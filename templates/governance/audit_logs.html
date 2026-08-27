@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Audit Logs — AI Client Portal{% endblock %}
+{% block content %}
+{% include "governance/_nav.html" %}
+<div class="card" style="overflow-x:auto;">
+    <h1>Audit Logs</h1>
+    <table class="data">
+        <thead>
+            <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Old</th><th>New</th></tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td class="text-muted">{{ log.timestamp|date:"Y-m-d H:i" }}</td>
+                <td>{{ log.actor|default:"—" }}</td>
+                <td><span class="badge badge-muted">{{ log.action_type }}</span></td>
+                <td class="text-muted">{{ log.target_type }}#{{ log.target_id }}</td>
+                <td class="text-muted">{{ log.old_value|truncatechars:40 }}</td>
+                <td class="text-muted">{{ log.new_value|truncatechars:40 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-faint">No audit events yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if is_paginated %}
+    <div class="mt-4" style="display:flex; gap:1rem; align-items:center;">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Prev</a>{% endif %}
+        <span class="text-faint" style="font-size:0.85rem;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next →</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

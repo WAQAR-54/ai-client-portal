@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Chat — AI Client Portal{% endblock %}
+{% block content %}
+<div class="chat-layout">
+    <aside class="card chat-sidebar">
+        <form method="post" action="{% url 'chat:create_conversation' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn">+ New chat</button>
+        </form>
+        <ul>
+            {% for c in conversations %}
+            <li>
+                <a href="{% url 'chat:chat_conversation' conversation_id=c.id %}"
+                   class="{% if conversation and conversation.id == c.id %}active{% endif %}">
+                    {{ c.title }}
+                </a>
+            </li>
+            {% empty %}
+            <li class="empty-hint">No conversations yet.</li>
+            {% endfor %}
+        </ul>
+    </aside>
+
+    <section class="card chat-panel">
+        {% if not has_models_available %}
+        <div class="alert alert-warning" style="margin:1rem 1rem 0;">
+            No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work.
+        </div>
+        {% endif %}
+
+        {% if conversation %}
+        <div id="messages" class="chat-messages">
+            {% for m in messages_list %}
+                {% include "chat/_message_bubble.html" with role=m.role content=m.content %}
+            {% endfor %}
+        </div>
+        <form class="chat-composer"
+              hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
+              hx-target="#messages" hx-swap="beforeend"
+              hx-on::after-request="this.reset()">
+            {% csrf_token %}
+            <input class="input" type="text" name="content" placeholder="Type a message..." required autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
+        {% else %}
+        <div class="chat-empty">
+            <p>Select a conversation from the sidebar, or start a new one.</p>
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

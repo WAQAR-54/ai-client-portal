@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Sign up — AI Client Portal{% endblock %}
+{% block content %}
+<div class="auth-shell">
+    <div class="auth-card">
+        <h1>Create your account</h1>
+        <p class="auth-subtitle">Get started with the AI Client Portal.</p>
+        <form method="post">
+            {% csrf_token %}
+            {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+            <label for="{{ form.email.id_for_label }}">Email</label>
+            {{ form.email }}
+            {{ form.email.errors }}
+            <label for="{{ form.password1.id_for_label }}">Password</label>
+            {{ form.password1 }}
+            {{ form.password1.errors }}
+            <label for="{{ form.password2.id_for_label }}">Confirm password</label>
+            {{ form.password2 }}
+            {{ form.password2.errors }}
+            <button type="submit">Sign up</button>
+        </form>
+        <p class="auth-footer">Already have an account? <a href="{% url 'accounts:login' %}">Log in</a></p>
+    </div>
+</div>
+{% endblock %}

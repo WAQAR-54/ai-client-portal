@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — AI Client Portal{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>Welcome, {{ user.email }}</h1>
+    <p>
+        <span class="badge">{{ user.role }}</span>
+        <span class="text-muted" style="margin-left:0.5rem;">{{ user.department|default:"No department assigned" }}</span>
+    </p>
+    <p class="mt-4"><a href="{% url 'chat:chat_home' %}" class="btn">Open Chat →</a></p>
+</div>
+{% endblock %}

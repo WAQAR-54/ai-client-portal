@@ -1,0 +1,37 @@
+# Example Nginx site config for the AI Client Portal.
+# Copy to /etc/nginx/sites-available/ai-client-portal, edit the placeholders
+# below, then: ln -s ../sites-available/ai-client-portal /etc/nginx/sites-enabled/
+#
+# TLS: this assumes Cloudflare in front (orange-clouded DNS) with Cloudflare
+# "Full (strict)" mode, so Nginx still needs a valid cert — get one via
+# certbot (Let's Encrypt): certbot --nginx -d your-domain.example
+# certbot will rewrite this file to add the listen 443 ssl block; the
+# server block below is the pre-certbot HTTP starting point.
+
+upstream ai_client_portal {
+    server 127.0.0.1:8000;  # must match GUNICORN_BIND in gunicorn.conf.py
+}
+
+server {
+    listen 80;
+    server_name your-domain.example;  # replace with your real domain
+
+    client_max_body_size 2M;
+
+    location /static/ {
+        alias /path/to/ai-client-portal/staticfiles/;  # must match STATIC_ROOT; run `manage.py collectstatic` first
+        expires 30d;
+    }
+
+    location / {
+        proxy_pass http://ai_client_portal;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Chat replies stream via SSE — don't buffer or time out the response early.
+        proxy_buffering off;
+        proxy_read_timeout 120s;
+    }
+}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Departments — AI Client Portal{% endblock %}
+{% block content %}
+{% include "governance/_nav.html" %}
+<div class="card">
+    <h1>Departments</h1>
+    <p>Manage department system prompts here. Create/edit departments in <a href="{% url 'admin:accounts_department_changelist' %}">Django admin</a>.</p>
+    <ul style="list-style:none; padding:0; margin-top:1rem; display:flex; flex-direction:column; gap:0.4rem;">
+        {% for d in departments %}
+        <li>
+            <a href="{% url 'governance:system_prompt' department_id=d.id %}" style="font-weight:600;">{{ d.name }}</a>
+        </li>
+        {% empty %}
+        <li class="text-faint">No departments yet.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

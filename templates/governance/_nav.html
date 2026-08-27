@@ -1,0 +1,8 @@
+<nav class="section-nav">
+    <a href="{% url 'governance:dashboard' %}" {% if request.resolver_match.url_name == "dashboard" %}class="active"{% endif %}>Overview</a>
+    <a href="{% url 'governance:users' %}" {% if request.resolver_match.url_name == "users" %}class="active"{% endif %}>Users</a>
+    <a href="{% url 'governance:models' %}" {% if request.resolver_match.url_name == "models" %}class="active"{% endif %}>Models</a>
+    <a href="{% url 'governance:usage' %}" {% if request.resolver_match.url_name == "usage" %}class="active"{% endif %}>Usage &amp; Cost</a>
+    <a href="{% url 'governance:audit_logs' %}" {% if request.resolver_match.url_name == "audit_logs" %}class="active"{% endif %}>Audit Logs</a>
+    <a href="{% url 'governance:departments' %}" {% if request.resolver_match.url_name == "departments" or request.resolver_match.url_name == "system_prompt" %}class="active"{% endif %}>Departments &amp; Prompts</a>
+</nav>

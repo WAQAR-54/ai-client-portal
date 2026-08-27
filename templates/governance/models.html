@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Models — AI Client Portal{% endblock %}
+{% block content %}
+{% include "governance/_nav.html" %}
+<div class="card" style="overflow-x:auto;">
+    <h1>AI Models</h1>
+    <p>Verify pricing against current provider docs before enabling a model — pricing is never auto-filled.</p>
+    <table class="data">
+        <thead>
+            <tr><th>Model</th><th>Provider</th><th>Tier</th><th>Input $/1M</th><th>Output $/1M</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for m in models %}
+            <tr>
+                <td>{{ m.model_name }}</td>
+                <td class="text-muted">{{ m.get_provider_display }}</td>
+                <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
+                <td>{{ m.input_cost_per_1m|default:"—" }}</td>
+                <td>{{ m.output_cost_per_1m|default:"—" }}</td>
+                <td>
+                    {% if m.is_enabled %}<span class="badge badge-success">Enabled</span>
+                    {% else %}<span class="badge badge-danger">Disabled</span>{% endif %}
+                </td>
+                <td>
+                    <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small {% if m.is_enabled %}btn-danger{% else %}btn-ghost{% endif %}"
+                                {% if not m.is_enabled and m.input_cost_per_1m is None %}title="Set pricing in Django admin first"{% endif %}>
+                            {% if m.is_enabled %}Disable{% else %}Enable{% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="mt-4"><a href="{% url 'admin:chat_modelconfig_changelist' %}">Edit pricing / add new models in Django admin →</a></p>
+</div>
+{% endblock %}

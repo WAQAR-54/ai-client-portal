@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Usage & Cost — AI Client Portal{% endblock %}
+{% block content %}
+{% include "governance/_nav.html" %}
+<div class="card" style="overflow-x:auto;">
+    <h1>Usage &amp; Cost by User</h1>
+    <table class="data">
+        <thead>
+            <tr><th>User</th><th>Requests</th><th>Tokens</th><th>Estimated Cost</th></tr>
+        </thead>
+        <tbody>
+            {% for row in per_user %}
+            <tr>
+                <td>{{ row.conversation__user__email }}</td>
+                <td>{{ row.requests }}</td>
+                <td>{{ row.tokens|default:0 }}</td>
+                <td>${{ row.cost|default:0|floatformat:4 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-faint">No usage recorded yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

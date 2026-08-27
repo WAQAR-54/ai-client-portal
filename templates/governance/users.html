@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Users — AI Client Portal{% endblock %}
+{% block content %}
+{% include "governance/_nav.html" %}
+<div class="card" style="overflow-x:auto;">
+    <h1>Users</h1>
+    <table class="data">
+        <thead>
+            <tr><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.email }}</td>
+                <td>
+                    <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
+                        {% csrf_token %}
+                        <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.35rem 0.5rem; font-size:0.85rem;">
+                            {% for value, label in roles %}
+                            <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </td>
+                <td class="text-muted">{{ u.department|default:"—" }}</td>
+                <td>
+                    {% if u.is_active %}<span class="badge badge-success">Active</span>
+                    {% else %}<span class="badge badge-danger">Suspended</span>{% endif %}
+                </td>
+                <td>
+                    <form method="post" action="{% url 'governance:toggle_user_active' user_id=u.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small {% if u.is_active %}btn-danger{% else %}btn-ghost{% endif %}">
+                            {% if u.is_active %}Suspend{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

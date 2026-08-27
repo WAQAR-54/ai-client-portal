@@ -1,0 +1,25 @@
+# Example systemd unit for running the app under Gunicorn.
+# Copy to /etc/systemd/system/ai-client-portal.service, edit the paths/user
+# below, then: systemctl daemon-reload && systemctl enable --now ai-client-portal
+#
+# Secrets (.env) are NOT read by systemd here — the app loads .env itself via
+# django-environ at Django startup, from the project's BASE_DIR. Make sure a
+# real .env (not committed) exists there with production values, permissions
+# restricted to the service user.
+
+[Unit]
+Description=AI Client Portal (Gunicorn)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/ai-client-portal
+Environment=PATH=/path/to/ai-client-portal/venv/bin
+ExecStart=/path/to/ai-client-portal/venv/bin/gunicorn -c deployment/gunicorn.conf.py config.wsgi:application
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

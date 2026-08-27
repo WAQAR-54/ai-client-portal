@@ -1,0 +1,8 @@
+{% include "chat/_message_bubble.html" with role="user" content=user_content %}
+<div hx-ext="sse"
+     sse-connect="{% url 'chat:stream_message' conversation_id=conversation.id message_id=pending_message.id %}"
+     class="msg-row msg-assistant">
+    <div class="msg-bubble" sse-swap="message" hx-swap="beforeend"></div>
+    <div sse-swap="error" hx-swap="innerHTML" style="color:var(--color-danger); margin-top:0.25rem;"></div>
+    <span sse-swap="done" hx-swap="delete" hx-target="this"></span>
+</div>

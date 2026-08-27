@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — AI Client Portal{% endblock %}
+{% block content %}
+{% include "governance/_nav.html" %}
+<div class="card">
+    <h1>Overview</h1>
+    <div class="stat-grid mt-4">
+        <div class="stat-tile"><div class="stat-label">Users</div><div class="stat-value">{{ total_users }}</div></div>
+        <div class="stat-tile"><div class="stat-label">Conversations</div><div class="stat-value">{{ total_conversations }}</div></div>
+        <div class="stat-tile"><div class="stat-label">Enabled models</div><div class="stat-value">{{ enabled_model_count }}</div></div>
+        <div class="stat-tile"><div class="stat-label">Tokens (all time)</div><div class="stat-value">{{ total_tokens_all_time }}</div></div>
+        <div class="stat-tile"><div class="stat-label">Cost (all time)</div><div class="stat-value">${{ total_cost_all_time|floatformat:2 }}</div></div>
+        <div class="stat-tile"><div class="stat-label">Tokens (this month)</div><div class="stat-value">{{ month_tokens }}</div></div>
+        <div class="stat-tile"><div class="stat-label">Cost (this month)</div><div class="stat-value">${{ month_cost|floatformat:2 }}</div></div>
+    </div>
+</div>
+{% endblock %}
