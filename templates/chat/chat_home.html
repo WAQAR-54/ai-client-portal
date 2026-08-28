@@ -2,17 +2,22 @@
 {% block title %}Chat — AI Client Portal{% endblock %}
 {% block content %}
 <div class="chat-layout">
-    <aside class="card chat-sidebar">
+    <aside class="chat-sidebar">
         <form method="post" action="{% url 'chat:create_conversation' %}">
             {% csrf_token %}
-            <button type="submit" class="btn">+ New chat</button>
+            <button type="submit" class="btn">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New chat
+            </button>
         </form>
+        <div class="chat-sidebar-label">Recent</div>
         <ul>
             {% for c in conversations %}
             <li>
                 <a href="{% url 'chat:chat_conversation' conversation_id=c.id %}"
                    class="{% if conversation and conversation.id == c.id %}active{% endif %}">
-                    {{ c.title }}
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                    <span>{{ c.title }}</span>
                 </a>
             </li>
             {% empty %}
@@ -21,7 +26,7 @@
         </ul>
     </aside>
 
-    <section class="card chat-panel">
+    <section class="chat-panel">
         {% if not has_models_available %}
         <div class="alert alert-warning" style="margin:1rem 1rem 0;">
             No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work.
@@ -29,21 +34,44 @@
         {% endif %}
 
         {% if conversation %}
+        <div class="chat-toolbar">
+            <span class="chat-toolbar-title">{{ conversation.title }}</span>
+            <select class="model-select" name="model_id" id="model-select">
+                <option value="">Auto (smart routing)</option>
+                {% regroup available_models by get_tier_display as tier_groups %}
+                {% for group in tier_groups %}
+                <optgroup label="{{ group.grouper }}">
+                    {% for m in group.list %}
+                    <option value="{{ m.id }}">{{ m.model_name }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endfor %}
+            </select>
+        </div>
         <div id="messages" class="chat-messages">
             {% for m in messages_list %}
-                {% include "chat/_message_bubble.html" with role=m.role content=m.content %}
+                {% include "chat/_message_bubble.html" with message=m %}
             {% endfor %}
         </div>
-        <form class="chat-composer"
+        <form id="composer-form" class="chat-composer"
               hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
               hx-target="#messages" hx-swap="beforeend"
+              hx-encoding="multipart/form-data"
+              hx-include="#model-select"
               hx-on::after-request="this.reset()">
             {% csrf_token %}
-            <input class="input" type="text" name="content" placeholder="Type a message..." required autocomplete="off">
-            <button type="submit">Send</button>
+            <label class="attach-btn" title="Attach a file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <input type="file" name="attachment" style="display:none;">
+            </label>
+            <input class="input" type="text" name="content" placeholder="Message the assistant..." autocomplete="off">
+            <button type="submit" class="send-btn" title="Send">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
         </form>
         {% else %}
         <div class="chat-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
             <p>Select a conversation from the sidebar, or start a new one.</p>
         </div>
         {% endif %}

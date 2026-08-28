@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Profile Settings — AI Client Portal{% endblock %}
+{% block content %}
+<div style="max-width: 560px;">
+    <h1>Profile Settings</h1>
+
+    <div class="card mt-4">
+        <h2>Your info</h2>
+        <p class="text-muted" style="margin-top:-0.5rem;">
+            {{ user.email }} · <span class="badge">{{ user.role }}</span>
+            {% if user.department %}· {{ user.department.name }}{% endif %}
+        </p>
+        <p class="text-faint" style="font-size:0.82rem;">Role and department are managed by an admin.</p>
+        <form method="post" action="{% url 'accounts:profile' %}">
+            {% csrf_token %}
+            <label for="{{ profile_form.first_name.id_for_label }}">First name</label>
+            {{ profile_form.first_name }}
+            {{ profile_form.first_name.errors }}
+            <label for="{{ profile_form.last_name.id_for_label }}">Last name</label>
+            {{ profile_form.last_name }}
+            {{ profile_form.last_name.errors }}
+            <button type="submit">Save changes</button>
+        </form>
+    </div>
+
+    <div class="card mt-5">
+        <h2>Change password</h2>
+        <form method="post" action="{% url 'accounts:profile_password' %}">
+            {% csrf_token %}
+            {{ password_form.non_field_errors }}
+            <label for="{{ password_form.old_password.id_for_label }}">Current password</label>
+            {{ password_form.old_password }}
+            {{ password_form.old_password.errors }}
+            <label for="{{ password_form.new_password1.id_for_label }}">New password</label>
+            {{ password_form.new_password1 }}
+            {{ password_form.new_password1.errors }}
+            <label for="{{ password_form.new_password2.id_for_label }}">Confirm new password</label>
+            {{ password_form.new_password2 }}
+            {{ password_form.new_password2.errors }}
+            <button type="submit">Change password</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,6 +1,6 @@
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.html import escape
 from django.views.decorators.http import require_GET, require_http_methods
@@ -9,12 +9,25 @@ from sentry_sdk import capture_exception
 from chat.models import Conversation, Message, ModelConfig
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
-from chat.router import NoModelAvailableError, classify_complexity, select_model_candidates
-from governance.limits import UsageLimitExceeded, check_usage_limits
+from chat.router import NoModelAvailableError, classify_complexity, models_visible_to_user, select_model_candidates
+from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, validate_upload
 
 
 def _owned_conversation_or_404(request, conversation_id):
     return get_object_or_404(Conversation, id=conversation_id, user=request.user)
+
+
+@login_required
+@require_GET
+def download_attachment(request, conversation_id, message_id):
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    message = get_object_or_404(Message, id=message_id, conversation=conversation)
+    if not message.attachment:
+        raise Http404
+    return FileResponse(
+        message.attachment.open("rb"), as_attachment=True,
+        filename=message.attachment_original_name or message.attachment.name,
+    )
 
 
 @login_required
@@ -23,11 +36,13 @@ def chat_home(request, conversation_id=None):
     if conversation_id:
         conversation = _owned_conversation_or_404(request, conversation_id)
 
+    available_models = models_visible_to_user(request.user)
     context = {
         "conversations": Conversation.objects.filter(user=request.user),
         "conversation": conversation,
         "messages_list": conversation.messages.all() if conversation else [],
-        "has_models_available": ModelConfig.objects.filter(is_enabled=True).exists(),
+        "has_models_available": available_models.exists(),
+        "available_models": available_models,
     }
     return render(request, "chat/chat_home.html", context)
 
@@ -43,8 +58,25 @@ def create_conversation(request):
 @require_http_methods(["POST"])
 def post_message(request, conversation_id):
     content = request.POST.get("content", "").strip()
-    if not content:
-        return HttpResponse(status=400)
+    uploaded_file = request.FILES.get("attachment")
+    if not content and not uploaded_file:
+        return render(
+            request, "chat/_limit_exceeded.html",
+            {"message": "Type a message or attach a file first."}, status=400,
+        )
+
+    if uploaded_file:
+        try:
+            validate_upload(request.user, uploaded_file)
+        except UploadRejected as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=400)
+
+    # Only offer a manually-picked model if it's actually one this user is
+    # currently allowed to use — otherwise silently fall back to auto-routing
+    # rather than trusting a stale/tampered value from the form.
+    model_id = request.POST.get("model_id", "").strip()
+    if model_id and not models_visible_to_user(request.user).filter(id=model_id).exists():
+        model_id = ""
 
     # Lock the conversation row for the duration of the check+create so two
     # concurrent sends against the same conversation can't both pass the
@@ -60,10 +92,15 @@ def post_message(request, conversation_id):
         except UsageLimitExceeded as exc:
             return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
 
-        Message.objects.create(conversation=conversation, role=Message.Role.USER, content=content)
+        user_message = Message.objects.create(conversation=conversation, role=Message.Role.USER, content=content)
+        if uploaded_file:
+            user_message.attachment = uploaded_file
+            user_message.attachment_original_name = uploaded_file.name
+            user_message.attachment_size = uploaded_file.size
+            user_message.save(update_fields=["attachment", "attachment_original_name", "attachment_size"])
 
         if conversation.title == "New chat":
-            conversation.title = content[:60]
+            conversation.title = (content or uploaded_file.name)[:60]
             conversation.save(update_fields=["title"])
 
         pending_assistant_message = Message.objects.create(
@@ -73,8 +110,39 @@ def post_message(request, conversation_id):
     return render(request, "chat/_message_pending.html", {
         "conversation": conversation,
         "pending_message": pending_assistant_message,
-        "user_content": content,
+        "user_message": user_message,
+        "model_id": model_id,
     })
+
+
+TEXT_ATTACHMENT_EXTENSIONS = {"txt", "csv", "md", "json"}
+MAX_ATTACHMENT_CHARS_IN_PROMPT = 8000
+
+
+def _history_with_attachments(conversation, exclude_message_id):
+    """Message history as provider-ready dicts, with the text content of
+    any small text-like attachment (txt/csv/md/json) appended inline.
+    Other file types (images, PDFs, office docs) are stored and shown in
+    the UI but not read by the model yet."""
+    history = []
+    messages = conversation.messages.exclude(id=exclude_message_id).order_by("created_at")
+    for msg in messages:
+        content = msg.content
+        if msg.attachment:
+            extension = msg.attachment_original_name.rsplit(".", 1)[-1].lower() if "." in msg.attachment_original_name else ""
+            if extension in TEXT_ATTACHMENT_EXTENSIONS:
+                try:
+                    with msg.attachment.open("rb") as f:
+                        file_text = f.read(MAX_ATTACHMENT_CHARS_IN_PROMPT + 1).decode("utf-8", errors="replace")
+                    if len(file_text) > MAX_ATTACHMENT_CHARS_IN_PROMPT:
+                        file_text = file_text[:MAX_ATTACHMENT_CHARS_IN_PROMPT] + "\n[...truncated...]"
+                    content = f"{content}\n\n[Attached file: {msg.attachment_original_name}]\n{file_text}"
+                except (FileNotFoundError, OSError):
+                    content = f"{content}\n\n[Attached file: {msg.attachment_original_name} — could not be read]"
+            else:
+                content = f"{content}\n\n[Attached file: {msg.attachment_original_name} (not readable by the assistant yet)]"
+        history.append({"role": msg.role, "content": content})
+    return history
 
 
 @login_required
@@ -85,15 +153,16 @@ def stream_message(request, conversation_id, message_id):
         Message, id=message_id, conversation=conversation, role=Message.Role.ASSISTANT, content="",
     )
 
-    history = list(
-        conversation.messages.exclude(id=message.id).order_by("created_at")
-        .values("role", "content")
-    )
+    history = _history_with_attachments(conversation, exclude_message_id=message.id)
+    requested_model_id = request.GET.get("model_id", "").strip()
 
     def event_stream():
         try:
-            tier = classify_complexity(history[-1]["content"] if history else "")
-            candidates = select_model_candidates(request.user, tier)
+            if requested_model_id and models_visible_to_user(request.user).filter(id=requested_model_id).exists():
+                candidates = [ModelConfig.objects.get(id=requested_model_id)]
+            else:
+                tier = classify_complexity(history[-1]["content"] if history else "")
+                candidates = select_model_candidates(request.user, tier)
         except NoModelAvailableError as exc:
             yield _sse_event("error", str(exc))
             return

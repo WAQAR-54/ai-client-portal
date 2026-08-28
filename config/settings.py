@@ -141,6 +141,20 @@ STORAGES = {
     },
 }
 
+# User-uploaded chat attachments. NOTE: on Railway/most PaaS this is local
+# container disk, not persistent storage — files won't survive a redeploy
+# or restart. Fine for local dev/demo; swap for real object storage
+# (S3-compatible) before relying on this in production.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Fallback file-upload limits, used whenever a user/department has no
+# UsageLimit row (or that row leaves the field blank) overriding them.
+DEFAULT_MAX_UPLOAD_SIZE_MB = env.int("DEFAULT_MAX_UPLOAD_SIZE_MB", default=10)
+DEFAULT_ALLOWED_FILE_EXTENSIONS = env(
+    "DEFAULT_ALLOWED_FILE_EXTENSIONS", default="pdf,txt,csv,md,png,jpg,jpeg,docx,xlsx,json",
+)
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 

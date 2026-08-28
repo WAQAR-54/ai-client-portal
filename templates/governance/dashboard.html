@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Admin Dashboard — AI Client Portal{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
 {% block content %}
-{% include "governance/_nav.html" %}
 <div class="card">
     <h1>Overview</h1>
     <div class="stat-grid mt-4">
@@ -14,4 +16,90 @@
         <div class="stat-tile"><div class="stat-label">Cost (this month)</div><div class="stat-value">${{ month_cost|floatformat:2 }}</div></div>
     </div>
 </div>
+
+<div class="chart-grid mt-5">
+    <div class="card chart-card">
+        <h2>Cost — last 14 days</h2>
+        <canvas id="chartDailyCost" height="200"></canvas>
+    </div>
+    <div class="card chart-card">
+        <h2>Tokens — last 14 days</h2>
+        <canvas id="chartDailyTokens" height="200"></canvas>
+    </div>
+    <div class="card chart-card">
+        <h2>Cost by model</h2>
+        <canvas id="chartByModel" height="200"></canvas>
+    </div>
+    <div class="card chart-card">
+        <h2>Users by role</h2>
+        <canvas id="chartByRole" height="200"></canvas>
+    </div>
+</div>
+
+<script>
+(function() {
+    const palette = ["#4f46e5", "#8b7ffb", "#16a34a", "#b45309", "#0ea5e9", "#dc2626", "#6b7085", "#a855f7"];
+    const gridColor = "#e4e7ee";
+    const textColor = "#6b7085";
+    Chart.defaults.font.family = "Inter, -apple-system, sans-serif";
+    Chart.defaults.color = textColor;
+
+    const dailyLabels = {{ chart_daily_labels|safe }};
+
+    new Chart(document.getElementById("chartDailyCost"), {
+        type: "bar",
+        data: {
+            labels: dailyLabels,
+            datasets: [{ data: {{ chart_daily_cost|safe }}, backgroundColor: palette[0], borderRadius: 4 }],
+        },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: v => "$" + v } },
+                x: { grid: { display: false } },
+            },
+        },
+    });
+
+    new Chart(document.getElementById("chartDailyTokens"), {
+        type: "line",
+        data: {
+            labels: dailyLabels,
+            datasets: [{
+                data: {{ chart_daily_tokens|safe }}, borderColor: palette[1], backgroundColor: palette[1] + "33",
+                fill: true, tension: 0.3,
+            }],
+        },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, grid: { color: gridColor } }, x: { grid: { display: false } } },
+        },
+    });
+
+    new Chart(document.getElementById("chartByModel"), {
+        type: "bar",
+        data: {
+            labels: {{ chart_model_labels|safe }},
+            datasets: [{ data: {{ chart_model_cost|safe }}, backgroundColor: palette, borderRadius: 4 }],
+        },
+        options: {
+            indexAxis: "y",
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: v => "$" + v } },
+                y: { grid: { display: false } },
+            },
+        },
+    });
+
+    new Chart(document.getElementById("chartByRole"), {
+        type: "doughnut",
+        data: {
+            labels: {{ chart_role_labels|safe }},
+            datasets: [{ data: {{ chart_role_values|safe }}, backgroundColor: palette }],
+        },
+        options: { plugins: { legend: { position: "bottom" } } },
+    });
+})();
+</script>
 {% endblock %}

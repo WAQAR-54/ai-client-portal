@@ -64,6 +64,14 @@ class UsageLimit(models.Model):
     budget_cap_currency = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True, help_text="Monthly spend cap in USD.",
     )
+    max_upload_size_mb = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text=f"File upload size cap in MB. Leave blank to use the system default ({settings.DEFAULT_MAX_UPLOAD_SIZE_MB}MB).",
+    )
+    allowed_file_extensions = models.CharField(
+        max_length=500, blank=True,
+        help_text=f"Comma-separated, no dots (e.g. pdf,png,txt). Leave blank to use the system default ({settings.DEFAULT_ALLOWED_FILE_EXTENSIONS}).",
+    )
 
     class Meta:
         constraints = [

@@ -1,18 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Departments — AI Client Portal{% endblock %}
 {% block content %}
-{% include "governance/_nav.html" %}
-<div class="card">
+<div class="card" style="margin-bottom:1.5rem;">
+    <h2>Add a department</h2>
+    <form method="post" action="{% url 'governance:add_department' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
+        {% csrf_token %}
+        <div style="flex:2; min-width:200px;">
+            <label for="name">Name</label>
+            <input class="input" type="text" name="name" id="name" placeholder="e.g. Engineering" style="margin:0;" required>
+        </div>
+        <div style="flex:1; min-width:160px;">
+            <label for="monthly_budget_cap">Monthly budget cap (USD)</label>
+            <input class="input" type="number" step="0.01" name="monthly_budget_cap" id="monthly_budget_cap" placeholder="unlimited" style="margin:0;">
+        </div>
+        <button type="submit">Add department</button>
+    </form>
+</div>
+
+<div class="card" style="overflow-x:auto;">
     <h1>Departments</h1>
-    <p>Manage department system prompts here. Create/edit departments in <a href="{% url 'admin:accounts_department_changelist' %}">Django admin</a>.</p>
-    <ul style="list-style:none; padding:0; margin-top:1rem; display:flex; flex-direction:column; gap:0.4rem;">
-        {% for d in departments %}
-        <li>
-            <a href="{% url 'governance:system_prompt' department_id=d.id %}" style="font-weight:600;">{{ d.name }}</a>
-        </li>
-        {% empty %}
-        <li class="text-faint">No departments yet.</li>
-        {% endfor %}
-    </ul>
+    <p>Manage departments, budgets, and system prompts here — no need for Django admin.</p>
+    <table class="data">
+        <thead><tr><th>Name</th><th>Monthly budget cap</th><th></th></tr></thead>
+        <tbody>
+            {% for d in departments %}
+            <tr>
+                <td>
+                    <input class="input" style="margin:0;" type="text" name="name" value="{{ d.name }}" form="dept-form-{{ d.id }}">
+                </td>
+                <td>
+                    <input class="input" style="margin:0; width:130px;" type="number" step="0.01" name="monthly_budget_cap" value="{{ d.monthly_budget_cap|default_if_none:'' }}" placeholder="unlimited" form="dept-form-{{ d.id }}">
+                </td>
+                <td style="white-space:nowrap;">
+                    <form id="dept-form-{{ d.id }}" method="post" action="{% url 'governance:update_department' department_id=d.id %}" style="display:none;">{% csrf_token %}</form>
+                    <button type="submit" form="dept-form-{{ d.id }}" class="btn-small btn-ghost" style="margin-right:0.3rem;">Save</button>
+                    <a href="{% url 'governance:system_prompt' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Prompt</a>
+                    <form method="post" action="{% url 'governance:delete_department' department_id=d.id %}" style="display:inline;" onsubmit="return confirm('Delete {{ d.name }}? This also removes its system prompt history.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-faint">No departments yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}

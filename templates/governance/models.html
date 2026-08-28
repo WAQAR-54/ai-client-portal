@@ -1,7 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Models — AI Client Portal{% endblock %}
 {% block content %}
-{% include "governance/_nav.html" %}
+
+<div class="card mt-4" style="margin-bottom:1.5rem;">
+    <h2>Add a model</h2>
+    <form method="post" action="{% url 'governance:add_model' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
+        {% csrf_token %}
+        <div style="flex:1; min-width:160px;">
+            <label for="provider">Provider</label>
+            <select class="input" name="provider" id="provider" style="margin:0;">
+                {% for value, label in providers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <div style="flex:2; min-width:220px;">
+            <label for="model_name">Model identifier</label>
+            <input class="input" type="text" name="model_name" id="model_name" placeholder="e.g. gpt-4o-mini" style="margin:0;" required>
+        </div>
+        <div style="flex:1; min-width:140px;">
+            <label for="tier">Tier</label>
+            <select class="input" name="tier" id="tier" style="margin:0;">
+                {% for value, label in tiers %}<option value="{{ value }}" {% if value == "default" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <button type="submit">Add model</button>
+    </form>
+</div>
+
 <div class="card" style="overflow-x:auto;">
     <h1>AI Models</h1>
     <p>Verify pricing against current provider docs before enabling a model — pricing is never auto-filled.</p>
@@ -15,17 +39,24 @@
                 <td>{{ m.model_name }}</td>
                 <td class="text-muted">{{ m.get_provider_display }}</td>
                 <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
-                <td>{{ m.input_cost_per_1m|default:"—" }}</td>
-                <td>{{ m.output_cost_per_1m|default:"—" }}</td>
+                <td colspan="2">
+                    <form method="post" action="{% url 'governance:update_model_pricing' model_id=m.id %}" style="display:flex; gap:0.4rem; align-items:center;">
+                        {% csrf_token %}
+                        <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="input_cost_per_1m" value="{{ m.input_cost_per_1m|default_if_none:'' }}" placeholder="input $">
+                        <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="output_cost_per_1m" value="{{ m.output_cost_per_1m|default_if_none:'' }}" placeholder="output $">
+                        <button type="submit" class="btn-small btn-ghost">Save</button>
+                    </form>
+                </td>
                 <td>
                     {% if m.is_enabled %}<span class="badge badge-success">Enabled</span>
                     {% else %}<span class="badge badge-danger">Disabled</span>{% endif %}
                 </td>
-                <td>
-                    <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}">
+                <td style="white-space:nowrap;">
+                    <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Who can use</a>
+                    <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}" style="display:inline;">
                         {% csrf_token %}
                         <button type="submit" class="btn-small {% if m.is_enabled %}btn-danger{% else %}btn-ghost{% endif %}"
-                                {% if not m.is_enabled and m.input_cost_per_1m is None %}title="Set pricing in Django admin first"{% endif %}>
+                                {% if not m.is_enabled and m.input_cost_per_1m is None %}title="Set pricing first"{% endif %}>
                             {% if m.is_enabled %}Disable{% else %}Enable{% endif %}
                         </button>
                     </form>
@@ -34,6 +65,5 @@
             {% endfor %}
         </tbody>
     </table>
-    <p class="mt-4"><a href="{% url 'admin:chat_modelconfig_changelist' %}">Edit pricing / add new models in Django admin →</a></p>
 </div>
 {% endblock %}

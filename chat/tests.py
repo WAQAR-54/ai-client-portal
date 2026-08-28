@@ -1,6 +1,7 @@
+import tempfile
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from accounts.models import User
@@ -220,3 +221,121 @@ class ChatViewTests(TestCase):
         self.assertIn("event: error", body)
         pending.refresh_from_db()
         self.assertEqual(pending.content, "(request failed before completion)")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class FileUploadTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    def test_upload_within_default_limits_succeeds(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("notes.txt", b"hello world", content_type="text/plain")
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "", "attachment": upload},
+        )
+        self.assertEqual(response.status_code, 200)
+        user_message = self.conversation.messages.get(role=Message.Role.USER)
+        self.assertEqual(user_message.attachment_original_name, "notes.txt")
+        self.assertEqual(user_message.attachment_size, 11)
+
+    def test_disallowed_extension_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("virus.exe", b"x" * 10, content_type="application/octet-stream")
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "", "attachment": upload},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.conversation.messages.filter(role=Message.Role.USER).exists())
+
+    def test_oversized_file_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        upload = SimpleUploadedFile("big.txt", b"x" * 2_000_000, content_type="text/plain")
+        with override_settings(DEFAULT_MAX_UPLOAD_SIZE_MB=1):
+            response = self.client.post(
+                reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+                {"content": "", "attachment": upload},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.conversation.messages.filter(role=Message.Role.USER).exists())
+
+    def test_download_attachment_requires_ownership(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        message = Message.objects.create(
+            conversation=self.conversation, role=Message.Role.USER, content="",
+            attachment=SimpleUploadedFile("notes.txt", b"secret"), attachment_original_name="notes.txt",
+        )
+        self.client.logout()
+        self.client.login(email="other@example.com", password="pw12345!")
+        response = self.client.get(
+            reverse("chat:download_attachment", kwargs={
+                "conversation_id": self.conversation.id, "message_id": message.id,
+            })
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_download_attachment_works_for_owner(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        message = Message.objects.create(
+            conversation=self.conversation, role=Message.Role.USER, content="",
+            attachment=SimpleUploadedFile("notes.txt", b"secret"), attachment_original_name="notes.txt",
+        )
+        response = self.client.get(
+            reverse("chat:download_attachment", kwargs={
+                "conversation_id": self.conversation.id, "message_id": message.id,
+            })
+        )
+        self.assertEqual(response.status_code, 200)
+
+
+class ModelSelectionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.allowed_model = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI, model_name="allowed-model",
+            tier=ModelConfig.Tier.DEFAULT, output_cost_per_1m=2, is_enabled=True,
+        )
+        self.denied_model = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.ANTHROPIC, model_name="denied-model",
+            tier=ModelConfig.Tier.DEFAULT, output_cost_per_1m=1, is_enabled=True,
+        )
+        UserModelPermission.objects.create(user=self.user, model_config=self.denied_model, is_allowed=False)
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    @patch("chat.views.get_provider")
+    def test_manually_selected_allowed_model_is_used(self, mock_get_provider):
+        from chat.providers import StreamChunk
+
+        mock_get_provider.return_value.stream_chat.return_value = iter([
+            StreamChunk(text="hi"),
+            StreamChunk(done=True, input_tokens=1, output_tokens=1),
+        ])
+        pending = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="")
+        url = reverse("chat:stream_message", kwargs={
+            "conversation_id": self.conversation.id, "message_id": pending.id,
+        }) + f"?model_id={self.allowed_model.id}"
+        response = self.client.get(url)
+        b"".join(response.streaming_content)
+        pending.refresh_from_db()
+        self.assertEqual(pending.model_used, self.allowed_model)
+
+    def test_denied_model_id_is_ignored_in_post_message(self):
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "hi", "model_id": str(self.denied_model.id)},
+        )
+        self.assertEqual(response.status_code, 200)
+        # the pending fragment's SSE URL should not carry the denied model's id
+        self.assertNotIn(f"model_id={self.denied_model.id}", response.content.decode())

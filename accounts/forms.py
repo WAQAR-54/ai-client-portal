@@ -25,3 +25,13 @@ class SignupForm(UserCreationForm):
         super().__init__(*args, **kwargs)
         self.fields["password1"].widget.attrs["class"] = "input"
         self.fields["password2"].widget.attrs["class"] = "input"
+
+
+class ProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name"]
+        widgets = {
+            "first_name": forms.TextInput(attrs={"class": "input"}),
+            "last_name": forms.TextInput(attrs={"class": "input"}),
+        }

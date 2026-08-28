@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Users — AI Client Portal{% endblock %}
 {% block content %}
-{% include "governance/_nav.html" %}
 <div class="card" style="overflow-x:auto;">
     <h1>Users</h1>
+    <p>Change a user's role, department, or access — everything here takes effect immediately.</p>
     <table class="data">
         <thead>
             <tr><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr>
@@ -15,14 +15,24 @@
                 <td>
                     <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
                         {% csrf_token %}
-                        <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.35rem 0.5rem; font-size:0.85rem;">
+                        <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
                             {% for value, label in roles %}
                             <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
                     </form>
                 </td>
-                <td class="text-muted">{{ u.department|default:"—" }}</td>
+                <td>
+                    <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
+                        {% csrf_token %}
+                        <select name="department_id" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
+                            <option value="">— none —</option>
+                            {% for d in departments %}
+                            <option value="{{ d.id }}" {% if u.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </td>
                 <td>
                     {% if u.is_active %}<span class="badge badge-success">Active</span>
                     {% else %}<span class="badge badge-danger">Suspended</span>{% endif %}

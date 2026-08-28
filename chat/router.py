@@ -73,3 +73,11 @@ def select_model_for_user(user, tier: str) -> ModelConfig:
     if not candidates:
         raise NoModelAvailableError("No AI model is enabled and permitted for this user.")
     return candidates[0]
+
+
+def models_visible_to_user(user):
+    """Enabled models this user is allowed to pick from a manual model
+    dropdown, cheapest-first within each tier."""
+    return ModelConfig.objects.filter(is_enabled=True).exclude(
+        id__in=UserModelPermission.objects.filter(user=user, is_allowed=False).values_list("model_config_id", flat=True),
+    ).order_by("tier", F("output_cost_per_1m").asc(nulls_last=True))

@@ -14,4 +14,9 @@ urlpatterns = [
         views.stream_message,
         name="stream_message",
     ),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/attachment/",
+        views.download_attachment,
+        name="download_attachment",
+    ),
 ]

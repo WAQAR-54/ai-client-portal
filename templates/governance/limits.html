@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Limits — AI Client Portal{% endblock %}
+{% block content %}
+<div class="card" style="overflow-x:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1>Usage &amp; Upload Limits</h1>
+        <a href="{% url 'governance:limit_new' %}" class="btn">+ New limit</a>
+    </div>
+    <p>System defaults apply to anyone without a limit here: uploads up to {{ default_upload_mb }}MB, {{ default_extensions }} file types, no token/budget caps.</p>
+    <table class="data">
+        <thead>
+            <tr><th>Applies to</th><th>Daily tokens</th><th>Monthly tokens</th><th>Session msgs</th><th>Budget/mo</th><th>Upload cap</th><th>File types</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for l in limits %}
+            <tr>
+                <td>{% if l.user %}👤 {{ l.user.email }}{% else %}🏢 {{ l.department.name }}{% endif %}</td>
+                <td>{{ l.daily_token_cap|default:"—" }}</td>
+                <td>{{ l.monthly_token_cap|default:"—" }}</td>
+                <td>{{ l.session_limit|default:"—" }}</td>
+                <td>{% if l.budget_cap_currency %}${{ l.budget_cap_currency }}{% else %}—{% endif %}</td>
+                <td>{% if l.max_upload_size_mb %}{{ l.max_upload_size_mb }}MB{% else %}—{% endif %}</td>
+                <td class="text-muted">{{ l.allowed_file_extensions|default:"—" }}</td>
+                <td style="white-space:nowrap;">
+                    <a href="{% url 'governance:limit_edit' limit_id=l.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Edit</a>
+                    <form method="post" action="{% url 'governance:limit_delete' limit_id=l.id %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="text-faint">No custom limits set — everyone uses system defaults.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

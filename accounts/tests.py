@@ -107,3 +107,52 @@ class SignupTests(TestCase):
         self.client.login(email="existing@example.com", password="pw12345!")
         response = self.client.get(reverse("accounts:signup"))
         self.assertRedirects(response, reverse("accounts:dashboard"))
+
+
+class ProfileTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_update_name(self):
+        response = self.client.post(reverse("accounts:profile"), {
+            "first_name": "Ayesha", "last_name": "Khan",
+        })
+        self.assertRedirects(response, reverse("accounts:profile"))
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "Ayesha")
+        self.assertEqual(self.user.last_name, "Khan")
+
+    def test_cannot_change_role_or_department_from_profile_form(self):
+        # ProfileForm only exposes first/last name — role/department aren't postable here.
+        response = self.client.post(reverse("accounts:profile"), {
+            "first_name": "A", "last_name": "B", "role": User.Role.ADMIN,
+        })
+        self.assertRedirects(response, reverse("accounts:profile"))
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, User.Role.USER)
+
+    def test_change_password_success(self):
+        response = self.client.post(reverse("accounts:profile_password"), {
+            "old_password": "pw12345!",
+            "new_password1": "a-new-strong-password-9",
+            "new_password2": "a-new-strong-password-9",
+        })
+        self.assertRedirects(response, reverse("accounts:profile"))
+        self.client.logout()
+        self.assertTrue(self.client.login(email="u@example.com", password="a-new-strong-password-9"))
+
+    def test_change_password_wrong_current_password_rejected(self):
+        response = self.client.post(reverse("accounts:profile_password"), {
+            "old_password": "wrong-password",
+            "new_password1": "a-new-strong-password-9",
+            "new_password2": "a-new-strong-password-9",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.client.logout()
+        self.assertTrue(self.client.login(email="u@example.com", password="pw12345!"))
+
+    def test_profile_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("accounts:profile"))
+        self.assertEqual(response.status_code, 302)

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Who can use {{ model_config.model_name }} — AI Client Portal{% endblock %}
+{% block content %}
+<div class="card" style="overflow-x:auto;">
+    <h1>Who can use {{ model_config.model_name }}</h1>
+    <p>Every user can use an enabled model by default. Deny access below to restrict specific users.</p>
+    <table class="data">
+        <thead><tr><th>User</th><th>Role</th><th>Access</th><th></th></tr></thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.email }}</td>
+                <td class="text-muted">{{ u.get_role_display }}</td>
+                <td>
+                    {% if u.id in denied_user_ids %}<span class="badge badge-danger">Denied</span>
+                    {% else %}<span class="badge badge-success">Allowed</span>{% endif %}
+                </td>
+                <td>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                        <button type="submit" class="btn-small {% if u.id not in denied_user_ids %}btn-danger{% else %}btn-ghost{% endif %}">
+                            {% if u.id in denied_user_ids %}Allow{% else %}Deny{% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="mt-4"><a href="{% url 'governance:models' %}">← Back to models</a></p>
+</div>
+{% endblock %}

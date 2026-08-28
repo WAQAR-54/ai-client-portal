@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db.models import F, Sum
 from django.utils import timezone
 
@@ -9,6 +10,10 @@ class UsageLimitExceeded(Exception):
     pass
 
 
+class UploadRejected(Exception):
+    pass
+
+
 def _effective_limit(user):
     """A personal UsageLimit overrides the user's department-level one."""
     personal = UsageLimit.objects.filter(user=user).first()
@@ -17,6 +22,26 @@ def _effective_limit(user):
     if user.department:
         return UsageLimit.objects.filter(department=user.department).first()
     return None
+
+
+def validate_upload(user, uploaded_file):
+    """Raise UploadRejected if `uploaded_file` violates this user's
+    effective size/extension limits (personal, then department, then the
+    system-wide default from settings)."""
+    limit = _effective_limit(user)
+
+    max_mb = (limit.max_upload_size_mb if limit else None) or settings.DEFAULT_MAX_UPLOAD_SIZE_MB
+    max_bytes = max_mb * 1024 * 1024
+    if uploaded_file.size > max_bytes:
+        raise UploadRejected(f"File is too large. Max size is {max_mb}MB.")
+
+    allowed_raw = (limit.allowed_file_extensions if limit else "") or settings.DEFAULT_ALLOWED_FILE_EXTENSIONS
+    allowed_extensions = {ext.strip().lower().lstrip(".") for ext in allowed_raw.split(",") if ext.strip()}
+    file_extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+    if file_extension not in allowed_extensions:
+        raise UploadRejected(
+            f"File type '.{file_extension or '?'}' isn't allowed. Allowed types: {', '.join(sorted(allowed_extensions))}."
+        )
 
 
 def check_usage_limits(user, conversation):
