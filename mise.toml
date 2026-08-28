@@ -1,0 +1,6 @@
+[settings]
+# Railway's build system (Railpack) installs Python via mise. mise's GitHub
+# artifact attestation check fails for some Python patch versions (seen with
+# 3.11.9) even though the download itself is fine - this disables just that
+# verification step, not the install.
+python.github_attestations = false
