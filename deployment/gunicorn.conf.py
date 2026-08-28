@@ -17,7 +17,13 @@ else:
 # gthread, not sync: chat responses are long-lived SSE streams (StreamingHttpResponse)
 # held open for the whole AI reply. Sync workers would tie up a full worker
 # process per open stream; threads let one worker serve many concurrent chats.
-workers = int(os.environ.get("GUNICORN_WORKERS", multiprocessing.cpu_count() * 2 + 1))
+#
+# multiprocessing.cpu_count() reads the HOST machine's core count, not what
+# a small PaaS container is actually allocated (often just a fraction of a
+# core) - on Railway/Render this formula can ask for far more worker
+# processes than the container's memory budget allows, and gunicorn just
+# hangs/crash-loops with no clear error. Cap it at 3 unless overridden.
+workers = int(os.environ.get("GUNICORN_WORKERS", min(multiprocessing.cpu_count() * 2 + 1, 3)))
 worker_class = "gthread"
 threads = int(os.environ.get("GUNICORN_THREADS", 4))
 timeout = int(os.environ.get("GUNICORN_TIMEOUT", 60))  # chat streaming responses can run long; raise if needed
