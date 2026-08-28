@@ -126,8 +126,20 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-if not DEBUG:
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Django 5.x reads storage backends from STORAGES, not the legacy
+# STATICFILES_STORAGE setting (which silently no-ops here) - this is what
+# actually switches static file storage to WhiteNoise's compressing,
+# cache-busting backend in production.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if not DEBUG else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        ),
+    },
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
