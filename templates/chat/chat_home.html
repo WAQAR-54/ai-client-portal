@@ -49,26 +49,31 @@
             </select>
         </div>
         <div id="messages" class="chat-messages">
-            {% for m in messages_list %}
-                {% include "chat/_message_bubble.html" with message=m %}
-            {% endfor %}
+            <div class="chat-column">
+                {% for m in messages_list %}
+                    {% include "chat/_message_bubble.html" with message=m %}
+                {% endfor %}
+            </div>
         </div>
-        <form id="composer-form" class="chat-composer"
-              hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
-              hx-target="#messages" hx-swap="beforeend"
-              hx-encoding="multipart/form-data"
-              hx-include="#model-select"
-              hx-on::after-request="this.reset()">
-            {% csrf_token %}
-            <label class="attach-btn" title="Attach a file">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                <input type="file" name="attachment" style="display:none;">
-            </label>
-            <input class="input" type="text" name="content" placeholder="Message the assistant..." autocomplete="off">
-            <button type="submit" class="send-btn" title="Send">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
-        </form>
+        <div class="chat-composer-wrap">
+            <form id="composer-form" class="chat-composer"
+                  hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
+                  hx-target="#messages .chat-column" hx-swap="beforeend"
+                  hx-encoding="multipart/form-data"
+                  hx-include="#model-select"
+                  hx-on::after-request="this.reset()">
+                {% csrf_token %}
+                <label class="attach-btn" title="Attach a file">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <input type="file" name="attachment" style="display:none;">
+                </label>
+                <input class="input" type="text" name="content" placeholder="Message the assistant..." autocomplete="off">
+                <button type="submit" class="send-btn" title="Send">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+            </form>
+            <p class="chat-disclaimer">AI responses may be inaccurate. Verify important information.</p>
+        </div>
         {% else %}
         <div class="chat-empty">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>

@@ -1,9 +1,9 @@
 /* ---------- Design tokens ---------- */
 :root {
-    --color-bg: #f4f5f9;
+    --color-bg: #ffffff;
     --color-surface: #ffffff;
-    --color-surface-muted: #f8f9fc;
-    --color-border: #e4e7ee;
+    --color-surface-muted: #f7f7f8;
+    --color-border: #e5e5e8;
     --color-text: #1a1d29;
     --color-text-muted: #6b7085;
     --color-text-faint: #9498a8;
@@ -261,18 +261,24 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
 .app-main {
     flex: 1;
     min-width: 0;
+    height: 100vh;
     overflow-x: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 main {
     max-width: 1080px;
     margin: 0 auto;
     padding: var(--space-6) var(--space-5);
+    width: 100%;
 }
 main.main-bleed {
     max-width: none;
     margin: 0;
     padding: 0;
+    flex: 1;
+    min-height: 0;
 }
 main.main-wide {
     max-width: 1440px;
@@ -285,7 +291,6 @@ main.main-wide {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: var(--space-6);
-    box-shadow: var(--shadow-sm);
 }
 
 /* ---------- Forms ---------- */
@@ -402,17 +407,14 @@ table.data tbody tr:last-child td { border-bottom: none; }
 /* ---------- Stat tiles (governance dashboard) ---------- */
 .stat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: var(--space-5);
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 .stat-tile {
-    background: var(--color-surface-muted);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-5);
+    padding: var(--space-4) var(--space-5) var(--space-4) 0;
+    border-bottom: 1px solid var(--color-border);
 }
-.stat-tile .stat-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-faint); }
-.stat-tile .stat-value { font-size: 1.65rem; font-weight: 700; margin-top: 0.3rem; letter-spacing: -0.02em; }
+.stat-tile .stat-label { font-size: 0.78rem; color: var(--color-text-muted); }
+.stat-tile .stat-value { font-size: 1.6rem; font-weight: 650; margin-top: 0.25rem; letter-spacing: -0.02em; color: var(--color-text); }
 
 /* ---------- Charts (governance dashboard) ---------- */
 .chart-grid {
@@ -491,7 +493,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     align-items: center;
     justify-content: center;
     padding: var(--space-6) var(--space-4);
-    background: var(--color-bg);
+    background: var(--color-surface-muted);
 }
 
 .auth-card {
@@ -512,21 +514,19 @@ table.data tbody tr:last-child td { border-bottom: none; }
     .auth-split-brand { display: none; }
 }
 
-/* ---------- Chat ---------- */
+/* ---------- Chat: one continuous flat panel, divided by a single border
+   line (not two separate floating cards) - matches the Claude/ChatGPT
+   chat shell rather than a boxed dashboard widget. ---------- */
 .chat-layout {
     display: flex;
-    gap: var(--space-4);
     align-items: stretch;
-    height: calc(100vh - 116px);
-    min-height: 520px;
+    height: 100%;
 }
 
 .chat-sidebar {
     width: 260px;
     flex-shrink: 0;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-right: 1px solid var(--color-border);
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
@@ -564,9 +564,6 @@ table.data tbody tr:last-child td { border-bottom: none; }
     min-width: 0;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
     overflow: hidden;
 }
 .chat-toolbar {
@@ -597,7 +594,9 @@ table.data tbody tr:last-child td { border-bottom: none; }
     max-width: 220px;
 }
 
-.chat-messages { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+.chat-messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); }
+.chat-column { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-5); }
+
 .chat-empty {
     flex: 1;
     display: flex;
@@ -611,48 +610,67 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .chat-empty svg { width: 44px; height: 44px; opacity: 0.4; }
 .chat-empty p { color: inherit; margin: 0; max-width: 280px; }
 
-.msg-row { display: flex; gap: 0.6rem; align-items: flex-end; }
-.msg-row.msg-user { justify-content: flex-end; }
-.msg-row.msg-assistant { justify-content: flex-start; }
+/* Assistant replies read like plain prose (no bubble) with a small avatar,
+   full column width - user turns stay a right-aligned bubble. This mirrors
+   the layout most people already know from Claude/ChatGPT, without
+   borrowing their branding/colors. */
+.msg-row { display: flex; gap: 0.75rem; }
+.msg-row.msg-user { justify-content: flex-end; align-items: flex-end; }
+.msg-row.msg-assistant { align-items: flex-start; }
 
 .msg-avatar {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     font-weight: 700;
+    margin-top: 0.15rem;
 }
-.msg-avatar-user { background: var(--color-primary-soft); color: var(--color-primary-text); order: 2; }
+.msg-avatar-user { background: var(--color-primary-soft); color: var(--color-primary-text); }
 .msg-avatar-assistant { background: linear-gradient(135deg, var(--color-primary), #8b7ffb); color: #fff; }
-.msg-avatar-assistant svg { width: 16px; height: 16px; }
+.msg-avatar-assistant svg { width: 15px; height: 15px; }
 
-.msg-bubble {
-    max-width: 68%;
-    padding: 0.7rem 1rem;
-    border-radius: var(--radius-md);
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 0.92rem;
-    line-height: 1.55;
+.msg-text { white-space: pre-wrap; word-break: break-word; }
+
+.msg-content {
+    flex: 1;
+    min-width: 0;
+    padding-top: 0.2rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--color-text);
 }
-.msg-user .msg-bubble { background: var(--color-primary); color: #fff; border-bottom-right-radius: 4px; }
-.msg-assistant .msg-bubble { background: var(--color-surface-muted); border: 1px solid var(--color-border); border-bottom-left-radius: 4px; }
-.msg-bubble-pending:empty::after {
+.msg-content-pending:empty::after {
     content: "";
     display: inline-block;
     width: 6px; height: 6px;
     border-radius: 50%;
     background: currentColor;
     opacity: 0.5;
+    margin-top: 0.4rem;
     animation: chat-pulse 1s ease-in-out infinite;
 }
 @keyframes chat-pulse {
     0%, 100% { opacity: 0.25; transform: scale(0.85); }
     50% { opacity: 0.8; transform: scale(1); }
+}
+.msg-error-text { color: var(--color-danger); font-size: 0.88rem; margin-top: 0.4rem; }
+
+.msg-bubble {
+    max-width: 68%;
+    padding: 0.65rem 1rem;
+    border-radius: var(--radius-md);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    background: var(--color-primary);
+    color: #fff;
+    border-bottom-right-radius: 4px;
 }
 
 .msg-attachment {
@@ -667,40 +685,52 @@ table.data tbody tr:last-child td { border-bottom: none; }
     font-weight: 600;
     color: inherit;
 }
-.msg-assistant .msg-attachment { background: var(--color-surface); border: 1px solid var(--color-border); }
+.msg-content .msg-attachment { background: var(--color-surface-muted); border: 1px solid var(--color-border); color: var(--color-text); }
 .msg-attachment:hover { text-decoration: underline; }
 
-.chat-composer {
+.chat-composer-wrap {
     border-top: 1px solid var(--color-border);
     padding: var(--space-4);
+}
+.chat-composer {
+    max-width: 760px;
+    margin: 0 auto;
     display: flex;
     align-items: center;
     gap: 0.6rem;
-}
-.chat-composer input[type="text"] {
-    margin: 0;
-    border-radius: 999px;
     background: var(--color-surface-muted);
-    border-color: transparent;
-    padding: 0.7rem 1.1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 0.4rem 0.4rem 0.4rem 0.9rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.chat-composer input[type="text"]:focus { background: var(--color-surface); border-color: var(--color-primary); }
+.chat-composer:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); background: var(--color-surface); }
+.chat-composer input[type="text"] {
+    flex: 1;
+    margin: 0;
+    border: none;
+    background: transparent;
+    padding: 0.4rem 0;
+}
+.chat-composer input[type="text"]:focus { border: none; box-shadow: none; }
 .chat-composer button { flex-shrink: 0; }
+.chat-disclaimer { text-align: center; font-size: 0.76rem; color: var(--color-text-faint); margin: 0.6rem 0 0; }
+
 .attach-btn, .send-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.2rem;
+    height: 2.2rem;
     flex-shrink: 0;
     border-radius: 50%;
     cursor: pointer;
 }
-.attach-btn { border: 1px solid var(--color-border); color: var(--color-text-muted); transition: background-color 0.15s ease; }
+.attach-btn { border: none; background: transparent; color: var(--color-text-muted); transition: background-color 0.15s ease; }
 .attach-btn svg { width: 17px; height: 17px; }
-.attach-btn:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.attach-btn:hover { background: var(--color-border); color: var(--color-text); }
 .send-btn { padding: 0; }
-.send-btn svg { width: 17px; height: 17px; }
+.send-btn svg { width: 16px; height: 16px; }
 
 /* ---------- Responsive: collapse sidebar shell on narrow screens ---------- */
 @media (max-width: 720px) {
