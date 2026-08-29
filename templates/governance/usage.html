@@ -2,23 +2,48 @@
 {% block title %}Usage & Cost — AI Client Portal{% endblock %}
 {% block content %}
 <div class="card" style="overflow-x:auto;">
-    <h1>Usage &amp; Cost by User</h1>
-    <table class="data">
-        <thead>
-            <tr><th>User</th><th>Requests</th><th>Tokens</th><th>Estimated Cost</th></tr>
-        </thead>
-        <tbody>
-            {% for row in per_user %}
-            <tr>
-                <td>{{ row.conversation__user__email }}</td>
-                <td>{{ row.requests }}</td>
-                <td>{{ row.tokens|default:0 }}</td>
-                <td>${{ row.cost|default:0|floatformat:4 }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="4" class="text-faint">No usage recorded yet.</td></tr>
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+        <h1 style="margin-bottom:0;">Usage &amp; Cost by User</h1>
+        <div style="display:flex; gap:0.5rem;">
+            <a href="{% url 'governance:export_usage_csv' %}" class="btn-small btn-ghost" style="text-decoration:none;"
+               onclick="this.href = this.href.split('?')[0] + window.location.search;">Export CSV</a>
+            <a href="{% url 'governance:export_usage_xlsx' %}" class="btn-small btn-ghost" style="text-decoration:none;"
+               onclick="this.href = this.href.split('?')[0] + window.location.search;">Export Excel</a>
+        </div>
+    </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.5rem;">Exports respect whatever search/filter is currently active below.</p>
+
+    <div class="card" style="background:var(--color-surface-muted); margin-bottom:var(--space-4); padding:var(--space-4);">
+        <form method="get" action="{% url 'governance:export_usage_monthly_summary' %}" style="display:flex; align-items:flex-end; gap:0.75rem; flex-wrap:wrap;">
+            <div>
+                <label for="monthly-summary-month">Monthly summary by department (for billing/chargeback)</label>
+                <input type="month" id="monthly-summary-month" name="month" style="margin:0;">
+            </div>
+            <button type="submit" class="btn-small">Export monthly summary (.xlsx)</button>
+        </form>
+    </div>
+
+    {% url 'governance:usage' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search user email..."
+                   hx-get="{{ filter_url }}" hx-target="#usage-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+        <select name="model" hx-get="{{ filter_url }}" hx-target="#usage-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">All models</option>
+            {% for m in models %}
+            <option value="{{ m.id }}" {% if model_filter == m.id|stringformat:"s" %}selected{% endif %}>{{ m.model_name }}</option>
             {% endfor %}
-        </tbody>
-    </table>
+        </select>
+        <input type="date" name="date_from" value="{{ date_from }}" title="From date"
+               hx-get="{{ filter_url }}" hx-target="#usage-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+        <input type="date" name="date_to" value="{{ date_to }}" title="To date"
+               hx-get="{{ filter_url }}" hx-target="#usage-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+    </form>
+
+    <div id="usage-table">
+        {% include "governance/_usage_table.html" %}
+    </div>
 </div>
 {% endblock %}

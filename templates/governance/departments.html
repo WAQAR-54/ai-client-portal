@@ -20,31 +20,18 @@
 <div class="card" style="overflow-x:auto;">
     <h1>Departments</h1>
     <p>Manage departments, budgets, and system prompts here — no need for Django admin.</p>
-    <table class="data">
-        <thead><tr><th>Name</th><th>Monthly budget cap</th><th></th></tr></thead>
-        <tbody>
-            {% for d in departments %}
-            <tr>
-                <td>
-                    <input class="input" style="margin:0;" type="text" name="name" value="{{ d.name }}" form="dept-form-{{ d.id }}">
-                </td>
-                <td>
-                    <input class="input" style="margin:0; width:130px;" type="number" step="0.01" name="monthly_budget_cap" value="{{ d.monthly_budget_cap|default_if_none:'' }}" placeholder="unlimited" form="dept-form-{{ d.id }}">
-                </td>
-                <td style="white-space:nowrap;">
-                    <form id="dept-form-{{ d.id }}" method="post" action="{% url 'governance:update_department' department_id=d.id %}" style="display:none;">{% csrf_token %}</form>
-                    <button type="submit" form="dept-form-{{ d.id }}" class="btn-small btn-ghost" style="margin-right:0.3rem;">Save</button>
-                    <a href="{% url 'governance:system_prompt' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Prompt</a>
-                    <form method="post" action="{% url 'governance:delete_department' department_id=d.id %}" style="display:inline;" onsubmit="return confirm('Delete {{ d.name }}? This also removes its system prompt history.');">
-                        {% csrf_token %}
-                        <button type="submit" class="btn-small btn-danger">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="3" class="text-faint">No departments yet.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+
+    {% url 'governance:departments' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search department name..."
+                   hx-get="{{ filter_url }}" hx-target="#departments-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+    </form>
+
+    <div id="departments-table">
+        {% include "governance/_departments_table.html" %}
+    </div>
 </div>
 {% endblock %}

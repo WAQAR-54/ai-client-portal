@@ -1,0 +1,39 @@
+<div class="filter-result-count">Showing <span class="mono">{{ models|length }}</span> of <span class="mono">{{ total_count }}</span> models</div>
+<table class="data">
+    <thead>
+        <tr><th>Model</th><th>Provider</th><th>Tier</th><th>Input $/1M</th><th>Output $/1M</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for m in models %}
+        <tr>
+            <td>{{ m.model_name }}</td>
+            <td class="text-muted">{{ m.get_provider_display }}</td>
+            <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
+            <td colspan="2">
+                <form method="post" action="{% url 'governance:update_model_pricing' model_id=m.id %}" style="display:flex; gap:0.4rem; align-items:center;">
+                    {% csrf_token %}
+                    <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="input_cost_per_1m" value="{{ m.input_cost_per_1m|default_if_none:'' }}" placeholder="input $">
+                    <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="output_cost_per_1m" value="{{ m.output_cost_per_1m|default_if_none:'' }}" placeholder="output $">
+                    <button type="submit" class="btn-small btn-ghost">Save</button>
+                </form>
+            </td>
+            <td>
+                {% if m.is_enabled %}<span class="badge badge-success">Enabled</span>
+                {% else %}<span class="badge badge-danger">Disabled</span>{% endif %}
+            </td>
+            <td style="white-space:nowrap;">
+                <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Who can use</a>
+                <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-small {% if m.is_enabled %}btn-danger{% else %}btn-ghost{% endif %}"
+                            {% if not m.is_enabled and m.input_cost_per_1m is None %}title="Set pricing first"{% endif %}>
+                        {% if m.is_enabled %}Disable{% else %}Enable{% endif %}
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="7">No models match your search/filters.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

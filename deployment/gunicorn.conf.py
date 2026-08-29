@@ -3,6 +3,7 @@
 Run from the project root with: gunicorn -c deployment/gunicorn.conf.py config.wsgi:application
 Override any of these via environment variables — see each line below.
 """
+
 import multiprocessing
 import os
 
@@ -31,6 +32,6 @@ graceful_timeout = 30
 max_requests = 1000  # recycle workers periodically to bound memory growth
 max_requests_jitter = 100
 
-accesslog = "-"   # stdout — capture via systemd/journald
+accesslog = "-"  # stdout — capture via systemd/journald
 errorlog = "-"
 loglevel = os.environ.get("GUNICORN_LOG_LEVEL", "info")

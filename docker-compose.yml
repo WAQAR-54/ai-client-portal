@@ -1,0 +1,103 @@
+# Full local stack: Django (Gunicorn), PostgreSQL, Redis, Celery worker, Celery beat.
+#
+# All four app services (web/worker/beat) build from the same image and read
+# secrets (SECRET_KEY, OPENAI_API_KEY, SENTRY_DSN, etc.) from the project's
+# own .env file via env_file: - the same file used for native (non-Docker)
+# local dev. DATABASE_URL/REDIS_URL are overridden below to point at the
+# bundled db/redis containers instead of whatever .env has for native dev.
+#
+# Quick start from a clean checkout:
+#   docker-compose up -d --build
+#   docker-compose exec web python manage.py createsuperuser
+# See README.md for the full walkthrough.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_client_portal}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_client_portal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-local-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_client_portal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    command: web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
+      REDIS_URL: redis://redis:6379/0
+      # Gunicorn defaults to binding 127.0.0.1 (safe when Nginx sits in
+      # front of it on a bare VPS) - inside Docker that would make the
+      # container unreachable via the port mapping below, so bind all
+      # interfaces here instead.
+      GUNICORN_BIND: 0.0.0.0:8000
+      DEBUG: ${DEBUG:-True}
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: ${DEBUG:-True}
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build: .
+    command: beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: ${DEBUG:-True}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:

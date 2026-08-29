@@ -1,0 +1,30 @@
+{% if usage.has_limits %}
+<div class="usage-widget{% if usage.warn %} usage-widget-warn{% endif %}">
+    <div class="usage-widget-head">
+        {% include "chat/_usage_ring.html" with pct=usage.overall_pct level=usage.overall_level size=32 %}
+        <div class="usage-widget-title">Your usage</div>
+    </div>
+    {% for m in usage.metrics %}
+    <div class="usage-metric">
+        <div class="usage-metric-row">
+            <span>{{ m.label }}</span>
+            <span class="mono">{% if m.is_currency %}${{ m.used|floatformat:2 }} / ${{ m.cap|floatformat:2 }}{% else %}{{ m.used }} / {{ m.cap }}{% endif %}</span>
+        </div>
+        <div class="usage-bar"><div class="usage-bar-fill usage-bar-{{ m.level }}" style="width:{{ m.pct }}%;"></div></div>
+        {% if m.level != "ok" %}
+        <div class="usage-metric-warning">{% if m.level == "danger" %}Limit reached{% else %}<span class="mono">{{ m.pct }}%</span> used{% endif %}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="usage-widget">
+    <div class="usage-widget-title">Your usage</div>
+    <div class="usage-widget-empty">
+        <div class="empty-icon-badge" style="width:28px;height:28px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>
+        </div>
+        <p>No usage limits set on your account.</p>
+    </div>
+</div>
+{% endif %}

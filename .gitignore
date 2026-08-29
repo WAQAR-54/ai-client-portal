@@ -6,3 +6,5 @@ db.sqlite3
 staticfiles/
 .vscode/
 *.log
+logs/
+media/

@@ -60,9 +60,14 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     template_name = "accounts/profile.html"
 
     def get_context_data(self, **kwargs):
+        from notifications.models import EMAIL_TOGGLE_LABELS, NotificationPreference
+
+        preference, _ = NotificationPreference.objects.get_or_create(user=self.request.user)
         return super().get_context_data(**kwargs) | {
             "profile_form": ProfileForm(instance=self.request.user),
             "password_form": PasswordChangeForm(user=self.request.user),
+            "notification_preference": preference,
+            "notification_toggles": EMAIL_TOGGLE_LABELS,
         }
 
     def post(self, request):
@@ -71,21 +76,29 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             profile_form.save()
             messages.success(request, "Profile updated.")
             return redirect("accounts:profile")
-        return render(request, self.template_name, {
-            "profile_form": profile_form, "password_form": PasswordChangeForm(user=request.user),
-        })
+        return render(request, self.template_name, self.get_context_data() | {"profile_form": profile_form})
 
 
 class ProfilePasswordView(LoginRequiredMixin, TemplateView):
     template_name = "accounts/profile.html"
 
     def post(self, request):
+        from notifications.models import EMAIL_TOGGLE_LABELS, NotificationPreference
+
         password_form = PasswordChangeForm(user=request.user, data=request.POST)
         if password_form.is_valid():
             password_form.save()
             update_session_auth_hash(request, password_form.user)
             messages.success(request, "Password changed.")
             return redirect("accounts:profile")
-        return render(request, self.template_name, {
-            "profile_form": ProfileForm(instance=request.user), "password_form": password_form,
-        })
+        preference, _ = NotificationPreference.objects.get_or_create(user=request.user)
+        return render(
+            request,
+            self.template_name,
+            {
+                "profile_form": ProfileForm(instance=request.user),
+                "password_form": password_form,
+                "notification_preference": preference,
+                "notification_toggles": EMAIL_TOGGLE_LABELS,
+            },
+        )

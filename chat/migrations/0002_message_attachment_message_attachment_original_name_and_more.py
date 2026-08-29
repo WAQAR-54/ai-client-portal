@@ -6,23 +6,23 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('chat', '0001_initial'),
+        ("chat", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='message',
-            name='attachment',
-            field=models.FileField(blank=True, null=True, upload_to='chat_attachments/%Y/%m/'),
+            model_name="message",
+            name="attachment",
+            field=models.FileField(blank=True, null=True, upload_to="chat_attachments/%Y/%m/"),
         ),
         migrations.AddField(
-            model_name='message',
-            name='attachment_original_name',
+            model_name="message",
+            name="attachment_original_name",
             field=models.CharField(blank=True, max_length=255),
         ),
         migrations.AddField(
-            model_name='message',
-            name='attachment_size',
-            field=models.PositiveIntegerField(blank=True, help_text='Bytes.', null=True),
+            model_name="message",
+            name="attachment_size",
+            field=models.PositiveIntegerField(blank=True, help_text="Bytes.", null=True),
         ),
     ]

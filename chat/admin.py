@@ -35,7 +35,13 @@ class ConversationAdmin(admin.ModelAdmin):
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
     list_display = [
-        "conversation", "role", "model_used", "input_tokens", "output_tokens",
-        "estimated_cost", "attachment_original_name", "created_at",
+        "conversation",
+        "role",
+        "model_used",
+        "input_tokens",
+        "output_tokens",
+        "estimated_cost",
+        "attachment_original_name",
+        "created_at",
     ]
     list_filter = ["role", "model_used"]

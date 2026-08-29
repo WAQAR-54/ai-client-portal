@@ -11,7 +11,14 @@ class SystemPromptVersionAdmin(admin.ModelAdmin):
 
 @admin.register(UsageLimit)
 class UsageLimitAdmin(admin.ModelAdmin):
-    list_display = ["user", "department", "daily_token_cap", "monthly_token_cap", "session_limit", "budget_cap_currency"]
+    list_display = [
+        "user",
+        "department",
+        "daily_token_cap",
+        "monthly_token_cap",
+        "session_limit",
+        "budget_cap_currency",
+    ]
     list_filter = ["department"]
 
 

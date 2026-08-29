@@ -21,11 +21,17 @@ class ModelConfig(models.Model):
     )
     tier = models.CharField(max_length=20, choices=Tier.choices, default=Tier.DEFAULT)
     input_cost_per_1m = models.DecimalField(
-        max_digits=10, decimal_places=4, null=True, blank=True,
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
         help_text="USD per 1M input tokens. Verify against provider pricing before setting.",
     )
     output_cost_per_1m = models.DecimalField(
-        max_digits=10, decimal_places=4, null=True, blank=True,
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
         help_text="USD per 1M output tokens. Verify against provider pricing before setting.",
     )
     is_enabled = models.BooleanField(
@@ -45,8 +51,7 @@ class ModelConfig(models.Model):
         if self.input_cost_per_1m is None or self.output_cost_per_1m is None:
             return None
         return (
-            Decimal(input_tokens) * self.input_cost_per_1m
-            + Decimal(output_tokens) * self.output_cost_per_1m
+            Decimal(input_tokens) * self.input_cost_per_1m + Decimal(output_tokens) * self.output_cost_per_1m
         ) / Decimal(1_000_000)
 
 
@@ -62,10 +67,23 @@ class UserModelPermission(models.Model):
         return f"{self.user} -> {self.model_config} ({'allowed' if self.is_allowed else 'denied'})"
 
 
+class ActiveConversationManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+
 class Conversation(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
     title = models.CharField(max_length=200, default="New chat")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_pinned = models.BooleanField(default=False)
+    pinned_at = models.DateTimeField(null=True, blank=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ActiveConversationManager()
+    all_objects = models.Manager()
 
     class Meta:
         ordering = ["-created_at"]
@@ -83,7 +101,11 @@ class Message(models.Model):
     role = models.CharField(max_length=20, choices=Role.choices)
     content = models.TextField(blank=True)
     model_used = models.ForeignKey(
-        ModelConfig, on_delete=models.SET_NULL, null=True, blank=True, related_name="messages",
+        ModelConfig,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
     )
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)

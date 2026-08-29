@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('governance', '0001_initial'),
+        ("governance", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='systempromptversion',
-            name='is_active',
+            model_name="systempromptversion",
+            name="is_active",
             field=models.BooleanField(default=False),
         ),
     ]

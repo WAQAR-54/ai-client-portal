@@ -1,0 +1,224 @@
+"""Plan resolution and precedence rules.
+
+MIGRATION APPROACH (documented per the spec's explicit request): per-user
+`UsageLimit` and `UserModelPermission` rows are kept as explicit overrides
+layered ON TOP of a user's Plan, not replaced by it. Reasoning: those tables
+are already deeply wired into governance/limits.py, chat/router.py, the
+admin Limits/Model-permissions screens, and ~90 existing tests. Fully
+migrating away would be a much larger, riskier rewrite of already-working
+enforcement code for a single feature pass. Precedence (most specific wins):
+
+  Limits:        personal UsageLimit > department UsageLimit > user's Plan > system default
+  Model access:  (Plan.allowed_models UNION explicit is_allowed=True) MINUS explicit is_allowed=False
+  Features:      Plan.feature_flags only (no per-user override exists for these)
+
+A user with no Plan assignment at all is treated as unrestricted (matches
+this app's pre-Plan behavior) rather than silently locked out - Plans only
+ever *restrict* on top of that baseline once assigned.
+"""
+
+from datetime import timedelta
+
+from django.conf import settings
+from django.utils import timezone
+
+GRACE_PERIOD_DAYS = getattr(settings, "DEMO_GRACE_PERIOD_DAYS", 2)
+
+
+def get_assignment(user):
+    from governance.models import UserPlanAssignment
+
+    return UserPlanAssignment.objects.select_related("plan", "previous_plan").filter(user=user).first()
+
+
+def assign_plan(user, plan, assigned_by=None):
+    """The only correct way to change a user's plan - computes expiry for
+    demo plans, tracks previous_plan, and returns the assignment. Callers
+    are responsible for their own audit_log entry (the assigner knows the
+    "why", e.g. "admin change" vs "self-service approval" vs "auto-expiry")."""
+    from governance.models import UserPlanAssignment
+
+    expires_at = None
+    if plan.is_demo and plan.demo_duration_days:
+        expires_at = timezone.now() + timedelta(days=plan.demo_duration_days)
+
+    assignment, _ = UserPlanAssignment.objects.get_or_create(user=user, defaults={"plan": plan})
+    assignment.previous_plan = assignment.plan
+    assignment.plan = plan
+    assignment.expires_at = expires_at
+    assignment.assigned_by = assigned_by
+    assignment.assigned_at = timezone.now()
+    assignment.save()
+    return assignment
+
+
+def assign_default_plan_if_missing(user):
+    """Called on user creation (see accounts/signals.py). No-op if the user
+    already has an assignment, or if no default plan is configured yet."""
+    from governance.models import Plan, UserPlanAssignment
+
+    if UserPlanAssignment.objects.filter(user=user).exists():
+        return None
+    default_plan = Plan.objects.filter(is_default=True, is_active=True).first()
+    if default_plan is None:
+        return None
+    return assign_plan(user, default_plan, assigned_by=None)
+
+
+def get_plan_status(user):
+    """The single source of truth for "where does this user's plan stand
+    right now". Returns a dict:
+      plan, assignment: the Plan/UserPlanAssignment objects (or None)
+      state: "none" | "active" | "grace" | "expired"
+      days_remaining: whole days left before expiry (active demo plans only)
+      grace_days_remaining: whole days left in the post-expiry grace window
+    Purely a read - never mutates anything, so it's safe to call on every
+    request (no Celery/cron dependency for the actual blocking behavior;
+    see the module docstring in governance/tasks.py notes for why)."""
+    assignment = get_assignment(user)
+    if assignment is None:
+        return {"plan": None, "assignment": None, "state": "none", "days_remaining": None, "grace_days_remaining": None}
+
+    plan = assignment.plan
+    if not plan.is_demo or assignment.expires_at is None:
+        return {
+            "plan": plan,
+            "assignment": assignment,
+            "state": "active",
+            "days_remaining": None,
+            "grace_days_remaining": None,
+        }
+
+    now = timezone.now()
+    if now <= assignment.expires_at:
+        days_remaining = max(0, (assignment.expires_at - now).days)
+        return {
+            "plan": plan,
+            "assignment": assignment,
+            "state": "active",
+            "days_remaining": days_remaining,
+            "grace_days_remaining": None,
+        }
+
+    grace_end = assignment.expires_at + timedelta(days=GRACE_PERIOD_DAYS)
+    if now <= grace_end:
+        grace_days_remaining = max(0, (grace_end - now).days)
+        return {
+            "plan": plan,
+            "assignment": assignment,
+            "state": "grace",
+            "days_remaining": 0,
+            "grace_days_remaining": grace_days_remaining,
+        }
+
+    return {"plan": plan, "assignment": assignment, "state": "expired", "days_remaining": 0, "grace_days_remaining": 0}
+
+
+def effective_allowed_model_ids(user):
+    """Plan grant set, adjusted by explicit per-user overrides. Returns
+    None to mean "unrestricted" (no plan assigned at all)."""
+    from chat.models import UserModelPermission
+
+    status = get_plan_status(user)
+    plan = status["plan"]
+
+    denied = set(
+        UserModelPermission.objects.filter(user=user, is_allowed=False).values_list("model_config_id", flat=True)
+    )
+    granted_extra = set(
+        UserModelPermission.objects.filter(user=user, is_allowed=True).values_list("model_config_id", flat=True)
+    )
+
+    if plan is None:
+        return None  # caller should treat this as "don't filter"
+
+    base_ids = set(plan.allowed_models.values_list("id", flat=True))
+    return (base_ids | granted_extra) - denied
+
+
+class _PlanLimitFallback:
+    """A minimal UsageLimit-shaped read-only stand-in so _effective_limit()
+    can treat "fall back to the user's Plan" the same as any other limit
+    source, without UsageLimit needing to know about Plan at all."""
+
+    def __init__(self, plan):
+        self.daily_token_cap = plan.daily_token_limit
+        self.monthly_token_cap = plan.monthly_token_limit
+        self.session_limit = plan.messages_per_session_limit
+        self.budget_cap_currency = plan.monthly_budget_cap
+        self.max_upload_size_mb = None
+        self.allowed_file_extensions = ""
+
+
+def plan_limit_fallback(user):
+    status = get_plan_status(user)
+    plan = status["plan"]
+    if plan is None:
+        return None
+    return _PlanLimitFallback(plan)
+
+
+def has_feature(user, flag_name):
+    """True when no plan is assigned (unrestricted baseline) or the flag
+    is explicitly on for the user's plan."""
+    status = get_plan_status(user)
+    plan = status["plan"]
+    if plan is None:
+        return True
+    return plan.has_feature(flag_name)
+
+
+def check_session_creation_limit(user):
+    """Raise UsageLimitExceeded if the user has already started as many
+    conversations today as their plan allows. Separate from
+    check_usage_limits() in governance/limits.py because this caps *new
+    conversations*, not messages within one - a Plan-only concept, so it
+    lives here rather than being bolted onto the UsageLimit-based checks."""
+    from governance.limits import UsageLimitExceeded
+
+    status = get_plan_status(user)
+    plan = status["plan"]
+    if plan is None or plan.sessions_per_day_limit is None:
+        return
+
+    if status["state"] == "expired":
+        raise UsageLimitExceeded("Your trial has ended — contact your administrator.")
+
+    from chat.models import Conversation
+
+    today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    started_today = Conversation.objects.filter(user=user, created_at__gte=today_start).count()
+    if started_today >= plan.sessions_per_day_limit:
+        raise UsageLimitExceeded(
+            f"You've reached your plan's limit of {plan.sessions_per_day_limit} new conversation(s) per day."
+        )
+
+
+def engagement_score(user):
+    """Simple heuristic for surfacing "engaged demo users worth upgrading":
+    (% of their plan's monthly token limit used) / (% of their trial
+    elapsed). >1 means burning through their trial faster than time is
+    passing - a genuine usage signal, not a scored/ML system. Returns None
+    when it doesn't apply (not on a demo plan, or no token limit set)."""
+    from django.db.models import F, Sum
+
+    from chat.models import Message
+
+    status = get_plan_status(user)
+    plan, assignment = status["plan"], status["assignment"]
+    if plan is None or not plan.is_demo or not plan.monthly_token_limit or assignment.expires_at is None:
+        return None
+
+    total_duration = plan.demo_duration_days or 1
+    elapsed = (timezone.now() - assignment.assigned_at).total_seconds() / 86400
+    pct_elapsed = max(elapsed / total_duration, 0.01)
+
+    used = (
+        Message.objects.filter(conversation__user=user, role=Message.Role.ASSISTANT).aggregate(
+            total=Sum(F("input_tokens") + F("output_tokens")),
+        )["total"]
+        or 0
+    )
+    pct_used = used / plan.monthly_token_limit
+
+    return round(pct_used / pct_elapsed, 2)

@@ -1,0 +1,92 @@
+{% load governance_extras %}
+<div class="filter-result-count">Showing <span class="mono">{{ users|length }}</span> of <span class="mono">{{ total_count }}</span> users</div>
+
+<form id="bulk-plan-form" method="post" action="{% url 'governance:bulk_change_plan' %}" style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
+    {% csrf_token %}
+    <span class="text-muted" style="font-size:0.85rem;">With selected:</span>
+    <select name="plan_id" style="margin:0; width:auto;">
+        <option value="">Choose a plan…</option>
+        {% for p in plans %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn-small btn-ghost">Assign plan to selected</button>
+</form>
+
+<table class="data">
+    <thead>
+        <tr>
+            <th style="width:2rem;"></th>
+            <th>Email</th><th>Role</th><th>Department</th>
+            <th>Plan <a href="?sort=engagement" class="text-faint" style="font-weight:400; text-transform:none; font-size:0.85em;" title="Sort by engagement (fastest limit burn vs. trial time elapsed)">↕ engagement</a></th>
+            <th>Status</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for u in users %}
+        {% with info=plan_info|dict_get:u.id %}
+        <tr>
+            <td><input type="checkbox" name="user_ids" value="{{ u.id }}" form="bulk-plan-form" style="width:auto;"></td>
+            <td>{{ u.email }}</td>
+            <td>
+                <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
+                    {% csrf_token %}
+                    <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
+                        {% for value, label in roles %}
+                        <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </td>
+            <td>
+                <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
+                    {% csrf_token %}
+                    <select name="department_id" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
+                        <option value="">— none —</option>
+                        {% for d in departments %}
+                        <option value="{{ d.id }}" {% if u.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </td>
+            <td>
+                <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.35rem; flex-wrap:wrap;">
+                    <span class="badge badge-muted">{{ info.plan.name|default:"No plan" }}</span>
+                    {% if info.state == "active" and info.days_remaining is not None %}
+                        <span class="text-faint mono" style="font-size:0.78rem;">{{ info.days_remaining }}d left</span>
+                    {% elif info.state == "grace" %}
+                        <span class="badge badge-danger">Grace: {{ info.grace_days_remaining }}d</span>
+                    {% elif info.state == "expired" %}
+                        <span class="badge badge-danger">Expired</span>
+                    {% endif %}
+                    {% if info.engagement and info.engagement >= 0.8 %}
+                        <span class="badge badge-success" title="Using their limit faster than their trial time is passing">🔥 {{ info.engagement }}x</span>
+                    {% endif %}
+                </div>
+                <form method="post" action="{% url 'governance:change_user_plan' user_id=u.id %}" style="display:flex; gap:0.3rem;">
+                    {% csrf_token %}
+                    <select name="plan_id" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
+                        {% for p in plans %}
+                        <option value="{{ p.id }}" {% if info.plan.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn-small btn-ghost">Change</button>
+                </form>
+            </td>
+            <td>
+                {% if u.is_active %}<span class="badge badge-success">Active</span>
+                {% else %}<span class="badge badge-danger">Suspended</span>{% endif %}
+            </td>
+            <td>
+                <form method="post" action="{% url 'governance:toggle_user_active' user_id=u.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-small {% if u.is_active %}btn-danger{% else %}btn-ghost{% endif %}">
+                        {% if u.is_active %}Suspend{% else %}Activate{% endif %}
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="7">No users match your search/filters.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

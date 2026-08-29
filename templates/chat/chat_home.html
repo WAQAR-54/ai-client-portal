@@ -1,41 +1,140 @@
 {% extends "base.html" %}
 {% block title %}Chat — AI Client Portal{% endblock %}
+
+{% block sidebar %}
+<a class="brand" href="{% url 'accounts:dashboard' %}"><span class="dot"></span>AI Client Portal</a>
+<form method="post" action="{% url 'chat:create_conversation' %}" class="new-chat-form">
+    {% csrf_token %}
+    <button type="submit" class="btn">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New chat
+    </button>
+</form>
+<div class="filter-search sidebar-conv-search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" id="conv-search-input" placeholder="Search conversations..." autocomplete="off">
+</div>
+<div class="conv-list-wrap">
+    {% include "chat/_conversation_list.html" %}
+    <div id="conv-list-skeleton" class="sidebar-skeleton">
+        <div class="skeleton-block"></div>
+        <div class="skeleton-block"></div>
+        <div class="skeleton-block"></div>
+    </div>
+    <div id="conv-search-empty" class="sidebar-empty-state" style="display:none;">
+        <p>No matching conversations.</p>
+    </div>
+</div>
+<script>
+(function() {
+    var input = document.getElementById("conv-search-input");
+    var listWrap = document.querySelector(".conv-list-wrap");
+    var emptyState = document.getElementById("conv-search-empty");
+    if (!input || !listWrap) return;
+
+    function applyFilter() {
+        var query = input.value.trim().toLowerCase();
+        var anyVisibleAtAll = false;
+        listWrap.querySelectorAll(".conv-group").forEach(function(group) {
+            var anyVisibleInGroup = false;
+            group.querySelectorAll(".conv-item").forEach(function(item) {
+                var titleEl = item.querySelector(".conv-item-link span");
+                var title = titleEl ? titleEl.textContent.toLowerCase() : "";
+                var match = !query || title.indexOf(query) !== -1;
+                item.style.display = match ? "" : "none";
+                if (match) anyVisibleInGroup = true;
+            });
+            group.style.display = anyVisibleInGroup ? "" : "none";
+            var label = group.previousElementSibling;
+            if (label && label.classList.contains("chat-sidebar-label")) {
+                label.style.display = anyVisibleInGroup ? "" : "none";
+            }
+            if (anyVisibleInGroup) anyVisibleAtAll = true;
+        });
+        var hasAnyGroups = listWrap.querySelectorAll(".conv-group").length > 0;
+        emptyState.style.display = (query && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
+    }
+
+    input.addEventListener("input", applyFilter);
+    // Re-apply the current search after the list is refreshed by htmx
+    // (pin/unpin, delete) so filtering survives those swaps.
+    document.body.addEventListener("htmx:afterSwap", function(evt) {
+        if (evt.target.id === "conv-list-container" || (evt.target.querySelector && evt.target.querySelector("#conv-list-container"))) {
+            applyFilter();
+        }
+    });
+})();
+</script>
+<div id="usage-widget"
+     hx-get="{% url 'chat:usage_widget' %}{% if conversation %}?conversation_id={{ conversation.id }}{% endif %}"
+     hx-trigger="load, every 20s, refreshUsage from:body" hx-swap="innerHTML">
+    {% include "chat/_usage_widget.html" %}
+</div>
+{% if can_request_upgrade %}
+<div class="sidebar-upgrade">
+    <form method="post" action="{% url 'chat:request_upgrade' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-small btn-ghost" style="width:100%;">Request upgrade</button>
+    </form>
+</div>
+{% endif %}
+<div class="app-sidebar-footer">
+    <div class="sidebar-user-chip">
+        <span class="msg-avatar msg-avatar-user">{{ user.email|first|upper }}</span>
+        <span class="sidebar-user-email">{{ user.email }}</span>
+        <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"></div>
+    </div>
+    {% if user.is_admin %}
+    <a href="{% url 'governance:dashboard' %}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        Admin
+    </a>
+    {% endif %}
+    <a href="{% url 'accounts:profile' %}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+    </a>
+    <form method="post" action="{% url 'accounts:logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="link-btn">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Log out
+        </button>
+    </form>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="chat-layout">
-    <aside class="chat-sidebar">
-        <form method="post" action="{% url 'chat:create_conversation' %}">
-            {% csrf_token %}
-            <button type="submit" class="btn">
-                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                New chat
-            </button>
-        </form>
-        <div class="chat-sidebar-label">Recent</div>
-        <ul>
-            {% for c in conversations %}
-            <li>
-                <a href="{% url 'chat:chat_conversation' conversation_id=c.id %}"
-                   class="{% if conversation and conversation.id == c.id %}active{% endif %}">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                    <span>{{ c.title }}</span>
-                </a>
-            </li>
-            {% empty %}
-            <li class="empty-hint">No conversations yet.</li>
+<section class="chat-panel">
+    {% if plan_status.state == "grace" %}
+    <div class="alert alert-warning" style="margin:1rem 1rem 0;">
+        Your trial has ended. You have <strong>{{ plan_status.grace_days_remaining }} day(s)</strong> of read-only
+        access left — you can still view past conversations, but new messages are blocked. Contact your administrator to continue.
+    </div>
+    {% elif plan_status.state == "expired" %}
+    <div class="alert alert-danger" style="margin:1rem 1rem 0;">
+        Your trial has ended — contact your administrator to continue.
+    </div>
+    {% endif %}
+    {% if not has_models_available %}
+    <div class="alert alert-warning" style="margin:1rem 1rem 0;">
+        No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work.
+    </div>
+    {% endif %}
+
+    {% if conversation %}
+    <div class="chat-toolbar">
+        <span class="chat-toolbar-title">{{ conversation.title }}</span>
+    </div>
+    <div id="messages" class="chat-messages">
+        <div class="chat-column">
+            {% for m in messages_list %}
+                {% include "chat/_message_bubble.html" with message=m %}
             {% endfor %}
-        </ul>
-    </aside>
-
-    <section class="chat-panel">
-        {% if not has_models_available %}
-        <div class="alert alert-warning" style="margin:1rem 1rem 0;">
-            No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work.
         </div>
-        {% endif %}
-
-        {% if conversation %}
-        <div class="chat-toolbar">
-            <span class="chat-toolbar-title">{{ conversation.title }}</span>
+    </div>
+    <div class="chat-composer-wrap">
+        <div class="composer-toolbar">
             <select class="model-select" name="model_id" id="model-select">
                 <option value="">Auto (smart routing)</option>
                 {% regroup available_models by get_tier_display as tier_groups %}
@@ -48,38 +147,70 @@
                 {% endfor %}
             </select>
         </div>
-        <div id="messages" class="chat-messages">
-            <div class="chat-column">
-                {% for m in messages_list %}
-                    {% include "chat/_message_bubble.html" with message=m %}
-                {% endfor %}
-            </div>
+        <form id="composer-form" class="chat-composer"
+              hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
+              hx-target="#messages .chat-column" hx-swap="beforeend"
+              hx-encoding="multipart/form-data"
+              hx-include="#model-select"
+              hx-on::after-request="this.reset(); document.getElementById('composer-textarea').style.height='auto'; htmx.trigger(document.body, 'refreshUsage');">
+            {% csrf_token %}
+            <label class="attach-btn" title="Attach a file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <input type="file" name="attachment" style="display:none;">
+            </label>
+            <textarea id="composer-textarea" class="input" name="content" placeholder="Message the assistant..."
+                      rows="1" autocomplete="off"
+                      onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.closest('form').requestSubmit();}"
+                      oninput="this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,200)+'px';"></textarea>
+            <button type="submit" class="send-btn" title="Send">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+        </form>
+        <p class="chat-disclaimer">AI responses may be inaccurate. Verify important information.</p>
+    </div>
+    <script>
+    (function() {
+        var container = document.getElementById("messages");
+        if (!container) return;
+        var NEAR_BOTTOM_PX = 100;
+        var shouldAutoScroll = true;
+
+        function isNearBottom() {
+            return container.scrollHeight - container.scrollTop - container.clientHeight < NEAR_BOTTOM_PX;
+        }
+        function scrollToBottom() {
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Open an existing conversation already scrolled to its latest message.
+        requestAnimationFrame(scrollToBottom);
+
+        // Every message-area update (sending, each streamed token, and the
+        // final swap to the rendered reply) goes through one of htmx's own
+        // swap mechanisms (hx-swap, sse-swap, or the sse:done hx-get), so a
+        // single pair of listeners on the container covers all of them.
+        // Reading scroll position in beforeSwap (before new content lands)
+        // and acting on it in afterSwap is what makes the "don't yank the
+        // user back down if they scrolled up to read history" rule work.
+        document.body.addEventListener("htmx:beforeSwap", function(evt) {
+            if (container.contains(evt.target)) {
+                shouldAutoScroll = isNearBottom();
+            }
+        });
+        document.body.addEventListener("htmx:afterSwap", function(evt) {
+            if (container.contains(evt.target) && shouldAutoScroll) {
+                scrollToBottom();
+            }
+        });
+    })();
+    </script>
+    {% else %}
+    <div class="chat-empty">
+        <div class="empty-icon-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
         </div>
-        <div class="chat-composer-wrap">
-            <form id="composer-form" class="chat-composer"
-                  hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
-                  hx-target="#messages .chat-column" hx-swap="beforeend"
-                  hx-encoding="multipart/form-data"
-                  hx-include="#model-select"
-                  hx-on::after-request="this.reset()">
-                {% csrf_token %}
-                <label class="attach-btn" title="Attach a file">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                    <input type="file" name="attachment" style="display:none;">
-                </label>
-                <input class="input" type="text" name="content" placeholder="Message the assistant..." autocomplete="off">
-                <button type="submit" class="send-btn" title="Send">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                </button>
-            </form>
-            <p class="chat-disclaimer">AI responses may be inaccurate. Verify important information.</p>
-        </div>
-        {% else %}
-        <div class="chat-empty">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-            <p>Select a conversation from the sidebar, or start a new one.</p>
-        </div>
-        {% endif %}
-    </section>
-</div>
+        <p>Select a conversation from the sidebar, or start a new one.</p>
+    </div>
+    {% endif %}
+</section>
 {% endblock %}

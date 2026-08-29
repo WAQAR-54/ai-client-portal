@@ -29,41 +29,23 @@
 <div class="card" style="overflow-x:auto;">
     <h1>AI Models</h1>
     <p>Verify pricing against current provider docs before enabling a model — pricing is never auto-filled.</p>
-    <table class="data">
-        <thead>
-            <tr><th>Model</th><th>Provider</th><th>Tier</th><th>Input $/1M</th><th>Output $/1M</th><th>Status</th><th></th></tr>
-        </thead>
-        <tbody>
-            {% for m in models %}
-            <tr>
-                <td>{{ m.model_name }}</td>
-                <td class="text-muted">{{ m.get_provider_display }}</td>
-                <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
-                <td colspan="2">
-                    <form method="post" action="{% url 'governance:update_model_pricing' model_id=m.id %}" style="display:flex; gap:0.4rem; align-items:center;">
-                        {% csrf_token %}
-                        <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="input_cost_per_1m" value="{{ m.input_cost_per_1m|default_if_none:'' }}" placeholder="input $">
-                        <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="output_cost_per_1m" value="{{ m.output_cost_per_1m|default_if_none:'' }}" placeholder="output $">
-                        <button type="submit" class="btn-small btn-ghost">Save</button>
-                    </form>
-                </td>
-                <td>
-                    {% if m.is_enabled %}<span class="badge badge-success">Enabled</span>
-                    {% else %}<span class="badge badge-danger">Disabled</span>{% endif %}
-                </td>
-                <td style="white-space:nowrap;">
-                    <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Who can use</a>
-                    <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}" style="display:inline;">
-                        {% csrf_token %}
-                        <button type="submit" class="btn-small {% if m.is_enabled %}btn-danger{% else %}btn-ghost{% endif %}"
-                                {% if not m.is_enabled and m.input_cost_per_1m is None %}title="Set pricing first"{% endif %}>
-                            {% if m.is_enabled %}Disable{% else %}Enable{% endif %}
-                        </button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+
+    {% url 'governance:models' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search model or provider..."
+                   hx-get="{{ filter_url }}" hx-target="#models-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+        <select name="status" hx-get="{{ filter_url }}" hx-target="#models-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">All statuses</option>
+            <option value="enabled" {% if status_filter == "enabled" %}selected{% endif %}>Enabled</option>
+            <option value="disabled" {% if status_filter == "disabled" %}selected{% endif %}>Disabled</option>
+        </select>
+    </form>
+
+    <div id="models-table">
+        {% include "governance/_models_table.html" %}
+    </div>
 </div>
 {% endblock %}

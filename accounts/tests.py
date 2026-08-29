@@ -24,22 +24,32 @@ class AuthAndRBACTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Engineering")
         self.user = User.objects.create_user(
-            email="user@example.com", password="pw12345!",
-            role=User.Role.USER, department=self.department,
+            email="user@example.com",
+            password="pw12345!",
+            role=User.Role.USER,
+            department=self.department,
         )
         self.manager = User.objects.create_user(
-            email="manager@example.com", password="pw12345!",
-            role=User.Role.MANAGER, department=self.department,
+            email="manager@example.com",
+            password="pw12345!",
+            role=User.Role.MANAGER,
+            department=self.department,
         )
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="pw12345!",
-            role=User.Role.ADMIN, is_staff=True,
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
         )
 
     def test_login_with_email(self):
-        response = self.client.post(reverse("accounts:login"), {
-            "username": "user@example.com", "password": "pw12345!",
-        })
+        response = self.client.post(
+            reverse("accounts:login"),
+            {
+                "username": "user@example.com",
+                "password": "pw12345!",
+            },
+        )
         self.assertRedirects(response, reverse("accounts:dashboard"))
         self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
 
@@ -71,11 +81,14 @@ class AuthAndRBACTests(TestCase):
 
 class SignupTests(TestCase):
     def test_signup_creates_user_with_default_role_and_logs_in(self):
-        response = self.client.post(reverse("accounts:signup"), {
-            "email": "newperson@example.com",
-            "password1": "a-strong-password-123",
-            "password2": "a-strong-password-123",
-        })
+        response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "newperson@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+        )
         self.assertRedirects(response, reverse("accounts:dashboard"))
 
         user = User.objects.get(email="newperson@example.com")
@@ -84,21 +97,27 @@ class SignupTests(TestCase):
         self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
 
     def test_signup_rejects_mismatched_passwords(self):
-        response = self.client.post(reverse("accounts:signup"), {
-            "email": "newperson@example.com",
-            "password1": "a-strong-password-123",
-            "password2": "different-password-456",
-        })
+        response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "newperson@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "different-password-456",
+            },
+        )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(email="newperson@example.com").exists())
 
     def test_signup_rejects_duplicate_email(self):
         User.objects.create_user(email="taken@example.com", password="pw12345!")
-        response = self.client.post(reverse("accounts:signup"), {
-            "email": "taken@example.com",
-            "password1": "a-strong-password-123",
-            "password2": "a-strong-password-123",
-        })
+        response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "taken@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(User.objects.filter(email="taken@example.com").count(), 1)
 
@@ -115,9 +134,13 @@ class ProfileTests(TestCase):
         self.client.login(email="u@example.com", password="pw12345!")
 
     def test_update_name(self):
-        response = self.client.post(reverse("accounts:profile"), {
-            "first_name": "Ayesha", "last_name": "Khan",
-        })
+        response = self.client.post(
+            reverse("accounts:profile"),
+            {
+                "first_name": "Ayesha",
+                "last_name": "Khan",
+            },
+        )
         self.assertRedirects(response, reverse("accounts:profile"))
         self.user.refresh_from_db()
         self.assertEqual(self.user.first_name, "Ayesha")
@@ -125,29 +148,40 @@ class ProfileTests(TestCase):
 
     def test_cannot_change_role_or_department_from_profile_form(self):
         # ProfileForm only exposes first/last name — role/department aren't postable here.
-        response = self.client.post(reverse("accounts:profile"), {
-            "first_name": "A", "last_name": "B", "role": User.Role.ADMIN,
-        })
+        response = self.client.post(
+            reverse("accounts:profile"),
+            {
+                "first_name": "A",
+                "last_name": "B",
+                "role": User.Role.ADMIN,
+            },
+        )
         self.assertRedirects(response, reverse("accounts:profile"))
         self.user.refresh_from_db()
         self.assertEqual(self.user.role, User.Role.USER)
 
     def test_change_password_success(self):
-        response = self.client.post(reverse("accounts:profile_password"), {
-            "old_password": "pw12345!",
-            "new_password1": "a-new-strong-password-9",
-            "new_password2": "a-new-strong-password-9",
-        })
+        response = self.client.post(
+            reverse("accounts:profile_password"),
+            {
+                "old_password": "pw12345!",
+                "new_password1": "a-new-strong-password-9",
+                "new_password2": "a-new-strong-password-9",
+            },
+        )
         self.assertRedirects(response, reverse("accounts:profile"))
         self.client.logout()
         self.assertTrue(self.client.login(email="u@example.com", password="a-new-strong-password-9"))
 
     def test_change_password_wrong_current_password_rejected(self):
-        response = self.client.post(reverse("accounts:profile_password"), {
-            "old_password": "wrong-password",
-            "new_password1": "a-new-strong-password-9",
-            "new_password2": "a-new-strong-password-9",
-        })
+        response = self.client.post(
+            reverse("accounts:profile_password"),
+            {
+                "old_password": "wrong-password",
+                "new_password1": "a-new-strong-password-9",
+                "new_password2": "a-new-strong-password-9",
+            },
+        )
         self.assertEqual(response.status_code, 200)
         self.client.logout()
         self.assertTrue(self.client.login(email="u@example.com", password="pw12345!"))

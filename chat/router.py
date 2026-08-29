@@ -1,9 +1,10 @@
 """Smart routing: classify request complexity, then pick the cheapest
 enabled model at that tier the requesting user is permitted to use.
 """
+
 from django.db.models import F
 
-from chat.models import ModelConfig, UserModelPermission
+from chat.models import ModelConfig
 from chat.prompts import ROUTER_CLASSIFICATION_PROMPT
 from chat.providers import ProviderError, get_provider
 
@@ -15,17 +16,20 @@ class NoModelAvailableError(Exception):
 
 
 def _allowed_models_for_user(user, tier=None):
-    """Enabled models, cheapest-output-first, minus any this user is explicitly denied.
-    Pass user=None to skip the permission filter (used for the internal router call)."""
+    """Enabled models, cheapest-output-first, restricted to the user's Plan
+    (plus/minus explicit UserModelPermission overrides - see
+    governance/plans.py for the exact precedence). Pass user=None to skip
+    the permission filter entirely (used for the internal router call)."""
     qs = ModelConfig.objects.filter(is_enabled=True)
     if tier:
         qs = qs.filter(tier=tier)
 
     if user is not None:
-        denied_ids = UserModelPermission.objects.filter(
-            user=user, is_allowed=False,
-        ).values_list("model_config_id", flat=True)
-        qs = qs.exclude(id__in=denied_ids)
+        from governance.plans import effective_allowed_model_ids
+
+        allowed_ids = effective_allowed_model_ids(user)
+        if allowed_ids is not None:
+            qs = qs.filter(id__in=allowed_ids)
 
     return qs.order_by(F("output_cost_per_1m").asc(nulls_last=True))
 
@@ -78,6 +82,10 @@ def select_model_for_user(user, tier: str) -> ModelConfig:
 def models_visible_to_user(user):
     """Enabled models this user is allowed to pick from a manual model
     dropdown, cheapest-first within each tier."""
-    return ModelConfig.objects.filter(is_enabled=True).exclude(
-        id__in=UserModelPermission.objects.filter(user=user, is_allowed=False).values_list("model_config_id", flat=True),
-    ).order_by("tier", F("output_cost_per_1m").asc(nulls_last=True))
+    from governance.plans import effective_allowed_model_ids
+
+    qs = ModelConfig.objects.filter(is_enabled=True)
+    allowed_ids = effective_allowed_model_ids(user)
+    if allowed_ids is not None:
+        qs = qs.filter(id__in=allowed_ids)
+    return qs.order_by("tier", F("output_cost_per_1m").asc(nulls_last=True))

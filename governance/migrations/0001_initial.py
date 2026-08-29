@@ -10,56 +10,126 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('accounts', '0001_initial'),
+        ("accounts", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='AuditLog',
+            name="AuditLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('action_type', models.CharField(max_length=100)),
-                ('target_type', models.CharField(max_length=100)),
-                ('target_id', models.CharField(blank=True, max_length=100)),
-                ('old_value', models.TextField(blank=True)),
-                ('new_value', models.TextField(blank=True)),
-                ('timestamp', models.DateTimeField(auto_now_add=True)),
-                ('actor', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("action_type", models.CharField(max_length=100)),
+                ("target_type", models.CharField(max_length=100)),
+                ("target_id", models.CharField(blank=True, max_length=100)),
+                ("old_value", models.TextField(blank=True)),
+                ("new_value", models.TextField(blank=True)),
+                ("timestamp", models.DateTimeField(auto_now_add=True)),
+                (
+                    "actor",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-timestamp'],
+                "ordering": ["-timestamp"],
             },
         ),
         migrations.CreateModel(
-            name='SystemPromptVersion',
+            name="SystemPromptVersion",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('content', models.TextField(help_text='Company/department context injected into the base system prompt.')),
-                ('tone_preference', models.CharField(choices=[('formal', 'Formal'), ('casual', 'Casual'), ('technical', 'Technical')], default='formal', max_length=20)),
-                ('restricted_topics', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
-                ('department', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='system_prompt_versions', to='accounts.department')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                (
+                    "content",
+                    models.TextField(help_text="Company/department context injected into the base system prompt."),
+                ),
+                (
+                    "tone_preference",
+                    models.CharField(
+                        choices=[("formal", "Formal"), ("casual", "Casual"), ("technical", "Technical")],
+                        default="formal",
+                        max_length=20,
+                    ),
+                ),
+                ("restricted_topics", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("is_active", models.BooleanField(default=True)),
+                (
+                    "created_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "department",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="system_prompt_versions",
+                        to="accounts.department",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='UsageLimit',
+            name="UsageLimit",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('daily_token_cap', models.PositiveIntegerField(blank=True, null=True)),
-                ('monthly_token_cap', models.PositiveIntegerField(blank=True, null=True)),
-                ('session_limit', models.PositiveIntegerField(blank=True, help_text='Max user messages allowed in a single conversation.', null=True)),
-                ('budget_cap_currency', models.DecimalField(blank=True, decimal_places=2, help_text='Monthly spend cap in USD.', max_digits=10, null=True)),
-                ('department', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='usage_limits', to='accounts.department')),
-                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='usage_limit', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("daily_token_cap", models.PositiveIntegerField(blank=True, null=True)),
+                ("monthly_token_cap", models.PositiveIntegerField(blank=True, null=True)),
+                (
+                    "session_limit",
+                    models.PositiveIntegerField(
+                        blank=True, help_text="Max user messages allowed in a single conversation.", null=True
+                    ),
+                ),
+                (
+                    "budget_cap_currency",
+                    models.DecimalField(
+                        blank=True, decimal_places=2, help_text="Monthly spend cap in USD.", max_digits=10, null=True
+                    ),
+                ),
+                (
+                    "department",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="usage_limits",
+                        to="accounts.department",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="usage_limit",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'constraints': [models.CheckConstraint(condition=models.Q(models.Q(('department__isnull', True), ('user__isnull', False)), models.Q(('department__isnull', False), ('user__isnull', True)), _connector='OR'), name='usage_limit_exactly_one_of_user_or_department')],
+                "constraints": [
+                    models.CheckConstraint(
+                        condition=models.Q(
+                            models.Q(("department__isnull", True), ("user__isnull", False)),
+                            models.Q(("department__isnull", False), ("user__isnull", True)),
+                            _connector="OR",
+                        ),
+                        name="usage_limit_exactly_one_of_user_or_department",
+                    )
+                ],
             },
         ),
     ]

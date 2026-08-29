@@ -3,6 +3,7 @@
 Callers depend only on `get_provider(name).stream_chat(...)` and never touch
 the OpenAI/Anthropic SDKs directly, so the rest of the app is provider-agnostic.
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Iterator
@@ -36,7 +37,13 @@ class AIProvider(ABC):
 class OpenAIProvider(AIProvider):
     def _client(self):
         import openai
-        return openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
+        # The SDK's default max_retries=2 gave up too fast against a flaky
+        # local network (observed: two quick retries on a DNS getaddrinfo
+        # failure, then a hard failure) — a real, live example of this is
+        # in the incident notes. Bumped so a transient blip doesn't
+        # immediately surface as a failed reply to the user.
+        return openai.OpenAI(api_key=settings.OPENAI_API_KEY, max_retries=5, timeout=60.0)
 
     def _format_messages(self, messages, system_prompt):
         formatted = []
@@ -78,7 +85,8 @@ class OpenAIProvider(AIProvider):
 class AnthropicProvider(AIProvider):
     def _client(self):
         import anthropic
-        return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+        return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, max_retries=5, timeout=60.0)
 
     def stream_chat(self, messages, model_name, system_prompt=""):
         try:

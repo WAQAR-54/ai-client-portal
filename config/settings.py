@@ -3,6 +3,7 @@ Django settings for config project (Phase 1: foundation, auth, RBAC).
 """
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -13,7 +14,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DEBUG=(bool, False),
 )
-environ.Env.read_env(BASE_DIR / ".env")
+# overwrite=True: when a local .env file exists, its values win over
+# whatever's already sitting in the shell's own environment. Without this,
+# django-environ only fills in variables that are *absent* from os.environ —
+# if a terminal/IDE run config has ever exported e.g. OPENAI_API_KEY="" (even
+# empty), that silently wins over .env's real value with zero error or
+# warning, which is exactly what caused every AI reply to fail while the
+# key worked fine from every other shell. In production there's no .env
+# file at all, so this is a no-op there — real platform env vars still win.
+environ.Env.read_env(BASE_DIR / ".env", overwrite=True)
 
 _INSECURE_DEFAULT_KEY = "django-insecure-dev-only-change-me"
 SECRET_KEY = env("SECRET_KEY", default=_INSECURE_DEFAULT_KEY)
@@ -43,9 +52,12 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "axes",
+    "django_celery_beat",
     "accounts",
     "chat",
     "governance",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -57,7 +69,47 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "axes.middleware.AxesMiddleware",  # must stay last (see django-axes docs)
 ]
+
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",  # must be first - checks lockout before real auth
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+# Login brute-force protection (django-axes) - tracked in the DB, no Redis
+# needed. Locks the ACCOUNT after AXES_FAILURE_LIMIT failures within
+# AXES_COOLOFF_TIME, per spec: 5 attempts / 15-30 min cooldown. A
+# successful login always resets the counter.
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=20)
+# Deliberately username-only, NOT ip_address: this app is used by many
+# employees from behind the same shared office IP/NAT. Locking by IP too
+# (django-axes' own recommendation, its W006 check) would mean one
+# coworker mistyping their password 5 times locks out the entire office
+# for 20 minutes - a worse outcome than the brute-force risk it prevents.
+# Cross-account-same-IP attack *patterns* are still fully visible to admins
+# via the audit log (every lockout logs its IP - see accounts/signals.py),
+# which is the spec's own stated detection mechanism for that case.
+AXES_LOCKOUT_PARAMETERS = ["username"]
+# Our login form is Django's standard AuthenticationForm, which always
+# posts the field as "username" even though its value is an email address
+# (USERNAME_FIELD="email" only affects authenticate(), not the form's
+# field name) - without this, axes looks for a POST field called "email"
+# that doesn't exist, silently failing to resolve who it just locked out.
+AXES_USERNAME_FORM_FIELD = "username"
+AXES_RESET_ON_SUCCESS = True
+AXES_LOCKOUT_CALLABLE = "accounts.axes_hooks.axes_lockout_response"
+SILENCED_SYSTEM_CHECKS = ["axes.W006"]  # the ip_address-lockout tradeoff above is deliberate
+
+# AxesStandaloneBackend requires a real `request` object passed to
+# authenticate() - Django's own test Client.login() shortcut doesn't pass
+# one (a known django-axes/test-client incompatibility), which would break
+# every existing test that uses self.client.login(...) instead of
+# force_login(). Same test-only-behavior-change pattern as PASSWORD_HASHERS
+# below: brute-force protection isn't what the test suite is exercising,
+# and tests aren't the actual attack surface.
+AXES_ENABLED = "test" not in sys.argv
 
 ROOT_URLCONF = "config.urls"
 
@@ -88,6 +140,40 @@ DATABASES = {
 }
 
 
+# Database backups (see accounts/management/commands/backup_database.py and
+# docs/BACKUP_RESTORE.md). All blank by default so the command fails loudly
+# with a clear message instead of silently no-op'ing if run before it's
+# configured. 30-day retention by default (spec's stated 14-30 day range,
+# upper end - a few dozen compressed dumps is cheap; lower with
+# BACKUP_RETENTION_DAYS if storage cost matters more than history depth).
+BACKUP_S3_BUCKET = env("BACKUP_S3_BUCKET", default="")
+BACKUP_S3_ENDPOINT_URL = env("BACKUP_S3_ENDPOINT_URL", default="")
+BACKUP_S3_ACCESS_KEY_ID = env("BACKUP_S3_ACCESS_KEY_ID", default="")
+BACKUP_S3_SECRET_ACCESS_KEY = env("BACKUP_S3_SECRET_ACCESS_KEY", default="")
+BACKUP_S3_REGION = env("BACKUP_S3_REGION", default="")
+BACKUP_RETENTION_DAYS = env.int("BACKUP_RETENTION_DAYS", default=30)
+
+
+# Celery (background jobs: notification emails, daily plan-expiry sweep).
+# REDIS_URL blank (local dev, no Redis running) -> tasks execute
+# synchronously in-process instead of being queued (CELERY_TASK_ALWAYS_EAGER)
+# so `.delay()` calls still work correctly without a broker/worker - the
+# same escape hatch pattern used elsewhere in this file for test-only
+# behavior. Set a real REDIS_URL in production to actually queue tasks.
+REDIS_URL = env("REDIS_URL", default="")
+CELERY_BROKER_URL = REDIS_URL or "memory://"
+CELERY_RESULT_BACKEND = REDIS_URL or None
+CELERY_TASK_ALWAYS_EAGER = not REDIS_URL
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+# Periodic tasks (e.g. the daily plan-expiry sweep) are configured through
+# the admin-editable django-celery-beat tables, not hardcoded here - see
+# notifications/migrations for the seeded schedule.
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+
 # AI provider credentials — set these in .env, never commit real values.
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
@@ -99,6 +185,21 @@ AUTH_USER_MODEL = "accounts.User"
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "accounts:dashboard"
 LOGOUT_REDIRECT_URL = "accounts:login"
+
+# Session hardening. HttpOnly/SameSite=Lax are Django's defaults already,
+# made explicit here so they're not silently relying on defaults changing
+# out from under this app. SESSION_COOKIE_AGE + SESSION_SAVE_EVERY_REQUEST
+# together give an effective 12-hour *idle* timeout (each request pushes
+# expiry forward) rather than an indefinite session or a fixed absolute
+# expiry that's disconnected from actual activity. SESSION_COOKIE_SECURE
+# is set below only when DEBUG=False (see production hardening block) —
+# forcing it here would break plain-HTTP local dev.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = 60 * 60 * 12
+SESSION_SAVE_EVERY_REQUEST = True
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
 
 
 # Password validation
@@ -136,7 +237,8 @@ STORAGES = {
     "staticfiles": {
         "BACKEND": (
             "whitenoise.storage.CompressedManifestStaticFilesStorage"
-            if not DEBUG else "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if not DEBUG
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
         ),
     },
 }
@@ -152,7 +254,8 @@ MEDIA_ROOT = BASE_DIR / "media"
 # UsageLimit row (or that row leaves the field blank) overriding them.
 DEFAULT_MAX_UPLOAD_SIZE_MB = env.int("DEFAULT_MAX_UPLOAD_SIZE_MB", default=10)
 DEFAULT_ALLOWED_FILE_EXTENSIONS = env(
-    "DEFAULT_ALLOWED_FILE_EXTENSIONS", default="pdf,txt,csv,md,png,jpg,jpeg,docx,xlsx,json",
+    "DEFAULT_ALLOWED_FILE_EXTENSIONS",
+    default="pdf,txt,csv,md,png,jpg,jpeg,docx,xlsx,json",
 )
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -172,16 +275,90 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
+# Always log real exceptions to the console, independent of Sentry — a
+# blank SENTRY_DSN previously meant capture_exception() was a silent no-op,
+# so a failing AI provider call left zero trace anywhere and required live
+# debugging to diagnose. This guarantees a traceback lands somewhere even
+# with no Sentry DSN configured; Sentry (below) is additional, not a
+# replacement for this.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": BASE_DIR / "logs" / "app.log",
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 3,
+            "formatter": "verbose",
+        },
+    },
+    "root": {"handlers": ["console", "file"], "level": "INFO"},
+}
+(BASE_DIR / "logs").mkdir(exist_ok=True)
+
+# Notification emails. Without real SMTP configured, emails print to the
+# console/log instead of failing or hanging — same "safe no-op until
+# configured" pattern as Sentry/backups below, not a silent data loss:
+# the in-app Notification row is always created either way.
+EMAIL_HOST = env("EMAIL_HOST", default="")
+if EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+    EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+    EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+    EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+    DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    DEFAULT_FROM_EMAIL = "noreply@example.com"
+    # The console backend writes straight to sys.stdout using whatever
+    # encoding the terminal defaults to - on Windows that's often cp1252,
+    # which can't represent an em-dash, an arrow, or (this app explicitly
+    # supports Urdu/mixed-language content) non-Latin text at all. Without
+    # this, ANY non-ASCII character anywhere in a notification body turns
+    # into an unhandled 500 the first time it's hit locally - a real bug
+    # found by testing this exact path, not a hypothetical one.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass  # non-interactive/redirected stdout in some environments doesn't support reconfigure
+
 # Error monitoring — only active once SENTRY_DSN is set in .env. Silent no-op otherwise.
 SENTRY_DSN = env("SENTRY_DSN", default="")
 if SENTRY_DSN and "test" not in sys.argv:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
 
+    def _sentry_before_send(event, hint):
+        # Belt-and-suspenders on top of send_default_pii=False and
+        # include_local_variables=False below: never forward the raw
+        # request body (chat message content lives there) even if a
+        # future SDK/integration change starts attaching it by default.
+        request = event.get("request")
+        if request and "data" in request:
+            del request["data"]
+        return event
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[DjangoIntegration()],
         environment=env("SENTRY_ENVIRONMENT", default="development"),
         traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
-        send_default_pii=False,
+        # PII/data-scrubbing, tightened beyond the SDK defaults:
+        send_default_pii=False,  # never attach request user/IP/cookies
+        # Default is True — without this, a stack trace through post_message()
+        # or stream_message() would capture the *values* of local variables
+        # like `content`/`uploaded_file`, i.e. the user's actual chat text and
+        # attachments, and any local holding an API key string. The built-in
+        # key-name scrubber (DEFAULT_DENYLIST) wouldn't catch these because
+        # they're not named like secrets - so this is disabled outright rather
+        # than relied on.
+        include_local_variables=False,
+        max_request_body_size="never",  # extra guard alongside send_default_pii=False
+        before_send=_sentry_before_send,
     )

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Upgrade Requests — AI Client Portal{% endblock %}
+{% block content %}
+<div class="card" style="overflow-x:auto;">
+    <h1>Upgrade Requests</h1>
+    <p>Self-service requests from users on Demo (or non-top-tier) plans asking for more access.</p>
+    <table class="data">
+        <thead><tr><th>User</th><th>Current plan</th><th>Message</th><th>Requested</th><th></th></tr></thead>
+        <tbody>
+            {% for r in upgrade_requests %}
+            <tr>
+                <td>{{ r.user.email }}</td>
+                <td><span class="badge badge-muted">{{ r.current_plan.name|default:"—" }}</span></td>
+                <td class="text-muted">{{ r.message|default:"—"|truncatechars:80 }}</td>
+                <td class="text-muted mono">{{ r.created_at|date:"Y-m-d H:i" }}</td>
+                <td style="white-space:nowrap;">
+                    <form method="post" action="{% url 'governance:resolve_upgrade_request' request_id=r.id %}" style="display:inline;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="approve">
+                        <button type="submit" class="btn-small">Approve → Change Plan</button>
+                    </form>
+                    <form method="post" action="{% url 'governance:resolve_upgrade_request' request_id=r.id %}" style="display:inline;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="dismiss">
+                        <button type="submit" class="btn-small btn-ghost">Dismiss</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr class="empty-state-row"><td colspan="5">No pending upgrade requests.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

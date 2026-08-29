@@ -4,6 +4,7 @@ Roles are hierarchical: admin > manager > user. `role_required` and
 `RoleRequiredMixin` grant access to the given role and any role above it
 in the hierarchy, unless `exact=True` is passed.
 """
+
 from functools import wraps
 
 from django.contrib.auth.mixins import AccessMixin

@@ -12,17 +12,25 @@ class UsageLimitTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Sales")
         self.user = User.objects.create_user(
-            email="u@example.com", password="pw12345!", department=self.department,
+            email="u@example.com",
+            password="pw12345!",
+            department=self.department,
         )
         self.conversation = Conversation.objects.create(user=self.user)
         self.model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True,
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="m",
+            is_enabled=True,
         )
 
     def _add_assistant_message(self, input_tokens, output_tokens, cost):
         Message.objects.create(
-            conversation=self.conversation, role=Message.Role.ASSISTANT, content="hi",
-            model_used=self.model, input_tokens=input_tokens, output_tokens=output_tokens,
+            conversation=self.conversation,
+            role=Message.Role.ASSISTANT,
+            content="hi",
+            model_used=self.model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             estimated_cost=cost,
         )
 
@@ -101,7 +109,9 @@ class SystemPromptInjectionTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Legal")
         self.user = User.objects.create_user(
-            email="u@example.com", password="pw12345!", department=self.department,
+            email="u@example.com",
+            password="pw12345!",
+            department=self.department,
         )
 
     def test_no_version_yields_blank_department_instructions(self):
@@ -110,7 +120,8 @@ class SystemPromptInjectionTests(TestCase):
 
     def test_active_version_is_injected(self):
         SystemPromptVersion.objects.create_new_version(
-            department=self.department, content="Always cite case law.",
+            department=self.department,
+            content="Always cite case law.",
             restricted_topics="tax advice",
         )
         prompt = build_system_prompt(self.user)
@@ -128,7 +139,10 @@ class SystemPromptInjectionTests(TestCase):
 class GovernanceRBACAndAuditTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True,
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
         )
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
 
@@ -145,9 +159,7 @@ class GovernanceRBACAndAuditTests(TestCase):
     def test_toggle_user_active_writes_audit_log(self):
         self.client.login(email="admin@example.com", password="pw12345!")
         self.assertTrue(self.user.is_active)
-        response = self.client.post(
-            reverse("governance:toggle_user_active", kwargs={"user_id": self.user.id})
-        )
+        response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user.id}))
         self.assertEqual(response.status_code, 302)
         self.user.refresh_from_db()
         self.assertFalse(self.user.is_active)
@@ -158,10 +170,73 @@ class GovernanceRBACAndAuditTests(TestCase):
 
     def test_toggle_user_active_forbidden_for_non_admin(self):
         self.client.login(email="u@example.com", password="pw12345!")
-        response = self.client.post(
-            reverse("governance:toggle_user_active", kwargs={"user_id": self.user.id})
-        )
+        response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user.id}))
         self.assertEqual(response.status_code, 403)
+
+    def test_dashboard_charts_zero_filled_across_14_days(self):
+        conversation = Conversation.objects.create(user=self.user, title="c")
+        model = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="m",
+            is_enabled=True,
+            input_cost_per_1m=1,
+            output_cost_per_1m=1,
+        )
+        Message.objects.create(
+            conversation=conversation,
+            role=Message.Role.ASSISTANT,
+            content="hi",
+            model_used=model,
+            input_tokens=100,
+            output_tokens=50,
+            estimated_cost="0.15",
+        )
+
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+
+        self.assertEqual(len(response.context["chart_daily_labels"]), 14)
+        self.assertTrue(response.context["has_cost_data"])
+        self.assertTrue(response.context["has_token_data"])
+        self.assertTrue(response.context["has_model_data"])
+
+    def test_dashboard_charts_show_empty_state_flags_with_no_usage(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+
+        self.assertFalse(response.context["has_cost_data"])
+        self.assertFalse(response.context["has_token_data"])
+        self.assertFalse(response.context["has_model_data"])
+        self.assertIn(b"No usage yet", response.content)
+
+    def test_dashboard_chart_data_cannot_break_out_of_script_tag(self):
+        """A model_name containing "</script>" must never let the dashboard's
+        chart data terminate the real <script> block early - regression test
+        for the chart-data-XSS fix (json_script instead of |safe)."""
+        conversation = Conversation.objects.create(user=self.user, title="c")
+        model = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="</script><script>alert(1)</script>",
+            is_enabled=True,
+            input_cost_per_1m=1,
+            output_cost_per_1m=1,
+        )
+        Message.objects.create(
+            conversation=conversation,
+            role=Message.Role.ASSISTANT,
+            content="hi",
+            model_used=model,
+            input_tokens=10,
+            output_tokens=5,
+            estimated_cost="0.01",
+        )
+
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        body = response.content.decode()
+
+        self.assertNotIn("<script>alert(1)</script>", body)
+        self.assertIn("\\u003C/script\\u003E", body)
 
     def test_change_user_role_writes_audit_log(self):
         self.client.login(email="admin@example.com", password="pw12345!")
@@ -201,12 +276,12 @@ class GovernanceRBACAndAuditTests(TestCase):
 
     def test_toggle_model_enabled_writes_audit_log(self):
         model_config = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=False,
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="m",
+            is_enabled=False,
         )
         self.client.login(email="admin@example.com", password="pw12345!")
-        response = self.client.post(
-            reverse("governance:toggle_model_enabled", kwargs={"model_id": model_config.id})
-        )
+        response = self.client.post(reverse("governance:toggle_model_enabled", kwargs={"model_id": model_config.id}))
         self.assertEqual(response.status_code, 302)
         model_config.refresh_from_db()
         self.assertTrue(model_config.is_enabled)
@@ -225,9 +300,14 @@ class GovernanceRBACAndAuditTests(TestCase):
 
     def test_add_model_creates_disabled_unpriced_entry(self):
         self.client.login(email="admin@example.com", password="pw12345!")
-        response = self.client.post(reverse("governance:add_model"), {
-            "provider": ModelConfig.Provider.OPENAI, "model_name": "gpt-new", "tier": ModelConfig.Tier.DEFAULT,
-        })
+        response = self.client.post(
+            reverse("governance:add_model"),
+            {
+                "provider": ModelConfig.Provider.OPENAI,
+                "model_name": "gpt-new",
+                "tier": ModelConfig.Tier.DEFAULT,
+            },
+        )
         self.assertEqual(response.status_code, 302)
         model_config = ModelConfig.objects.get(model_name="gpt-new")
         self.assertFalse(model_config.is_enabled)
@@ -268,16 +348,25 @@ class GovernanceRBACAndAuditTests(TestCase):
 class LimitManagementTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True,
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
         )
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
         self.client.login(email="admin@example.com", password="pw12345!")
 
     def test_create_user_limit(self):
-        response = self.client.post(reverse("governance:limit_new"), {
-            "target_type": "user", "user_id": self.user.id,
-            "daily_token_cap": "1000", "max_upload_size_mb": "5", "allowed_file_extensions": "pdf,txt",
-        })
+        response = self.client.post(
+            reverse("governance:limit_new"),
+            {
+                "target_type": "user",
+                "user_id": self.user.id,
+                "daily_token_cap": "1000",
+                "max_upload_size_mb": "5",
+                "allowed_file_extensions": "pdf,txt",
+            },
+        )
         self.assertEqual(response.status_code, 302)
         limit = UsageLimit.objects.get(user=self.user)
         self.assertEqual(limit.daily_token_cap, 1000)
@@ -300,12 +389,14 @@ class UploadLimitOverrideTests(TestCase):
 
     def test_system_default_extension_check(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
+
         bad = SimpleUploadedFile("script.exe", b"x", content_type="application/octet-stream")
         with self.assertRaises(UploadRejected):
             validate_upload(self.user, bad)
 
     def test_personal_limit_overrides_default_extensions(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
+
         UsageLimit.objects.create(user=self.user, allowed_file_extensions="exe")
         upload = SimpleUploadedFile("tool.exe", b"x", content_type="application/octet-stream")
         validate_upload(self.user, upload)  # should not raise
@@ -314,14 +405,21 @@ class UploadLimitOverrideTests(TestCase):
 class DepartmentManagementTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True,
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
         )
         self.client.login(email="admin@example.com", password="pw12345!")
 
     def test_add_department(self):
-        response = self.client.post(reverse("governance:add_department"), {
-            "name": "Engineering", "monthly_budget_cap": "500",
-        })
+        response = self.client.post(
+            reverse("governance:add_department"),
+            {
+                "name": "Engineering",
+                "monthly_budget_cap": "500",
+            },
+        )
         self.assertEqual(response.status_code, 302)
         department = Department.objects.get(name="Engineering")
         self.assertEqual(str(department.monthly_budget_cap), "500.00")
@@ -344,9 +442,7 @@ class DepartmentManagementTests(TestCase):
 
     def test_delete_department(self):
         department = Department.objects.create(name="Temp")
-        response = self.client.post(
-            reverse("governance:delete_department", kwargs={"department_id": department.id})
-        )
+        response = self.client.post(reverse("governance:delete_department", kwargs={"department_id": department.id}))
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Department.objects.filter(id=department.id).exists())
 
@@ -355,3 +451,108 @@ class DepartmentManagementTests(TestCase):
         self.client.login(email="u@example.com", password="pw12345!")
         response = self.client.post(reverse("governance:add_department"), {"name": "Nope"})
         self.assertEqual(response.status_code, 403)
+
+
+class AdminListFilteringTests(TestCase):
+    """Search/filter query-param handling for the admin list screens, and
+    the htmx-partial vs full-page template switch it relies on."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="filteradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+        )
+        self.client.login(email="filteradmin@example.com", password="pw12345!")
+        self.eng = Department.objects.create(name="Engineering")
+        self.sales = Department.objects.create(name="Sales")
+        self.alice = User.objects.create_user(email="alice@example.com", password="pw12345!", department=self.eng)
+        self.bob = User.objects.create_user(
+            email="bob@example.com",
+            password="pw12345!",
+            role=User.Role.MANAGER,
+            department=self.sales,
+        )
+
+    def test_users_search_filters_by_email(self):
+        response = self.client.get(reverse("governance:users"), {"search": "alice"})
+        self.assertEqual(list(response.context["users"]), [self.alice])
+
+    def test_users_role_filter(self):
+        response = self.client.get(reverse("governance:users"), {"role": "manager"})
+        self.assertEqual(list(response.context["users"]), [self.bob])
+
+    def test_users_status_filter(self):
+        self.bob.is_active = False
+        self.bob.save()
+        response = self.client.get(reverse("governance:users"), {"status": "suspended"})
+        self.assertEqual(list(response.context["users"]), [self.bob])
+
+    def test_users_htmx_request_gets_partial_template_only(self):
+        response = self.client.get(reverse("governance:users"), {"search": "alice"}, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+        # The partial has no <html>/sidebar chrome - base.html content wouldn't appear.
+        self.assertNotIn(b"<html", response.content)
+        self.assertIn(b"alice@example.com", response.content)
+
+    def test_models_status_filter(self):
+        enabled = ModelConfig.objects.create(provider="openai", model_name="gpt-4o-mini", is_enabled=True)
+        disabled = ModelConfig.objects.create(provider="openai", model_name="gpt-3.5-turbo", is_enabled=False)
+        response = self.client.get(reverse("governance:models"), {"status": "enabled"})
+        self.assertEqual(list(response.context["models"]), [enabled])
+        response = self.client.get(reverse("governance:models"), {"status": "disabled"})
+        self.assertEqual(list(response.context["models"]), [disabled])
+
+    def test_departments_search(self):
+        response = self.client.get(reverse("governance:departments"), {"search": "eng"})
+        self.assertEqual(list(response.context["departments"]), [self.eng])
+
+    def test_limits_search_by_user_or_department(self):
+        limit1 = UsageLimit.objects.create(user=self.alice, daily_token_cap=1000)
+        limit2 = UsageLimit.objects.create(department=self.sales, monthly_token_cap=5000)
+        response = self.client.get(reverse("governance:limits"), {"search": "alice"})
+        self.assertEqual(list(response.context["limits"]), [limit1])
+        response = self.client.get(reverse("governance:limits"), {"search": "sales"})
+        self.assertEqual(list(response.context["limits"]), [limit2])
+
+    def test_audit_logs_action_type_filter(self):
+        AuditLog.objects.create(actor=self.admin, action_type="user.role_change", target_type="User", target_id="1")
+        AuditLog.objects.create(actor=self.admin, action_type="model.enable", target_type="ModelConfig", target_id="1")
+        response = self.client.get(reverse("governance:audit_logs"), {"action_type": "model.enable"})
+        self.assertEqual(len(response.context["logs"]), 1)
+        self.assertEqual(response.context["logs"][0].action_type, "model.enable")
+
+    def test_audit_logs_date_range_filter_excludes_out_of_range(self):
+        AuditLog.objects.create(actor=self.admin, action_type="user.role_change", target_type="User", target_id="1")
+        response = self.client.get(
+            reverse("governance:audit_logs"), {"date_from": "2020-01-01", "date_to": "2020-01-02"}
+        )
+        self.assertEqual(len(response.context["logs"]), 0)
+
+    def test_usage_search_and_model_filter(self):
+        model = ModelConfig.objects.create(provider="openai", model_name="gpt-4o-mini", is_enabled=True)
+        conv = Conversation.objects.create(user=self.alice, title="c")
+        Message.objects.create(
+            conversation=conv,
+            role=Message.Role.ASSISTANT,
+            content="hi",
+            model_used=model,
+            input_tokens=10,
+            output_tokens=5,
+            estimated_cost="0.01",
+        )
+        response = self.client.get(reverse("governance:usage"), {"search": "alice"})
+        self.assertEqual(len(response.context["per_user"]), 1)
+        response = self.client.get(reverse("governance:usage"), {"search": "nobody"})
+        self.assertEqual(len(response.context["per_user"]), 0)
+        response = self.client.get(reverse("governance:usage"), {"model": model.id})
+        self.assertEqual(len(response.context["per_user"]), 1)
+
+    def test_filters_are_admin_only(self):
+        User.objects.create_user(email="plain@example.com", password="pw12345!")
+        self.client.logout()
+        self.client.login(email="plain@example.com", password="pw12345!")
+        for url_name in ["users", "models", "departments", "limits", "audit_logs", "usage"]:
+            response = self.client.get(reverse(f"governance:{url_name}"), {"search": "x"})
+            self.assertEqual(response.status_code, 403, url_name)

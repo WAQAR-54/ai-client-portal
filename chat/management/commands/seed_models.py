@@ -21,7 +21,9 @@ class Command(BaseCommand):
         created_count = 0
         for provider, model_name, tier in SEED_MODELS:
             _, created = ModelConfig.objects.get_or_create(
-                provider=provider, model_name=model_name, defaults={"tier": tier},
+                provider=provider,
+                model_name=model_name,
+                defaults={"tier": tier},
             )
             created_count += int(created)
 

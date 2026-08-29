@@ -6,7 +6,10 @@ from django.db import models
 class Department(models.Model):
     name = models.CharField(max_length=150, unique=True)
     monthly_budget_cap = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
         help_text="Monthly AI spending cap for this department, in USD.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -59,7 +62,11 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.USER)
     department = models.ForeignKey(
-        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name="users",
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="users",
     )
 
     USERNAME_FIELD = "email"

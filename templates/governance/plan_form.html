@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{% if plan %}Edit Plan{% else %}New Plan{% endif %} — AI Client Portal{% endblock %}
+{% block content %}
+<div class="card" style="max-width:720px;">
+    <h1>{% if plan %}Edit {{ plan.name }}{% else %}New plan{% endif %}</h1>
+    <form method="post">
+        {% csrf_token %}
+        <label for="name">Name</label>
+        <input class="input" type="text" name="name" id="name" value="{{ plan.name|default:"" }}" required>
+
+        <label for="description">Description</label>
+        <input class="input" type="text" name="description" id="description" value="{{ plan.description|default:"" }}">
+
+        <div style="display:flex; gap:1.5rem; margin-bottom:1rem;">
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500;">
+                <input type="checkbox" name="is_demo" {% if plan.is_demo %}checked{% endif %} style="width:auto;"> Time-limited demo plan
+            </label>
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500;">
+                <input type="checkbox" name="is_active" {% if not plan or plan.is_active %}checked{% endif %} style="width:auto;"> Active
+            </label>
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500;">
+                <input type="checkbox" name="is_default" {% if plan.is_default %}checked{% endif %} style="width:auto;"> Default for new users
+            </label>
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500;">
+                <input type="checkbox" name="is_visible_to_admins" {% if not plan or plan.is_visible_to_admins %}checked{% endif %} style="width:auto;"> Visible in Change Plan picker
+            </label>
+        </div>
+
+        <label for="demo_duration_days">Demo duration (days) — only used if "time-limited demo plan" is checked</label>
+        <input class="input" type="number" name="demo_duration_days" id="demo_duration_days" value="{{ plan.demo_duration_days|default_if_none:"" }}">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
+            <div>
+                <label for="daily_token_limit">Daily token limit</label>
+                <input class="input" type="number" name="daily_token_limit" id="daily_token_limit" value="{{ plan.daily_token_limit|default_if_none:"" }}" placeholder="unlimited">
+            </div>
+            <div>
+                <label for="monthly_token_limit">Monthly token limit</label>
+                <input class="input" type="number" name="monthly_token_limit" id="monthly_token_limit" value="{{ plan.monthly_token_limit|default_if_none:"" }}" placeholder="unlimited">
+            </div>
+            <div>
+                <label for="messages_per_session_limit">Messages per session</label>
+                <input class="input" type="number" name="messages_per_session_limit" id="messages_per_session_limit" value="{{ plan.messages_per_session_limit|default_if_none:"" }}" placeholder="unlimited">
+            </div>
+            <div>
+                <label for="sessions_per_day_limit">New conversations per day</label>
+                <input class="input" type="number" name="sessions_per_day_limit" id="sessions_per_day_limit" value="{{ plan.sessions_per_day_limit|default_if_none:"" }}" placeholder="unlimited">
+            </div>
+        </div>
+        <label for="monthly_budget_cap">Monthly budget cap (USD)</label>
+        <input class="input" type="number" step="0.01" name="monthly_budget_cap" id="monthly_budget_cap" value="{{ plan.monthly_budget_cap|default_if_none:"" }}" placeholder="unlimited">
+
+        <label>Features</label>
+        <div style="display:flex; gap:1.5rem; margin-bottom:1rem;">
+            {% for key, label, checked in known_flags %}
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500;">
+                <input type="checkbox" name="flag_{{ key }}" {% if checked %}checked{% endif %} style="width:auto;"> {{ label }}
+            </label>
+            {% endfor %}
+        </div>
+
+        <label>Allowed models</label>
+        <div style="display:flex; flex-direction:column; gap:0.4rem; margin-bottom:1.5rem; max-height:220px; overflow-y:auto; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:0.75rem;">
+            {% for m in models %}
+            <label style="display:flex; align-items:center; gap:0.5rem; font-weight:500;">
+                <input type="checkbox" name="model_ids" value="{{ m.id }}" {% if m.id in selected_model_ids %}checked{% endif %} style="width:auto;">
+                {{ m.model_name }} <span class="text-faint" style="font-size:0.8rem;">({{ m.get_provider_display }} · {{ m.get_tier_display }})</span>
+            </label>
+            {% empty %}
+            <span class="text-faint">No models configured yet.</span>
+            {% endfor %}
+        </div>
+
+        <button type="submit">{% if plan %}Save changes{% else %}Create plan{% endif %}</button>
+        <a href="{% url 'governance:plans' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+<div class="filter-result-count">Showing <span class="mono">{{ per_user|length }}</span> users with matching usage</div>
+<table class="data">
+    <thead>
+        <tr><th>User</th><th>Requests</th><th>Tokens</th><th>Estimated Cost</th></tr>
+    </thead>
+    <tbody>
+        {% for row in per_user %}
+        <tr>
+            <td>{{ row.conversation__user__email }}</td>
+            <td class="mono">{{ row.requests }}</td>
+            <td class="mono">{{ row.tokens|default:0 }}</td>
+            <td class="mono">${{ row.cost|default:0|floatformat:4 }}</td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="4">No usage matches your search/filters.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -1,0 +1,28 @@
+<div class="filter-result-count">Showing <span class="mono">{{ limits|length }}</span> of <span class="mono">{{ total_count }}</span> limits</div>
+<table class="data">
+    <thead>
+        <tr><th>Applies to</th><th>Daily tokens</th><th>Monthly tokens</th><th>Session msgs</th><th>Budget/mo</th><th>Upload cap</th><th>File types</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for l in limits %}
+        <tr>
+            <td>{% if l.user %}👤 {{ l.user.email }}{% else %}🏢 {{ l.department.name }}{% endif %}</td>
+            <td>{{ l.daily_token_cap|default:"—" }}</td>
+            <td>{{ l.monthly_token_cap|default:"—" }}</td>
+            <td>{{ l.session_limit|default:"—" }}</td>
+            <td>{% if l.budget_cap_currency %}${{ l.budget_cap_currency }}{% else %}—{% endif %}</td>
+            <td>{% if l.max_upload_size_mb %}{{ l.max_upload_size_mb }}MB{% else %}—{% endif %}</td>
+            <td class="text-muted">{{ l.allowed_file_extensions|default:"—" }}</td>
+            <td style="white-space:nowrap;">
+                <a href="{% url 'governance:limit_edit' limit_id=l.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Edit</a>
+                <form method="post" action="{% url 'governance:limit_delete' limit_id=l.id %}" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-small btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="8">No limits match your search — everyone else uses system defaults.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

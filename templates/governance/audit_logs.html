@@ -3,31 +3,28 @@
 {% block content %}
 <div class="card" style="overflow-x:auto;">
     <h1>Audit Logs</h1>
-    <table class="data">
-        <thead>
-            <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Old</th><th>New</th></tr>
-        </thead>
-        <tbody>
-            {% for log in logs %}
-            <tr>
-                <td class="text-muted">{{ log.timestamp|date:"Y-m-d H:i" }}</td>
-                <td>{{ log.actor|default:"—" }}</td>
-                <td><span class="badge badge-muted">{{ log.action_type }}</span></td>
-                <td class="text-muted">{{ log.target_type }}#{{ log.target_id }}</td>
-                <td class="text-muted">{{ log.old_value|truncatechars:40 }}</td>
-                <td class="text-muted">{{ log.new_value|truncatechars:40 }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="6" class="text-faint">No audit events yet.</td></tr>
+
+    {% url 'governance:audit_logs' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search actor, action, target..."
+                   hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+        <select name="action_type" hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">All actions</option>
+            {% for at in action_types %}
+            <option value="{{ at }}" {% if action_type_filter == at %}selected{% endif %}>{{ at }}</option>
             {% endfor %}
-        </tbody>
-    </table>
-    {% if is_paginated %}
-    <div class="mt-4" style="display:flex; gap:1rem; align-items:center;">
-        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Prev</a>{% endif %}
-        <span class="text-faint" style="font-size:0.85rem;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next →</a>{% endif %}
+        </select>
+        <input type="date" name="date_from" value="{{ date_from }}" title="From date"
+               hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+        <input type="date" name="date_to" value="{{ date_to }}" title="To date"
+               hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+    </form>
+
+    <div id="audit-logs-table">
+        {% include "governance/_audit_logs_table.html" %}
     </div>
-    {% endif %}
 </div>
 {% endblock %}

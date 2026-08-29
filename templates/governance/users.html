@@ -4,50 +4,35 @@
 <div class="card" style="overflow-x:auto;">
     <h1>Users</h1>
     <p>Change a user's role, department, or access — everything here takes effect immediately.</p>
-    <table class="data">
-        <thead>
-            <tr><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr>
-        </thead>
-        <tbody>
-            {% for u in users %}
-            <tr>
-                <td>{{ u.email }}</td>
-                <td>
-                    <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
-                        {% csrf_token %}
-                        <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
-                            {% for value, label in roles %}
-                            <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                </td>
-                <td>
-                    <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
-                        {% csrf_token %}
-                        <select name="department_id" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
-                            <option value="">— none —</option>
-                            {% for d in departments %}
-                            <option value="{{ d.id }}" {% if u.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                </td>
-                <td>
-                    {% if u.is_active %}<span class="badge badge-success">Active</span>
-                    {% else %}<span class="badge badge-danger">Suspended</span>{% endif %}
-                </td>
-                <td>
-                    <form method="post" action="{% url 'governance:toggle_user_active' user_id=u.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn-small {% if u.is_active %}btn-danger{% else %}btn-ghost{% endif %}">
-                            {% if u.is_active %}Suspend{% else %}Activate{% endif %}
-                        </button>
-                    </form>
-                </td>
-            </tr>
+
+    {% url 'governance:users' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search name or email..."
+                   hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+        <select name="role" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">All roles</option>
+            {% for value, label in roles %}
+            <option value="{{ value }}" {% if role_filter == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
-        </tbody>
-    </table>
+        </select>
+        <select name="status" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">All statuses</option>
+            <option value="active" {% if status_filter == "active" %}selected{% endif %}>Active</option>
+            <option value="suspended" {% if status_filter == "suspended" %}selected{% endif %}>Suspended</option>
+        </select>
+        <select name="plan" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">All plans</option>
+            {% for p in plans %}
+            <option value="{{ p.id }}" {% if plan_filter == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </form>
+
+    <div id="users-table">
+        {% include "governance/_users_table.html" %}
+    </div>
 </div>
 {% endblock %}
