@@ -173,6 +173,7 @@
             <details class="export-menu">
                 <summary class="btn-small btn-ghost no-marker" title="{% trans 'Export conversation' %}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                    {% trans "Export" %}
                 </summary>
                 <div class="export-menu-panel">
                     <a href="{% url 'chat:export_conversation_pdf' conversation_id=conversation.id %}">{% trans "Export as PDF" %}</a>
@@ -263,17 +264,25 @@
             <button type="button" class="link-btn" onclick="portalCancelEdit()">{% trans "Cancel" %}</button>
         </div>
         <div class="composer-toolbar">
-            <select class="model-select" name="model_id" id="model-select">
-                <option value="">{% trans "Auto (smart routing)" %}</option>
-                {% regroup available_models by get_tier_display as tier_groups %}
-                {% for group in tier_groups %}
-                <optgroup label="{{ group.grouper }}">
+            {% trans "Auto (smart routing)" as auto_routing_label %}
+            <details class="model-select-dropdown" id="model-select-dropdown">
+                <summary class="model-select-summary no-marker">
+                    <span id="model-select-label">{{ auto_routing_label }}</span>
+                    <svg class="nav-icon chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div class="model-select-panel">
+                    <button type="button" class="model-select-option is-selected" data-value="" data-label="{{ auto_routing_label }}">{{ auto_routing_label }}</button>
+                    {% regroup available_models by get_tier_display as tier_groups %}
+                    {% for group in tier_groups %}
+                    <div class="model-select-group-label">{{ group.grouper }}</div>
                     {% for m in group.list %}
-                    <option value="{{ m.id }}">{{ m.display_label }}</option>
+                    <button type="button" class="model-select-option" data-value="{{ m.id }}" data-label="{{ m.display_label }}">{{ m.display_label }}</button>
                     {% endfor %}
-                </optgroup>
-                {% endfor %}
-            </select>
+                    {% endfor %}
+                </div>
+            </details>
+            <input type="hidden" name="model_id" id="model-select" value="">
+            <div class="composer-toolbar-spacer"></div>
             <details class="template-picker" id="prompt-template-picker">
                 <summary class="btn-small btn-ghost no-marker" title="{% trans 'Insert a saved prompt (or type "/")' %}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -411,6 +420,34 @@ function portalCopyMessage(btn) {
 }
 
 (function() {
+    var dropdown = document.getElementById("model-select-dropdown");
+    if (!dropdown) return;
+    var hiddenInput = document.getElementById("model-select");
+    var label = document.getElementById("model-select-label");
+    dropdown.querySelectorAll(".model-select-option").forEach(function(opt) {
+        opt.addEventListener("click", function() {
+            hiddenInput.value = opt.getAttribute("data-value");
+            label.textContent = opt.getAttribute("data-label");
+            dropdown.querySelectorAll(".model-select-option").forEach(function(o) {
+                o.classList.toggle("is-selected", o === opt);
+            });
+            dropdown.removeAttribute("open");
+        });
+    });
+})();
+
+// Every "..."/summary-triggered dropdown in the chat header and composer
+// toolbar (export, usage, profile, templates, model picker) is a native
+// <details> element - browsers don't close those on an outside click by
+// default, only on clicking the summary again. One shared listener closes
+// whichever one is open whenever the click lands outside all of them.
+document.addEventListener("click", function(evt) {
+    document.querySelectorAll(".chat-header-actions details[open], .composer-toolbar details[open]").forEach(function(d) {
+        if (!d.contains(evt.target)) d.removeAttribute("open");
+    });
+});
+
+(function() {
     var picker = document.getElementById("prompt-template-picker");
     var textarea = document.getElementById("composer-textarea");
     var saveBtn = document.getElementById("save-template-btn");
@@ -484,7 +521,7 @@ function portalCopyMessage(btn) {
     var steps = [
         {selector: "#tour-new-chat", title: "{% trans 'Start a new conversation' %}", body: "{% trans 'Click here any time to begin a fresh chat.' %}"},
         {selector: "#tour-usage-btn", title: "{% trans 'Track your usage' %}", body: "{% trans 'See your token and budget usage here, and request an upgrade if you need more.' %}"},
-        {selector: "#model-select", title: "{% trans 'Pick a model' %}", body: "{% trans 'Auto-routing picks a model for you, or choose one manually here once a conversation is open.' %}"},
+        {selector: "#model-select-dropdown", title: "{% trans 'Pick a model' %}", body: "{% trans 'Auto-routing picks a model for you, or choose one manually here once a conversation is open.' %}"},
         {selector: "#tour-admin-link", title: "{% trans 'Admin dashboard' %}", body: "{% trans 'Manage users, models, limits, and more from here.' %}"}
     ];
 
