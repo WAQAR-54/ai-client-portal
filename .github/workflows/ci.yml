@@ -104,21 +104,26 @@ jobs:
             docker compose exec -T web python manage.py collectstatic --noinput
             echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) deployed $(git rev-parse HEAD)" >> ~/ai-client-portal/deploy.log
 
-      # Gives the freshly-recreated containers a moment before we judge them.
-      - name: Wait for containers to settle
-        run: sleep 10
-
       # Real client's-eye-view check, not just "did the SSH commands exit 0" -
       # a deploy that runs cleanly but ships a broken homepage still fails here.
-      - name: Health check
+      # Retries with backoff instead of one fixed sleep+check: a full
+      # container restart (stop old, start freshly-built new, Gunicorn boot)
+      # took over 10s on this VM in practice and tripped a false-positive
+      # rollback on the very first real deploy - polling for up to ~50s
+      # succeeds as soon as it's actually ready instead of guessing one delay.
+      - name: Health check (polls with backoff, up to ~50s)
         id: health_check
         run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://${{ secrets.SSH_HOST }}/accounts/login/")
-          echo "Response status: $status"
-          if [ "$status" != "200" ]; then
-            echo "::error::Health check failed - expected 200, got $status"
-            exit 1
-          fi
+          for i in 1 2 3 4 5 6 7 8; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${{ secrets.SSH_HOST }}/accounts/login/" || echo "000")
+            echo "Attempt $i: status $status"
+            if [ "$status" = "200" ]; then
+              exit 0
+            fi
+            sleep 7
+          done
+          echo "::error::Health check failed after 8 attempts - last status was $status"
+          exit 1
 
       # Only runs if something above failed. Reverts the CODE to whatever was
       # deployed before this run and rebuilds - see the note in the PR/commit
