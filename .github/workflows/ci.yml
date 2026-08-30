@@ -77,3 +77,72 @@ jobs:
 
       - name: Run tests
         run: python manage.py test
+
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      # Pinned to the v1.2.5 tag's commit SHA (not a mutable tag) - standard
+      # practice for third-party actions that get SSH credentials.
+      - name: Deploy over SSH (pull, rebuild, migrate, collectstatic)
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+            cd ~/ai-client-portal
+            git rev-parse HEAD > /tmp/ai_client_portal_prev_sha
+            git pull origin main
+            docker compose up -d --build
+            docker compose exec -T web python manage.py migrate --noinput
+            docker compose exec -T web python manage.py collectstatic --noinput
+            echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) deployed $(git rev-parse HEAD)" >> ~/ai-client-portal/deploy.log
+
+      # Gives the freshly-recreated containers a moment before we judge them.
+      - name: Wait for containers to settle
+        run: sleep 10
+
+      # Real client's-eye-view check, not just "did the SSH commands exit 0" -
+      # a deploy that runs cleanly but ships a broken homepage still fails here.
+      - name: Health check
+        id: health_check
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://${{ secrets.SSH_HOST }}/accounts/login/")
+          echo "Response status: $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::Health check failed - expected 200, got $status"
+            exit 1
+          fi
+
+      # Only runs if something above failed. Reverts the CODE to whatever was
+      # deployed before this run and rebuilds - see the note in the PR/commit
+      # this shipped with: this does NOT undo a database migration that
+      # already ran, so it's a real safety net for bad application code
+      # (syntax errors, import failures, a broken view) but not a complete
+      # guarantee against a migration the old code can't handle.
+      - name: Roll back to previous commit on failure
+        if: failure()
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+            cd ~/ai-client-portal
+            if [ ! -f /tmp/ai_client_portal_prev_sha ]; then
+              echo "No previous commit recorded - cannot auto-rollback."
+              exit 1
+            fi
+            PREV_SHA=$(cat /tmp/ai_client_portal_prev_sha)
+            echo "Rolling back to $PREV_SHA"
+            git reset --hard "$PREV_SHA"
+            docker compose up -d --build
+            echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ROLLED BACK to $PREV_SHA after failed deploy/health check" >> ~/ai-client-portal/deploy.log

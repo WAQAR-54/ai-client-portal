@@ -8,3 +8,4 @@ staticfiles/
 *.log
 logs/
 media/
+docs/LOCAL_ACCESS.md
