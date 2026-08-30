@@ -303,13 +303,22 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Production hardening. Cloudflare/Nginx terminate TLS in front of this app
 # (see deployment/), so these only bite once DEBUG=False in a real deploy —
 # they'd break plain-HTTP local dev otherwise.
+#
+# FORCE_HTTPS defaults True (the real production posture) but is overridable
+# for a transitional bare-IP deploy that has no domain/cert yet, where
+# nothing listens on 443 at all. All of SECURE_SSL_REDIRECT/cookie-Secure/HSTS
+# are tied to the SAME flag deliberately: turning off just the redirect while
+# leaving Secure-flagged cookies on would make browsers silently refuse to
+# send/store the session or CSRF cookie over plain HTTP - login would look
+# like it works (the POST succeeds) but never actually stick.
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    FORCE_HTTPS = env.bool("FORCE_HTTPS", default=True)
+    SECURE_SSL_REDIRECT = FORCE_HTTPS
+    SESSION_COOKIE_SECURE = FORCE_HTTPS
+    CSRF_COOKIE_SECURE = FORCE_HTTPS
+    SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=31536000) if FORCE_HTTPS else 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = FORCE_HTTPS
+    SECURE_HSTS_PRELOAD = FORCE_HTTPS
     # Nginx sits between Cloudflare and Gunicorn and sets this per deployment/nginx.conf.example.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
