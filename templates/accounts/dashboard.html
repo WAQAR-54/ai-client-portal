@@ -1,12 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Dashboard" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
+{% trans "No department assigned" as no_dept_label %}
 <div class="card">
-    <h1>Welcome, {{ user.email }}</h1>
+    <h1>{% blocktrans %}Welcome, {{ user.email }}{% endblocktrans %}</h1>
     <p>
-        <span class="badge">{{ user.role }}</span>
-        <span class="text-muted" style="margin-left:0.5rem;">{{ user.department|default:"No department assigned" }}</span>
+        <span class="badge">{{ user.get_role_display }}</span>
+        <span class="text-muted" style="margin-left:0.5rem;">{{ user.department|default:no_dept_label }}</span>
     </p>
-    <p class="mt-4"><a href="{% url 'chat:chat_home' %}" class="btn">Open Chat →</a></p>
+    <p class="mt-4"><a href="{% url 'chat:chat_home' %}" class="btn">{% trans "Open Chat" %} →</a></p>
 </div>
 {% endblock %}

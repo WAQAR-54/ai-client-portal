@@ -1,18 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Chat — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Chat" %} — {% trans "AI Client Portal" %}{% endblock %}
 
 {% block sidebar %}
-<a class="brand" href="{% url 'accounts:dashboard' %}"><span class="dot"></span>AI Client Portal</a>
+<a class="brand" href="{% url 'accounts:dashboard' %}"><span class="dot"></span>{% trans "AI Client Portal" %}</a>
 <form method="post" action="{% url 'chat:create_conversation' %}" class="new-chat-form">
     {% csrf_token %}
-    <button type="submit" class="btn">
+    <button type="submit" class="btn" id="tour-new-chat">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        New chat
+        {% trans "New chat" %}
     </button>
 </form>
 <div class="filter-search sidebar-conv-search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="search" id="conv-search-input" placeholder="Search conversations..." autocomplete="off">
+    <input type="search" id="conv-search-input" placeholder="{% trans 'Search conversations...' %}" autocomplete="off">
 </div>
 <div class="conv-list-wrap">
     {% include "chat/_conversation_list.html" %}
@@ -22,7 +23,7 @@
         <div class="skeleton-block"></div>
     </div>
     <div id="conv-search-empty" class="sidebar-empty-state" style="display:none;">
-        <p>No matching conversations.</p>
+        <p>{% trans "No matching conversations." %}</p>
     </div>
 </div>
 <script>
@@ -65,19 +66,6 @@
     });
 })();
 </script>
-<div id="usage-widget"
-     hx-get="{% url 'chat:usage_widget' %}{% if conversation %}?conversation_id={{ conversation.id }}{% endif %}"
-     hx-trigger="load, every 20s, refreshUsage from:body" hx-swap="innerHTML">
-    {% include "chat/_usage_widget.html" %}
-</div>
-{% if can_request_upgrade %}
-<div class="sidebar-upgrade">
-    <form method="post" action="{% url 'chat:request_upgrade' %}">
-        {% csrf_token %}
-        <button type="submit" class="btn-small btn-ghost" style="width:100%;">Request upgrade</button>
-    </form>
-</div>
-{% endif %}
 <div class="app-sidebar-footer">
     <div class="sidebar-user-chip">
         <span class="msg-avatar msg-avatar-user">{{ user.email|first|upper }}</span>
@@ -85,88 +73,241 @@
         <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"></div>
     </div>
     {% if user.is_admin %}
-    <a href="{% url 'governance:dashboard' %}">
+    <a href="{% url 'governance:dashboard' %}" id="tour-admin-link">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-        Admin
+        {% trans "Admin" %}
     </a>
     {% endif %}
     <a href="{% url 'accounts:profile' %}">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Settings
+        {% trans "Settings" %}
     </a>
     <form method="post" action="{% url 'accounts:logout' %}">
         {% csrf_token %}
         <button type="submit" class="link-btn">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            Log out
+            {% trans "Log out" %}
         </button>
     </form>
 </div>
 {% endblock %}
 
 {% block content %}
+<div id="quick-switcher-overlay" class="quick-switcher-overlay" style="display:none;">
+    <div class="quick-switcher-box">
+        <input type="text" id="quick-switcher-input" class="input" placeholder="{% trans 'Search conversations, or start a new one...' %}" autocomplete="off">
+        <div id="quick-switcher-results" class="quick-switcher-results"></div>
+    </div>
+</div>
+<script>
+(function() {
+    var overlay = document.getElementById("quick-switcher-overlay");
+    var input = document.getElementById("quick-switcher-input");
+    var results = document.getElementById("quick-switcher-results");
+    var newChatUrl = "{% url 'chat:create_conversation' %}";
+    var csrfToken = "{{ csrf_token }}";
+
+    function escapeHtml(s) {
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function getConversations() {
+        return Array.from(document.querySelectorAll(".conv-item-link")).map(function(a) {
+            var span = a.querySelector("span");
+            return {href: a.getAttribute("href"), title: span ? span.textContent : a.textContent};
+        });
+    }
+
+    function render(query) {
+        query = (query || "").trim().toLowerCase();
+        var items = getConversations().filter(function(c) {
+            return !query || c.title.toLowerCase().indexOf(query) !== -1;
+        });
+        var html = '<form method="post" action="' + newChatUrl + '">' +
+            '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+            '<button type="submit" class="quick-switcher-item quick-switcher-item-new">' +
+            '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+            '{% trans "New chat" %}</button></form>';
+        items.slice(0, 8).forEach(function(c) {
+            html += '<a class="quick-switcher-item" href="' + c.href + '">' +
+                '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>' +
+                escapeHtml(c.title) + '</a>';
+        });
+        if (query && items.length === 0) {
+            html += '<div class="quick-switcher-empty">{% trans "No matching conversations." %}</div>';
+        }
+        results.innerHTML = html;
+    }
+
+    function openSwitcher() {
+        overlay.style.display = "flex";
+        input.value = "";
+        render("");
+        setTimeout(function() { input.focus(); }, 0);
+    }
+    function closeSwitcher() {
+        overlay.style.display = "none";
+    }
+
+    document.addEventListener("keydown", function(evt) {
+        if ((evt.ctrlKey || evt.metaKey) && (evt.key === "k" || evt.key === "K")) {
+            evt.preventDefault();
+            if (overlay.style.display === "flex") { closeSwitcher(); } else { openSwitcher(); }
+        } else if (evt.key === "Escape" && overlay.style.display === "flex") {
+            closeSwitcher();
+        }
+    });
+    overlay.addEventListener("mousedown", function(evt) {
+        if (evt.target === overlay) closeSwitcher();
+    });
+    input.addEventListener("input", function() { render(input.value); });
+})();
+</script>
 <section class="chat-panel">
+    <header class="chat-header">
+        <span class="chat-toolbar-title">{% if conversation %}{{ conversation.title }}{% endif %}</span>
+        <div class="chat-header-actions">
+            {% if conversation %}
+            <details class="export-menu">
+                <summary class="btn-small btn-ghost no-marker" title="{% trans 'Export conversation' %}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                </summary>
+                <div class="export-menu-panel">
+                    <a href="{% url 'chat:export_conversation_pdf' conversation_id=conversation.id %}">{% trans "Export as PDF" %}</a>
+                    <a href="{% url 'chat:export_conversation_markdown' conversation_id=conversation.id %}">{% trans "Export as Markdown" %}</a>
+                    <a href="{% url 'chat:export_conversation_text' conversation_id=conversation.id %}">{% trans "Export as plain text" %}</a>
+                </div>
+            </details>
+            {% endif %}
+            <details class="usage-popover">
+                <summary class="btn-small btn-ghost no-marker" id="tour-usage-btn">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+                    {% trans "Usage" %}
+                </summary>
+                <div class="usage-popover-panel">
+                    {% if plan_status.plan %}
+                    <p class="text-muted" style="margin:0 0 0.6rem; font-size:0.85rem;">
+                        {% trans "Plan:" %} <span class="badge">{{ plan_status.plan.name }}</span>
+                        {% if plan_status.state == "grace" %}
+                            <span class="badge badge-danger">{% blocktrans with days=plan_status.grace_days_remaining %}Trial ended — {{ days }}d left{% endblocktrans %}</span>
+                        {% elif plan_status.state == "expired" %}
+                            <span class="badge badge-danger">{% trans "Trial ended" %}</span>
+                        {% elif plan_status.days_remaining is not None %}
+                            <span class="badge badge-muted">{% blocktrans with days=plan_status.days_remaining %}{{ days }}d left{% endblocktrans %}</span>
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                    <div class="usage-widget-card">
+                        {% include "chat/_usage_widget.html" %}
+                    </div>
+                    {% if can_request_upgrade %}
+                    <details class="mt-3">
+                        <summary class="btn-small btn-ghost no-marker">{% trans "Request upgrade" %}</summary>
+                        <form method="post" action="{% url 'chat:request_upgrade' %}" class="mt-2">
+                            {% csrf_token %}
+                            <select class="input" name="requested_plan_id">
+                                <option value="">{% trans "Not sure — let the admin decide" %}</option>
+                                {% for p in upgrade_plan_choices %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <textarea class="input" name="message" rows="2" placeholder="{% trans 'Anything else to add? (optional)' %}"></textarea>
+                            <button type="submit" class="btn-small mt-2">{% trans "Send request" %}</button>
+                        </form>
+                    </details>
+                    {% endif %}
+                </div>
+            </details>
+            <details class="profile-menu">
+                <summary class="profile-avatar">{{ user.email|first|upper }}</summary>
+                <div class="profile-dropdown">
+                    <div class="profile-dropdown-email">{{ user.email }}<span class="badge">{{ user.get_role_display }}</span></div>
+                    <a href="{% url 'accounts:profile' %}">{% trans "Profile settings" %}</a>
+                    <form method="post" action="{% url 'accounts:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit">{% trans "Log out" %}</button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    </header>
     {% if plan_status.state == "grace" %}
     <div class="alert alert-warning" style="margin:1rem 1rem 0;">
-        Your trial has ended. You have <strong>{{ plan_status.grace_days_remaining }} day(s)</strong> of read-only
-        access left — you can still view past conversations, but new messages are blocked. Contact your administrator to continue.
+        {% blocktrans with days=plan_status.grace_days_remaining %}Your trial has ended. You have <strong>{{ days }} day(s)</strong> of read-only
+        access left — you can still view past conversations, but new messages are blocked. Contact your administrator to continue.{% endblocktrans %}
     </div>
     {% elif plan_status.state == "expired" %}
     <div class="alert alert-danger" style="margin:1rem 1rem 0;">
-        Your trial has ended — contact your administrator to continue.
+        {% trans "Your trial has ended — contact your administrator to continue." %}
     </div>
     {% endif %}
     {% if not has_models_available %}
     <div class="alert alert-warning" style="margin:1rem 1rem 0;">
-        No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work.
+        {% trans "No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work." %}
     </div>
     {% endif %}
 
     {% if conversation %}
-    <div class="chat-toolbar">
-        <span class="chat-toolbar-title">{{ conversation.title }}</span>
-    </div>
     <div id="messages" class="chat-messages">
         <div class="chat-column">
             {% for m in messages_list %}
-                {% include "chat/_message_bubble.html" with message=m %}
+                {% include "chat/_message_bubble.html" with message=m is_last=forloop.last %}
             {% endfor %}
         </div>
     </div>
     <div class="chat-composer-wrap">
+        <div id="edit-banner" class="edit-banner" style="display:none;">
+            <span>{% trans "Editing message — sending will regenerate the reply" %}</span>
+            <button type="button" class="link-btn" onclick="portalCancelEdit()">{% trans "Cancel" %}</button>
+        </div>
         <div class="composer-toolbar">
             <select class="model-select" name="model_id" id="model-select">
-                <option value="">Auto (smart routing)</option>
+                <option value="">{% trans "Auto (smart routing)" %}</option>
                 {% regroup available_models by get_tier_display as tier_groups %}
                 {% for group in tier_groups %}
                 <optgroup label="{{ group.grouper }}">
                     {% for m in group.list %}
-                    <option value="{{ m.id }}">{{ m.model_name }}</option>
+                    <option value="{{ m.id }}">{{ m.display_label }}</option>
                     {% endfor %}
                 </optgroup>
                 {% endfor %}
             </select>
+            <details class="template-picker" id="prompt-template-picker">
+                <summary class="btn-small btn-ghost no-marker" title="{% trans 'Insert a saved prompt (or type "/")' %}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    {% trans "Templates" %}
+                </summary>
+                <div class="template-picker-panel" id="prompt-template-picker-panel"
+                     hx-get="{% url 'chat:prompt_template_list' %}" hx-trigger="load" hx-swap="innerHTML">
+                </div>
+            </details>
+            <button type="button" class="btn-small btn-ghost" id="save-template-btn" title="{% trans 'Save the current composer text as a template' %}">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                {% trans "Save as template" %}
+            </button>
         </div>
         <form id="composer-form" class="chat-composer"
               hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
               hx-target="#messages .chat-column" hx-swap="beforeend"
               hx-encoding="multipart/form-data"
               hx-include="#model-select"
-              hx-on::after-request="this.reset(); document.getElementById('composer-textarea').style.height='auto'; htmx.trigger(document.body, 'refreshUsage');">
+              hx-on::after-request="this.reset(); document.getElementById('composer-textarea').style.height='auto'; portalResetComposerAttrs();">
             {% csrf_token %}
-            <label class="attach-btn" title="Attach a file">
+            <label class="attach-btn" title="{% trans 'Attach a PDF, Word, Excel, or text file — its content is read into this message as context' %}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                <input type="file" name="attachment" style="display:none;">
+                <input type="file" name="attachment" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
             </label>
-            <textarea id="composer-textarea" class="input" name="content" placeholder="Message the assistant..."
+            <textarea id="composer-textarea" class="input" name="content" placeholder="{% trans 'Message the assistant...' %}"
                       rows="1" autocomplete="off"
                       onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.closest('form').requestSubmit();}"
                       oninput="this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,200)+'px';"></textarea>
-            <button type="submit" class="send-btn" title="Send">
+            <button type="submit" class="send-btn" title="{% trans 'Send' %}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
         </form>
-        <p class="chat-disclaimer">AI responses may be inaccurate. Verify important information.</p>
+        <p class="chat-disclaimer">{% trans "AI responses may be inaccurate. Verify important information." %}</p>
     </div>
     <script>
     (function() {
@@ -209,8 +350,216 @@
         <div class="empty-icon-badge">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
         </div>
-        <p>Select a conversation from the sidebar, or start a new one.</p>
+        <h2>{% trans "Start a new conversation" %}</h2>
+        <p>{% trans "Select a conversation from the sidebar, or start a fresh one below." %}</p>
+        <form method="post" action="{% url 'chat:create_conversation' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                {% trans "New chat" %}
+            </button>
+        </form>
     </div>
     {% endif %}
 </section>
+<script>
+function portalResetComposerAttrs() {
+    var form = document.getElementById("composer-form");
+    if (!form || !form.dataset.defaultPost) return;
+    form.setAttribute("hx-post", form.dataset.defaultPost);
+    form.setAttribute("hx-target", form.dataset.defaultTarget);
+    form.setAttribute("hx-swap", form.dataset.defaultSwap);
+    htmx.process(form);
+    var banner = document.getElementById("edit-banner");
+    if (banner) banner.style.display = "none";
+}
+function portalStartEdit(btn) {
+    var form = document.getElementById("composer-form");
+    var textarea = document.getElementById("composer-textarea");
+    if (!form.dataset.defaultPost) {
+        form.dataset.defaultPost = form.getAttribute("hx-post");
+        form.dataset.defaultTarget = form.getAttribute("hx-target");
+        form.dataset.defaultSwap = form.getAttribute("hx-swap");
+    }
+    form.setAttribute("hx-post", btn.getAttribute("data-edit-url"));
+    form.setAttribute("hx-target", "#messages .chat-column");
+    form.setAttribute("hx-swap", "innerHTML");
+    htmx.process(form);
+    textarea.value = btn.getAttribute("data-content");
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+    textarea.focus();
+    document.getElementById("edit-banner").style.display = "flex";
+}
+function portalCancelEdit() {
+    portalResetComposerAttrs();
+    var textarea = document.getElementById("composer-textarea");
+    textarea.value = "";
+    textarea.style.height = "auto";
+}
+function portalCopyMessage(btn) {
+    var text = btn.getAttribute("data-copy-text");
+    navigator.clipboard.writeText(text).then(function() {
+        var original = btn.innerHTML;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        btn.classList.add("msg-action-copied");
+        setTimeout(function() {
+            btn.innerHTML = original;
+            btn.classList.remove("msg-action-copied");
+        }, 1200);
+    });
+}
+
+(function() {
+    var picker = document.getElementById("prompt-template-picker");
+    var textarea = document.getElementById("composer-textarea");
+    var saveBtn = document.getElementById("save-template-btn");
+    if (!picker || !textarea) return;
+
+    function insertIntoComposer(text) {
+        textarea.value = text;
+        textarea.style.height = "auto";
+        textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+        textarea.focus();
+        picker.open = false;
+    }
+
+    // Event delegation: the picker's contents are swapped in by htmx (on
+    // load, and again after save/delete), so listening on the stable
+    // <details> wrapper - rather than on individual .template-item-insert
+    // buttons that get replaced - means this never needs re-attaching.
+    picker.addEventListener("click", function(evt) {
+        var btn = evt.target.closest(".template-item-insert");
+        if (btn) insertIntoComposer(btn.getAttribute("data-content"));
+    });
+
+    // "/" as the very first character in an empty composer opens the
+    // picker instead of being typed, per the spec's suggested slash-command.
+    textarea.addEventListener("input", function() {
+        if (textarea.value === "/") {
+            textarea.value = "";
+            picker.open = true;
+        }
+    });
+
+    if (saveBtn) {
+        saveBtn.addEventListener("click", function() {
+            var content = textarea.value.trim();
+            if (!content) {
+                alert("{% trans 'Type something in the composer first, then save it as a template.' %}");
+                return;
+            }
+            var name = window.prompt("{% trans 'Name this template:' %}");
+            if (!name || !name.trim()) return;
+            var formData = new FormData();
+            formData.append("name", name.trim());
+            formData.append("content", content);
+            fetch("{% url 'chat:save_prompt_template' %}", {
+                method: "POST",
+                headers: {"X-CSRFToken": "{{ csrf_token }}"},
+                body: formData,
+            }).then(function(resp) { return resp.text(); }).then(function(html) {
+                document.getElementById("prompt-template-picker-panel").innerHTML = html;
+            });
+        });
+    }
+})();
+</script>
+
+{% if not user.has_seen_onboarding %}
+<div id="onboarding-overlay" class="onboarding-overlay" style="display:none;">
+    <div id="onboarding-ring" class="onboarding-ring"></div>
+    <div id="onboarding-card" class="onboarding-card">
+        <div class="onboarding-card-step" id="onboarding-step-label"></div>
+        <h3 id="onboarding-title"></h3>
+        <p id="onboarding-body"></p>
+        <div class="onboarding-card-actions">
+            <button type="button" id="onboarding-skip" class="btn-small btn-ghost">{% trans "Skip" %}</button>
+            <button type="button" id="onboarding-next" class="btn-small">{% trans "Next" %}</button>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    var steps = [
+        {selector: "#tour-new-chat", title: "{% trans 'Start a new conversation' %}", body: "{% trans 'Click here any time to begin a fresh chat.' %}"},
+        {selector: "#tour-usage-btn", title: "{% trans 'Track your usage' %}", body: "{% trans 'See your token and budget usage here, and request an upgrade if you need more.' %}"},
+        {selector: "#model-select", title: "{% trans 'Pick a model' %}", body: "{% trans 'Auto-routing picks a model for you, or choose one manually here once a conversation is open.' %}"},
+        {selector: "#tour-admin-link", title: "{% trans 'Admin dashboard' %}", body: "{% trans 'Manage users, models, limits, and more from here.' %}"}
+    ];
+
+    var overlay = document.getElementById("onboarding-overlay");
+    var ring = document.getElementById("onboarding-ring");
+    var card = document.getElementById("onboarding-card");
+    var stepLabel = document.getElementById("onboarding-step-label");
+    var titleEl = document.getElementById("onboarding-title");
+    var bodyEl = document.getElementById("onboarding-body");
+    var nextBtn = document.getElementById("onboarding-next");
+    var skipBtn = document.getElementById("onboarding-skip");
+    var current = -1;
+    var visibleSteps = [];
+
+    function finish() {
+        overlay.style.display = "none";
+        fetch("{% url 'accounts:complete_onboarding' %}", {
+            method: "POST",
+            headers: {"X-CSRFToken": "{{ csrf_token }}"},
+        });
+    }
+
+    function position(target) {
+        var r = target.getBoundingClientRect();
+        var pad = 6;
+        ring.style.top = (r.top - pad) + "px";
+        ring.style.left = (r.left - pad) + "px";
+        ring.style.width = (r.width + pad * 2) + "px";
+        ring.style.height = (r.height + pad * 2) + "px";
+
+        var cardTop = r.bottom + 14;
+        if (cardTop + 160 > window.innerHeight) cardTop = Math.max(14, r.top - 174);
+        var cardLeft = Math.min(Math.max(14, r.left), window.innerWidth - 320);
+        card.style.top = cardTop + "px";
+        card.style.left = cardLeft + "px";
+    }
+
+    var stepLabelFormat = "{% trans 'Step {current} of {total}' %}";
+    var doneLabel = "{% trans 'Done' %}";
+    var nextLabel = "{% trans 'Next' %}";
+
+    function showStep(index) {
+        current = index;
+        var step = visibleSteps[index];
+        var target = document.querySelector(step.selector);
+        if (!target) { advance(); return; }
+        stepLabel.textContent = stepLabelFormat.replace("{current}", index + 1).replace("{total}", visibleSteps.length);
+        titleEl.textContent = step.title;
+        bodyEl.textContent = step.body;
+        nextBtn.textContent = index === visibleSteps.length - 1 ? doneLabel : nextLabel;
+        position(target);
+    }
+
+    function advance() {
+        if (current + 1 >= visibleSteps.length) { finish(); return; }
+        showStep(current + 1);
+    }
+
+    function start() {
+        visibleSteps = steps.filter(function(s) { return document.querySelector(s.selector); });
+        if (!visibleSteps.length) { finish(); return; }
+        overlay.style.display = "block";
+        showStep(0);
+    }
+
+    nextBtn.addEventListener("click", advance);
+    skipBtn.addEventListener("click", finish);
+    window.addEventListener("resize", function() { if (current >= 0 && overlay.style.display !== "none") showStep(current); });
+
+    // The model selector only exists once a conversation is open - on a
+    // first-ever login there isn't one yet, so that step is naturally
+    // skipped (via the querySelector filter building visibleSteps above)
+    // rather than blocking the tour on creating a conversation first.
+    start();
+})();
+</script>
+{% endif %}
 {% endblock %}

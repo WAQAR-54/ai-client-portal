@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db.models import F, Sum
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from chat.models import Message
 from governance.models import UsageLimit
@@ -40,14 +41,17 @@ def validate_upload(user, uploaded_file):
     max_mb = (limit.max_upload_size_mb if limit else None) or settings.DEFAULT_MAX_UPLOAD_SIZE_MB
     max_bytes = max_mb * 1024 * 1024
     if uploaded_file.size > max_bytes:
-        raise UploadRejected(f"File is too large. Max size is {max_mb}MB.")
+        raise UploadRejected(_("File is too large. Max size is %(max_mb)sMB.") % {"max_mb": max_mb})
 
     allowed_raw = (limit.allowed_file_extensions if limit else "") or settings.DEFAULT_ALLOWED_FILE_EXTENSIONS
     allowed_extensions = {ext.strip().lower().lstrip(".") for ext in allowed_raw.split(",") if ext.strip()}
     file_extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
     if file_extension not in allowed_extensions:
         allowed_list = ", ".join(sorted(allowed_extensions))
-        raise UploadRejected(f"File type '.{file_extension or '?'}' isn't allowed. Allowed types: {allowed_list}.")
+        raise UploadRejected(
+            _("File type '.%(ext)s' isn't allowed. Allowed types: %(allowed)s.")
+            % {"ext": file_extension or "?", "allowed": allowed_list}
+        )
 
 
 def check_usage_limits(user, conversation):
@@ -58,11 +62,13 @@ def check_usage_limits(user, conversation):
 
     plan_state = get_plan_status(user)["state"]
     if plan_state == "expired":
-        raise UsageLimitExceeded("Your trial has ended — contact your administrator.")
+        raise UsageLimitExceeded(_("Your trial has ended — contact your administrator."))
     if plan_state == "grace":
         raise UsageLimitExceeded(
-            "Your trial has ended. You're in a short grace period with read-only access — "
-            "contact your administrator to continue chatting."
+            _(
+                "Your trial has ended. You're in a short grace period with read-only access — "
+                "contact your administrator to continue chatting."
+            )
         )
 
     limit = _effective_limit(user)
@@ -86,7 +92,7 @@ def check_usage_limits(user, conversation):
             or 0
         )
         if used >= limit.daily_token_cap:
-            raise UsageLimitExceeded("Daily token limit reached. Try again tomorrow.")
+            raise UsageLimitExceeded(_("Daily token limit reached. Try again tomorrow."))
 
     if limit.monthly_token_cap is not None:
         used = (
@@ -96,7 +102,7 @@ def check_usage_limits(user, conversation):
             or 0
         )
         if used >= limit.monthly_token_cap:
-            raise UsageLimitExceeded("Monthly token limit reached.")
+            raise UsageLimitExceeded(_("Monthly token limit reached."))
 
     if limit.budget_cap_currency is not None:
         spent = (
@@ -106,12 +112,12 @@ def check_usage_limits(user, conversation):
             or 0
         )
         if spent >= limit.budget_cap_currency:
-            raise UsageLimitExceeded("Monthly budget cap reached.")
+            raise UsageLimitExceeded(_("Monthly budget cap reached."))
 
     if limit.session_limit is not None:
         sent = conversation.messages.filter(role=Message.Role.USER).count()
         if sent >= limit.session_limit:
-            raise UsageLimitExceeded("Message limit reached for this conversation. Start a new chat.")
+            raise UsageLimitExceeded(_("Message limit reached for this conversation. Start a new chat."))
 
 
 def _metric(label, used, cap):
@@ -141,24 +147,24 @@ def get_usage_status(user, conversation=None):
         used = assistant_messages.filter(created_at__gte=today_start).aggregate(
             total=Sum(F("input_tokens") + F("output_tokens")),
         )["total"]
-        metrics.append(_metric("Tokens today", used, limit.daily_token_cap))
+        metrics.append(_metric(_("Tokens today"), used, limit.daily_token_cap))
 
     if limit.monthly_token_cap is not None:
         used = assistant_messages.filter(created_at__gte=month_start).aggregate(
             total=Sum(F("input_tokens") + F("output_tokens")),
         )["total"]
-        metrics.append(_metric("Tokens this month", used, limit.monthly_token_cap))
+        metrics.append(_metric(_("Tokens this month"), used, limit.monthly_token_cap))
 
     if limit.budget_cap_currency is not None:
         spent = assistant_messages.filter(created_at__gte=month_start).aggregate(
             total=Sum("estimated_cost"),
         )["total"]
-        metrics.append(_metric("Budget this month", spent, limit.budget_cap_currency))
+        metrics.append(_metric(_("Budget this month"), spent, limit.budget_cap_currency))
         metrics[-1]["is_currency"] = True
 
     if limit.session_limit is not None and conversation is not None:
         sent = conversation.messages.filter(role=Message.Role.USER).count()
-        metrics.append(_metric("Messages in this chat", sent, limit.session_limit))
+        metrics.append(_metric(_("Messages in this chat"), sent, limit.session_limit))
 
     worst = max(metrics, key=lambda m: m["pct"]) if metrics else None
     return {

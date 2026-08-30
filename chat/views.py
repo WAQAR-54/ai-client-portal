@@ -3,17 +3,21 @@ import re
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import FileResponse, Http404, StreamingHttpResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 from sentry_sdk import capture_exception
 
-from chat.models import Conversation, Message, ModelConfig
+from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
+from chat.document_extraction import EXTRACTABLE_EXTENSIONS, extract_text, wrap_for_prompt
+from chat.export import render_conversation_markdown, render_conversation_pdf, render_conversation_text
+from chat.response_cache import get_cached_response, store_cached_response
 from chat.router import NoModelAvailableError, classify_complexity, models_visible_to_user, select_model_candidates
 from chat.utils import group_conversations
 from governance.audit import log_action
@@ -68,16 +72,11 @@ def chat_home(request, conversation_id=None):
         "messages_list": conversation.messages.all() if conversation else [],
         "has_models_available": available_models.exists(),
         "available_models": available_models,
-        "usage": get_usage_status(request.user, conversation=conversation),
         "plan_status": plan_status,
-        "can_request_upgrade": bool(
-            plan_status["plan"]
-            and Plan.objects.filter(
-                is_active=True,
-                is_visible_to_admins=True,
-            )
-            .exclude(pk=plan_status["plan"].pk)
-            .exists(),
+        "usage": get_usage_status(request.user, conversation=conversation),
+        "can_request_upgrade": bool(plan_status["plan"]),
+        "upgrade_plan_choices": Plan.objects.filter(is_active=True, is_visible_to_admins=True).exclude(
+            pk=plan_status["plan"].pk if plan_status["plan"] else None,
         ),
     }
     return render(request, "chat/chat_home.html", context)
@@ -98,26 +97,15 @@ def _conversation_list_context(request, active_conversation=None):
 
 @login_required
 @require_GET
-def usage_widget(request):
-    """Fragment for the sidebar usage widget — this user's own usage only,
-    read-only. Polled periodically and refreshed after each send."""
-    conversation = None
-    conversation_id = request.GET.get("conversation_id")
-    if conversation_id:
-        conversation = Conversation.objects.filter(id=conversation_id, user=request.user).first()
-    usage = get_usage_status(request.user, conversation=conversation)
-    return render(request, "chat/_usage_widget.html", {"usage": usage})
-
-
-@login_required
-@require_GET
 def render_message(request, conversation_id, message_id):
     """Returns one message's final rendered bubble — used to swap a
     streamed reply's plain-text bubble for the Markdown-rendered version
     once the stream finishes (see _message_pending.html's sse:done hook)."""
     conversation = _owned_conversation_or_404(request, conversation_id)
     message = get_object_or_404(Message, id=message_id, conversation=conversation)
-    return render(request, "chat/_message_bubble.html", {"message": message})
+    # Always the newest message at the moment its stream finishes - safe to
+    # treat as "last" so the Regenerate action becomes available on it.
+    return render(request, "chat/_message_bubble.html", {"message": message, "is_last": True})
 
 
 @login_required
@@ -125,16 +113,32 @@ def render_message(request, conversation_id, message_id):
 def request_upgrade(request):
     from django.contrib import messages
 
-    from governance.models import UpgradeRequest
+    from governance.models import Plan, UpgradeRequest
     from governance.plans import get_assignment
 
     assignment = get_assignment(request.user)
+    current_plan = assignment.plan if assignment else None
+
+    requested_plan = None
+    requested_plan_id = request.POST.get("requested_plan_id", "").strip()
+    if requested_plan_id:
+        requested_plan = (
+            Plan.objects.filter(
+                id=requested_plan_id,
+                is_active=True,
+                is_visible_to_admins=True,
+            )
+            .exclude(pk=current_plan.pk if current_plan else None)
+            .first()
+        )
+
     UpgradeRequest.objects.create(
         user=request.user,
-        current_plan=assignment.plan if assignment else None,
+        current_plan=current_plan,
+        requested_plan=requested_plan,
         message=request.POST.get("message", "").strip(),
     )
-    messages.success(request, "Upgrade request sent — an admin will review it soon.")
+    messages.success(request, _("Upgrade request sent — an admin will review it soon."))
     return redirect("chat:chat_home")
 
 
@@ -152,7 +156,7 @@ def create_conversation(request):
         messages.warning(request, str(exc))
         return redirect("chat:chat_home")
 
-    conversation = Conversation.objects.create(user=request.user, title="New chat")
+    conversation = Conversation.objects.create(user=request.user, title=_("New chat"))
     return redirect("chat:chat_conversation", conversation_id=conversation.id)
 
 
@@ -214,7 +218,7 @@ def post_message(request, conversation_id):
         return render(
             request,
             "chat/_limit_exceeded.html",
-            {"message": "Type a message or attach a file first."},
+            {"message": _("Type a message or attach a file first.")},
             status=400,
         )
 
@@ -225,7 +229,7 @@ def post_message(request, conversation_id):
             return render(
                 request,
                 "chat/_limit_exceeded.html",
-                {"message": "File upload isn't included in your current plan."},
+                {"message": _("File upload isn't included in your current plan.")},
                 status=403,
             )
         try:
@@ -286,6 +290,188 @@ def post_message(request, conversation_id):
     )
 
 
+@login_required
+@require_http_methods(["POST"])
+def edit_message(request, conversation_id, message_id):
+    """Editing a user message regenerates the conversation forward from that
+    point - matches ChatGPT/Claude: the original message and every reply
+    that came after it are discarded, not kept as a branch (confirmed with
+    the user rather than guessed, since the alternative - versioned
+    branches - needs a real data model change)."""
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    message = get_object_or_404(Message, id=message_id, conversation=conversation, role=Message.Role.USER)
+    content = request.POST.get("content", "").strip()
+    if not content:
+        return render(request, "chat/_limit_exceeded.html", {"message": _("Type a message first.")}, status=400)
+
+    with transaction.atomic():
+        conversation = get_object_or_404(
+            Conversation.objects.select_for_update(), id=conversation_id, user=request.user
+        )
+        try:
+            check_usage_limits(request.user, conversation)
+        except UsageLimitExceeded as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
+
+        Message.objects.filter(conversation=conversation, id__gte=message.id).delete()
+        Conversation.objects.filter(pk=conversation.pk).update(updated_at=timezone.now())
+        new_user_message = Message.objects.create(conversation=conversation, role=Message.Role.USER, content=content)
+        pending_assistant_message = Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content=""
+        )
+
+    prior_messages = list(conversation.messages.exclude(id__in=[new_user_message.id, pending_assistant_message.id]))
+    return render(
+        request,
+        "chat/_conversation_messages.html",
+        {
+            "prior_messages": prior_messages,
+            "conversation": conversation,
+            "pending_message": pending_assistant_message,
+            "user_message": new_user_message,
+            "model_id": "",
+        },
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def regenerate_message(request, conversation_id, message_id):
+    """Regenerating replaces this exact reply in place (same row/id reset
+    back to pending) rather than deleting/recreating it - confirmed with the
+    user as the intended behavior, and it means messages that came after
+    this one (if any) are left untouched instead of needing to be
+    truncated too."""
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    message = get_object_or_404(Message, id=message_id, conversation=conversation, role=Message.Role.ASSISTANT)
+
+    try:
+        check_usage_limits(request.user, conversation)
+    except UsageLimitExceeded as exc:
+        return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
+
+    message.content = ""
+    message.model_used = None
+    message.input_tokens = None
+    message.output_tokens = None
+    message.estimated_cost = None
+    message.save(update_fields=["content", "model_used", "input_tokens", "output_tokens", "estimated_cost"])
+
+    return render(
+        request,
+        "chat/_pending_assistant_row.html",
+        {"conversation": conversation, "pending_message": message, "model_id": ""},
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def submit_feedback(request, conversation_id, message_id):
+    """Thumbs up/down on an assistant reply, plus an optional follow-up
+    comment on a thumbs-down. Distinguishing the two is based on whether
+    `comment` was posted at all (a rating click never includes it; the
+    follow-up comment form always does, even if left empty) rather than on
+    `rating`, since the comment form doesn't need to resend it."""
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    message = get_object_or_404(Message, id=message_id, conversation=conversation, role=Message.Role.ASSISTANT)
+    existing = MessageFeedback.objects.filter(message=message).first()
+
+    comment = request.POST.get("comment")
+    if comment is None:
+        rating = request.POST.get("rating", "").strip()
+        if rating not in MessageFeedback.Rating.values:
+            return HttpResponseBadRequest("Invalid rating")
+        if existing and existing.rating == rating:
+            existing.delete()
+            feedback = None
+        else:
+            feedback, _ = MessageFeedback.objects.update_or_create(
+                message=message,
+                defaults={"user": request.user, "rating": rating, "model_used": message.model_used},
+            )
+    else:
+        if not existing:
+            return HttpResponseBadRequest("Rate the message before adding a comment")
+        existing.comment = comment.strip()[:500]
+        existing.save(update_fields=["comment", "updated_at"])
+        feedback = existing
+
+    return render(request, "chat/_message_feedback.html", {"message": message, "feedback": feedback})
+
+
+@login_required
+@require_GET
+def export_conversation_markdown(request, conversation_id):
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    body = render_conversation_markdown(conversation)
+    response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{_export_filename(conversation)}.md"'
+    return response
+
+
+@login_required
+@require_GET
+def export_conversation_text(request, conversation_id):
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    body = render_conversation_text(conversation)
+    response = HttpResponse(body, content_type="text/plain; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{_export_filename(conversation)}.txt"'
+    return response
+
+
+@login_required
+@require_GET
+def export_conversation_pdf(request, conversation_id):
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    pdf_bytes = render_conversation_pdf(conversation)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{_export_filename(conversation)}.pdf"'
+    return response
+
+
+def _export_filename(conversation):
+    slug = re.sub(r"[^a-z0-9]+", "-", conversation.title.lower()).strip("-") or "conversation"
+    return slug[:60]
+
+
+def _visible_prompt_templates(user):
+    """Personal templates + this user's department's team templates, if any."""
+    from django.db.models import Q
+
+    filters = Q(owner=user)
+    if user.department_id:
+        filters |= Q(department_id=user.department_id)
+    return PromptTemplate.objects.filter(filters)
+
+
+@login_required
+@require_GET
+def prompt_template_list(request):
+    return render(request, "chat/_prompt_template_picker.html", {"templates": _visible_prompt_templates(request.user)})
+
+
+@login_required
+@require_http_methods(["POST"])
+def save_prompt_template(request):
+    name = request.POST.get("name", "").strip()
+    content = request.POST.get("content", "").strip()
+    if not name or not content:
+        return render(
+            request, "chat/_limit_exceeded.html", {"message": _("A template needs both a name and text.")}, status=400
+        )
+    PromptTemplate.objects.create(owner=request.user, name=name[:100], content=content)
+    return render(request, "chat/_prompt_template_picker.html", {"templates": _visible_prompt_templates(request.user)})
+
+
+@login_required
+@require_http_methods(["POST"])
+def delete_prompt_template(request, template_id):
+    # Owner-only - a department template has owner=None and can never
+    # match here, so this can't be used to delete a team template.
+    get_object_or_404(PromptTemplate, id=template_id, owner=request.user).delete()
+    return render(request, "chat/_prompt_template_picker.html", {"templates": _visible_prompt_templates(request.user)})
+
+
 def _notify_if_usage_warning(user):
     """Fires the in-app+email "approaching a limit" notice the first time
     a user crosses 80% of any cap after a message - deduped to at most
@@ -313,15 +499,15 @@ def _notify_if_usage_warning(user):
     )
 
 
-TEXT_ATTACHMENT_EXTENSIONS = {"txt", "csv", "md", "json"}
-MAX_ATTACHMENT_CHARS_IN_PROMPT = 8000
-
-
 def _history_with_attachments(conversation, exclude_message_id):
     """Message history as provider-ready dicts, with the text content of
-    any small text-like attachment (txt/csv/md/json) appended inline.
-    Other file types (images, PDFs, office docs) are stored and shown in
-    the UI but not read by the model yet."""
+    any attachment we can extract from (txt/csv/md/json/pdf/docx/xlsx)
+    appended inline, delimited via document_extraction.wrap_for_prompt()
+    so the model treats it as reference material, never instructions (see
+    that module's docstring and the system prompt in chat/prompts.py -
+    this is the other required half of the same defense). Other file
+    types (images) are stored and shown in the UI but not read by the
+    model yet."""
     history = []
     messages = conversation.messages.exclude(id=exclude_message_id).order_by("created_at")
     for msg in messages:
@@ -329,15 +515,9 @@ def _history_with_attachments(conversation, exclude_message_id):
         if msg.attachment:
             name = msg.attachment_original_name
             extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-            if extension in TEXT_ATTACHMENT_EXTENSIONS:
-                try:
-                    with msg.attachment.open("rb") as f:
-                        file_text = f.read(MAX_ATTACHMENT_CHARS_IN_PROMPT + 1).decode("utf-8", errors="replace")
-                    if len(file_text) > MAX_ATTACHMENT_CHARS_IN_PROMPT:
-                        file_text = file_text[:MAX_ATTACHMENT_CHARS_IN_PROMPT] + "\n[...truncated...]"
-                    content = f"{content}\n\n[Attached file: {name}]\n{file_text}"
-                except (FileNotFoundError, OSError):
-                    content = f"{content}\n\n[Attached file: {name} — could not be read]"
+            extracted = extract_text(msg.attachment, extension) if extension in EXTRACTABLE_EXTENSIONS else None
+            if extracted is not None:
+                content = f"{content}\n\n{wrap_for_prompt(name, extracted)}"
             else:
                 content = f"{content}\n\n[Attached file: {name} (not readable by the assistant yet)]"
         history.append({"role": msg.role, "content": content})
@@ -388,6 +568,27 @@ def stream_message(request, conversation_id, message_id):
 
         system_prompt = build_system_prompt(request.user)
 
+        # Exact-match cache: only ever checked against candidates[0] (the
+        # model this request would actually use first), keyed on the full
+        # history so a repeat of the identical exchange - not just the
+        # same trailing message - is what's required to hit. See
+        # chat/response_cache.py for why the whole history is hashed.
+        cached = get_cached_response(request.user.id, candidates[0].id, system_prompt, history)
+        if cached is not None:
+            yield _sse_event("message", cached["text"])
+            message.content = cached["text"]
+            message.model_used = candidates[0]
+            message.input_tokens = cached["input_tokens"]
+            message.output_tokens = cached["output_tokens"]
+            message.estimated_cost = candidates[0].estimate_cost(
+                cached["input_tokens"] or 0, cached["output_tokens"] or 0
+            )
+            message.served_from_cache = True
+            message.save()
+            _notify_if_usage_warning(request.user)
+            yield _sse_event("done", "")
+            return
+
         # Provider fallback: if a candidate fails before it has streamed any
         # visible text, silently retry the next cheapest candidate (which is
         # usually the other provider) rather than surfacing a raw error —
@@ -432,6 +633,15 @@ def stream_message(request, conversation_id, message_id):
             message.output_tokens = output_tokens
             message.estimated_cost = model_config.estimate_cost(input_tokens or 0, output_tokens or 0)
             message.save()
+            store_cached_response(
+                request.user.id,
+                model_config.id,
+                system_prompt,
+                history,
+                text=full_text,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
             _notify_if_usage_warning(request.user)
             yield _sse_event("done", "")
             return

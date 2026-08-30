@@ -26,6 +26,38 @@ urlpatterns = [
         views.render_message,
         name="render_message",
     ),
-    path("usage-widget/", views.usage_widget, name="usage_widget"),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/edit/",
+        views.edit_message,
+        name="edit_message",
+    ),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/regenerate/",
+        views.regenerate_message,
+        name="regenerate_message",
+    ),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/feedback/",
+        views.submit_feedback,
+        name="submit_feedback",
+    ),
+    path(
+        "conversations/<int:conversation_id>/export/markdown/",
+        views.export_conversation_markdown,
+        name="export_conversation_markdown",
+    ),
+    path(
+        "conversations/<int:conversation_id>/export/text/",
+        views.export_conversation_text,
+        name="export_conversation_text",
+    ),
+    path(
+        "conversations/<int:conversation_id>/export/pdf/",
+        views.export_conversation_pdf,
+        name="export_conversation_pdf",
+    ),
+    path("templates/", views.prompt_template_list, name="prompt_template_list"),
+    path("templates/save/", views.save_prompt_template, name="save_prompt_template"),
+    path("templates/<int:template_id>/delete/", views.delete_prompt_template, name="delete_prompt_template"),
     path("request-upgrade/", views.request_upgrade, name="request_upgrade"),
 ]

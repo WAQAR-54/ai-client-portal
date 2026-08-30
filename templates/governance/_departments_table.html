@@ -1,6 +1,7 @@
-<div class="filter-result-count">Showing <span class="mono">{{ departments|length }}</span> of <span class="mono">{{ total_count }}</span> departments</div>
+{% load i18n %}
+<div class="filter-result-count">{% blocktrans count counter=departments|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> department{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> departments{% endblocktrans %}</div>
 <table class="data">
-    <thead><tr><th>Name</th><th>Monthly budget cap</th><th></th></tr></thead>
+    <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Monthly budget cap" %}</th><th></th></tr></thead>
     <tbody>
         {% for d in departments %}
         <tr>
@@ -8,20 +9,21 @@
                 <input class="input" style="margin:0;" type="text" name="name" value="{{ d.name }}" form="dept-form-{{ d.id }}">
             </td>
             <td>
-                <input class="input" style="margin:0; width:130px;" type="number" step="0.01" name="monthly_budget_cap" value="{{ d.monthly_budget_cap|default_if_none:'' }}" placeholder="unlimited" form="dept-form-{{ d.id }}">
+                <input class="input" style="margin:0; width:130px;" type="number" step="0.01" name="monthly_budget_cap" value="{{ d.monthly_budget_cap|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" form="dept-form-{{ d.id }}">
             </td>
             <td style="white-space:nowrap;">
                 <form id="dept-form-{{ d.id }}" method="post" action="{% url 'governance:update_department' department_id=d.id %}" style="display:none;">{% csrf_token %}</form>
-                <button type="submit" form="dept-form-{{ d.id }}" class="btn-small btn-ghost" style="margin-right:0.3rem;">Save</button>
-                <a href="{% url 'governance:system_prompt' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Prompt</a>
-                <form method="post" action="{% url 'governance:delete_department' department_id=d.id %}" style="display:inline;" onsubmit="return confirm('Delete {{ d.name }}? This also removes its system prompt history.');">
+                <button type="submit" form="dept-form-{{ d.id }}" class="btn-small btn-ghost" style="margin-right:0.3rem;">{% trans "Save" %}</button>
+                <a href="{% url 'governance:system_prompt' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">{% trans "Prompt" %}</a>
+                <a href="{% url 'governance:department_templates' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">{% trans "Templates" %}</a>
+                <form method="post" action="{% url 'governance:delete_department' department_id=d.id %}" style="display:inline;" onsubmit="return confirm('{% blocktrans with name=d.name %}Delete {{ name }}? This also removes its system prompt history.{% endblocktrans %}');">
                     {% csrf_token %}
-                    <button type="submit" class="btn-small btn-danger">Delete</button>
+                    <button type="submit" class="btn-small btn-danger">{% trans "Delete" %}</button>
                 </form>
             </td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="3">No departments match your search.</td></tr>
+        <tr class="empty-state-row"><td colspan="3">{% trans "No departments match your search." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

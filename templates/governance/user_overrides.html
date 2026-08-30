@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% blocktrans with email=target.email %}Overrides — {{ email }}{% endblocktrans %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:720px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1 style="margin-bottom:0;">{% blocktrans with email=target.email %}Overrides — {{ email }}{% endblocktrans %}</h1>
+        <a href="{% url 'governance:users' %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Back to Users" %}</a>
+    </div>
+    <p class="text-faint" style="font-size:0.85rem;">
+        {% trans "No plan" as no_plan_label %}
+        {% blocktrans with plan=plan_status.plan.name|default:no_plan_label %}These settings apply on top of this user's Plan ({{ plan }}) and win over its defaults. Clearing them reverts this user to pure Plan behavior.{% endblocktrans %}
+    </p>
+
+    <h2 class="mt-5">{% trans "Personal usage limit" %}</h2>
+    {% if overrides.usage_limit %}
+    <table class="data" style="margin-bottom:var(--space-3);">
+        <thead>
+            <tr>
+                <th>{% trans "Daily tokens" %}</th><th>{% trans "Monthly tokens" %}</th>
+                <th>{% trans "Session msgs" %}</th><th>{% trans "Budget/mo" %}</th>
+                <th>{% trans "Upload cap" %}</th><th>{% trans "File types" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ overrides.usage_limit.daily_token_cap|default:"—" }}</td>
+                <td>{{ overrides.usage_limit.monthly_token_cap|default:"—" }}</td>
+                <td>{{ overrides.usage_limit.session_limit|default:"—" }}</td>
+                <td>{% if overrides.usage_limit.budget_cap_currency %}${{ overrides.usage_limit.budget_cap_currency }}{% else %}—{% endif %}</td>
+                <td>{% if overrides.usage_limit.max_upload_size_mb %}{{ overrides.usage_limit.max_upload_size_mb }}MB{% else %}—{% endif %}</td>
+                <td class="text-muted">{{ overrides.usage_limit.allowed_file_extensions|default:"—" }}</td>
+            </tr>
+        </tbody>
+    </table>
+    <p><a href="{% url 'governance:limit_edit' limit_id=overrides.usage_limit.id %}">{% trans "Edit on the Limits screen" %}</a></p>
+    {% else %}
+    <p class="text-faint">{% trans "No personal usage limit set — this user follows their Plan's limits." %}</p>
+    {% endif %}
+
+    <h2 class="mt-5">{% trans "Model access overrides" %}</h2>
+    {% if overrides.model_permissions %}
+    <table class="data">
+        <thead><tr><th>{% trans "Model" %}</th><th>{% trans "Access" %}</th></tr></thead>
+        <tbody>
+            {% for perm in overrides.model_permissions %}
+            <tr>
+                <td>{{ perm.model_config.display_label }}</td>
+                <td>
+                    {% if perm.is_allowed %}<span class="badge badge-success">{% trans "Allowed" %}</span>
+                    {% else %}<span class="badge badge-danger">{% trans "Denied" %}</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-faint">{% trans "No per-model access overrides — this user follows their Plan's allowed models." %}</p>
+    {% endif %}
+
+    {% if overrides.usage_limit or overrides.model_permissions %}
+    <form method="post" action="{% url 'governance:clear_user_overrides' user_id=target.id %}" class="mt-5"
+          onsubmit="return confirm('{% blocktrans with email=target.email %}Clear all overrides for {{ email }}? They will revert to pure Plan defaults.{% endblocktrans %}');">
+        {% csrf_token %}
+        <button type="submit" class="btn-danger">{% trans "Clear all overrides" %}</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,7 +1,12 @@
-<div class="filter-result-count">Showing <span class="mono">{{ per_user|length }}</span> users with matching usage</div>
+{% load i18n %}
+<div class="cache-stats-bar">
+    <span>{% blocktrans %}Cache hit rate: <span class="mono">{{ cache_hit_rate }}%</span>{% endblocktrans %} ({% blocktrans count counter=cache_hits %}{{ counter }} cached reply{% plural %}{{ counter }} cached replies{% endblocktrans %})</span>
+    <span>{% trans "Estimated cost saved:" %} <span class="mono">${{ cache_cost_saved|floatformat:4 }}</span></span>
+</div>
+<div class="filter-result-count">{% blocktrans count counter=per_user|length %}Showing <span class="mono">{{ counter }}</span> user with matching usage{% plural %}Showing <span class="mono">{{ counter }}</span> users with matching usage{% endblocktrans %}</div>
 <table class="data">
     <thead>
-        <tr><th>User</th><th>Requests</th><th>Tokens</th><th>Estimated Cost</th></tr>
+        <tr><th>{% trans "User" %}</th><th>{% trans "Requests" %}</th><th>{% trans "Tokens" %}</th><th>{% trans "Estimated Cost" %}</th></tr>
     </thead>
     <tbody>
         {% for row in per_user %}
@@ -12,7 +17,7 @@
             <td class="mono">${{ row.cost|default:0|floatformat:4 }}</td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="4">No usage matches your search/filters.</td></tr>
+        <tr class="empty-state-row"><td colspan="4">{% trans "No usage matches your search/filters." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

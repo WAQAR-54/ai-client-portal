@@ -90,13 +90,44 @@ when you're already down.**
 5. Restart the app service afterward so any in-memory/connection-pooled
    state doesn't reference pre-restore data.
 
-## Status: not yet live-tested end-to-end
+## Status
 
-I wrote and reviewed this command carefully, but **could not execute a
-real test restore** from the environment I built it in — there's no
-Postgres server or S3 credentials available there (this project's local
-dev database is SQLite). Per the spec's own requirement ("do a real test
-restore once... not just files sitting there untested"): **run steps 1–3
-above for real against a staging database before trusting this in an
-actual emergency.** Treat this document as the procedure, not yet as a
-verified one.
+**Retention: confirmed 30 days.** `BACKUP_RETENTION_DAYS` is unset in
+`.env`, so the `settings.py` default of `30` is what's actually active —
+matches the 14-30 day range agreed with the client; no code or config
+change needed.
+
+**The actual `pg_dump`/`pg_restore`/S3 path (steps above) is still
+untested.** The environment this project is built in has no PostgreSQL
+server, no `pg_dump`/`pg_restore` client tools, and no S3-compatible
+bucket credentials — `backup_database.py` itself checks for a PostgreSQL
+engine and refuses to run against anything else, so it cannot be exercised
+here at all, not even to see it fail cleanly. This has not changed since
+this doc was first written.
+
+**What *was* tested for real, 2026-08-30, as a partial substitute**: a
+logical backup/restore cycle against this environment's actual SQLite dev
+database, using Django's own `dumpdata`/`loaddata` (engine-agnostic, no
+`pg_dump` involved) rather than the production command:
+
+1. `python manage.py dumpdata --exclude auth.permission --exclude
+   contenttypes --exclude sessions.session --exclude admin.logentry` against
+   the real `db.sqlite3` → 8 real rows across `accounts.user`,
+   `axes.accessattempt`, `axes.accesslog`, `governance.auditlog`.
+2. Built a fresh schema in a completely separate, throwaway SQLite file
+   (`migrate --run-syncdb` against a different `DATABASE_URL`).
+3. `loaddata` the dump into that throwaway database → "Installed 8
+   object(s) from 1 fixture(s)".
+4. Compared row counts table-by-table between the original and the
+   restored database — all four tables matched exactly — and spot-checked
+   the one real user row's actual field values (email/role/is_active),
+   which matched byte-for-byte.
+5. Deleted the throwaway database and dump file afterward.
+
+This proves the underlying restore *concept* (a dump taken now, loaded
+into an empty database, recovers the original data exactly) but is **not**
+a substitute for testing the real command. Per the spec's own requirement
+("do a real test restore once... not just files sitting there untested"):
+**run steps 1-3 in the Restore procedure section above, for real, against
+a staging Postgres database with real S3 credentials, before trusting this
+in an actual emergency.**

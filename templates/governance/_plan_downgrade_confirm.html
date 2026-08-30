@@ -1,19 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Confirm plan change — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Confirm plan change" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="card" style="max-width:560px;">
-    <h1>Confirm plan change</h1>
+    <h1>{% trans "Confirm plan change" %}</h1>
     <div class="alert alert-warning">
-        <strong>{{ target.email }}</strong> has already used more than <strong>{{ plan.name }}</strong>'s limits allow
+        {% blocktrans with email=target.email plan_name=plan.name %}
+        <strong>{{ email }}</strong> has already used more than <strong>{{ plan_name }}</strong>'s limits allow
         (based on today's/this month's usage so far). Moving them to this plan now will cap all <em>future</em> usage
         immediately — it won't retroactively flag or penalize what they've already sent.
+        {% endblocktrans %}
     </div>
     <form method="post" action="{% url 'governance:change_user_plan' user_id=target.id %}">
         {% csrf_token %}
         <input type="hidden" name="plan_id" value="{{ plan.id }}">
         <input type="hidden" name="confirmed" value="1">
-        <button type="submit" class="btn-danger">Yes, move to {{ plan.name }} anyway</button>
-        <a href="{% url 'governance:users' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">Cancel</a>
+        <button type="submit" class="btn-danger">{% blocktrans with plan_name=plan.name %}Yes, move to {{ plan_name }} anyway{% endblocktrans %}</button>
+        <a href="{% url 'governance:users' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">{% trans "Cancel" %}</a>
     </form>
 </div>
 {% endblock %}

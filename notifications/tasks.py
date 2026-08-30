@@ -7,6 +7,7 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.utils.translation import override as translation_override
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,13 @@ def send_notification_email(notification_id):
     if not notification or not notification.user.email:
         return
 
-    html_body = render_to_string("notifications/email_generic.html", {"notification": notification})
+    # Only the email's own chrome (button/footer text) follows the
+    # recipient's language preference - notification.title/body are
+    # written in English at the many notify() call sites throughout the
+    # codebase and aren't translated in this pass (see AI_Client_Portal
+    # notes on B5 scope).
+    with translation_override(notification.user.preferred_language):
+        html_body = render_to_string("notifications/email_generic.html", {"notification": notification})
     send_mail(
         subject=f"[AI Client Portal] {notification.title}",
         message=strip_tags(html_body),

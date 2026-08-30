@@ -226,6 +226,14 @@ class UpgradeRequest(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="upgrade_requests")
     current_plan = models.ForeignKey(Plan, on_delete=models.SET_NULL, null=True, related_name="+")
+    requested_plan = models.ForeignKey(
+        Plan,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Which plan the user asked to move to, if they specified one.",
+    )
     message = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)

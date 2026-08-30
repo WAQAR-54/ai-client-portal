@@ -1,46 +1,53 @@
 {% extends "base.html" %}
-{% block title %}Models — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Models" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 
 <div class="card mt-4" style="margin-bottom:1.5rem;">
-    <h2>Add a model</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin-bottom:0;">{% trans "Add a model" %}</h2>
+        <a href="{% url 'governance:sync_models_preview' %}" class="btn-small" style="text-decoration:none;">{% trans "Sync Models" %}</a>
+    </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:0.3rem;">
+        {% trans "Sync fetches the real, current model list from each provider's API — no more hand-typed IDs. Manual entry below still works as a fallback." %}
+    </p>
     <form method="post" action="{% url 'governance:add_model' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
         {% csrf_token %}
         <div style="flex:1; min-width:160px;">
-            <label for="provider">Provider</label>
+            <label for="provider">{% trans "Provider" %}</label>
             <select class="input" name="provider" id="provider" style="margin:0;">
                 {% for value, label in providers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
             </select>
         </div>
         <div style="flex:2; min-width:220px;">
-            <label for="model_name">Model identifier</label>
+            <label for="model_name">{% trans "Model identifier" %}</label>
             <input class="input" type="text" name="model_name" id="model_name" placeholder="e.g. gpt-4o-mini" style="margin:0;" required>
         </div>
         <div style="flex:1; min-width:140px;">
-            <label for="tier">Tier</label>
+            <label for="tier">{% trans "Tier" %}</label>
             <select class="input" name="tier" id="tier" style="margin:0;">
                 {% for value, label in tiers %}<option value="{{ value }}" {% if value == "default" %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
         </div>
-        <button type="submit">Add model</button>
+        <button type="submit">{% trans "Add model" %}</button>
     </form>
 </div>
 
 <div class="card" style="overflow-x:auto;">
-    <h1>AI Models</h1>
-    <p>Verify pricing against current provider docs before enabling a model — pricing is never auto-filled.</p>
+    <h1>{% trans "AI Models" %}</h1>
+    <p>{% trans "Verify pricing against current provider docs before enabling a model — pricing is never auto-filled." %}</p>
 
     {% url 'governance:models' as filter_url %}
     <form class="filter-toolbar">
         <div class="filter-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search model or provider..."
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search model or provider...' %}"
                    hx-get="{{ filter_url }}" hx-target="#models-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
         </div>
         <select name="status" hx-get="{{ filter_url }}" hx-target="#models-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
-            <option value="">All statuses</option>
-            <option value="enabled" {% if status_filter == "enabled" %}selected{% endif %}>Enabled</option>
-            <option value="disabled" {% if status_filter == "disabled" %}selected{% endif %}>Disabled</option>
+            <option value="">{% trans "All statuses" %}</option>
+            <option value="enabled" {% if status_filter == "enabled" %}selected{% endif %}>{% trans "Enabled" %}</option>
+            <option value="disabled" {% if status_filter == "disabled" %}selected{% endif %}>{% trans "Disabled" %}</option>
         </select>
     </form>
 

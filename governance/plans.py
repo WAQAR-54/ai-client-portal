@@ -158,6 +158,45 @@ def plan_limit_fallback(user):
     return _PlanLimitFallback(plan)
 
 
+def get_user_overrides(user):
+    """The personal UsageLimit row and UserModelPermission rows that sit on
+    top of this user's Plan (see precedence rules above) - the raw material
+    for the admin "N custom overrides beyond Plan defaults" indicator."""
+    from chat.models import UserModelPermission
+    from governance.models import UsageLimit
+
+    usage_limit = UsageLimit.objects.filter(user=user).first()
+    model_permissions = list(
+        UserModelPermission.objects.filter(user=user)
+        .select_related("model_config")
+        .order_by("model_config__display_name")
+    )
+    return {"usage_limit": usage_limit, "model_permissions": model_permissions}
+
+
+def count_user_overrides(user):
+    overrides = get_user_overrides(user)
+    return (1 if overrides["usage_limit"] else 0) + len(overrides["model_permissions"])
+
+
+def clear_user_overrides(user):
+    """Deletes the personal UsageLimit row and all UserModelPermission rows
+    for this user, so their Plan alone governs again. Returns a short
+    description of what was removed, for the audit log entry."""
+    from chat.models import UserModelPermission
+
+    overrides = get_user_overrides(user)
+    parts = []
+    if overrides["usage_limit"]:
+        overrides["usage_limit"].delete()
+        parts.append("personal usage limit")
+    permission_count = len(overrides["model_permissions"])
+    if permission_count:
+        UserModelPermission.objects.filter(user=user).delete()
+        parts.append(f"{permission_count} model permission override(s)")
+    return ", ".join(parts) or "nothing to clear"
+
+
 def has_feature(user, flag_name):
     """True when no plan is assigned (unrestricted baseline) or the flag
     is explicitly on for the user's plan."""

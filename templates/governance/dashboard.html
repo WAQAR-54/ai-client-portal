@@ -1,36 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Admin Dashboard — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Admin Dashboard" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 {% endblock %}
 {% block content %}
+{% trans "No usage yet — data will appear here once conversations start." as chart_empty_msg %}
 <div class="card">
     <div class="overview-head">
-        <h1>Overview</h1>
+        <h1>{% trans "Overview" %}</h1>
         {% if org_usage.has_data %}
         <div class="org-usage-ring">
             {% include "chat/_usage_ring.html" with pct=org_usage.avg_pct level=org_usage.level size=64 %}
             <div class="org-usage-ring-label">
-                <strong>Avg usage</strong> across users with limits
-                <div class="text-muted mono" style="font-size: var(--text-xs);">{{ org_usage.over_80_count }} of {{ org_usage.tracked_users }} users over 80%</div>
+                <strong>{% trans "Avg usage" %}</strong> {% trans "across users with limits" %}
+                <div class="text-muted mono" style="font-size: var(--text-xs);">{% blocktrans with over=org_usage.over_80_count total=org_usage.tracked_users %}{{ over }} of {{ total }} users over 80%{% endblocktrans %}</div>
             </div>
         </div>
         {% endif %}
     </div>
     <div class="stat-grid mt-4">
-        <div class="stat-tile"><div class="stat-label">Users</div><div class="stat-value mono">{{ total_users }}</div></div>
-        <div class="stat-tile"><div class="stat-label">Conversations</div><div class="stat-value mono">{{ total_conversations }}</div></div>
-        <div class="stat-tile"><div class="stat-label">Enabled models</div><div class="stat-value mono">{{ enabled_model_count }}</div></div>
-        <div class="stat-tile"><div class="stat-label">Tokens (all time)</div><div class="stat-value mono">{{ total_tokens_all_time }}</div></div>
-        <div class="stat-tile"><div class="stat-label">Cost (all time)</div><div class="stat-value mono">${{ total_cost_all_time|floatformat:2 }}</div></div>
-        <div class="stat-tile"><div class="stat-label">Tokens (this month)</div><div class="stat-value mono">{{ month_tokens }}</div></div>
-        <div class="stat-tile"><div class="stat-label">Cost (this month)</div><div class="stat-value mono">${{ month_cost|floatformat:2 }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Users" %}</div><div class="stat-value mono">{{ total_users }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Conversations" %}</div><div class="stat-value mono">{{ total_conversations }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Enabled models" %}</div><div class="stat-value mono">{{ enabled_model_count }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (all time)" %}</div><div class="stat-value mono">{{ total_tokens_all_time }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Cost (all time)" %}</div><div class="stat-value mono">${{ total_cost_all_time|floatformat:2 }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (this month)" %}</div><div class="stat-value mono">{{ month_tokens }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Cost (this month)" %}</div><div class="stat-value mono">${{ month_cost|floatformat:2 }}</div></div>
     </div>
 </div>
 
 <div class="chart-grid mt-5">
     <div class="card chart-card">
-        <h2>Cost — last 14 days</h2>
+        <h2>{% trans "Cost — last 14 days" %}</h2>
         {% if has_cost_data %}
         <div class="chart-wrap">
             <div class="skeleton-block"></div>
@@ -39,12 +41,12 @@
         {% else %}
         <div class="chart-empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="14" width="3" height="4"/></svg>
-            <span>No usage yet — data will appear here once conversations start.</span>
+            <span>{{ chart_empty_msg }}</span>
         </div>
         {% endif %}
     </div>
     <div class="card chart-card">
-        <h2>Tokens — last 14 days</h2>
+        <h2>{% trans "Tokens — last 14 days" %}</h2>
         {% if has_token_data %}
         <div class="chart-wrap">
             <div class="skeleton-block"></div>
@@ -53,12 +55,12 @@
         {% else %}
         <div class="chart-empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="14" width="3" height="4"/></svg>
-            <span>No usage yet — data will appear here once conversations start.</span>
+            <span>{{ chart_empty_msg }}</span>
         </div>
         {% endif %}
     </div>
     <div class="card chart-card">
-        <h2>Cost by model</h2>
+        <h2>{% trans "Cost by model" %}</h2>
         {% if has_model_data %}
         <div class="chart-wrap">
             <div class="skeleton-block"></div>
@@ -67,12 +69,12 @@
         {% else %}
         <div class="chart-empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="14" width="3" height="4"/></svg>
-            <span>No usage yet — data will appear here once conversations start.</span>
+            <span>{{ chart_empty_msg }}</span>
         </div>
         {% endif %}
     </div>
     <div class="card chart-card">
-        <h2>Users by role</h2>
+        <h2>{% trans "Users by role" %}</h2>
         <div class="chart-wrap">
             <div class="skeleton-block"></div>
             <canvas id="chartByRole" height="200"></canvas>
@@ -95,9 +97,9 @@
     // that might appear inside a string value.
     const readJSON = (id) => JSON.parse(document.getElementById(id).textContent);
 
-    const palette = ["#4f46e5", "#8b7ffb", "#16a34a", "#b45309", "#0ea5e9", "#dc2626", "#6b7085", "#a855f7"];
-    const gridColor = "#e4e7ee";
-    const textColor = "#6b7085";
+    const palette = ["#122268", "#00aef0", "#1e8e5a", "#c77700", "#7a8a99", "#d9363e", "#5b6472", "#7a5ea8"];
+    const gridColor = "#dde2ea";
+    const textColor = "#5b6472";
     Chart.defaults.font.family = "Inter, -apple-system, sans-serif";
     Chart.defaults.color = textColor;
 

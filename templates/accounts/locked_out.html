@@ -1,20 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Account temporarily locked — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Account temporarily locked" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="auth-split">
     <div class="auth-split-brand">
-        <div class="brand-mark"><span class="dot"></span>AI Client Portal</div>
-        <h2>One assistant. Every model. Full control.</h2>
-        <p>Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally.</p>
+        <div class="brand-mark"><span class="dot"></span>{% trans "AI Client Portal" %}</div>
+        <h2>{% trans "One assistant. Every model. Full control." %}</h2>
+        <p>{% trans "Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally." %}</p>
     </div>
     <div class="auth-split-form">
         <div class="auth-card">
-            <h1>Too many failed attempts</h1>
+            <h1>{% trans "Too many failed attempts" %}</h1>
             <p class="auth-subtitle">
-                This account is temporarily locked after several incorrect password attempts.
-                Try again in about <strong>{{ cooloff_minutes }} minutes</strong>, or contact your administrator if this wasn't you.
+                {% blocktrans %}This account is temporarily locked after several incorrect password attempts.
+                Try again in about <strong>{{ cooloff_minutes }} minutes</strong>, or contact your administrator if this wasn't you.{% endblocktrans %}
             </p>
-            <a href="{% url 'accounts:login' %}" class="btn" style="width:100%; display:flex; justify-content:center;">Back to login</a>
+            <a href="{% url 'accounts:login' %}" class="btn" style="width:100%; display:flex; justify-content:center;">{% trans "Back to login" %}</a>
         </div>
     </div>
 </div>

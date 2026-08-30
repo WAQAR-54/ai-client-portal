@@ -1,38 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Plans — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Plans" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="card" style="overflow-x:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1>Plans</h1>
-        <a href="{% url 'governance:plan_new' %}" class="btn">+ New plan</a>
+        <h1>{% trans "Plans" %}</h1>
+        <a href="{% url 'governance:plan_new' %}" class="btn">+ {% trans "New plan" %}</a>
     </div>
-    <p>A user's Plan sets their model access, limits, and features all at once. Personal overrides on the Limits/Models screens still win over a Plan when set.</p>
+    <p>{% trans "A user's Plan sets their model access, limits, and features all at once. Personal overrides on the Limits/Models screens still win over a Plan when set." %}</p>
     <table class="data">
         <thead>
-            <tr><th>Name</th><th>Type</th><th>Daily tokens</th><th>Monthly budget</th><th>Models</th><th>Features</th><th>Status</th><th></th></tr>
+            <tr><th>{% trans "Name" %}</th><th>{% trans "Type" %}</th><th>{% trans "Daily tokens" %}</th><th>{% trans "Monthly budget" %}</th><th>{% trans "Models" %}</th><th>{% trans "Features" %}</th><th>{% trans "Status" %}</th><th></th></tr>
         </thead>
         <tbody>
             {% for p in plans %}
             <tr>
                 <td>
                     {{ p.name }}
-                    {% if p.is_default %}<span class="badge">Default</span>{% endif %}
+                    {% if p.is_default %}<span class="badge">{% trans "Default" %}</span>{% endif %}
                 </td>
-                <td>{% if p.is_demo %}<span class="badge badge-muted">Demo · {{ p.demo_duration_days }}d</span>{% else %}<span class="text-muted">Standard</span>{% endif %}</td>
+                <td>{% if p.is_demo %}<span class="badge badge-muted">{% blocktrans with days=p.demo_duration_days %}Demo · {{ days }}d{% endblocktrans %}</span>{% else %}<span class="text-muted">{% trans "Standard" %}</span>{% endif %}</td>
                 <td class="mono">{{ p.daily_token_limit|default:"—" }}</td>
                 <td class="mono">{% if p.monthly_budget_cap %}${{ p.monthly_budget_cap }}{% else %}—{% endif %}</td>
-                <td class="text-muted">{{ p.allowed_models.count }} model(s)</td>
+                <td class="text-muted">{% blocktrans count counter=p.allowed_models.count %}{{ counter }} model{% plural %}{{ counter }} models{% endblocktrans %}</td>
                 <td class="text-muted">
                     {% for key, label in p.feature_flags.items %}{% if label %}{{ key }} {% endif %}{% endfor %}
                 </td>
                 <td>
-                    {% if p.is_active %}<span class="badge badge-success">Active</span>{% else %}<span class="badge badge-danger">Retired</span>{% endif %}
-                    {% if not p.is_visible_to_admins %}<span class="badge badge-muted">Hidden</span>{% endif %}
+                    {% if p.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% else %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
+                    {% if not p.is_visible_to_admins %}<span class="badge badge-muted">{% trans "Hidden" %}</span>{% endif %}
                 </td>
-                <td><a href="{% url 'governance:plan_edit' plan_id=p.id %}" class="btn-small btn-ghost" style="text-decoration:none;">Edit</a></td>
+                <td><a href="{% url 'governance:plan_edit' plan_id=p.id %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Edit" %}</a></td>
             </tr>
             {% empty %}
-            <tr class="empty-state-row"><td colspan="8">No plans yet.</td></tr>
+            <tr class="empty-state-row"><td colspan="8">{% trans "No plans yet." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>

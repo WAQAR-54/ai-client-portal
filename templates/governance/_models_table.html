@@ -1,39 +1,41 @@
-<div class="filter-result-count">Showing <span class="mono">{{ models|length }}</span> of <span class="mono">{{ total_count }}</span> models</div>
+{% load i18n %}
+<div class="filter-result-count">{% blocktrans count counter=models|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> model{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> models{% endblocktrans %}</div>
 <table class="data">
     <thead>
-        <tr><th>Model</th><th>Provider</th><th>Tier</th><th>Input $/1M</th><th>Output $/1M</th><th>Status</th><th></th></tr>
+        <tr><th>{% trans "Model" %}</th><th>{% trans "Provider" %}</th><th>{% trans "Tier" %}</th><th>{% trans "Display name / pricing" %}</th><th></th><th>{% trans "Status" %}</th><th></th></tr>
     </thead>
     <tbody>
         {% for m in models %}
         <tr>
-            <td>{{ m.model_name }}</td>
+            <td class="mono" style="font-size:0.85rem;">{{ m.model_name }}</td>
             <td class="text-muted">{{ m.get_provider_display }}</td>
             <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
             <td colspan="2">
-                <form method="post" action="{% url 'governance:update_model_pricing' model_id=m.id %}" style="display:flex; gap:0.4rem; align-items:center;">
+                <form method="post" action="{% url 'governance:update_model_pricing' model_id=m.id %}" style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
                     {% csrf_token %}
-                    <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="input_cost_per_1m" value="{{ m.input_cost_per_1m|default_if_none:'' }}" placeholder="input $">
-                    <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="output_cost_per_1m" value="{{ m.output_cost_per_1m|default_if_none:'' }}" placeholder="output $">
-                    <button type="submit" class="btn-small btn-ghost">Save</button>
+                    <input class="input" style="margin:0; width:120px;" type="text" name="display_name" value="{{ m.display_name }}" placeholder="{% trans 'Display name' %}">
+                    <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="input_cost_per_1m" value="{{ m.input_cost_per_1m|default_if_none:'' }}" placeholder="{% trans 'input $' %}">
+                    <input class="input" style="margin:0; width:90px;" type="number" step="0.0001" name="output_cost_per_1m" value="{{ m.output_cost_per_1m|default_if_none:'' }}" placeholder="{% trans 'output $' %}">
+                    <button type="submit" class="btn-small btn-ghost">{% trans "Save" %}</button>
                 </form>
             </td>
             <td>
-                {% if m.is_enabled %}<span class="badge badge-success">Enabled</span>
-                {% else %}<span class="badge badge-danger">Disabled</span>{% endif %}
+                {% if m.is_enabled %}<span class="badge badge-success">{% trans "Enabled" %}</span>
+                {% else %}<span class="badge badge-danger">{% trans "Disabled" %}</span>{% endif %}
             </td>
             <td style="white-space:nowrap;">
-                <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">Who can use</a>
+                <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">{% trans "Who can use" %}</a>
                 <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}" style="display:inline;">
                     {% csrf_token %}
                     <button type="submit" class="btn-small {% if m.is_enabled %}btn-danger{% else %}btn-ghost{% endif %}"
-                            {% if not m.is_enabled and m.input_cost_per_1m is None %}title="Set pricing first"{% endif %}>
-                        {% if m.is_enabled %}Disable{% else %}Enable{% endif %}
+                            {% if not m.is_enabled and m.input_cost_per_1m is None %}title="{% trans 'Set pricing first' %}"{% endif %}>
+                        {% if m.is_enabled %}{% trans "Disable" %}{% else %}{% trans "Enable" %}{% endif %}
                     </button>
                 </form>
             </td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="7">No models match your search/filters.</td></tr>
+        <tr class="empty-state-row"><td colspan="7">{% trans "No models match your search/filters." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

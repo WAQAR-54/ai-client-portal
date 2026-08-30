@@ -8,6 +8,7 @@ class NotificationType(models.TextChoices):
     TRIAL_EXPIRING = "trial_expiring", "Trial expiring soon"
     TRIAL_EXPIRED = "trial_expired", "Trial expired"
     ADMIN_CHANGE = "admin_change", "Admin changed your account"
+    MODEL_SYNC_AVAILABLE = "model_sync_available", "New models available to sync"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see
@@ -20,6 +21,7 @@ EMAIL_TOGGLE_LABELS = [
     (NotificationType.TRIAL_EXPIRING, "Trial expiring soon"),
     (NotificationType.TRIAL_EXPIRED, "Trial expired"),
     (NotificationType.ADMIN_CHANGE, "An admin changed your role/limits"),
+    (NotificationType.MODEL_SYNC_AVAILABLE, "New AI models are available to sync"),
 ]
 
 
@@ -54,6 +56,7 @@ class NotificationPreference(models.Model):
     email_trial_expiring = models.BooleanField(default=True)
     email_trial_expired = models.BooleanField(default=True)
     email_admin_change = models.BooleanField(default=True)
+    email_model_sync_available = models.BooleanField(default=True)
 
     def wants_email(self, notification_type):
         return getattr(self, f"email_{notification_type}", True)

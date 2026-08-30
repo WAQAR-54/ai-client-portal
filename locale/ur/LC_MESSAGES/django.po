@@ -1,0 +1,1854 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-30 00:00+0000\n"
+"PO-Revision-Date: 2026-08-30 00:00+0000\n"
+"Language: ur\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: templates/governance/_plan_downgrade_confirm.html:8
+msgid ""
+"\n"
+"        <strong>%(email)s</strong> has already used more than <strong>%(plan_name)s</strong>'s limits allow\n"
+"        (based on today's/this month's usage so far). Moving them to this plan now will cap all <em>future</em> usage\n"
+"        immediately — it won't retroactively flag or penalize what they've already sent.\n"
+"        "
+msgstr ""
+"\n"
+"        <strong>%(email)s</strong> پہلے ہی <strong>%(plan_name)s</strong> کی مقررہ حد سے زیادہ استعمال کر چکے ہیں\n"
+"        (آج/اس مہینے کے اب تک کے استعمال کی بنیاد پر)۔ انہیں ابھی اس پلان میں منتقل کرنے سے <em>آئندہ</em> کا تمام استعمال\n"
+"        فوری طور پر محدود ہو جائے گا — یہ پہلے سے بھیجے گئے پیغامات پر رجعتی طور پر نشان زد یا سزا نہیں دے گا۔\n"
+"        "
+
+#: templates/governance/model_sync.html:49
+msgid "%(counter)s already tracked (not shown above)"
+msgid_plural "%(counter)s already tracked (not shown above)"
+msgstr[0] "%(counter)s پہلے سے شامل ہے (اوپر نہیں دکھایا گیا)"
+msgstr[1] "%(counter)s پہلے سے شامل ہیں (اوپر نہیں دکھایا گیا)"
+
+#: templates/governance/_usage_table.html:3
+msgid "%(counter)s cached reply"
+msgid_plural "%(counter)s cached replies"
+msgstr[0] "%(counter)s کیشڈ جواب"
+msgstr[1] "%(counter)s کیشڈ جوابات"
+
+#: templates/governance/plans.html:25
+msgid "%(counter)s model"
+msgid_plural "%(counter)s models"
+msgstr[0] "%(counter)s ماڈل"
+msgstr[1] "%(counter)s ماڈلز"
+
+#: templates/governance/model_sync.html:27
+msgid "%(counter)s new model not yet tracked:"
+msgid_plural "%(counter)s new models not yet tracked:"
+msgstr[0] "%(counter)s نیا ماڈل ابھی شامل نہیں ہے:"
+msgstr[1] "%(counter)s نئے ماڈلز ابھی شامل نہیں ہیں:"
+
+#: templates/chat/chat_home.html:198 templates/governance/_users_table.html:55
+msgid "%(days)sd left"
+msgstr "%(days)s دن باقی"
+
+#: templates/governance/dashboard.html:17
+msgid "%(over)s of %(total)s users over 80%%"
+msgstr "%(total)s میں سے %(over)s صارفین 80%% سے زیادہ استعمال پر"
+
+#: templates/chat/_usage_ring.html:4
+msgid "%(pct)s%% of usage limit used"
+msgstr "استعمال کی حد کا %(pct)s%% استعمال ہو چکا"
+
+#: templates/governance/limit_form.html:14
+msgid "A specific user"
+msgstr "ایک مخصوص صارف"
+
+#: chat/views.py:460
+msgid "A template needs both a name and text."
+msgstr "ٹیمپلیٹ کے لیے نام اور متن دونوں درکار ہیں۔"
+
+#: templates/governance/plans.html:10
+msgid ""
+"A user's Plan sets their model access, limits, and features all at once. "
+"Personal overrides on the Limits/Models screens still win over a Plan when "
+"set."
+msgstr ""
+"صارف کا پلان ایک ہی وقت میں ان کی ماڈل تک رسائی، حدود اور خصوصیات مقرر کرتا "
+"ہے۔ لمٹس/ماڈلز اسکرینز پر انفرادی تبدیلیاں مقرر ہونے کی صورت میں پلان پر "
+"فوقیت رکھتی ہیں۔"
+
+#: templates/governance/limit_form.html:18
+msgid "A whole department"
+msgstr "پورا شعبہ"
+
+#: templates/base.html:9 templates/accounts/dashboard.html:3
+#: templates/accounts/locked_out.html:3 templates/accounts/login.html:3
+#: templates/accounts/profile.html:3 templates/accounts/signup.html:3
+#: templates/chat/chat_home.html:3 templates/governance/audit_logs.html:3
+#: templates/governance/dashboard.html:3
+#: templates/governance/departments.html:3
+#: templates/governance/feedback.html:3 templates/governance/limits.html:3
+#: templates/governance/limit_form.html:3 templates/governance/models.html:3
+#: templates/governance/model_permissions.html:3
+#: templates/governance/model_sync.html:3 templates/governance/plans.html:3
+#: templates/governance/plan_form.html:3
+#: templates/governance/upgrade_requests.html:3
+#: templates/governance/usage.html:3 templates/governance/users.html:3
+#: templates/governance/_plan_downgrade_confirm.html:3
+#: templates/notifications/email_generic.html:12
+msgid "AI Client Portal"
+msgstr "AI کلائنٹ پورٹل"
+
+#: templates/governance/models.html:37
+msgid "AI Models"
+msgstr "AI ماڈلز"
+
+#: templates/chat/chat_home.html:310
+msgid "AI responses may be inaccurate. Verify important information."
+msgstr "AI کے جوابات غلط ہو سکتے ہیں۔ اہم معلومات کی تصدیق کریں۔"
+
+#: templates/governance/model_permissions.html:9
+msgid "Access"
+msgstr "رسائی"
+
+#: templates/accounts/locked_out.html:3
+msgid "Account temporarily locked"
+msgstr "اکاؤنٹ عارضی طور پر مقفل ہے"
+
+#: templates/governance/_audit_logs_table.html:5
+msgid "Action"
+msgstr "عمل"
+
+#: templates/governance/_users_table.html:83
+msgid "Activate"
+msgstr "فعال کریں"
+
+#: templates/governance/plans.html:30 templates/governance/plan_form.html:20
+#: templates/governance/system_prompt.html:34
+#: templates/governance/users.html:24
+#: templates/governance/_users_table.html:76
+msgid "Active"
+msgstr "فعال"
+
+#: templates/governance/system_prompt.html:9
+msgid "Active version created %(created)s by %(by)s."
+msgstr "فعال ورژن %(by)s نے %(created)s کو بنایا۔"
+
+#: templates/governance/_audit_logs_table.html:5
+msgid "Actor"
+msgstr "کارگزار"
+
+#: templates/governance/departments.html:6
+msgid "Add a department"
+msgstr "شعبہ شامل کریں"
+
+#: templates/governance/models.html:8
+msgid "Add a model"
+msgstr "ماڈل شامل کریں"
+
+#: templates/governance/departments.html:17
+msgid "Add department"
+msgstr "شعبہ شامل کریں"
+
+#: templates/governance/models.html:32
+msgid "Add model"
+msgstr "ماڈل شامل کریں"
+
+#: templates/governance/department_templates.html:20
+msgid "Add team template"
+msgstr "ٹیم ٹیمپلیٹ شامل کریں"
+
+#: accounts/models.py:60 templates/base.html:42
+#: templates/chat/chat_home.html:78
+msgid "Admin"
+msgstr "ایڈمن"
+
+#: templates/governance/dashboard.html:3
+msgid "Admin Dashboard"
+msgstr "ایڈمن ڈیش بورڈ"
+
+#: templates/chat/chat_home.html:488
+msgid "Admin dashboard"
+msgstr "ایڈمن ڈیش بورڈ"
+
+#: templates/governance/audit_logs.html:16
+msgid "All actions"
+msgstr "تمام اعمال"
+
+#: templates/governance/feedback.html:25 templates/governance/usage.html:35
+msgid "All models"
+msgstr "تمام ماڈلز"
+
+#: templates/governance/users.html:28
+msgid "All plans"
+msgstr "تمام پلانز"
+
+#: templates/governance/feedback.html:20
+msgid "All ratings"
+msgstr "تمام درجہ بندیاں"
+
+#: templates/governance/users.html:17
+msgid "All roles"
+msgstr "تمام کردار"
+
+#: templates/governance/models.html:48 templates/governance/users.html:23
+msgid "All statuses"
+msgstr "تمام حیثیتیں"
+
+#: templates/governance/model_permissions.html:24
+msgid "Allow"
+msgstr "اجازت دیں"
+
+#: templates/governance/model_permissions.html:17
+msgid "Allowed"
+msgstr "اجازت شدہ"
+
+#: templates/governance/limit_form.html:59
+msgid "Allowed file types"
+msgstr "اجازت شدہ فائل اقسام"
+
+#: templates/governance/plan_form.html:64
+msgid "Allowed models"
+msgstr "اجازت شدہ ماڈلز"
+
+#: templates/accounts/signup.html:29
+msgid "Already have an account?"
+msgstr "پہلے سے اکاؤنٹ ہے؟"
+
+#: templates/chat/chat_home.html:216
+msgid "Anything else to add? (optional)"
+msgstr "مزید کچھ شامل کرنا ہے؟ (اختیاری)"
+
+#: templates/governance/limit_form.html:10
+#: templates/governance/_limits_table.html:5
+msgid "Applies to"
+msgstr "لاگو ہوتا ہے"
+
+#: templates/governance/upgrade_requests.html:22
+msgid "Approve → Change Plan"
+msgstr "منظور کریں → پلان تبدیل کریں"
+
+#: templates/governance/_users_table.html:11
+msgid "Assign plan to selected"
+msgstr "منتخب کردہ کو پلان تفویض کریں"
+
+#: governance/views.py:343
+msgid "Assigned %(plan)s to %(count)s user."
+msgid_plural "Assigned %(plan)s to %(count)s users."
+msgstr[0] "%(plan)s کو %(count)s صارف کے لیے تفویض کیا گیا۔"
+msgstr[1] "%(plan)s کو %(count)s صارفین کے لیے تفویض کیا گیا۔"
+
+#: templates/chat/chat_home.html:298
+msgid ""
+"Attach a PDF, Word, Excel, or text file — its content is read into this "
+"message as context"
+msgstr ""
+"PDF، Word، Excel، یا ٹیکسٹ فائل منسلک کریں — اس کا مواد اس پیغام میں بطور "
+"سیاق و سباق شامل کیا جائے گا"
+
+#: templates/base.html:76 templates/governance/audit_logs.html:3
+msgid "Audit Logs"
+msgstr "آڈٹ لاگز"
+
+#: templates/chat/chat_home.html:267
+msgid "Auto (smart routing)"
+msgstr "خودکار (سمارٹ روٹنگ)"
+
+#: templates/chat/chat_home.html:487
+msgid ""
+"Auto-routing picks a model for you, or choose one manually here once a "
+"conversation is open."
+msgstr ""
+"خودکار روٹنگ آپ کے لیے ماڈل منتخب کرتی ہے، یا گفتگو کھلنے کے بعد یہاں دستی "
+"طور پر منتخب کریں۔"
+
+#: templates/governance/dashboard.html:16
+msgid "Avg usage"
+msgstr "اوسط استعمال"
+
+#: templates/governance/department_templates.html:8
+msgid "Back to Departments"
+msgstr "شعبہ جات کی طرف واپس"
+
+#: templates/governance/model_sync.html:8
+msgid "Back to Models"
+msgstr "ماڈلز کی طرف واپس"
+
+#: templates/accounts/locked_out.html:18
+msgid "Back to login"
+msgstr "لاگ ان کی طرف واپس"
+
+#: templates/governance/model_permissions.html:32
+msgid "Back to models"
+msgstr "ماڈلز کی طرف واپس"
+
+#: templates/chat/_message_feedback.html:15
+msgid "Bad response"
+msgstr "غیر تسلی بخش جواب"
+
+#: governance/limits.py:162
+msgid "Budget this month"
+msgstr "اس مہینے کا بجٹ"
+
+#: templates/governance/_limits_table.html:5
+msgid "Budget/mo"
+msgstr "بجٹ/ماہ"
+
+#: templates/governance/system_prompt.html:34
+msgid "By"
+msgstr "بذریعہ"
+
+#: templates/governance/_usage_table.html:3
+msgid "Cache hit rate: <span class=\"mono\">%(cache_hit_rate)s%%</span>"
+msgstr "کیش ہٹ ریٹ: <span class=\"mono\">%(cache_hit_rate)s%%</span>"
+
+#: templates/chat/chat_home.html:263 templates/governance/plan_form.html:77
+#: templates/governance/_plan_downgrade_confirm.html:19
+msgid "Cancel"
+msgstr "منسوخ کریں"
+
+#: templates/governance/system_prompt.html:22
+msgid "Casual"
+msgstr "غیر رسمی"
+
+#: templates/governance/_users_table.html:72
+msgid "Change"
+msgstr "تبدیل کریں"
+
+#: templates/governance/users.html:7
+msgid ""
+"Change a user's role, department, or access — everything here takes effect "
+"immediately."
+msgstr ""
+"صارف کا کردار، شعبہ، یا رسائی تبدیل کریں — یہاں کی ہر تبدیلی فوری طور پر "
+"لاگو ہوتی ہے۔"
+
+#: templates/accounts/profile.html:47
+msgid "Change password"
+msgstr "پاس ورڈ تبدیل کریں"
+
+#: templates/accounts/profile.html:30
+msgid ""
+"Changes menus, buttons, and labels. The assistant's replies already follow "
+"whatever language you write in."
+msgstr ""
+"مینیوز، بٹنز اور لیبلز کو تبدیل کرتا ہے۔ اسسٹنٹ کے جوابات پہلے ہی اسی زبان "
+"میں ہوتے ہیں جس میں آپ لکھتے ہیں۔"
+
+#: templates/base.html:37 templates/chat/chat_home.html:3
+msgid "Chat"
+msgstr "چیٹ"
+
+#: templates/accounts/locked_out.html:9 templates/accounts/login.html:9
+msgid ""
+"Chat with your organization's approved AI models through a single, secure "
+"interface — usage, cost, and access all managed centrally."
+msgstr ""
+"اپنی تنظیم کے منظور شدہ AI ماڈلز کے ساتھ ایک ہی محفوظ انٹرفیس کے ذریعے چیٹ "
+"کریں — استعمال، لاگت اور رسائی سب مرکزی طور پر منظم ہیں۔"
+
+#: templates/governance/_users_table.html:8
+msgid "Choose a plan…"
+msgstr "پلان منتخب کریں…"
+
+#: templates/chat/chat_home.html:485
+msgid "Click here any time to begin a fresh chat."
+msgstr "نئی چیٹ شروع کرنے کے لیے کسی بھی وقت یہاں کلک کریں۔"
+
+#: templates/base.html:29
+msgid "Close menu"
+msgstr "مینو بند کریں"
+
+#: templates/accounts/profile.html:98
+msgid "Close the quick-switcher or any open menu/popover"
+msgstr "کوئیک سوئچر یا کوئی بھی کھلا مینو/پوپ اوور بند کریں"
+
+#: templates/governance/_feedback_table.html:5
+msgid "Comment"
+msgstr "تبصرہ"
+
+#: templates/governance/system_prompt.html:16
+msgid "Company/Department Context"
+msgstr "کمپنی/شعبہ سیاق و سباق"
+
+#: templates/accounts/profile.html:57
+msgid "Confirm new password"
+msgstr "نیا پاس ورڈ تصدیق کریں"
+
+#: templates/accounts/signup.html:24
+msgid "Confirm password"
+msgstr "پاس ورڈ کی تصدیق کریں"
+
+#: templates/governance/_plan_downgrade_confirm.html:3
+msgid "Confirm plan change"
+msgstr "پلان کی تبدیلی کی تصدیق کریں"
+
+#: templates/governance/dashboard.html:24
+msgid "Conversations"
+msgstr "گفتگوئیں"
+
+#: templates/chat/_message_bubble.html:1
+msgid "Copy"
+msgstr "کاپی کریں"
+
+#: templates/governance/dashboard.html:27
+msgid "Cost (all time)"
+msgstr "لاگت (اب تک)"
+
+#: templates/governance/dashboard.html:29
+msgid "Cost (this month)"
+msgstr "لاگت (اس مہینے)"
+
+#: templates/governance/dashboard.html:63
+msgid "Cost by model"
+msgstr "ماڈل کے لحاظ سے لاگت"
+
+#: templates/governance/dashboard.html:35
+msgid "Cost — last 14 days"
+msgstr "لاگت — آخری 14 دن"
+
+#: templates/governance/model_sync.html:24
+msgid "Couldn't fetch models: %(error)s"
+msgstr "ماڈلز حاصل نہیں کیے جا سکے: %(error)s"
+
+#: templates/governance/plan_form.html:76
+msgid "Create plan"
+msgstr "پلان بنائیں"
+
+#: templates/accounts/signup.html:13
+msgid "Create your account"
+msgstr "اپنا اکاؤنٹ بنائیں"
+
+#: templates/accounts/signup.html:9
+msgid ""
+"Create your account to start chatting — an admin can adjust your role, "
+"department, and model access anytime."
+msgstr ""
+"چیٹ شروع کرنے کے لیے اپنا اکاؤنٹ بنائیں — ایڈمن کسی بھی وقت آپ کا کردار، "
+"شعبہ، اور ماڈل تک رسائی تبدیل کر سکتا ہے۔"
+
+#: templates/governance/system_prompt.html:34
+msgid "Created"
+msgstr "تخلیق شدہ"
+
+#: templates/accounts/profile.html:51
+msgid "Current password"
+msgstr "موجودہ پاس ورڈ"
+
+#: templates/governance/upgrade_requests.html:9
+msgid "Current plan"
+msgstr "موجودہ پلان"
+
+#: templates/governance/limit_form.html:39
+msgid "Daily token cap"
+msgstr "روزانہ ٹوکن حد"
+
+#: templates/governance/plan_form.html:36
+msgid "Daily token limit"
+msgstr "روزانہ ٹوکن حد"
+
+#: governance/limits.py:95
+msgid "Daily token limit reached. Try again tomorrow."
+msgstr "روزانہ ٹوکن حد پوری ہو گئی۔ کل دوبارہ کوشش کریں۔"
+
+#: templates/governance/plans.html:13
+#: templates/governance/_limits_table.html:5
+msgid "Daily tokens"
+msgstr "روزانہ ٹوکنز"
+
+#: templates/accounts/dashboard.html:3
+msgid "Dashboard"
+msgstr "ڈیش بورڈ"
+
+#: chat/models.py:15 templates/governance/plans.html:20
+msgid "Default"
+msgstr "ڈیفالٹ"
+
+#: templates/governance/plan_form.html:23
+msgid "Default for new users"
+msgstr "نئے صارفین کے لیے ڈیفالٹ"
+
+#: templates/governance/department_templates.html:35
+#: templates/governance/_departments_table.html:21
+#: templates/governance/_limits_table.html:21
+msgid "Delete"
+msgstr "حذف کریں"
+
+#: templates/governance/_departments_table.html:19
+msgid "Delete %(name)s? This also removes its system prompt history."
+msgstr "%(name)s حذف کریں؟ اس سے اس کی سسٹم پرامپٹ ہسٹری بھی حذف ہو جائے گی۔"
+
+#: templates/chat/_conversation_item.html:25
+msgid "Delete conversation"
+msgstr "گفتگو حذف کریں"
+
+#: templates/chat/_prompt_template_picker.html:14
+msgid "Delete template"
+msgstr "ٹیمپلیٹ حذف کریں"
+
+#: templates/chat/_conversation_item.html:21
+msgid "Delete this conversation? This cannot be undone."
+msgstr "یہ گفتگو حذف کریں؟ اسے واپس نہیں کیا جا سکتا۔"
+
+#: templates/governance/department_templates.html:33
+msgid ""
+"Delete this team template? Everyone in %(name)s will lose access to it."
+msgstr ""
+"یہ ٹیم ٹیمپلیٹ حذف کریں؟ %(name)s میں موجود سب اس تک رسائی کھو دیں گے۔"
+
+#: templates/governance/plan_form.html:30
+msgid "Demo duration (days) — only used if \"time-limited demo plan\" is checked"
+msgstr ""
+"ڈیمو کا دورانیہ (دن) — صرف اس صورت میں استعمال ہوتا ہے جب \"وقت کی حد والا "
+"ڈیمو پلان\" منتخب ہو"
+
+#: templates/governance/plans.html:22
+msgid "Demo · %(days)sd"
+msgstr "ڈیمو · %(days)s دن"
+
+#: templates/governance/model_permissions.html:16
+msgid "Denied"
+msgstr "مسترد"
+
+#: templates/governance/model_permissions.html:24
+msgid "Deny"
+msgstr "مسترد کریں"
+
+#: templates/governance/limit_form.html:30
+#: templates/governance/_users_table.html:18
+msgid "Department"
+msgstr "شعبہ"
+
+#: templates/base.html:84 templates/governance/departments.html:3
+msgid "Departments"
+msgstr "شعبہ جات"
+
+#: templates/governance/plan_form.html:12
+msgid "Description"
+msgstr "تفصیل"
+
+#: templates/governance/_models_table.html:32
+msgid "Disable"
+msgstr "غیر فعال کریں"
+
+#: templates/governance/models.html:50
+#: templates/governance/_models_table.html:24
+msgid "Disabled"
+msgstr "غیر فعال"
+
+#: templates/governance/upgrade_requests.html:27
+msgid "Dismiss"
+msgstr "برخاست کریں"
+
+#: templates/governance/_models_table.html:16
+msgid "Display name"
+msgstr "ظاہری نام"
+
+#: templates/governance/_models_table.html:5
+msgid "Display name / pricing"
+msgstr "ظاہری نام / قیمت"
+
+#: templates/chat/chat_home.html:526
+msgid "Done"
+msgstr "مکمل"
+
+#: templates/governance/_feedback_table.html:14
+msgid "Down"
+msgstr "ناپسند"
+
+#: chat/models.py:14
+msgid "Economy"
+msgstr "اکانومی"
+
+#: templates/chat/_message_bubble.html:1
+#: templates/governance/limit_form.html:3 templates/governance/plans.html:33
+#: templates/governance/_limits_table.html:18
+msgid "Edit"
+msgstr "ترمیم کریں"
+
+#: templates/governance/plan_form.html:6
+msgid "Edit %(name)s"
+msgstr "%(name)s میں ترمیم کریں"
+
+#: templates/governance/plan_form.html:3
+msgid "Edit Plan"
+msgstr "پلان میں ترمیم کریں"
+
+#: templates/governance/limit_form.html:6
+msgid "Edit limit"
+msgstr "حد میں ترمیم کریں"
+
+#: templates/chat/chat_home.html:262
+msgid "Editing message — sending will regenerate the reply"
+msgstr "پیغام میں ترمیم ہو رہی ہے — بھیجنے پر جواب دوبارہ تیار ہوگا"
+
+#: templates/accounts/login.html:18 templates/accounts/signup.html:18
+#: templates/governance/_users_table.html:18
+msgid "Email"
+msgstr "ای میل"
+
+#: templates/governance/_models_table.html:32
+msgid "Enable"
+msgstr "فعال کریں"
+
+#: templates/governance/models.html:49
+#: templates/governance/_models_table.html:23
+msgid "Enabled"
+msgstr "فعال"
+
+#: templates/governance/dashboard.html:25
+msgid "Enabled models"
+msgstr "فعال ماڈلز"
+
+#: templates/governance/_usage_table.html:9
+msgid "Estimated Cost"
+msgstr "تخمینی لاگت"
+
+#: templates/governance/_usage_table.html:4
+msgid "Estimated cost saved:"
+msgstr "بچائی گئی تخمینی لاگت:"
+
+#: templates/governance/model_permissions.html:7
+msgid ""
+"Every user can use an enabled model by default. Deny access below to "
+"restrict specific users."
+msgstr ""
+"ہر صارف بطور ڈیفالٹ فعال ماڈل استعمال کر سکتا ہے۔ مخصوص صارفین کو روکنے کے "
+"لیے نیچے رسائی مسترد کریں۔"
+
+#: templates/governance/department_templates.html:23
+msgid "Existing team templates"
+msgstr "موجودہ ٹیم ٹیمپلیٹس"
+
+#: templates/governance/_users_table.html:59
+msgid "Expired"
+msgstr "میعاد ختم"
+
+#: templates/governance/usage.html:10
+msgid "Export CSV"
+msgstr "CSV ایکسپورٹ کریں"
+
+#: templates/governance/usage.html:12
+msgid "Export Excel"
+msgstr "Excel ایکسپورٹ کریں"
+
+#: templates/chat/chat_home.html:179
+msgid "Export as Markdown"
+msgstr "Markdown کے طور پر ایکسپورٹ کریں"
+
+#: templates/chat/chat_home.html:178
+msgid "Export as PDF"
+msgstr "PDF کے طور پر ایکسپورٹ کریں"
+
+#: templates/chat/chat_home.html:180
+msgid "Export as plain text"
+msgstr "سادہ متن کے طور پر ایکسپورٹ کریں"
+
+#: templates/chat/chat_home.html:174
+msgid "Export conversation"
+msgstr "گفتگو ایکسپورٹ کریں"
+
+#: templates/governance/usage.html:23
+msgid "Export monthly summary (.xlsx)"
+msgstr "ماہانہ خلاصہ ایکسپورٹ کریں (.xlsx)"
+
+#: templates/governance/usage.html:15
+msgid "Exports respect whatever search/filter is currently active below."
+msgstr "ایکسپورٹس نیچے فی الحال فعال تلاش/فلٹر کا خیال رکھتے ہیں۔"
+
+#: templates/governance/plans.html:13 templates/governance/plan_form.html:55
+msgid "Features"
+msgstr "خصوصیات"
+
+#: templates/base.html:80 templates/governance/feedback.html:3
+msgid "Feedback"
+msgstr "رائے"
+
+#: templates/governance/model_sync.html:11
+msgid ""
+"Fetched just now from each provider's own model-list API. Checking a model creates a\n"
+"        <strong>disabled</strong> entry with the exact provider ID — nothing is enabled automatically.\n"
+"        Set pricing and enable it from the Models page afterward."
+msgstr ""
+"ابھی ابھی ہر فراہم کنندہ کی اپنی ماڈل لسٹ API سے حاصل کیا گیا۔ کسی ماڈل کو منتخب کرنے سے\n"
+"        عین فراہم کنندہ ID کے ساتھ <strong>غیر فعال</strong> اندراج بن جاتا ہے — کچھ بھی خودکار طور پر فعال نہیں ہوتا۔\n"
+"        بعد میں ماڈلز صفحہ سے قیمت مقرر کریں اور اسے فعال کریں۔"
+
+#: governance/limits.py:44
+msgid "File is too large. Max size is %(max_mb)sMB."
+msgstr "فائل بہت بڑی ہے۔ زیادہ سے زیادہ سائز %(max_mb)sMB ہے۔"
+
+#: governance/limits.py:52
+msgid "File type '.%(ext)s' isn't allowed. Allowed types: %(allowed)s."
+msgstr "فائل قسم '.%(ext)s' کی اجازت نہیں ہے۔ اجازت شدہ اقسام: %(allowed)s۔"
+
+#: templates/governance/_limits_table.html:5
+msgid "File types"
+msgstr "فائل اقسام"
+
+#: chat/views.py:232
+msgid "File upload isn't included in your current plan."
+msgstr "فائل اپ لوڈ آپ کے موجودہ پلان میں شامل نہیں ہے۔"
+
+#: templates/accounts/profile.html:17
+msgid "First name"
+msgstr "پہلا نام"
+
+#: templates/governance/system_prompt.html:21
+msgid "Formal"
+msgstr "رسمی"
+
+#: templates/governance/audit_logs.html:21 templates/governance/usage.html:40
+msgid "From date"
+msgstr "تاریخ سے"
+
+#: templates/accounts/signup.html:8
+msgid "Get started in seconds."
+msgstr "سیکنڈوں میں شروع کریں۔"
+
+#: templates/accounts/signup.html:14
+msgid "Get started with the AI Client Portal."
+msgstr "AI کلائنٹ پورٹل کے ساتھ شروع کریں۔"
+
+#: templates/chat/_message_feedback.html:10
+msgid "Good response"
+msgstr "اچھا جواب"
+
+#: templates/governance/_users_table.html:57
+msgid "Grace: %(days)sd"
+msgstr "رعایتی مدت: %(days)s دن"
+
+#: templates/accounts/profile.html:83
+msgid "Guided tour"
+msgstr "رہنما ٹور"
+
+#: templates/governance/plans.html:31
+msgid "Hidden"
+msgstr "پوشیدہ"
+
+#: templates/governance/system_prompt.html:32
+msgid "History"
+msgstr "تاریخ"
+
+#: templates/governance/model_sync.html:56
+msgid "Import selected models"
+msgstr "منتخب کردہ ماڈلز درآمد کریں"
+
+#: templates/accounts/profile.html:97
+msgid "Insert a newline without sending"
+msgstr "بھیجے بغیر نئی سطر شامل کریں"
+
+#: templates/chat/chat_home.html:278
+msgid "Insert a saved prompt (or type \"/\")"
+msgstr "محفوظ شدہ پرامپٹ شامل کریں (یا \"/\" ٹائپ کریں)"
+
+#: templates/accounts/profile.html:35
+msgid "Interface language"
+msgstr "انٹرفیس کی زبان"
+
+#: templates/accounts/profile.html:92
+msgid "Keyboard shortcuts"
+msgstr "کی بورڈ شارٹ کٹس"
+
+#: templates/accounts/profile.html:28
+msgid "Language"
+msgstr "زبان"
+
+#: templates/accounts/profile.html:20
+msgid "Last name"
+msgstr "آخری نام"
+
+#: templates/governance/limit_form.html:3
+msgid "Limit"
+msgstr "حد"
+
+#: templates/chat/_usage_widget.html:16
+msgid "Limit reached"
+msgstr "حد پوری ہو گئی"
+
+#: templates/base.html:68 templates/governance/limits.html:3
+msgid "Limits"
+msgstr "حدود"
+
+#: templates/accounts/login.html:3 templates/accounts/signup.html:29
+msgid "Log in"
+msgstr "لاگ ان"
+
+#: templates/base.html:103 templates/chat/chat_home.html:89
+msgid "Log out"
+msgstr "لاگ آؤٹ"
+
+#: templates/governance/departments.html:23
+msgid ""
+"Manage departments, budgets, and system prompts here — no need for Django "
+"admin."
+msgstr ""
+"یہاں شعبہ جات، بجٹ، اور سسٹم پرامپٹس منظم کریں — Django ایڈمن کی ضرورت نہیں۔"
+
+#: templates/chat/chat_home.html:488
+msgid "Manage users, models, limits, and more from here."
+msgstr "یہاں سے صارفین، ماڈلز، حدود، اور مزید کچھ منظم کریں۔"
+
+#: accounts/models.py:59
+msgid "Manager"
+msgstr "منیجر"
+
+#: templates/notifications/_bell_dropdown.html:13
+msgid "Mark all read"
+msgstr "سب کو پڑھا ہوا نشان زد کریں"
+
+#: templates/governance/limit_form.html:55
+msgid "Max upload size (MB)"
+msgstr "زیادہ سے زیادہ اپ لوڈ سائز (MB)"
+
+#: templates/governance/upgrade_requests.html:9
+msgid "Message"
+msgstr "پیغام"
+
+#: governance/limits.py:120
+msgid "Message limit reached for this conversation. Start a new chat."
+msgstr "اس گفتگو کے لیے پیغامات کی حد پوری ہو گئی۔ نئی چیٹ شروع کریں۔"
+
+#: templates/chat/chat_home.html:302
+msgid "Message the assistant..."
+msgstr "اسسٹنٹ کو پیغام بھیجیں..."
+
+#: governance/limits.py:167
+msgid "Messages in this chat"
+msgstr "اس چیٹ میں پیغامات"
+
+#: templates/governance/limit_form.html:47
+msgid "Messages per conversation"
+msgstr "فی گفتگو پیغامات"
+
+#: templates/governance/plan_form.html:44
+msgid "Messages per session"
+msgstr "فی سیشن پیغامات"
+
+#: templates/governance/_feedback_table.html:5
+#: templates/governance/_models_table.html:5
+msgid "Model"
+msgstr "ماڈل"
+
+#: templates/governance/model_sync.html:29
+msgid "Model ID"
+msgstr "ماڈل ID"
+
+#: templates/governance/models.html:23
+msgid "Model identifier"
+msgstr "ماڈل شناخت کنندہ"
+
+#: templates/base.html:64 templates/governance/models.html:3
+#: templates/governance/plans.html:13
+msgid "Models"
+msgstr "ماڈلز"
+
+#: templates/governance/plans.html:13
+msgid "Monthly budget"
+msgstr "ماہانہ بجٹ"
+
+#: templates/governance/_departments_table.html:4
+msgid "Monthly budget cap"
+msgstr "ماہانہ بجٹ حد"
+
+#: templates/governance/departments.html:14
+#: templates/governance/limit_form.html:51
+#: templates/governance/plan_form.html:52
+msgid "Monthly budget cap (USD)"
+msgstr "ماہانہ بجٹ حد (USD)"
+
+#: governance/limits.py:115
+msgid "Monthly budget cap reached."
+msgstr "ماہانہ بجٹ حد پوری ہو گئی۔"
+
+#: templates/governance/usage.html:20
+msgid "Monthly summary by department (for billing/chargeback)"
+msgstr "شعبہ کے لحاظ سے ماہانہ خلاصہ (بلنگ/چارج بیک کے لیے)"
+
+#: templates/governance/limit_form.html:43
+msgid "Monthly token cap"
+msgstr "ماہانہ ٹوکن حد"
+
+#: templates/governance/plan_form.html:40
+msgid "Monthly token limit"
+msgstr "ماہانہ ٹوکن حد"
+
+#: governance/limits.py:105
+msgid "Monthly token limit reached."
+msgstr "ماہانہ ٹوکن حد پوری ہو گئی۔"
+
+#: templates/governance/_limits_table.html:5
+msgid "Monthly tokens"
+msgstr "ماہانہ ٹوکنز"
+
+#: templates/governance/departments.html:10
+#: templates/governance/department_templates.html:16
+#: templates/governance/plans.html:13 templates/governance/plan_form.html:9
+#: templates/governance/_departments_table.html:4
+msgid "Name"
+msgstr "نام"
+
+#: templates/chat/chat_home.html:452
+msgid "Name this template:"
+msgstr "اس ٹیمپلیٹ کا نام رکھیں:"
+
+#: templates/governance/limit_form.html:3
+#: templates/governance/_audit_logs_table.html:5
+msgid "New"
+msgstr "نیا"
+
+#: templates/governance/plan_form.html:3
+msgid "New Plan"
+msgstr "نیا پلان"
+
+#: chat/views.py:159 templates/chat/chat_home.html:11
+msgid "New chat"
+msgstr "نئی چیٹ"
+
+#: templates/governance/plan_form.html:48
+msgid "New conversations per day"
+msgstr "روزانہ نئی گفتگوئیں"
+
+#: templates/governance/limits.html:8 templates/governance/limit_form.html:6
+msgid "New limit"
+msgstr "نئی حد"
+
+#: templates/accounts/profile.html:54
+msgid "New password"
+msgstr "نیا پاس ورڈ"
+
+#: templates/governance/plans.html:8 templates/governance/plan_form.html:6
+msgid "New plan"
+msgstr "نیا پلان"
+
+#: templates/chat/chat_home.html:478
+#: templates/governance/_audit_logs_table.html:26
+#: templates/governance/_feedback_table.html:29
+msgid "Next"
+msgstr "اگلا"
+
+#: templates/chat/chat_home.html:248
+msgid ""
+"No AI models are enabled yet. An admin needs to enable a verified model in "
+"the admin dashboard before chat will work."
+msgstr ""
+"ابھی تک کوئی AI ماڈل فعال نہیں ہے۔ چیٹ کام کرنے سے پہلے ایڈمن کو ایڈمن ڈیش "
+"بورڈ میں تصدیق شدہ ماڈل فعال کرنا ہوگا۔"
+
+#: templates/governance/model_sync.html:22
+msgid ""
+"No API key configured for this provider — set it in your environment to "
+"sync."
+msgstr ""
+"اس فراہم کنندہ کے لیے کوئی API کلید مقرر نہیں ہے — سنک کرنے کے لیے اسے اپنے "
+"ماحول میں مقرر کریں۔"
+
+#: templates/accounts/login.html:26
+msgid "No account?"
+msgstr "اکاؤنٹ نہیں ہے؟"
+
+#: templates/governance/system_prompt.html:11
+msgid ""
+"No active version yet — the base system prompt is used with no department-"
+"specific instructions."
+msgstr ""
+"ابھی تک کوئی فعال ورژن نہیں ہے — بنیادی سسٹم پرامپٹ بغیر شعبہ کی مخصوص "
+"ہدایات کے استعمال ہو رہا ہے۔"
+
+#: templates/governance/_audit_logs_table.html:18
+msgid "No audit events match your search/filters."
+msgstr "آپ کی تلاش/فلٹرز سے کوئی آڈٹ ایونٹ میل نہیں کھاتا۔"
+
+#: templates/chat/_conversation_list.html:21
+msgid "No conversations yet."
+msgstr "ابھی تک کوئی گفتگو نہیں۔"
+
+#: templates/accounts/dashboard.html:5
+msgid "No department assigned"
+msgstr "کوئی شعبہ تفویض نہیں کیا گیا"
+
+#: templates/governance/_departments_table.html:26
+msgid "No departments match your search."
+msgstr "آپ کی تلاش سے کوئی شعبہ میل نہیں کھاتا۔"
+
+#: templates/governance/_feedback_table.html:21
+msgid "No feedback matches your search/filters."
+msgstr "آپ کی تلاش/فلٹرز سے کوئی رائے میل نہیں کھاتی۔"
+
+#: templates/governance/_limits_table.html:26
+msgid "No limits match your search — everyone else uses system defaults."
+msgstr ""
+"آپ کی تلاش سے کوئی حد میل نہیں کھاتی — باقی سب سسٹم ڈیفالٹس استعمال کرتے "
+"ہیں۔"
+
+#: templates/chat/chat_home.html:26
+msgid "No matching conversations."
+msgstr "کوئی مماثل گفتگو نہیں۔"
+
+#: templates/governance/plan_form.html:72
+msgid "No models configured yet."
+msgstr "ابھی تک کوئی ماڈل مقرر نہیں کیا گیا۔"
+
+#: templates/governance/_models_table.html:38
+msgid "No models match your search/filters."
+msgstr "آپ کی تلاش/فلٹرز سے کوئی ماڈل میل نہیں کھاتا۔"
+
+#: governance/views.py:549
+msgid "No models were selected to import."
+msgstr "درآمد کے لیے کوئی ماڈل منتخب نہیں کیا گیا۔"
+
+#: templates/governance/model_sync.html:45
+msgid "No new models — everything returned is already tracked."
+msgstr "کوئی نیا ماڈل نہیں — واپس آنے والا سب کچھ پہلے سے شامل ہے۔"
+
+#: templates/notifications/_bell_dropdown.html:28
+msgid "No notifications yet."
+msgstr "ابھی تک کوئی اطلاع نہیں۔"
+
+#: templates/governance/upgrade_requests.html:32
+msgid "No pending upgrade requests."
+msgstr "کوئی زیر التوا اپ گریڈ درخواست نہیں۔"
+
+#: templates/governance/_users_table.html:52
+msgid "No plan"
+msgstr "کوئی پلان نہیں"
+
+#: templates/governance/plans.html:36
+msgid "No plans yet."
+msgstr "ابھی تک کوئی پلان نہیں۔"
+
+#: templates/chat/_prompt_template_picker.html:21
+msgid ""
+"No saved prompts yet. Type something in the composer and use \"Save as "
+"template\" to add one."
+msgstr ""
+"ابھی تک کوئی محفوظ شدہ پرامپٹ نہیں۔ کمپوزر میں کچھ ٹائپ کریں اور شامل کرنے "
+"کے لیے \"ٹیمپلیٹ کے طور پر محفوظ کریں\" استعمال کریں۔"
+
+#: templates/governance/department_templates.html:40
+msgid "No team templates yet."
+msgstr "ابھی تک کوئی ٹیم ٹیمپلیٹ نہیں۔"
+
+#: templates/chat/_usage_widget.html:28
+msgid "No usage limits set on your account."
+msgstr "آپ کے اکاؤنٹ پر کوئی استعمال کی حد مقرر نہیں ہے۔"
+
+#: templates/governance/_usage_table.html:20
+msgid "No usage matches your search/filters."
+msgstr "آپ کی تلاش/فلٹرز سے کوئی استعمال میل نہیں کھاتا۔"
+
+#: templates/governance/dashboard.html:8
+msgid "No usage yet — data will appear here once conversations start."
+msgstr ""
+"ابھی تک کوئی استعمال نہیں — گفتگوئیں شروع ہوتے ہی ڈیٹا یہاں ظاہر ہوگا۔"
+
+#: templates/governance/_users_table.html:90
+msgid "No users match your search/filters."
+msgstr "آپ کی تلاش/فلٹرز سے کوئی صارف میل نہیں کھاتا۔"
+
+#: templates/governance/system_prompt.html:44
+msgid "No versions yet."
+msgstr "ابھی تک کوئی ورژن نہیں۔"
+
+#: templates/governance/upgrade_requests.html:15
+msgid "Not specified"
+msgstr "غیر متعین"
+
+#: templates/chat/chat_home.html:211
+msgid "Not sure — let the admin decide"
+msgstr "یقین نہیں — ایڈمن کو فیصلہ کرنے دیں"
+
+#: notifications/views.py:46
+msgid "Notification preferences updated."
+msgstr "اطلاعاتی ترجیحات اپ ڈیٹ ہو گئیں۔"
+
+#: templates/accounts/profile.html:65
+#: templates/notifications/_bell_dropdown.html:9
+msgid "Notifications"
+msgstr "اطلاعات"
+
+#: templates/governance/_audit_logs_table.html:5
+msgid "Old"
+msgstr "پرانا"
+
+#: templates/accounts/locked_out.html:8 templates/accounts/login.html:8
+msgid "One assistant. Every model. Full control."
+msgstr "ایک اسسٹنٹ۔ ہر ماڈل۔ مکمل کنٹرول۔"
+
+#: templates/accounts/dashboard.html:12
+msgid "Open Chat"
+msgstr "چیٹ کھولیں"
+
+#: templates/base.html:22
+msgid "Open menu"
+msgstr "مینو کھولیں"
+
+#: templates/notifications/email_generic.html:23
+msgid "Open the portal"
+msgstr "پورٹل کھولیں"
+
+#: templates/base.html:48 templates/governance/dashboard.html:11
+msgid "Overview"
+msgstr "جائزہ"
+
+#: templates/governance/_audit_logs_table.html:25
+#: templates/governance/_feedback_table.html:28
+msgid "Page %(number)s of %(pages)s"
+msgstr "صفحہ %(number)s از %(pages)s"
+
+#: templates/accounts/login.html:21 templates/accounts/signup.html:21
+msgid "Password"
+msgstr "پاس ورڈ"
+
+#: accounts/views.py:132
+msgid "Password changed."
+msgstr "پاس ورڈ تبدیل ہو گیا۔"
+
+#: templates/chat/chat_home.html:487
+msgid "Pick a model"
+msgstr "ماڈل منتخب کریں"
+
+#: templates/chat/_conversation_item.html:15
+msgid "Pin conversation"
+msgstr "گفتگو پن کریں"
+
+#: templates/chat/_conversation_list.html:4
+msgid "Pinned"
+msgstr "پن شدہ"
+
+#: templates/governance/_users_table.html:19
+msgid "Plan"
+msgstr "پلان"
+
+#: templates/chat/chat_home.html:192
+msgid "Plan:"
+msgstr "پلان:"
+
+#: templates/base.html:56 templates/governance/plans.html:3
+msgid "Plans"
+msgstr "پلانز"
+
+#: chat/models.py:16
+msgid "Premium"
+msgstr "پریمیم"
+
+#: templates/governance/_audit_logs_table.html:24
+#: templates/governance/_feedback_table.html:27
+msgid "Prev"
+msgstr "پچھلا"
+
+#: chat/utils.py:29
+msgid "Previous 30 Days"
+msgstr "پچھلے 30 دن"
+
+#: chat/utils.py:27
+msgid "Previous 7 Days"
+msgstr "پچھلے 7 دن"
+
+#: templates/accounts/profile.html:3
+msgid "Profile Settings"
+msgstr "پروفائل کی ترتیبات"
+
+#: templates/base.html:118 templates/chat/chat_home.html:227
+msgid "Profile settings"
+msgstr "پروفائل کی ترتیبات"
+
+#: accounts/views.py:117
+msgid "Profile updated."
+msgstr "پروفائل اپ ڈیٹ ہو گیا۔"
+
+#: templates/governance/department_templates.html:25
+#: templates/governance/_departments_table.html:17
+msgid "Prompt"
+msgstr "پرامپٹ"
+
+#: templates/governance/department_templates.html:18
+msgid "Prompt text"
+msgstr "پرامپٹ متن"
+
+#: templates/governance/models.html:17
+#: templates/governance/_models_table.html:5
+msgid "Provider"
+msgstr "فراہم کنندہ"
+
+#: templates/accounts/profile.html:95
+msgid "Quick-switcher — new chat or jump to a conversation"
+msgstr "کوئیک سوئچر — نئی چیٹ یا کسی گفتگو پر جائیں"
+
+#: templates/governance/_feedback_table.html:5
+msgid "Rating"
+msgstr "درجہ بندی"
+
+#: templates/chat/_message_bubble.html:1
+msgid "Regenerate"
+msgstr "دوبارہ تیار کریں"
+
+#: templates/accounts/profile.html:84
+msgid ""
+"Replay the first-login walkthrough of New chat, Usage, model selection, and "
+"Admin."
+msgstr ""
+"نئی چیٹ، استعمال، ماڈل منتخب کرنے، اور ایڈمن کا پہلی لاگ ان والا رہنما "
+"دوبارہ دیکھیں۔"
+
+#: templates/accounts/profile.html:87
+msgid "Replay tour"
+msgstr "ٹور دوبارہ دیکھیں"
+
+#: templates/governance/_feedback_table.html:5
+msgid "Reply"
+msgstr "جواب"
+
+#: templates/chat/chat_home.html:207
+msgid "Request upgrade"
+msgstr "اپ گریڈ کی درخواست کریں"
+
+#: templates/governance/upgrade_requests.html:9
+msgid "Requested"
+msgstr "درخواست شدہ"
+
+#: templates/governance/_usage_table.html:9
+msgid "Requests"
+msgstr "درخواستیں"
+
+#: templates/governance/feedback.html:6
+msgid "Response Feedback"
+msgstr "جواب کی رائے"
+
+#: templates/governance/system_prompt.html:26
+msgid "Restricted Topics"
+msgstr "پابندی شدہ موضوعات"
+
+#: templates/governance/plans.html:30
+msgid "Retired"
+msgstr "منسوخ شدہ"
+
+#: templates/governance/model_permissions.html:9
+#: templates/governance/_users_table.html:18
+msgid "Role"
+msgstr "کردار"
+
+#: templates/accounts/profile.html:14
+msgid "Role and department are managed by an admin."
+msgstr "کردار اور شعبہ ایڈمن کے زیرِ انتظام ہیں۔"
+
+#: templates/governance/_departments_table.html:16
+#: templates/governance/_models_table.html:19
+msgid "Save"
+msgstr "محفوظ کریں"
+
+#: templates/governance/system_prompt.html:29
+msgid "Save as new version"
+msgstr "نئے ورژن کے طور پر محفوظ کریں"
+
+#: templates/chat/chat_home.html:288
+msgid "Save as template"
+msgstr "ٹیمپلیٹ کے طور پر محفوظ کریں"
+
+#: templates/accounts/profile.html:23 templates/governance/plan_form.html:76
+msgid "Save changes"
+msgstr "تبدیلیاں محفوظ کریں"
+
+#: templates/accounts/profile.html:42
+msgid "Save language"
+msgstr "زبان محفوظ کریں"
+
+#: templates/governance/limit_form.html:64
+msgid "Save limit"
+msgstr "حد محفوظ کریں"
+
+#: templates/accounts/profile.html:78
+msgid "Save notification preferences"
+msgstr "اطلاعاتی ترجیحات محفوظ کریں"
+
+#: templates/chat/chat_home.html:286
+msgid "Save the current composer text as a template"
+msgstr "موجودہ کمپوزر متن کو ٹیمپلیٹ کے طور پر محفوظ کریں"
+
+#: templates/governance/audit_logs.html:12
+msgid "Search actor, action, target..."
+msgstr "کارگزار، عمل، ہدف تلاش کریں..."
+
+#: templates/chat/chat_home.html:98
+msgid "Search conversations, or start a new one..."
+msgstr "گفتگوئیں تلاش کریں، یا نئی شروع کریں..."
+
+#: templates/chat/chat_home.html:16
+msgid "Search conversations..."
+msgstr "گفتگوئیں تلاش کریں..."
+
+#: templates/governance/departments.html:29
+msgid "Search department name..."
+msgstr "شعبہ کا نام تلاش کریں..."
+
+#: templates/governance/models.html:44
+msgid "Search model or provider..."
+msgstr "ماڈل یا فراہم کنندہ تلاش کریں..."
+
+#: templates/governance/users.html:13
+msgid "Search name or email..."
+msgstr "نام یا ای میل تلاش کریں..."
+
+#: templates/governance/usage.html:31
+msgid "Search user email..."
+msgstr "صارف کا ای میل تلاش کریں..."
+
+#: templates/governance/feedback.html:16
+msgid "Search user or comment..."
+msgstr "صارف یا تبصرہ تلاش کریں..."
+
+#: templates/governance/limits.html:16
+msgid "Search user or department..."
+msgstr "صارف یا شعبہ تلاش کریں..."
+
+#: templates/chat/chat_home.html:486
+msgid ""
+"See your token and budget usage here, and request an upgrade if you need "
+"more."
+msgstr ""
+"یہاں اپنے ٹوکن اور بجٹ کا استعمال دیکھیں، اور اگر مزید درکار ہو تو اپ گریڈ "
+"کی درخواست کریں۔"
+
+#: templates/chat/chat_home.html:354
+msgid "Select a conversation from the sidebar, or start a fresh one below."
+msgstr "سائیڈ بار سے کوئی گفتگو منتخب کریں، یا نیچے نئی شروع کریں۔"
+
+#: governance/views.py:331
+msgid "Select at least one user and a plan first."
+msgstr "پہلے کم از کم ایک صارف اور ایک پلان منتخب کریں۔"
+
+#: templates/governance/upgrade_requests.html:7
+msgid ""
+"Self-service requests from users on Demo (or non-top-tier) plans asking for "
+"more access."
+msgstr ""
+"ڈیمو (یا غیر اعلیٰ درجہ) پلانز پر موجود صارفین کی طرف سے مزید رسائی کے لیے "
+"خود کار درخواستیں۔"
+
+#: templates/chat/chat_home.html:306 templates/chat/_message_feedback.html:25
+msgid "Send"
+msgstr "بھیجیں"
+
+#: templates/chat/chat_home.html:217
+msgid "Send request"
+msgstr "درخواست بھیجیں"
+
+#: templates/accounts/profile.html:96
+msgid "Send the message"
+msgstr "پیغام بھیجیں"
+
+#: templates/governance/_limits_table.html:5
+msgid "Session msgs"
+msgstr "سیشن پیغامات"
+
+#: templates/governance/_models_table.html:31
+msgid "Set pricing first"
+msgstr "پہلے قیمت مقرر کریں"
+
+#: templates/base.html:97 templates/chat/chat_home.html:83
+msgid "Settings"
+msgstr "ترتیبات"
+
+#: templates/governance/_departments_table.html:2
+msgid ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> department"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> departments"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> شعبہ"
+msgstr[1] ""
+"دکھائے جا رہے ہیں <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> شعبہ جات"
+
+#: templates/governance/_audit_logs_table.html:2
+msgid ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> event"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> events"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> واقعہ"
+msgstr[1] ""
+"دکھائے جا رہے ہیں <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> واقعات"
+
+#: templates/governance/_feedback_table.html:2
+msgid ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> feedback entry"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> feedback entries"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> رائے"
+msgstr[1] ""
+"دکھائی جا رہی ہیں <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> آراء"
+
+#: templates/governance/_limits_table.html:2
+msgid ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> limit"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> limits"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> حد"
+msgstr[1] ""
+"دکھائی جا رہی ہیں <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> حدود"
+
+#: templates/governance/_models_table.html:2
+msgid ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> model"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> models"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> ماڈل"
+msgstr[1] ""
+"دکھائے جا رہے ہیں <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> ماڈلز"
+
+#: templates/governance/_users_table.html:2
+msgid ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> user"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> of <span "
+"class=\"mono\">%(total_count)s</span> users"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> صارف"
+msgstr[1] ""
+"دکھائے جا رہے ہیں <span class=\"mono\">%(total_count)s</span> میں سے <span "
+"class=\"mono\">%(counter)s</span> صارفین"
+
+#: templates/governance/_usage_table.html:6
+msgid "Showing <span class=\"mono\">%(counter)s</span> user with matching usage"
+msgid_plural ""
+"Showing <span class=\"mono\">%(counter)s</span> users with matching usage"
+msgstr[0] ""
+"دکھایا جا رہا ہے <span class=\"mono\">%(counter)s</span> صارف مماثل استعمال "
+"کے ساتھ"
+msgstr[1] ""
+"دکھائے جا رہے ہیں <span class=\"mono\">%(counter)s</span> صارفین مماثل "
+"استعمال کے ساتھ"
+
+#: templates/accounts/login.html:14
+msgid "Sign in to your account."
+msgstr "اپنے اکاؤنٹ میں سائن ان کریں۔"
+
+#: templates/accounts/login.html:26 templates/accounts/signup.html:3
+msgid "Sign up"
+msgstr "سائن اپ کریں"
+
+#: templates/chat/chat_home.html:477
+msgid "Skip"
+msgstr "نظر انداز کریں"
+
+#: templates/governance/_users_table.html:19
+msgid "Sort by engagement (fastest limit burn vs. trial time elapsed)"
+msgstr ""
+"شمولیت کے لحاظ سے ترتیب دیں (تیز ترین حد ختم ہونا بمقابلہ ٹرائل کا گزرا وقت)"
+
+#: templates/governance/plans.html:22
+msgid "Standard"
+msgstr "معیاری"
+
+#: templates/chat/chat_home.html:353
+msgid "Start a new conversation"
+msgstr "نئی گفتگو شروع کریں"
+
+#: templates/governance/plans.html:13
+#: templates/governance/_models_table.html:5
+#: templates/governance/_users_table.html:20
+msgid "Status"
+msgstr "حیثیت"
+
+#: templates/chat/chat_home.html:525
+msgid "Step {current} of {total}"
+msgstr "مرحلہ {current} از {total}"
+
+#: templates/governance/_users_table.html:83
+msgid "Suspend"
+msgstr "معطل کریں"
+
+#: templates/governance/users.html:25
+#: templates/governance/_users_table.html:77
+msgid "Suspended"
+msgstr "معطل"
+
+#: templates/governance/models.html:9 templates/governance/model_sync.html:3
+msgid "Sync Models"
+msgstr "ماڈلز سنک کریں"
+
+#: templates/governance/models.html:12
+msgid ""
+"Sync fetches the real, current model list from each provider's API — no more"
+" hand-typed IDs. Manual entry below still works as a fallback."
+msgstr ""
+"سنک ہر فراہم کنندہ کی API سے حقیقی، موجودہ ماڈل لسٹ حاصل کرتا ہے — اب ہاتھ "
+"سے ID ٹائپ کرنے کی ضرورت نہیں۔ نیچے دستی اندراج بطور متبادل اب بھی کام کرتا "
+"ہے۔"
+
+#: templates/governance/system_prompt.html:3
+msgid "System Prompt — %(name)s"
+msgstr "سسٹم پرامپٹ — %(name)s"
+
+#: templates/governance/limits.html:10
+msgid ""
+"System defaults apply to anyone without a limit here: uploads up to "
+"%(default_upload_mb)sMB, %(default_extensions)s file types, no token/budget "
+"caps."
+msgstr ""
+"یہاں بغیر حد والے ہر فرد پر سسٹم ڈیفالٹس لاگو ہوتے ہیں: اپ لوڈز "
+"%(default_upload_mb)sMB تک، فائل اقسام %(default_extensions)s، کوئی ٹوکن/بجٹ"
+" حد نہیں۔"
+
+#: templates/governance/_audit_logs_table.html:5
+msgid "Target"
+msgstr "ہدف"
+
+#: templates/chat/_prompt_template_picker.html:6
+msgid "Team"
+msgstr "ٹیم"
+
+#: templates/governance/department_templates.html:3
+msgid "Team Templates — %(name)s"
+msgstr "ٹیم ٹیمپلیٹس — %(name)s"
+
+#: templates/governance/system_prompt.html:23
+msgid "Technical"
+msgstr "تکنیکی"
+
+#: templates/chat/chat_home.html:280
+#: templates/governance/_departments_table.html:18
+msgid "Templates"
+msgstr "ٹیمپلیٹس"
+
+#: templates/accounts/locked_out.html:15
+msgid ""
+"This account is temporarily locked after several incorrect password attempts.\n"
+"                Try again in about <strong>%(cooloff_minutes)s minutes</strong>, or contact your administrator if this wasn't you."
+msgstr ""
+"کئی غلط پاس ورڈ کوششوں کے بعد یہ اکاؤنٹ عارضی طور پر مقفل کر دیا گیا ہے۔\n"
+"                تقریباً <strong>%(cooloff_minutes)s منٹ</strong> میں دوبارہ کوشش کریں، یا اگر یہ آپ نہیں تھے تو اپنے ایڈمن سے رابطہ کریں۔"
+
+#: templates/governance/feedback.html:21
+msgid "Thumbs down only"
+msgstr "صرف ناپسندیدہ"
+
+#: templates/governance/feedback.html:22
+msgid "Thumbs up only"
+msgstr "صرف پسندیدہ"
+
+#: templates/governance/feedback.html:8
+msgid ""
+"Thumbs up/down left by users on assistant replies. This is visibility only — nothing\n"
+"        here changes model routing or behavior automatically."
+msgstr ""
+"صارفین کی طرف سے اسسٹنٹ کے جوابات پر دی گئی پسند/ناپسند۔ یہ صرف نظر ثانی کے لیے ہے — یہاں\n"
+"        کچھ بھی خودکار طور پر ماڈل روٹنگ یا رویے کو تبدیل نہیں کرتا۔"
+
+#: templates/governance/models.html:27 templates/governance/model_sync.html:29
+#: templates/governance/_models_table.html:5
+msgid "Tier"
+msgstr "درجہ"
+
+#: templates/governance/_audit_logs_table.html:5
+#: templates/governance/_feedback_table.html:5
+msgid "Time"
+msgstr "وقت"
+
+#: templates/governance/plan_form.html:17
+msgid "Time-limited demo plan"
+msgstr "وقت کی حد والا ڈیمو پلان"
+
+#: templates/governance/audit_logs.html:23 templates/governance/usage.html:42
+msgid "To date"
+msgstr "تاریخ تک"
+
+#: chat/utils.py:23
+msgid "Today"
+msgstr "آج"
+
+#: templates/governance/_usage_table.html:9
+msgid "Tokens"
+msgstr "ٹوکنز"
+
+#: templates/governance/dashboard.html:26
+msgid "Tokens (all time)"
+msgstr "ٹوکنز (اب تک)"
+
+#: templates/governance/dashboard.html:28
+msgid "Tokens (this month)"
+msgstr "ٹوکنز (اس مہینے)"
+
+#: governance/limits.py:156
+msgid "Tokens this month"
+msgstr "اس مہینے کے ٹوکنز"
+
+#: governance/limits.py:150
+msgid "Tokens today"
+msgstr "آج کے ٹوکنز"
+
+#: templates/governance/dashboard.html:49
+msgid "Tokens — last 14 days"
+msgstr "ٹوکنز — آخری 14 دن"
+
+#: templates/governance/system_prompt.html:34
+msgid "Tone"
+msgstr "لہجہ"
+
+#: templates/governance/system_prompt.html:19
+msgid "Tone Preference"
+msgstr "لہجے کی ترجیح"
+
+#: templates/accounts/locked_out.html:13
+msgid "Too many failed attempts"
+msgstr "بہت زیادہ ناکام کوششیں"
+
+#: templates/chat/chat_home.html:486
+msgid "Track your usage"
+msgstr "اپنا استعمال دیکھیں"
+
+#: templates/chat/chat_home.html:196
+msgid "Trial ended"
+msgstr "ٹرائل ختم ہو گیا"
+
+#: templates/chat/chat_home.html:194
+msgid "Trial ended — %(days)sd left"
+msgstr "ٹرائل ختم ہو گیا — %(days)s دن باقی"
+
+#: templates/governance/plans.html:13
+msgid "Type"
+msgstr "قسم"
+
+#: chat/views.py:305
+msgid "Type a message first."
+msgstr "پہلے ایک پیغام لکھیں۔"
+
+#: chat/views.py:221
+msgid "Type a message or attach a file first."
+msgstr "پہلے پیغام لکھیں یا فائل منسلک کریں۔"
+
+#: templates/chat/chat_home.html:449
+msgid "Type something in the composer first, then save it as a template."
+msgstr "پہلے کمپوزر میں کچھ لکھیں، پھر اسے ٹیمپلیٹ کے طور پر محفوظ کریں۔"
+
+#: templates/chat/_conversation_item.html:15
+msgid "Unpin conversation"
+msgstr "گفتگو ان پن کریں"
+
+#: templates/governance/_feedback_table.html:13
+msgid "Up"
+msgstr "پسند"
+
+#: templates/base.html:60 templates/governance/upgrade_requests.html:3
+msgid "Upgrade Requests"
+msgstr "اپ گریڈ درخواستیں"
+
+#: chat/views.py:141
+msgid "Upgrade request sent — an admin will review it soon."
+msgstr "اپ گریڈ درخواست بھیج دی گئی — ایڈمن جلد اس کا جائزہ لے گا۔"
+
+#: templates/governance/_limits_table.html:5
+msgid "Upload cap"
+msgstr "اپ لوڈ حد"
+
+#: templates/chat/chat_home.html:187
+msgid "Usage"
+msgstr "استعمال"
+
+#: templates/base.html:72 templates/governance/usage.html:3
+msgid "Usage & Cost"
+msgstr "استعمال اور لاگت"
+
+#: templates/governance/usage.html:7
+msgid "Usage & Cost by User"
+msgstr "صارف کے لحاظ سے استعمال اور لاگت"
+
+#: templates/governance/limits.html:7
+msgid "Usage & Upload Limits"
+msgstr "استعمال اور اپ لوڈ کی حدود"
+
+#: accounts/models.py:58 templates/governance/limit_form.html:23
+#: templates/governance/model_permissions.html:9
+#: templates/governance/upgrade_requests.html:9
+#: templates/governance/_feedback_table.html:5
+#: templates/governance/_usage_table.html:9
+msgid "User"
+msgstr "صارف"
+
+#: templates/base.html:52 templates/governance/dashboard.html:23
+#: templates/governance/users.html:3
+msgid "Users"
+msgstr "صارفین"
+
+#: templates/governance/dashboard.html:77
+msgid "Users by role"
+msgstr "کردار کے لحاظ سے صارفین"
+
+#: templates/governance/_users_table.html:62
+msgid "Using their limit faster than their trial time is passing"
+msgstr "ٹرائل وقت گزرنے کی نسبت اپنی حد تیزی سے استعمال کرنا"
+
+#: templates/governance/models.html:38
+msgid ""
+"Verify pricing against current provider docs before enabling a model — "
+"pricing is never auto-filled."
+msgstr ""
+"ماڈل فعال کرنے سے پہلے موجودہ فراہم کنندہ دستاویزات کے خلاف قیمت کی تصدیق "
+"کریں — قیمت کبھی خودکار طور پر نہیں بھری جاتی۔"
+
+#: templates/governance/plan_form.html:26
+msgid "Visible in Change Plan picker"
+msgstr "پلان تبدیل کریں والے منتخب کنندہ میں نظر آتا ہے"
+
+#: templates/governance/department_templates.html:11
+msgid ""
+"Visible to every user in %(name)s, alongside their own personal templates, "
+"badged \"Team\"."
+msgstr ""
+"%(name)s میں ہر صارف کو نظر آتا ہے، ان کے اپنے ذاتی ٹیمپلیٹس کے ساتھ، "
+"\"ٹیم\" کے نشان کے ساتھ۔"
+
+#: templates/governance/upgrade_requests.html:9
+msgid "Wants"
+msgstr "خواہش"
+
+#: templates/accounts/login.html:13
+msgid "Welcome back"
+msgstr "خوش آمدید"
+
+#: templates/accounts/dashboard.html:7
+msgid "Welcome, %(user.email)s"
+msgstr "خوش آمدید، %(user.email)s"
+
+#: templates/chat/_message_feedback.html:24
+msgid "What was wrong? (optional)"
+msgstr "کیا غلط تھا؟ (اختیاری)"
+
+#: templates/governance/_models_table.html:27
+msgid "Who can use"
+msgstr "کون استعمال کر سکتا ہے"
+
+#: templates/governance/model_permissions.html:3
+msgid "Who can use %(name)s"
+msgstr "%(name)s کون استعمال کر سکتا ہے"
+
+#: templates/governance/_users_table.html:6
+msgid "With selected:"
+msgstr "منتخب کردہ کے ساتھ:"
+
+#: templates/governance/_plan_downgrade_confirm.html:18
+msgid "Yes, move to %(plan_name)s anyway"
+msgstr "ہاں، بہرحال %(plan_name)s میں منتقل کریں"
+
+#: chat/utils.py:25
+msgid "Yesterday"
+msgstr "کل"
+
+#: templates/notifications/email_generic.html:28
+msgid ""
+"You can change what you're emailed about under Settings, in the "
+"Notifications section."
+msgstr ""
+"آپ ترتیبات میں، اطلاعات کے سیکشن میں، یہ تبدیل کر سکتے ہیں کہ آپ کو کس بارے "
+"میں ای میل کی جاتی ہے۔"
+
+#: templates/accounts/profile.html:67
+msgid ""
+"You'll always see these in the notification bell. Choose which ones also "
+"come by email."
+msgstr ""
+"یہ ہمیشہ اطلاعاتی گھنٹی میں نظر آئیں گی۔ منتخب کریں کہ کون سی ای میل کے "
+"ذریعے بھی آئیں۔"
+
+#: templates/accounts/profile.html:9
+msgid "Your info"
+msgstr "آپ کی معلومات"
+
+#: templates/chat/chat_home.html:243
+msgid "Your trial has ended — contact your administrator to continue."
+msgstr ""
+"آپ کا ٹرائل ختم ہو گیا ہے — جاری رکھنے کے لیے اپنے ایڈمن سے رابطہ کریں۔"
+
+#: governance/limits.py:65
+msgid "Your trial has ended — contact your administrator."
+msgstr "آپ کا ٹرائل ختم ہو گیا ہے — اپنے ایڈمن سے رابطہ کریں۔"
+
+#: templates/chat/chat_home.html:238
+msgid ""
+"Your trial has ended. You have <strong>%(days)s day(s)</strong> of read-only\n"
+"        access left — you can still view past conversations, but new messages are blocked. Contact your administrator to continue."
+msgstr ""
+"آپ کا ٹرائل ختم ہو گیا ہے۔ آپ کے پاس <strong>%(days)s دن</strong> کی صرف پڑھنے کی\n"
+"        رسائی باقی ہے — آپ اب بھی پرانی گفتگوئیں دیکھ سکتے ہیں، لیکن نئے پیغامات مسدود ہیں۔ جاری رکھنے کے لیے اپنے ایڈمن سے رابطہ کریں۔"
+
+#: templates/chat/_usage_widget.html:6
+msgid "Your usage"
+msgstr "آپ کا استعمال"
+
+#: templates/governance/dashboard.html:16
+msgid "across users with limits"
+msgstr "حدود والے صارفین میں"
+
+#: templates/governance/departments.html:11
+msgid "e.g. Engineering"
+msgstr "مثلاً انجینئرنگ"
+
+#: templates/governance/department_templates.html:17
+msgid "e.g. Weekly status update"
+msgstr "مثلاً ہفتہ وار حیثیت اپ ڈیٹ"
+
+#: templates/governance/_users_table.html:19
+msgid "engagement"
+msgstr "شمولیت"
+
+#: templates/governance/_models_table.html:17
+msgid "input $"
+msgstr "ان پٹ $"
+
+#: templates/governance/_models_table.html:18
+msgid "output $"
+msgstr "آؤٹ پٹ $"
+
+#: templates/governance/limit_form.html:60
+msgid "pdf,png,txt (system default if blank)"
+msgstr "pdf,png,txt (خالی ہونے پر سسٹم ڈیفالٹ)"
+
+#: templates/governance/limit_form.html:25
+msgid "select"
+msgstr "منتخب کریں"
+
+#: templates/governance/limit_form.html:56
+msgid "system default"
+msgstr "سسٹم ڈیفالٹ"
+
+#: templates/governance/departments.html:15
+#: templates/governance/limit_form.html:40
+#: templates/governance/plan_form.html:33
+#: templates/governance/_departments_table.html:12
+msgid "unlimited"
+msgstr "لامحدود"
+
+#: templates/chat/_usage_widget.html:16
+msgid "used"
+msgstr "استعمال شدہ"
+
+#: templates/governance/_users_table.html:43
+msgid "— none —"
+msgstr "— کوئی نہیں —"

@@ -12,4 +12,7 @@ urlpatterns = [
     path("admin-panel/", views.AdminPanelView.as_view(), name="admin_panel"),
     path("profile/", views.ProfileView.as_view(), name="profile"),
     path("profile/password/", views.ProfilePasswordView.as_view(), name="profile_password"),
+    path("set-language/", views.set_language_preference, name="set_language_preference"),
+    path("onboarding/complete/", views.complete_onboarding, name="complete_onboarding"),
+    path("onboarding/replay/", views.replay_onboarding, name="replay_onboarding"),
 ]

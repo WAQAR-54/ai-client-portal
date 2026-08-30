@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 
 from notifications.models import EMAIL_TOGGLE_LABELS, Notification, NotificationPreference
@@ -37,10 +38,10 @@ def mark_all_read(request):
 @login_required
 @require_http_methods(["POST"])
 def update_preferences(request):
-    preference, _ = NotificationPreference.objects.get_or_create(user=request.user)
+    preference, _created = NotificationPreference.objects.get_or_create(user=request.user)
     for key, _label in EMAIL_TOGGLE_LABELS:
         field = f"email_{key}"
         setattr(preference, field, request.POST.get(field) == "on")
     preference.save()
-    messages.success(request, "Notification preferences updated.")
+    messages.success(request, _("Notification preferences updated."))
     return redirect("accounts:profile")

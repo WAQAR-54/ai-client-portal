@@ -1,6 +1,9 @@
+from django.conf import settings
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import translation
 
+from accounts.geo import language_for_ip
 from accounts.models import Department, User
 
 
@@ -190,3 +193,123 @@ class ProfileTests(TestCase):
         self.client.logout()
         response = self.client.get(reverse("accounts:profile"))
         self.assertEqual(response.status_code, 302)
+
+
+class OnboardingTourTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_new_user_has_not_seen_onboarding(self):
+        self.assertFalse(self.user.has_seen_onboarding)
+
+    def test_complete_onboarding_sets_flag(self):
+        response = self.client.post(reverse("accounts:complete_onboarding"))
+        self.assertEqual(response.status_code, 204)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.has_seen_onboarding)
+
+    def test_complete_onboarding_requires_post(self):
+        response = self.client.get(reverse("accounts:complete_onboarding"))
+        self.assertEqual(response.status_code, 405)
+
+    def test_complete_onboarding_requires_login(self):
+        self.client.logout()
+        response = self.client.post(reverse("accounts:complete_onboarding"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_replay_onboarding_resets_flag_and_redirects_to_chat(self):
+        self.user.has_seen_onboarding = True
+        self.user.save(update_fields=["has_seen_onboarding"])
+        response = self.client.post(reverse("accounts:replay_onboarding"))
+        self.assertRedirects(response, reverse("chat:chat_home"))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.has_seen_onboarding)
+
+
+class LanguageForIPTests(TestCase):
+    def test_pakistani_ip_maps_to_urdu(self):
+        self.assertEqual(language_for_ip("182.176.1.1"), "ur")
+
+    def test_uae_ip_maps_to_arabic(self):
+        self.assertEqual(language_for_ip("213.42.1.1"), "ar")
+
+    def test_us_ip_maps_to_english(self):
+        self.assertEqual(language_for_ip("8.8.8.8"), "en")
+
+    def test_private_ip_falls_back_to_english(self):
+        self.assertEqual(language_for_ip("127.0.0.1"), "en")
+        self.assertEqual(language_for_ip("10.0.0.5"), "en")
+
+    def test_missing_ip_falls_back_to_english(self):
+        self.assertEqual(language_for_ip(""), "en")
+        self.assertEqual(language_for_ip(None), "en")
+
+
+class GeoLanguageMiddlewareTests(TestCase):
+    def test_anonymous_visitor_from_arabic_country_gets_arabic_cookie(self):
+        response = self.client.get(reverse("accounts:login"), REMOTE_ADDR="213.42.1.1")
+        self.assertEqual(response.cookies[settings.LANGUAGE_COOKIE_NAME].value, "ar")
+        self.assertContains(response, 'dir="rtl"')
+
+    def test_anonymous_visitor_from_pakistan_gets_urdu_cookie(self):
+        response = self.client.get(reverse("accounts:login"), REMOTE_ADDR="182.176.1.1")
+        self.assertEqual(response.cookies[settings.LANGUAGE_COOKIE_NAME].value, "ur")
+
+    def test_existing_language_cookie_is_not_overridden(self):
+        self.client.cookies[settings.LANGUAGE_COOKIE_NAME] = "en"
+        response = self.client.get(reverse("accounts:login"), REMOTE_ADDR="213.42.1.1")
+        self.assertNotIn(settings.LANGUAGE_COOKIE_NAME, response.cookies)
+
+    def test_authenticated_users_db_preference_wins_over_ip_guess(self):
+        User.objects.create_user(email="geo@example.com", password="pw12345!", preferred_language="ur")
+        self.client.login(email="geo@example.com", password="pw12345!")
+        response = self.client.get(reverse("accounts:profile"), REMOTE_ADDR="213.42.1.1")
+        self.assertContains(response, 'dir="rtl"')
+        self.assertContains(response, "زبان")
+
+
+class SignupLanguageTests(TestCase):
+    def test_signup_carries_over_geo_detected_language(self):
+        response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "arabicsignup@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+            REMOTE_ADDR="213.42.1.1",
+        )
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(email="arabicsignup@example.com")
+        self.assertEqual(user.preferred_language, "ar")
+
+    def test_signup_defaults_to_english_for_untraceable_ip(self):
+        response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "englishsignup@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(email="englishsignup@example.com")
+        self.assertEqual(user.preferred_language, "en")
+
+
+class ArabicLanguagePreferenceTests(TestCase):
+    def test_set_language_preference_accepts_arabic(self):
+        user = User.objects.create_user(email="ar@example.com", password="pw12345!")
+        self.client.login(email="ar@example.com", password="pw12345!")
+        response = self.client.post(reverse("accounts:set_language_preference"), {"language": "ar"})
+        self.assertRedirects(response, reverse("accounts:profile"))
+        user.refresh_from_db()
+        self.assertEqual(user.preferred_language, "ar")
+
+    def test_arabic_translations_are_loaded(self):
+        translation.activate("ar")
+        try:
+            self.assertEqual(translation.gettext("Save changes"), "حفظ التغييرات")
+        finally:
+            translation.deactivate()

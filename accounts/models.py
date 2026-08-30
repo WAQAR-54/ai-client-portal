@@ -1,6 +1,7 @@
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class Department(models.Model):
@@ -54,9 +55,9 @@ class UserManager(BaseUserManager):
 
 class User(AbstractUser):
     class Role(models.TextChoices):
-        USER = "user", "User"
-        MANAGER = "manager", "Manager"
-        ADMIN = "admin", "Admin"
+        USER = "user", _("User")
+        MANAGER = "manager", _("Manager")
+        ADMIN = "admin", _("Admin")
 
     username = None
     email = models.EmailField(unique=True)
@@ -67,6 +68,19 @@ class User(AbstractUser):
         null=True,
         blank=True,
         related_name="users",
+    )
+    has_seen_onboarding = models.BooleanField(
+        default=False,
+        help_text="Set once the first-login guided tour is completed or skipped. "
+        '"Replay tour" in Settings resets this to False.',
+    )
+    preferred_language = models.CharField(
+        max_length=10,
+        choices=[("en", "English"), ("ur", "اردو"), ("ar", "العربية")],
+        default="en",
+        help_text="UI label language (not the AI's reply language, which follows "
+        "the conversation naturally). Set from Settings; see "
+        "accounts/middleware.py for how this is applied on every request.",
     )
 
     USERNAME_FIELD = "email"

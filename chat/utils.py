@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 
 def group_conversations(conversations):
@@ -19,13 +20,19 @@ def group_conversations(conversations):
     def bucket_for(conversation):
         day = timezone.localtime(conversation.updated_at).date()
         if day == today:
-            return "Today"
+            return _("Today")
         if day == yesterday:
-            return "Yesterday"
+            return _("Yesterday")
         if day > week_ago:
-            return "Previous 7 Days"
+            return _("Previous 7 Days")
         if day > month_ago:
-            return "Previous 30 Days"
+            return _("Previous 30 Days")
+        # Older than 30 days: a literal month/year label (e.g. "March 2026").
+        # Left in English regardless of UI language - localizing this would
+        # need Django's own date-formatting machinery (strftime doesn't
+        # respect the active language), and it's a rare case (only shows
+        # once conversations are over a month old) not worth the added
+        # complexity for this pass.
         return day.strftime("%B %Y")
 
     for conversation in conversations:

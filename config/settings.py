@@ -64,9 +64,21 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Before LocaleMiddleware so its IP-based guess (for anonymous, first-
+    # time visitors only) is in place before LocaleMiddleware reads the
+    # language cookie - see accounts/middleware.py.
+    "accounts.middleware.GeoLanguageMiddleware",
+    # Must sit after SessionMiddleware and before CommonMiddleware - Django's
+    # own hard requirement, not just a convention (see LocaleMiddleware docs).
+    "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # After AuthenticationMiddleware (needs request.user) and LocaleMiddleware
+    # (this overrides its guess with the logged-in user's stored preference -
+    # see accounts/middleware.py for why that's not the same as session-only
+    # persistence).
+    "accounts.middleware.UserLanguagePreferenceMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",  # must stay last (see django-axes docs)
@@ -173,6 +185,23 @@ CELERY_TIMEZONE = "UTC"
 # notifications/migrations for the seeded schedule.
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+# Response cache (chat/response_cache.py) — same Redis instance as Celery,
+# namespaced with KEY_PREFIX so its keys never collide with Celery's own.
+# Falls back to Django's in-process LocMemCache when REDIS_URL is unset
+# (same "safe no-op locally, real behavior once configured" pattern as
+# Celery/email/Sentry/backups above) - caching still works within one dev
+# server process, it just isn't shared across workers/restarts.
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "KEY_PREFIX": "portal_cache",
+        }
+    }
+else:
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
 
 # AI provider credentials — set these in .env, never commit real values.
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
@@ -220,6 +249,16 @@ if "test" in sys.argv:
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
+
+# UI label translation only (buttons/menus/headings) - never the AI's own
+# conversation content, which already follows the user's language naturally
+# per the base system prompt (see chat/prompts.py).
+LANGUAGES = [
+    ("en", "English"),
+    ("ur", "اردو"),
+    ("ar", "العربية"),
+]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 USE_TZ = True
 
 

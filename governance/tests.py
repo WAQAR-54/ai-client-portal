@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from accounts.models import Department, User
-from chat.models import Conversation, Message, ModelConfig, UserModelPermission
+from chat.models import Conversation, Message, ModelConfig, PromptTemplate, UserModelPermission
 from chat.prompts import build_system_prompt
 from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, validate_upload
 from governance.models import AuditLog, SystemPromptVersion, UsageLimit
@@ -402,6 +402,71 @@ class UploadLimitOverrideTests(TestCase):
         validate_upload(self.user, upload)  # should not raise
 
 
+class UserOverridesTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+        )
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.target = User.objects.create_user(email="target@example.com", password="pw12345!")
+        self.model_config = ModelConfig.objects.create(
+            provider="openai", model_name="gpt-5.6-sol", display_name="Sol", is_enabled=True
+        )
+
+    def test_users_table_shows_override_count(self):
+        UsageLimit.objects.create(user=self.target, daily_token_cap=1000)
+        response = self.client.get(reverse("governance:users"))
+        self.assertContains(response, "1 custom override beyond Plan defaults")
+
+    def test_users_table_hides_override_link_when_none(self):
+        response = self.client.get(reverse("governance:users"))
+        self.assertNotContains(response, "custom override")
+
+    def test_overrides_page_lists_usage_limit_and_model_permissions(self):
+        UsageLimit.objects.create(user=self.target, daily_token_cap=500)
+        UserModelPermission.objects.create(user=self.target, model_config=self.model_config, is_allowed=False)
+        response = self.client.get(reverse("governance:user_overrides", kwargs={"user_id": self.target.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "500")
+        self.assertContains(response, "Sol")
+
+    def test_overrides_page_empty_state(self):
+        response = self.client.get(reverse("governance:user_overrides", kwargs={"user_id": self.target.id}))
+        self.assertContains(response, "No personal usage limit set")
+        self.assertContains(response, "No per-model access overrides")
+
+    def test_clear_overrides_removes_usage_limit_and_permissions(self):
+        UsageLimit.objects.create(user=self.target, daily_token_cap=500)
+        UserModelPermission.objects.create(user=self.target, model_config=self.model_config, is_allowed=False)
+        response = self.client.post(reverse("governance:clear_user_overrides", kwargs={"user_id": self.target.id}))
+        self.assertRedirects(response, reverse("governance:users"))
+        self.assertFalse(UsageLimit.objects.filter(user=self.target).exists())
+        self.assertFalse(UserModelPermission.objects.filter(user=self.target).exists())
+        self.assertTrue(
+            AuditLog.objects.filter(action_type="user.overrides_cleared", target_id=str(self.target.id)).exists()
+        )
+
+    def test_clear_overrides_with_nothing_to_clear_does_not_error(self):
+        response = self.client.post(reverse("governance:clear_user_overrides", kwargs={"user_id": self.target.id}))
+        self.assertRedirects(response, reverse("governance:users"))
+        self.assertFalse(AuditLog.objects.filter(action_type="user.overrides_cleared").exists())
+
+    def test_non_admin_cannot_clear_overrides(self):
+        self.client.logout()
+        self.client.login(email="target@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:clear_user_overrides", kwargs={"user_id": self.target.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_admin_cannot_view_overrides_page(self):
+        self.client.logout()
+        self.client.login(email="target@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:user_overrides", kwargs={"user_id": self.target.id}))
+        self.assertEqual(response.status_code, 403)
+
+
 class DepartmentManagementTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -556,3 +621,314 @@ class AdminListFilteringTests(TestCase):
         for url_name in ["users", "models", "departments", "limits", "audit_logs", "usage"]:
             response = self.client.get(reverse(f"governance:{url_name}"), {"search": "x"})
             self.assertEqual(response.status_code, 403, url_name)
+
+
+class ModelSyncTests(TestCase):
+    """Sync Models: fetch real provider model IDs instead of hand-typing
+    them (see chat/model_sync.py) - the picker/import views live in
+    governance, the fetch logic lives in chat since it's provider-specific.
+    Provider calls are always mocked here - never hit a real API in tests."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+        )
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.client.login(email="admin@example.com", password="pw12345!")
+
+    def test_preview_forbidden_for_non_admin(self):
+        self.client.logout()
+        self.client.login(email="u@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:sync_models_preview"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_preview_shows_no_api_key_state(self):
+        from unittest.mock import patch
+
+        with patch("chat.model_sync.settings.OPENAI_API_KEY", ""), patch(
+            "chat.model_sync.settings.ANTHROPIC_API_KEY", ""
+        ):
+            response = self.client.get(reverse("governance:sync_models_preview"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No API key configured")
+
+    def test_preview_separates_new_from_already_tracked_models(self):
+        from unittest.mock import patch
+
+        ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="gpt-4o-mini",
+            tier=ModelConfig.Tier.ECONOMY,
+        )
+        # Patching the individual fetch_openai_models/fetch_anthropic_models
+        # names here would NOT work: chat/model_sync.py's _FETCHERS dict
+        # captures those function objects at module-import time, so a
+        # later patch of the module-level name doesn't reach callers that
+        # go through _FETCHERS. fetch_all_available_models is the one
+        # entry point sync_models_preview actually calls (and re-imports
+        # locally on every request), so that's the correct patch target.
+        with patch(
+            "chat.model_sync.fetch_all_available_models",
+            return_value={
+                ModelConfig.Provider.OPENAI: {
+                    "configured": True,
+                    "models": ["gpt-4o-mini", "gpt-4o"],
+                    "error": None,
+                },
+                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
+            },
+        ):
+            response = self.client.get(reverse("governance:sync_models_preview"))
+        fetched = response.context["fetched"]
+        self.assertEqual(fetched[ModelConfig.Provider.OPENAI]["new_models"], ["gpt-4o"])
+        self.assertEqual(fetched[ModelConfig.Provider.OPENAI]["already_tracked"], ["gpt-4o-mini"])
+
+    def test_preview_surfaces_fetch_error_without_crashing(self):
+        from unittest.mock import patch
+
+        with patch(
+            "chat.model_sync.fetch_all_available_models",
+            return_value={
+                ModelConfig.Provider.OPENAI: {"configured": True, "models": [], "error": "network down"},
+                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
+            },
+        ):
+            response = self.client.get(reverse("governance:sync_models_preview"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "network down")
+
+    def test_import_creates_disabled_model_with_exact_id(self):
+        response = self.client.post(
+            reverse("governance:sync_models_import"),
+            {
+                "model": [f"{ModelConfig.Provider.OPENAI}::gpt-4o"],
+                f"tier__{ModelConfig.Provider.OPENAI}::gpt-4o": "premium",
+            },
+        )
+        self.assertRedirects(response, reverse("governance:models"))
+        model_config = ModelConfig.objects.get(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
+        self.assertFalse(model_config.is_enabled)
+        self.assertEqual(model_config.tier, ModelConfig.Tier.PREMIUM)
+        self.assertTrue(AuditLog.objects.filter(action_type="model.sync_import").exists())
+
+    def test_import_is_idempotent_for_already_tracked_models(self):
+        existing = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="gpt-4o-mini",
+            tier=ModelConfig.Tier.ECONOMY,
+        )
+        self.client.post(
+            reverse("governance:sync_models_import"),
+            {"model": [f"{ModelConfig.Provider.OPENAI}::gpt-4o-mini"]},
+        )
+        self.assertEqual(
+            ModelConfig.objects.filter(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o-mini").count(), 1
+        )
+        existing.refresh_from_db()
+        self.assertEqual(existing.tier, ModelConfig.Tier.ECONOMY)  # untouched, not overwritten
+
+    def test_import_ignores_malformed_or_unknown_provider_entries(self):
+        response = self.client.post(
+            reverse("governance:sync_models_import"),
+            {"model": ["not-encoded-properly", "made-up-provider::some-model"]},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(ModelConfig.objects.count(), 0)
+
+    def test_import_forbidden_for_non_admin(self):
+        self.client.logout()
+        self.client.login(email="u@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:sync_models_import"),
+            {"model": [f"{ModelConfig.Provider.OPENAI}::gpt-4o"]},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ModelConfig.objects.count(), 0)
+
+    def test_display_name_editable_via_pricing_update(self):
+        model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
+        response = self.client.post(
+            reverse("governance:update_model_pricing", kwargs={"model_id": model_config.id}),
+            {"input_cost_per_1m": "1.5", "output_cost_per_1m": "3", "display_name": "GPT-4o (flagship)"},
+        )
+        self.assertEqual(response.status_code, 302)
+        model_config.refresh_from_db()
+        self.assertEqual(model_config.display_name, "GPT-4o (flagship)")
+        self.assertEqual(model_config.display_label, "GPT-4o (flagship)")
+
+
+class ModelSyncFetchHelperTests(TestCase):
+    """Unit tests for chat/model_sync.py's own filtering/aggregation logic,
+    independent of the admin views above."""
+
+    def test_openai_chat_filter_excludes_known_non_chat_families(self):
+        from chat.model_sync import _is_openai_chat_model
+
+        self.assertTrue(_is_openai_chat_model("gpt-4o"))
+        self.assertTrue(_is_openai_chat_model("gpt-4o-mini"))
+        self.assertFalse(_is_openai_chat_model("text-embedding-3-large"))
+        self.assertFalse(_is_openai_chat_model("whisper-1"))
+        self.assertFalse(_is_openai_chat_model("tts-1"))
+        self.assertFalse(_is_openai_chat_model("dall-e-3"))
+        self.assertFalse(_is_openai_chat_model("text-moderation-latest"))
+
+    def test_fetch_all_available_models_reports_unconfigured_provider(self):
+        from unittest.mock import patch
+
+        from chat.model_sync import fetch_all_available_models
+
+        with patch("chat.model_sync.settings.OPENAI_API_KEY", ""), patch(
+            "chat.model_sync.settings.ANTHROPIC_API_KEY", ""
+        ):
+            result = fetch_all_available_models()
+        self.assertFalse(result[ModelConfig.Provider.OPENAI]["configured"])
+        self.assertFalse(result[ModelConfig.Provider.ANTHROPIC]["configured"])
+
+    def test_known_model_keys_reflects_existing_modelconfigs(self):
+        from chat.model_sync import known_model_keys
+
+        ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
+        self.assertIn((ModelConfig.Provider.OPENAI, "gpt-4o"), known_model_keys())
+        self.assertNotIn((ModelConfig.Provider.OPENAI, "gpt-4o-mini"), known_model_keys())
+
+
+class ModelSyncNotificationTaskTests(TestCase):
+    """The daily check_for_new_models Celery task (see chat/tasks.py) only
+    notifies admins about undiscovered models - it never creates/enables
+    anything itself, mirroring what the manual Sync Models button does."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+        )
+
+    def test_notifies_admins_when_new_models_found(self):
+        from unittest.mock import patch
+
+        from chat.tasks import check_for_new_models
+        from notifications.models import Notification, NotificationType
+
+        with patch(
+            "chat.model_sync.fetch_all_available_models",
+            return_value={
+                ModelConfig.Provider.OPENAI: {"configured": True, "models": ["gpt-4o"], "error": None},
+                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
+            },
+        ):
+            check_for_new_models()
+        self.assertTrue(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).exists()
+        )
+
+    def test_does_not_notify_when_nothing_new(self):
+        from unittest.mock import patch
+
+        from chat.tasks import check_for_new_models
+        from notifications.models import Notification, NotificationType
+
+        ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
+        with patch(
+            "chat.model_sync.fetch_all_available_models",
+            return_value={
+                ModelConfig.Provider.OPENAI: {"configured": True, "models": ["gpt-4o"], "error": None},
+                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
+            },
+        ):
+            check_for_new_models()
+        self.assertFalse(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).exists()
+        )
+
+    def test_dedup_prevents_repeat_notification_within_a_day(self):
+        from unittest.mock import patch
+
+        from chat.tasks import check_for_new_models
+        from notifications.models import Notification, NotificationType
+
+        with patch(
+            "chat.model_sync.fetch_all_available_models",
+            return_value={
+                ModelConfig.Provider.OPENAI: {"configured": True, "models": ["gpt-4o"], "error": None},
+                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
+            },
+        ):
+            check_for_new_models()
+            check_for_new_models()
+        self.assertEqual(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).count(),
+            1,
+        )
+
+
+class DepartmentTemplatesAdminTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+        )
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.department = Department.objects.create(name="Sales")
+        self.client.login(email="admin@example.com", password="pw12345!")
+
+    def test_admin_creates_team_template(self):
+        response = self.client.post(
+            reverse("governance:department_templates", kwargs={"department_id": self.department.id}),
+            {"name": "Weekly update", "content": "Summarize this week's progress"},
+        )
+        self.assertRedirects(
+            response, reverse("governance:department_templates", kwargs={"department_id": self.department.id})
+        )
+        template = PromptTemplate.objects.get(name="Weekly update")
+        self.assertEqual(template.department, self.department)
+        self.assertIsNone(template.owner)
+        self.assertTrue(template.is_team_template)
+        self.assertTrue(AuditLog.objects.filter(action_type="prompt_template.create").exists())
+
+    def test_admin_deletes_team_template(self):
+        template = PromptTemplate.objects.create(department=self.department, name="Old", content="x")
+        response = self.client.post(
+            reverse(
+                "governance:delete_department_template",
+                kwargs={"department_id": self.department.id, "template_id": template.id},
+            )
+        )
+        self.assertRedirects(
+            response, reverse("governance:department_templates", kwargs={"department_id": self.department.id})
+        )
+        self.assertFalse(PromptTemplate.objects.filter(id=template.id).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="prompt_template.delete").exists())
+
+    def test_department_templates_forbidden_for_non_admin(self):
+        self.client.logout()
+        self.client.login(email="u@example.com", password="pw12345!")
+        response = self.client.get(
+            reverse("governance:department_templates", kwargs={"department_id": self.department.id})
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_team_template_forbidden_for_non_admin(self):
+        template = PromptTemplate.objects.create(department=self.department, name="Old", content="x")
+        self.client.logout()
+        self.client.login(email="u@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse(
+                "governance:delete_department_template",
+                kwargs={"department_id": self.department.id, "template_id": template.id},
+            )
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(PromptTemplate.objects.filter(id=template.id).exists())

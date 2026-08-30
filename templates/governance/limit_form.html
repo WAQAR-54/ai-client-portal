@@ -1,66 +1,67 @@
 {% extends "base.html" %}
-{% block title %}{% if limit %}Edit{% else %}New{% endif %} Limit — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% if limit %}{% trans "Edit" %}{% else %}{% trans "New" %}{% endif %} {% trans "Limit" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="card">
-    <h1>{% if limit %}Edit limit{% else %}New limit{% endif %}</h1>
+    <h1>{% if limit %}{% trans "Edit limit" %}{% else %}{% trans "New limit" %}{% endif %}</h1>
 
     <form method="post">
         {% csrf_token %}
-        <label>Applies to</label>
+        <label>{% trans "Applies to" %}</label>
         <div style="display:flex; gap:1.5rem; margin-bottom:1rem;">
             <label style="display:flex; align-items:center; gap:0.4rem; font-weight:400;">
                 <input type="radio" name="target_type" value="user" {% if not limit or limit.user %}checked{% endif %} onchange="document.getElementById('user-picker').style.display='block';document.getElementById('dept-picker').style.display='none';">
-                A specific user
+                {% trans "A specific user" %}
             </label>
             <label style="display:flex; align-items:center; gap:0.4rem; font-weight:400;">
                 <input type="radio" name="target_type" value="department" {% if limit.department %}checked{% endif %} onchange="document.getElementById('user-picker').style.display='none';document.getElementById('dept-picker').style.display='block';">
-                A whole department
+                {% trans "A whole department" %}
             </label>
         </div>
 
         <div id="user-picker" style="display:{% if limit.department %}none{% else %}block{% endif %};">
-            <label for="user_id">User</label>
+            <label for="user_id">{% trans "User" %}</label>
             <select class="input" name="user_id" id="user_id">
-                <option value="">— select —</option>
+                <option value="">— {% trans "select" %} —</option>
                 {% for u in users %}<option value="{{ u.id }}" {% if limit.user_id == u.id %}selected{% endif %}>{{ u.email }}</option>{% endfor %}
             </select>
         </div>
         <div id="dept-picker" style="display:{% if limit.department %}block{% else %}none{% endif %};">
-            <label for="department_id">Department</label>
+            <label for="department_id">{% trans "Department" %}</label>
             <select class="input" name="department_id" id="department_id">
-                <option value="">— select —</option>
+                <option value="">— {% trans "select" %} —</option>
                 {% for d in departments %}<option value="{{ d.id }}" {% if limit.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
             </select>
         </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
             <div>
-                <label for="daily_token_cap">Daily token cap</label>
-                <input class="input" type="number" name="daily_token_cap" id="daily_token_cap" value="{{ limit.daily_token_cap|default_if_none:'' }}" placeholder="unlimited">
+                <label for="daily_token_cap">{% trans "Daily token cap" %}</label>
+                <input class="input" type="number" name="daily_token_cap" id="daily_token_cap" value="{{ limit.daily_token_cap|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
             </div>
             <div>
-                <label for="monthly_token_cap">Monthly token cap</label>
-                <input class="input" type="number" name="monthly_token_cap" id="monthly_token_cap" value="{{ limit.monthly_token_cap|default_if_none:'' }}" placeholder="unlimited">
+                <label for="monthly_token_cap">{% trans "Monthly token cap" %}</label>
+                <input class="input" type="number" name="monthly_token_cap" id="monthly_token_cap" value="{{ limit.monthly_token_cap|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
             </div>
             <div>
-                <label for="session_limit">Messages per conversation</label>
-                <input class="input" type="number" name="session_limit" id="session_limit" value="{{ limit.session_limit|default_if_none:'' }}" placeholder="unlimited">
+                <label for="session_limit">{% trans "Messages per conversation" %}</label>
+                <input class="input" type="number" name="session_limit" id="session_limit" value="{{ limit.session_limit|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
             </div>
             <div>
-                <label for="budget_cap_currency">Monthly budget cap (USD)</label>
-                <input class="input" type="number" step="0.01" name="budget_cap_currency" id="budget_cap_currency" value="{{ limit.budget_cap_currency|default_if_none:'' }}" placeholder="unlimited">
+                <label for="budget_cap_currency">{% trans "Monthly budget cap (USD)" %}</label>
+                <input class="input" type="number" step="0.01" name="budget_cap_currency" id="budget_cap_currency" value="{{ limit.budget_cap_currency|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
             </div>
             <div>
-                <label for="max_upload_size_mb">Max upload size (MB)</label>
-                <input class="input" type="number" name="max_upload_size_mb" id="max_upload_size_mb" value="{{ limit.max_upload_size_mb|default_if_none:'' }}" placeholder="system default">
+                <label for="max_upload_size_mb">{% trans "Max upload size (MB)" %}</label>
+                <input class="input" type="number" name="max_upload_size_mb" id="max_upload_size_mb" value="{{ limit.max_upload_size_mb|default_if_none:'' }}" placeholder="{% trans 'system default' %}">
             </div>
             <div>
-                <label for="allowed_file_extensions">Allowed file types</label>
-                <input class="input" type="text" name="allowed_file_extensions" id="allowed_file_extensions" value="{{ limit.allowed_file_extensions }}" placeholder="pdf,png,txt (system default if blank)">
+                <label for="allowed_file_extensions">{% trans "Allowed file types" %}</label>
+                <input class="input" type="text" name="allowed_file_extensions" id="allowed_file_extensions" value="{{ limit.allowed_file_extensions }}" placeholder="{% trans 'pdf,png,txt (system default if blank)' %}">
             </div>
         </div>
 
-        <button type="submit" class="mt-4">Save limit</button>
+        <button type="submit" class="mt-4">{% trans "Save limit" %}</button>
     </form>
 </div>
 {% endblock %}

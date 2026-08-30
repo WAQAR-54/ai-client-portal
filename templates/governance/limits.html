@@ -1,18 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Limits — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Limits" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="card" style="overflow-x:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1>Usage &amp; Upload Limits</h1>
-        <a href="{% url 'governance:limit_new' %}" class="btn">+ New limit</a>
+        <h1>{% trans "Usage & Upload Limits" %}</h1>
+        <a href="{% url 'governance:limit_new' %}" class="btn">+ {% trans "New limit" %}</a>
     </div>
-    <p>System defaults apply to anyone without a limit here: uploads up to {{ default_upload_mb }}MB, {{ default_extensions }} file types, no token/budget caps.</p>
+    <p>{% blocktrans %}System defaults apply to anyone without a limit here: uploads up to {{ default_upload_mb }}MB, {{ default_extensions }} file types, no token/budget caps.{% endblocktrans %}</p>
 
     {% url 'governance:limits' as filter_url %}
     <form class="filter-toolbar">
         <div class="filter-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search user or department..."
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search user or department...' %}"
                    hx-get="{{ filter_url }}" hx-target="#limits-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
         </div>
     </form>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% blocktrans with name=department.name %}Team Templates — {{ name }}{% endblocktrans %}{% endblock %}
+{% block content %}
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1 style="margin-bottom:0;">{% blocktrans with name=department.name %}Team Templates — {{ name }}{% endblocktrans %}</h1>
+        <a href="{% url 'governance:departments' %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Back to Departments" %}</a>
+    </div>
+    <p class="text-faint" style="font-size:0.85rem;">
+        {% blocktrans with name=department.name %}Visible to every user in {{ name }}, alongside their own personal templates, badged "Team".{% endblocktrans %}
+    </p>
+
+    <form method="post" class="mt-4">
+        {% csrf_token %}
+        <label for="name">{% trans "Name" %}</label>
+        <input class="input" type="text" name="name" id="name" placeholder="{% trans 'e.g. Weekly status update' %}" required>
+        <label for="content">{% trans "Prompt text" %}</label>
+        <textarea class="input" name="content" id="content" rows="4" required></textarea>
+        <button type="submit">{% trans "Add team template" %}</button>
+    </form>
+
+    <h2 class="mt-5">{% trans "Existing team templates" %}</h2>
+    <table class="data">
+        <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Prompt" %}</th><th></th></tr></thead>
+        <tbody>
+            {% for t in templates %}
+            <tr>
+                <td>{{ t.name }}</td>
+                <td class="text-muted">{{ t.content|truncatechars:80 }}</td>
+                <td>
+                    <form method="post" action="{% url 'governance:delete_department_template' department_id=department.id template_id=t.id %}"
+                          onsubmit="return confirm('{% blocktrans with name=department.name %}Delete this team template? Everyone in {{ name }} will lose access to it.{% endblocktrans %}');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small btn-danger">{% trans "Delete" %}</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-faint">{% trans "No team templates yet." %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

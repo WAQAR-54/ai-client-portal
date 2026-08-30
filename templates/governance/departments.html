@@ -1,31 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Departments — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Departments" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="card" style="margin-bottom:1.5rem;">
-    <h2>Add a department</h2>
+    <h2>{% trans "Add a department" %}</h2>
     <form method="post" action="{% url 'governance:add_department' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
         {% csrf_token %}
         <div style="flex:2; min-width:200px;">
-            <label for="name">Name</label>
-            <input class="input" type="text" name="name" id="name" placeholder="e.g. Engineering" style="margin:0;" required>
+            <label for="name">{% trans "Name" %}</label>
+            <input class="input" type="text" name="name" id="name" placeholder="{% trans 'e.g. Engineering' %}" style="margin:0;" required>
         </div>
         <div style="flex:1; min-width:160px;">
-            <label for="monthly_budget_cap">Monthly budget cap (USD)</label>
-            <input class="input" type="number" step="0.01" name="monthly_budget_cap" id="monthly_budget_cap" placeholder="unlimited" style="margin:0;">
+            <label for="monthly_budget_cap">{% trans "Monthly budget cap (USD)" %}</label>
+            <input class="input" type="number" step="0.01" name="monthly_budget_cap" id="monthly_budget_cap" placeholder="{% trans 'unlimited' %}" style="margin:0;">
         </div>
-        <button type="submit">Add department</button>
+        <button type="submit">{% trans "Add department" %}</button>
     </form>
 </div>
 
 <div class="card" style="overflow-x:auto;">
-    <h1>Departments</h1>
-    <p>Manage departments, budgets, and system prompts here — no need for Django admin.</p>
+    <h1>{% trans "Departments" %}</h1>
+    <p>{% trans "Manage departments, budgets, and system prompts here — no need for Django admin." %}</p>
 
     {% url 'governance:departments' as filter_url %}
     <form class="filter-toolbar">
         <div class="filter-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search department name..."
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search department name...' %}"
                    hx-get="{{ filter_url }}" hx-target="#departments-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
         </div>
     </form>

@@ -1,6 +1,7 @@
-{% load chat_extras %}
+{% load chat_extras i18n %}
 {% comment %}Reusable circular usage gauge. Context: pct (0-100), level ("ok"/"warn"/"danger"), size (px, e.g. 32 sidebar / 64 admin).{% endcomment %}
-<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 36 36" class="usage-ring usage-ring-{{ level }}" role="img" aria-label="{{ pct }}% of usage limit used">
+{% blocktrans asvar usage_ring_label %}{{ pct }}% of usage limit used{% endblocktrans %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 36 36" class="usage-ring usage-ring-{{ level }}" role="img" aria-label="{{ usage_ring_label }}">
     <circle class="usage-ring-track" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"></circle>
     <circle class="usage-ring-fill" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"
             stroke-linecap="round" stroke-dasharray="100 100" style="--ring-offset: {{ pct|to_offset }};"

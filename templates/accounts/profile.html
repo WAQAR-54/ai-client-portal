@@ -1,51 +1,71 @@
 {% extends "base.html" %}
-{% load notification_extras %}
-{% block title %}Profile Settings — AI Client Portal{% endblock %}
+{% load i18n notification_extras %}
+{% block title %}{% trans "Profile Settings" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div style="max-width: 560px;">
-    <h1>Profile Settings</h1>
+    <h1>{% trans "Profile Settings" %}</h1>
 
     <div class="card mt-4">
-        <h2>Your info</h2>
+        <h2>{% trans "Your info" %}</h2>
         <p class="text-muted" style="margin-top:-0.5rem;">
-            {{ user.email }} · <span class="badge">{{ user.role }}</span>
+            {{ user.email }} · <span class="badge">{{ user.get_role_display }}</span>
             {% if user.department %}· {{ user.department.name }}{% endif %}
         </p>
-        <p class="text-faint" style="font-size:0.82rem;">Role and department are managed by an admin.</p>
+        <p class="text-faint" style="font-size:0.82rem;">{% trans "Role and department are managed by an admin." %}</p>
         <form method="post" action="{% url 'accounts:profile' %}">
             {% csrf_token %}
-            <label for="{{ profile_form.first_name.id_for_label }}">First name</label>
+            <label for="{{ profile_form.first_name.id_for_label }}">{% trans "First name" %}</label>
             {{ profile_form.first_name }}
             {{ profile_form.first_name.errors }}
-            <label for="{{ profile_form.last_name.id_for_label }}">Last name</label>
+            <label for="{{ profile_form.last_name.id_for_label }}">{% trans "Last name" %}</label>
             {{ profile_form.last_name }}
             {{ profile_form.last_name.errors }}
-            <button type="submit">Save changes</button>
+            <button type="submit">{% trans "Save changes" %}</button>
         </form>
     </div>
 
     <div class="card mt-5">
-        <h2>Change password</h2>
+        <h2>{% trans "Language" %}</h2>
+        <p class="text-muted" style="margin-top:-0.5rem;">
+            {% trans "Changes menus, buttons, and labels. The assistant's replies already follow whatever language you write in." %}
+        </p>
+        <form method="post" action="{% url 'accounts:set_language_preference' %}" style="display:flex; align-items:flex-end; gap:0.75rem; flex-wrap:wrap;">
+            {% csrf_token %}
+            <div style="flex:1; min-width:180px;">
+                <label for="language">{% trans "Interface language" %}</label>
+                <select class="input" name="language" id="language" style="margin:0;">
+                    {% get_current_language as CURRENT_LANGUAGE %}
+                    <option value="en" {% if CURRENT_LANGUAGE == "en" %}selected{% endif %}>English</option>
+                    <option value="ur" {% if CURRENT_LANGUAGE == "ur" %}selected{% endif %}>اردو (Urdu)</option>
+                    <option value="ar" {% if CURRENT_LANGUAGE == "ar" %}selected{% endif %}>العربية (Arabic)</option>
+                </select>
+            </div>
+            <button type="submit">{% trans "Save language" %}</button>
+        </form>
+    </div>
+
+    <div class="card mt-5">
+        <h2>{% trans "Change password" %}</h2>
         <form method="post" action="{% url 'accounts:profile_password' %}">
             {% csrf_token %}
             {{ password_form.non_field_errors }}
-            <label for="{{ password_form.old_password.id_for_label }}">Current password</label>
+            <label for="{{ password_form.old_password.id_for_label }}">{% trans "Current password" %}</label>
             {{ password_form.old_password }}
             {{ password_form.old_password.errors }}
-            <label for="{{ password_form.new_password1.id_for_label }}">New password</label>
+            <label for="{{ password_form.new_password1.id_for_label }}">{% trans "New password" %}</label>
             {{ password_form.new_password1 }}
             {{ password_form.new_password1.errors }}
-            <label for="{{ password_form.new_password2.id_for_label }}">Confirm new password</label>
+            <label for="{{ password_form.new_password2.id_for_label }}">{% trans "Confirm new password" %}</label>
             {{ password_form.new_password2 }}
             {{ password_form.new_password2.errors }}
-            <button type="submit">Change password</button>
+            <button type="submit">{% trans "Change password" %}</button>
         </form>
     </div>
 
     <div class="card mt-5">
-        <h2>Notifications</h2>
+        <h2>{% trans "Notifications" %}</h2>
         <p class="text-muted" style="margin-top:-0.5rem;">
-            You'll always see these in the notification bell. Choose which ones also come by email.
+            {% trans "You'll always see these in the notification bell. Choose which ones also come by email." %}
         </p>
         <form method="post" action="{% url 'notifications:update_preferences' %}">
             {% csrf_token %}
@@ -56,8 +76,29 @@
                 {{ label }}
             </label>
             {% endfor %}
-            <button type="submit" class="mt-4">Save notification preferences</button>
+            <button type="submit" class="mt-4">{% trans "Save notification preferences" %}</button>
         </form>
+    </div>
+
+    <div class="card mt-5">
+        <h2>{% trans "Guided tour" %}</h2>
+        <p class="text-muted" style="margin-top:-0.5rem;">{% trans "Replay the first-login walkthrough of New chat, Usage, model selection, and Admin." %}</p>
+        <form method="post" action="{% url 'accounts:replay_onboarding' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-small btn-ghost">{% trans "Replay tour" %}</button>
+        </form>
+    </div>
+
+    <div class="card mt-5">
+        <h2>{% trans "Keyboard shortcuts" %}</h2>
+        <table class="data" style="margin:0;">
+            <tbody>
+                <tr><td class="mono" style="width:140px;">Ctrl/Cmd + K</td><td class="text-muted">{% trans "Quick-switcher — new chat or jump to a conversation" %}</td></tr>
+                <tr><td class="mono">Enter</td><td class="text-muted">{% trans "Send the message" %}</td></tr>
+                <tr><td class="mono">Shift + Enter</td><td class="text-muted">{% trans "Insert a newline without sending" %}</td></tr>
+                <tr><td class="mono">Esc</td><td class="text-muted">{% trans "Close the quick-switcher or any open menu/popover" %}</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 {% endblock %}

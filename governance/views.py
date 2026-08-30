@@ -8,16 +8,26 @@ from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods
 from django.views.generic import ListView, TemplateView
 
 from accounts.models import Department, User
 from accounts.permissions import AdminRequiredMixin, role_required
-from chat.models import Conversation, Message, ModelConfig, UserModelPermission
+from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from governance.audit import log_action
 from governance.limits import _effective_limit, _metric
 from governance.models import AuditLog, KNOWN_FEATURE_FLAGS, Plan, SystemPromptVersion, UpgradeRequest, UsageLimit
-from governance.plans import assign_plan, engagement_score, get_assignment, get_plan_status
+from governance.plans import (
+    assign_plan,
+    clear_user_overrides,
+    count_user_overrides,
+    engagement_score,
+    get_assignment,
+    get_plan_status,
+    get_user_overrides,
+)
 
 
 def _querystring_without(request, *exclude_keys):
@@ -180,7 +190,11 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
         plan_info = {}
         for u in users:
             status = get_plan_status(u)
-            plan_info[u.id] = {**status, "engagement": engagement_score(u)}
+            plan_info[u.id] = {
+                **status,
+                "engagement": engagement_score(u),
+                "override_count": count_user_overrides(u),
+            }
 
         if self.request.GET.get("sort") == "engagement":
             users.sort(key=lambda u: plan_info[u.id]["engagement"] or -1, reverse=True)
@@ -326,7 +340,7 @@ def bulk_change_plan(request):
     user_ids = request.POST.getlist("user_ids")
     plan_id = request.POST.get("plan_id")
     if not user_ids or not plan_id:
-        django_messages.warning(request, "Select at least one user and a plan first.")
+        django_messages.warning(request, _("Select at least one user and a plan first."))
         return redirect("governance:users")
 
     plan = get_object_or_404(Plan, id=plan_id)
@@ -336,7 +350,48 @@ def bulk_change_plan(request):
         assign_plan(target, plan, assigned_by=request.user)
         log_action(request.user, "user.plan_change", target, old_value=old_plan_name, new_value=f"{plan.name} (bulk)")
         _notify_plan_change(target, plan)
-    django_messages.success(request, f"Assigned {plan.name} to {len(user_ids)} user(s).")
+    django_messages.success(
+        request,
+        ngettext(
+            "Assigned %(plan)s to %(count)s user.",
+            "Assigned %(plan)s to %(count)s users.",
+            len(user_ids),
+        )
+        % {"plan": plan.name, "count": len(user_ids)},
+    )
+    return redirect("governance:users")
+
+
+class UserOverridesView(AdminRequiredMixin, TemplateView):
+    """Per-user view of the personal UsageLimit/UserModelPermission rows
+    that override their Plan (see governance/plans.py's precedence rules) -
+    what the "N custom overrides" badge on the Users list links to."""
+
+    template_name = "governance/user_overrides.html"
+
+    def get_context_data(self, **kwargs):
+        target = get_object_or_404(User, id=kwargs["user_id"])
+        return super().get_context_data(**kwargs) | {
+            "target": target,
+            "overrides": get_user_overrides(target),
+            "plan_status": get_plan_status(target),
+        }
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def clear_user_overrides_view(request, user_id):
+    target = get_object_or_404(User, id=user_id)
+    if count_user_overrides(target) == 0:
+        django_messages.warning(request, _("%(email)s has no overrides to clear.") % {"email": target.email})
+        return redirect("governance:users")
+
+    cleared_description = clear_user_overrides(target)
+    log_action(request.user, "user.overrides_cleared", target, old_value=cleared_description, new_value="")
+    django_messages.success(
+        request,
+        _("Cleared overrides for %(email)s: %(cleared)s.") % {"email": target.email, "cleared": cleared_description},
+    )
     return redirect("governance:users")
 
 
@@ -489,6 +544,58 @@ def _int_or_none(raw):
 
 
 @role_required(User.Role.ADMIN)
+@require_GET
+def sync_models_preview(request):
+    from chat.model_sync import fetch_all_available_models, known_model_keys
+
+    fetched = fetch_all_available_models()
+    existing = known_model_keys()
+    for provider, entry in fetched.items():
+        entry["new_models"] = [m for m in entry["models"] if (provider, m) not in existing]
+        entry["already_tracked"] = [m for m in entry["models"] if (provider, m) in existing]
+    return render(request, "governance/model_sync.html", {"fetched": fetched, "tiers": ModelConfig.Tier.choices})
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def sync_models_import(request):
+    created_count = 0
+    for encoded in request.POST.getlist("model"):
+        if "::" not in encoded:
+            continue
+        provider, model_name = encoded.split("::", 1)
+        if provider not in ModelConfig.Provider.values:
+            continue
+        tier = request.POST.get(f"tier__{encoded}", ModelConfig.Tier.DEFAULT)
+        if tier not in ModelConfig.Tier.values:
+            tier = ModelConfig.Tier.DEFAULT
+        model_config, was_created = ModelConfig.objects.get_or_create(
+            provider=provider,
+            model_name=model_name,
+            defaults={"tier": tier},
+        )
+        if was_created:
+            created_count += 1
+            log_action(request.user, "model.sync_import", model_config, new_value=model_name)
+
+    if created_count:
+        django_messages.success(
+            request,
+            ngettext(
+                "Imported %(count)s new model, disabled by default. "
+                "Set pricing and enable it below before it's usable.",
+                "Imported %(count)s new models, disabled by default. "
+                "Set pricing and enable them below before they're usable.",
+                created_count,
+            )
+            % {"count": created_count},
+        )
+    else:
+        django_messages.info(request, _("No models were selected to import."))
+    return redirect("governance:models")
+
+
+@role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def add_model(request):
     provider = request.POST.get("provider", "")
@@ -515,7 +622,8 @@ def update_model_pricing(request, model_id):
     old_value = f"in={model_config.input_cost_per_1m} out={model_config.output_cost_per_1m}"
     model_config.input_cost_per_1m = _parse_decimal(request.POST.get("input_cost_per_1m"))
     model_config.output_cost_per_1m = _parse_decimal(request.POST.get("output_cost_per_1m"))
-    model_config.save(update_fields=["input_cost_per_1m", "output_cost_per_1m"])
+    model_config.display_name = request.POST.get("display_name", "").strip()
+    model_config.save(update_fields=["input_cost_per_1m", "output_cost_per_1m", "display_name"])
     log_action(
         request.user,
         "model.pricing_update",
@@ -603,6 +711,15 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, TemplateView):
             )
             .order_by("-cost")
         )
+        # Cache hit rate / cost saved (see chat/response_cache.py) - over
+        # whatever filter is active, same as everything else on this page.
+        cache_stats = assistant_messages.aggregate(
+            total=Count("id"),
+            cache_hits=Count("id", filter=Q(served_from_cache=True)),
+            cost_saved=Sum("estimated_cost", filter=Q(served_from_cache=True)),
+        )
+        cache_hit_rate = round((cache_stats["cache_hits"] / cache_stats["total"]) * 100) if cache_stats["total"] else 0
+
         return super().get_context_data(**kwargs) | {
             "per_user": per_user,
             "models": ModelConfig.objects.order_by("provider", "model_name"),
@@ -610,6 +727,9 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, TemplateView):
             "model_filter": filters["model_id"],
             "date_from": filters["date_from"],
             "date_to": filters["date_to"],
+            "cache_hits": cache_stats["cache_hits"],
+            "cache_hit_rate": cache_hit_rate,
+            "cache_cost_saved": cache_stats["cost_saved"] or 0,
         }
 
 
@@ -781,6 +901,40 @@ class AuditLogListView(FilterableListMixin, AdminRequiredMixin, ListView):
         }
 
 
+class FeedbackListView(FilterableListMixin, AdminRequiredMixin, ListView):
+    """Response feedback (thumbs up/down) — visibility only, per spec: this
+    never feeds back into model selection/routing automatically."""
+
+    model = MessageFeedback
+    template_name = "governance/feedback.html"
+    partial_template_name = "governance/_feedback_table.html"
+    context_object_name = "feedback_entries"
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = MessageFeedback.objects.select_related("user", "model_used", "message", "message__conversation")
+        search = self.request.GET.get("search", "").strip()
+        if search:
+            qs = qs.filter(Q(user__email__icontains=search) | Q(comment__icontains=search))
+        rating = self.request.GET.get("rating", "").strip()
+        if rating in MessageFeedback.Rating.values:
+            qs = qs.filter(rating=rating)
+        model_id = self.request.GET.get("model", "").strip()
+        if model_id.isdigit():
+            qs = qs.filter(model_used_id=model_id)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | {
+            "search": self.request.GET.get("search", ""),
+            "rating_filter": self.request.GET.get("rating", ""),
+            "model_filter": self.request.GET.get("model", ""),
+            "models": ModelConfig.objects.all(),
+            "total_count": MessageFeedback.objects.count(),
+            "querystring_without_page": _querystring_without(self.request, "page"),
+        }
+
+
 class DepartmentListView(FilterableListMixin, AdminRequiredMixin, ListView):
     model = Department
     template_name = "governance/departments.html"
@@ -876,6 +1030,39 @@ class SystemPromptView(AdminRequiredMixin, TemplateView):
         )
         log_action(request.user, "system_prompt.new_version", new_version, old_value="", new_value=content[:200])
         return redirect("governance:system_prompt", department_id=department.id)
+
+
+class DepartmentTemplatesView(AdminRequiredMixin, TemplateView):
+    """Team prompt templates for one department - visible to every user in
+    that department alongside their own personal ones (see
+    chat/views.py::_visible_prompt_templates)."""
+
+    template_name = "governance/department_templates.html"
+
+    def get_context_data(self, **kwargs):
+        department = get_object_or_404(Department, id=kwargs["department_id"])
+        return super().get_context_data(**kwargs) | {
+            "department": department,
+            "templates": PromptTemplate.objects.filter(department=department),
+        }
+
+    def post(self, request, department_id):
+        department = get_object_or_404(Department, id=department_id)
+        name = request.POST.get("name", "").strip()
+        content = request.POST.get("content", "").strip()
+        if name and content:
+            template = PromptTemplate.objects.create(department=department, name=name[:100], content=content)
+            log_action(request.user, "prompt_template.create", template, new_value=name)
+        return redirect("governance:department_templates", department_id=department.id)
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def delete_department_template(request, department_id, template_id):
+    template = get_object_or_404(PromptTemplate, id=template_id, department_id=department_id)
+    log_action(request.user, "prompt_template.delete", template, old_value=template.name)
+    template.delete()
+    return redirect("governance:department_templates", department_id=department_id)
 
 
 class LimitListView(FilterableListMixin, AdminRequiredMixin, ListView):

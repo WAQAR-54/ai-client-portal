@@ -1,25 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Audit Logs — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Audit Logs" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="card" style="overflow-x:auto;">
-    <h1>Audit Logs</h1>
+    <h1>{% trans "Audit Logs" %}</h1>
 
     {% url 'governance:audit_logs' as filter_url %}
     <form class="filter-toolbar">
         <div class="filter-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="input" type="search" name="search" value="{{ search }}" placeholder="Search actor, action, target..."
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search actor, action, target...' %}"
                    hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
         </div>
         <select name="action_type" hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
-            <option value="">All actions</option>
+            <option value="">{% trans "All actions" %}</option>
             {% for at in action_types %}
             <option value="{{ at }}" {% if action_type_filter == at %}selected{% endif %}>{{ at }}</option>
             {% endfor %}
         </select>
-        <input type="date" name="date_from" value="{{ date_from }}" title="From date"
+        <input type="date" name="date_from" value="{{ date_from }}" title="{% trans 'From date' %}"
                hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
-        <input type="date" name="date_to" value="{{ date_to }}" title="To date"
+        <input type="date" name="date_to" value="{{ date_to }}" title="{% trans 'To date' %}"
                hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
     </form>
 

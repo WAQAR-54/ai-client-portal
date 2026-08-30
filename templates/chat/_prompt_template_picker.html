@@ -1,0 +1,23 @@
+{% load i18n %}
+<div id="prompt-template-list">
+    {% for t in templates %}
+    <div class="template-item">
+        <button type="button" class="template-item-insert" data-content="{{ t.content }}">
+            <span class="template-item-name">{{ t.name }}{% if t.is_team_template %} <span class="badge badge-muted">{% trans "Team" %}</span>{% endif %}</span>
+            <span class="template-item-preview">{{ t.content|truncatechars:60 }}</span>
+        </button>
+        {% if not t.is_team_template %}
+        <form method="post" action="{% url 'chat:delete_prompt_template' template_id=t.id %}"
+              hx-post="{% url 'chat:delete_prompt_template' template_id=t.id %}"
+              hx-target="#prompt-template-picker-panel" hx-swap="innerHTML">
+            {% csrf_token %}
+            <button type="submit" class="template-item-delete" title="{% trans 'Delete template' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    {% empty %}
+    <p class="template-empty">{% blocktrans %}No saved prompts yet. Type something in the composer and use "Save as template" to add one.{% endblocktrans %}</p>
+    {% endfor %}
+</div>

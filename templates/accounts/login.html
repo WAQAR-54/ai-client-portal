@@ -1,28 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Log in — AI Client Portal{% endblock %}
+{% load i18n %}
+{% block title %}{% trans "Log in" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 <div class="auth-split">
     <div class="auth-split-brand">
-        <div class="brand-mark"><span class="dot"></span>AI Client Portal</div>
-        <h2>One assistant. Every model. Full control.</h2>
-        <p>Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally.</p>
+        <div class="brand-mark"><span class="dot"></span>{% trans "AI Client Portal" %}</div>
+        <h2>{% trans "One assistant. Every model. Full control." %}</h2>
+        <p>{% trans "Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally." %}</p>
     </div>
     <div class="auth-split-form">
         <div class="auth-card">
-            <h1>Welcome back</h1>
-            <p class="auth-subtitle">Sign in to your account.</p>
+            <h1>{% trans "Welcome back" %}</h1>
+            <p class="auth-subtitle">{% trans "Sign in to your account." %}</p>
             <form method="post">
                 {% csrf_token %}
                 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-                <label for="{{ form.username.id_for_label }}">Email</label>
+                <label for="{{ form.username.id_for_label }}">{% trans "Email" %}</label>
                 {{ form.username }}
                 {{ form.username.errors }}
-                <label for="{{ form.password.id_for_label }}">Password</label>
+                <label for="{{ form.password.id_for_label }}">{% trans "Password" %}</label>
                 {{ form.password }}
                 {{ form.password.errors }}
-                <button type="submit">Log in</button>
+                <button type="submit">{% trans "Log in" %}</button>
             </form>
-            <p class="auth-footer">No account? <a href="{% url 'accounts:signup' %}">Sign up</a></p>
+            <p class="auth-footer">{% trans "No account?" %} <a href="{% url 'accounts:signup' %}">{% trans "Sign up" %}</a></p>
         </div>
     </div>
 </div>

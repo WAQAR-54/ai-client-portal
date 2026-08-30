@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Feedback" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card" style="overflow-x:auto;">
+    <h1>{% trans "Response Feedback" %}</h1>
+    <p class="text-faint" style="font-size:0.85rem; margin-top:-0.5rem;">
+        {% blocktrans %}Thumbs up/down left by users on assistant replies. This is visibility only — nothing
+        here changes model routing or behavior automatically.{% endblocktrans %}
+    </p>
+
+    {% url 'governance:feedback' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search user or comment...' %}"
+                   hx-get="{{ filter_url }}" hx-target="#feedback-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+        <select name="rating" hx-get="{{ filter_url }}" hx-target="#feedback-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">{% trans "All ratings" %}</option>
+            <option value="down" {% if rating_filter == "down" %}selected{% endif %}>{% trans "Thumbs down only" %}</option>
+            <option value="up" {% if rating_filter == "up" %}selected{% endif %}>{% trans "Thumbs up only" %}</option>
+        </select>
+        <select name="model" hx-get="{{ filter_url }}" hx-target="#feedback-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="">{% trans "All models" %}</option>
+            {% for m in models %}
+            <option value="{{ m.id }}" {% if model_filter == m.id|stringformat:"s" %}selected{% endif %}>{{ m.display_label }}</option>
+            {% endfor %}
+        </select>
+    </form>
+
+    <div id="feedback-table">
+        {% include "governance/_feedback_table.html" %}
+    </div>
+</div>
+{% endblock %}

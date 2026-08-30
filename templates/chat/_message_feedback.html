@@ -1,0 +1,29 @@
+{% load i18n %}
+{% with feedback=feedback|default:message.feedback %}
+<div class="msg-feedback" id="msg-feedback-{{ message.id }}">
+    <form method="post" action="{% url 'chat:submit_feedback' conversation_id=message.conversation_id message_id=message.id %}"
+          hx-post="{% url 'chat:submit_feedback' conversation_id=message.conversation_id message_id=message.id %}"
+          hx-target="#msg-feedback-{{ message.id }}" hx-swap="outerHTML" style="display:contents;">
+        {% csrf_token %}
+        <button type="submit" name="rating" value="up"
+                class="msg-feedback-btn{% if feedback.rating == 'up' %} msg-feedback-btn-active-up{% endif %}"
+                title="{% trans 'Good response' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+        </button>
+        <button type="submit" name="rating" value="down"
+                class="msg-feedback-btn{% if feedback.rating == 'down' %} msg-feedback-btn-active-down{% endif %}"
+                title="{% trans 'Bad response' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>
+        </button>
+    </form>
+    {% if feedback.rating == "down" %}
+    <form method="post" action="{% url 'chat:submit_feedback' conversation_id=message.conversation_id message_id=message.id %}"
+          hx-post="{% url 'chat:submit_feedback' conversation_id=message.conversation_id message_id=message.id %}"
+          hx-target="#msg-feedback-{{ message.id }}" hx-swap="outerHTML" class="msg-feedback-comment-form">
+        {% csrf_token %}
+        <input class="input" type="text" name="comment" value="{{ feedback.comment }}" placeholder="{% trans 'What was wrong? (optional)' %}" maxlength="500">
+        <button type="submit" class="btn-small btn-ghost">{% trans "Send" %}</button>
+    </form>
+    {% endif %}
+</div>
+{% endwith %}

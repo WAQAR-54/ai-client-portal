@@ -1,0 +1,31 @@
+{% load i18n %}
+<div class="filter-result-count">{% blocktrans count counter=feedback_entries|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> feedback entry{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> feedback entries{% endblocktrans %}</div>
+<table class="data">
+    <thead>
+        <tr><th>{% trans "Time" %}</th><th>{% trans "User" %}</th><th>{% trans "Rating" %}</th><th>{% trans "Model" %}</th><th>{% trans "Reply" %}</th><th>{% trans "Comment" %}</th></tr>
+    </thead>
+    <tbody>
+        {% for entry in feedback_entries %}
+        <tr>
+            <td class="text-muted mono">{{ entry.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ entry.user.email }}</td>
+            <td>
+                {% if entry.rating == "up" %}<span class="badge badge-success">{% trans "Up" %}</span>
+                {% else %}<span class="badge badge-danger">{% trans "Down" %}</span>{% endif %}
+            </td>
+            <td class="text-muted">{{ entry.model_used.display_label|default:"—" }}</td>
+            <td class="text-muted" style="max-width:320px;">{{ entry.message.content|truncatechars:140 }}</td>
+            <td class="text-muted">{{ entry.comment|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="6">{% trans "No feedback matches your search/filters." %}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% if is_paginated %}
+<div class="pagination-bar">
+    {% if page_obj.has_previous %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&{% endif %}page={{ page_obj.previous_page_number }}">← {% trans "Prev" %}</a>{% endif %}
+    <span class="text-faint">{% blocktrans with number=page_obj.number pages=page_obj.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktrans %}</span>
+    {% if page_obj.has_next %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&{% endif %}page={{ page_obj.next_page_number }}">{% trans "Next" %} →</a>{% endif %}
+</div>
+{% endif %}

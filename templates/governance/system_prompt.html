@@ -1,46 +1,47 @@
 {% extends "base.html" %}
-{% block title %}System Prompt — {{ department.name }}{% endblock %}
+{% load i18n %}
+{% block title %}{% blocktrans with name=department.name %}System Prompt — {{ name }}{% endblocktrans %}{% endblock %}
 {% block content %}
 <div class="card">
-    <h1>System Prompt — {{ department.name }}</h1>
+    <h1>{% blocktrans with name=department.name %}System Prompt — {{ name }}{% endblocktrans %}</h1>
 
     {% if active_version %}
-    <p>Active version created {{ active_version.created_at|date:"Y-m-d H:i" }} by {{ active_version.created_by|default:"—" }}.</p>
+    <p>{% blocktrans with created=active_version.created_at|date:"Y-m-d H:i" by=active_version.created_by|default:"—" %}Active version created {{ created }} by {{ by }}.{% endblocktrans %}</p>
     {% else %}
-    <p>No active version yet — the base system prompt is used with no department-specific instructions.</p>
+    <p>{% trans "No active version yet — the base system prompt is used with no department-specific instructions." %}</p>
     {% endif %}
 
     <form method="post" class="mt-4">
         {% csrf_token %}
-        <label for="content">Company/Department Context</label>
+        <label for="content">{% trans "Company/Department Context" %}</label>
         <textarea class="input" name="content" id="content" rows="5">{{ active_version.content|default:"" }}</textarea>
 
-        <label for="tone_preference">Tone Preference</label>
+        <label for="tone_preference">{% trans "Tone Preference" %}</label>
         <select class="input" name="tone_preference" id="tone_preference">
-            <option value="formal" {% if active_version.tone_preference == "formal" or not active_version %}selected{% endif %}>Formal</option>
-            <option value="casual" {% if active_version.tone_preference == "casual" %}selected{% endif %}>Casual</option>
-            <option value="technical" {% if active_version.tone_preference == "technical" %}selected{% endif %}>Technical</option>
+            <option value="formal" {% if active_version.tone_preference == "formal" or not active_version %}selected{% endif %}>{% trans "Formal" %}</option>
+            <option value="casual" {% if active_version.tone_preference == "casual" %}selected{% endif %}>{% trans "Casual" %}</option>
+            <option value="technical" {% if active_version.tone_preference == "technical" %}selected{% endif %}>{% trans "Technical" %}</option>
         </select>
 
-        <label for="restricted_topics">Restricted Topics</label>
+        <label for="restricted_topics">{% trans "Restricted Topics" %}</label>
         <textarea class="input" name="restricted_topics" id="restricted_topics" rows="2">{{ active_version.restricted_topics|default:"" }}</textarea>
 
-        <button type="submit">Save as new version</button>
+        <button type="submit">{% trans "Save as new version" %}</button>
     </form>
 
-    <h2 class="mt-5">History</h2>
+    <h2 class="mt-5">{% trans "History" %}</h2>
     <table class="data">
-        <thead><tr><th>Created</th><th>By</th><th>Tone</th><th>Active</th></tr></thead>
+        <thead><tr><th>{% trans "Created" %}</th><th>{% trans "By" %}</th><th>{% trans "Tone" %}</th><th>{% trans "Active" %}</th></tr></thead>
         <tbody>
             {% for v in history %}
             <tr>
                 <td class="text-muted">{{ v.created_at|date:"Y-m-d H:i" }}</td>
                 <td>{{ v.created_by|default:"—" }}</td>
                 <td><span class="badge badge-muted">{{ v.get_tone_preference_display }}</span></td>
-                <td>{% if v.is_active %}<span class="badge badge-success">Active</span>{% endif %}</td>
+                <td>{% if v.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="4" class="text-faint">No versions yet.</td></tr>
+            <tr><td colspan="4" class="text-faint">{% trans "No versions yet." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
