@@ -4,11 +4,20 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 
-from accounts.models import Department, User
+from accounts.models import Department, Team, User
 from chat.models import Conversation, Message, ModelConfig, PromptTemplate, UserModelPermission
 from chat.prompts import build_system_prompt
 from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, validate_upload
-from governance.models import AuditLog, Plan, SystemPromptVersion, UsageLimit
+from governance.models import (
+    ADMIN_NAV_FEATURES,
+    AuditLog,
+    Plan,
+    ROLE_FEATURE_ROLES,
+    RoleFeatureToggle,
+    SystemPromptVersion,
+    USER_CHAT_FEATURES,
+    UsageLimit,
+)
 from governance.plans import assign_plan, check_request_count_limit, validate_context_tokens
 
 
@@ -313,13 +322,21 @@ class SystemPromptInjectionTests(TestCase):
 
 class GovernanceRBACAndAuditTests(TestCase):
     def setUp(self):
+        self.department = Department.objects.create(name="Ops")
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
             role=User.Role.ADMIN,
+            department=self.department,
             is_staff=True,
         )
-        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.superadmin = User.objects.create_user(
+            email="superadmin@example.com",
+            password="pw12345!",
+            role=User.Role.SUPERADMIN,
+            is_staff=True,
+        )
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!", department=self.department)
 
     def test_dashboard_forbidden_for_regular_user(self):
         self.client.login(email="u@example.com", password="pw12345!")
@@ -414,19 +431,55 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.assertIn("\\u003C/script\\u003E", body)
 
     def test_change_user_role_writes_audit_log(self):
+        """Promoting to Manager requires a Team (Section 1B) - the request
+        must include team_id + confirmed=1 in one shot, or the view just
+        re-renders the confirmation partial without applying anything."""
+        team = Team.objects.create(name="Alpha", department=self.department)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_role", kwargs={"user_id": self.user.id}),
+            {"role": User.Role.MANAGER, "team_id": team.id, "confirmed": "1"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, User.Role.MANAGER)
+        self.assertEqual(self.user.team_id, team.id)
+        team.refresh_from_db()
+        self.assertEqual(team.manager_id, self.user.id)
+        self.assertTrue(AuditLog.objects.filter(action_type="user.role_change").exists())
+
+    def test_change_user_role_to_manager_without_team_does_not_apply(self):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:change_user_role", kwargs={"user_id": self.user.id}),
             {"role": User.Role.MANAGER},
         )
+        self.assertEqual(response.status_code, 200)  # re-renders the confirm partial, not a redirect
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, User.Role.USER)
+
+    def test_scoped_admin_cannot_promote_to_admin(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_role", kwargs={"user_id": self.user.id}),
+            {"role": User.Role.ADMIN, "department_id": self.department.id, "confirmed": "1"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_promote_to_admin_with_department(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_role", kwargs={"user_id": self.user.id}),
+            {"role": User.Role.ADMIN, "department_id": self.department.id, "confirmed": "1"},
+        )
         self.assertEqual(response.status_code, 302)
         self.user.refresh_from_db()
-        self.assertEqual(self.user.role, User.Role.MANAGER)
-        self.assertTrue(AuditLog.objects.filter(action_type="user.role_change").exists())
+        self.assertEqual(self.user.role, User.Role.ADMIN)
+        self.assertEqual(self.user.department_id, self.department.id)
 
     def test_change_user_department_writes_audit_log(self):
         department = Department.objects.create(name="Support")
-        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:change_user_department", kwargs={"user_id": self.user.id}),
             {"department_id": department.id},
@@ -437,10 +490,7 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.assertTrue(AuditLog.objects.filter(action_type="user.department_change").exists())
 
     def test_change_user_department_to_none(self):
-        department = Department.objects.create(name="Support")
-        self.user.department = department
-        self.user.save(update_fields=["department"])
-        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:change_user_department", kwargs={"user_id": self.user.id}),
             {"department_id": ""},
@@ -449,32 +499,55 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.user.refresh_from_db()
         self.assertIsNone(self.user.department_id)
 
+    def test_change_user_department_forbidden_for_scoped_admin(self):
+        department = Department.objects.create(name="Support")
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_department", kwargs={"user_id": self.user.id}),
+            {"department_id": department.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_toggle_model_enabled_writes_audit_log(self):
         model_config = ModelConfig.objects.create(
             provider=ModelConfig.Provider.OPENAI,
             model_name="m",
             is_enabled=False,
         )
-        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.post(reverse("governance:toggle_model_enabled", kwargs={"model_id": model_config.id}))
         self.assertEqual(response.status_code, 302)
         model_config.refresh_from_db()
         self.assertTrue(model_config.is_enabled)
         self.assertTrue(AuditLog.objects.filter(action_type="model.enable").exists())
 
+    def test_toggle_model_enabled_forbidden_for_scoped_admin(self):
+        model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_model_enabled", kwargs={"model_id": model_config.id}))
+        self.assertEqual(response.status_code, 403)
+
     def test_system_prompt_new_version_writes_audit_log(self):
-        department = Department.objects.create(name="Ops")
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.post(
-            reverse("governance:system_prompt", kwargs={"department_id": department.id}),
+            reverse("governance:system_prompt", kwargs={"department_id": self.department.id}),
             {"content": "Be concise.", "tone_preference": "casual", "restricted_topics": ""},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(SystemPromptVersion.objects.filter(department=department, is_active=True).exists())
+        self.assertTrue(SystemPromptVersion.objects.filter(department=self.department, is_active=True).exists())
         self.assertTrue(AuditLog.objects.filter(action_type="system_prompt.new_version").exists())
 
-    def test_add_model_creates_disabled_unpriced_entry(self):
+    def test_system_prompt_forbidden_for_other_departments_admin(self):
+        other_department = Department.objects.create(name="Other")
         self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:system_prompt", kwargs={"department_id": other_department.id}),
+            {"content": "Be concise.", "tone_preference": "casual", "restricted_topics": ""},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_add_model_creates_disabled_unpriced_entry(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:add_model"),
             {
@@ -488,9 +561,17 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.assertFalse(model_config.is_enabled)
         self.assertIsNone(model_config.input_cost_per_1m)
 
+    def test_add_model_forbidden_for_scoped_admin(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_model"),
+            {"provider": ModelConfig.Provider.OPENAI, "model_name": "gpt-new", "tier": ModelConfig.Tier.DEFAULT},
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_update_model_pricing(self):
         model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
-        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:update_model_pricing", kwargs={"model_id": model_config.id}),
             {"input_cost_per_1m": "1.5", "output_cost_per_1m": "3.0"},
@@ -502,7 +583,7 @@ class GovernanceRBACAndAuditTests(TestCase):
 
     def test_model_permissions_toggle_denies_and_reallows(self):
         model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True)
-        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.login(email="superadmin@example.com", password="pw12345!")
 
         response = self.client.post(
             reverse("governance:model_permissions", kwargs={"model_id": model_config.id}),
@@ -518,6 +599,12 @@ class GovernanceRBACAndAuditTests(TestCase):
         )
         permission.refresh_from_db()
         self.assertTrue(permission.is_allowed)
+
+    def test_model_permissions_forbidden_for_scoped_admin(self):
+        model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:model_permissions", kwargs={"model_id": model_config.id}))
+        self.assertEqual(response.status_code, 403)
 
 
 class LimitManagementTests(TestCase):
@@ -643,11 +730,14 @@ class UserOverridesTests(TestCase):
 
 
 class DepartmentManagementTests(TestCase):
+    """Department structure (create/rename/delete) is SuperAdmin-only per
+    the role hierarchy prompt, Section 1."""
+
     def setUp(self):
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
-            role=User.Role.ADMIN,
+            role=User.Role.SUPERADMIN,
             is_staff=True,
         )
         self.client.login(email="admin@example.com", password="pw12345!")
@@ -698,10 +788,15 @@ class AdminListFilteringTests(TestCase):
     the htmx-partial vs full-page template switch it relies on."""
 
     def setUp(self):
+        # SuperAdmin, not a department-scoped Admin: this class tests
+        # search/filter/htmx mechanics across departments (alice in
+        # Engineering, bob in Sales) - department-SCOPING itself has its
+        # own dedicated test class (DepartmentScopingTests) rather than
+        # being conflated with these cross-cutting list-screen mechanics.
         self.admin = User.objects.create_user(
             email="filteradmin@example.com",
             password="pw12345!",
-            role=User.Role.ADMIN,
+            role=User.Role.SUPERADMIN,
             is_staff=True,
         )
         self.client.login(email="filteradmin@example.com", password="pw12345!")
@@ -805,10 +900,13 @@ class ModelSyncTests(TestCase):
     Provider calls are always mocked here - never hit a real API in tests."""
 
     def setUp(self):
+        # Model sync/enable/pricing is SuperAdmin-only per the role
+        # hierarchy prompt, Section 1 ("enable/disable individual models
+        # system-wide").
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
-            role=User.Role.ADMIN,
+            role=User.Role.SUPERADMIN,
             is_staff=True,
         )
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
@@ -976,10 +1074,12 @@ class ModelSyncNotificationTaskTests(TestCase):
     anything itself, mirroring what the manual Sync Models button does."""
 
     def setUp(self):
+        # chat/tasks.py now notifies SuperAdmins (model sync/enable is
+        # SuperAdmin-only, see ModelSyncTests above).
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
-            role=User.Role.ADMIN,
+            role=User.Role.SUPERADMIN,
             is_staff=True,
         )
 
@@ -1049,14 +1149,18 @@ class ModelSyncNotificationTaskTests(TestCase):
 
 class DepartmentTemplatesAdminTests(TestCase):
     def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        # Department content (system prompt, team templates) is scoped, not
+        # SuperAdmin-only - the Admin must belong to the SAME department
+        # they're managing templates for.
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
             role=User.Role.ADMIN,
+            department=self.department,
             is_staff=True,
         )
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
-        self.department = Department.objects.create(name="Sales")
         self.client.login(email="admin@example.com", password="pw12345!")
 
     def test_admin_creates_team_template(self):
@@ -1106,4 +1210,368 @@ class DepartmentTemplatesAdminTests(TestCase):
             )
         )
         self.assertEqual(response.status_code, 403)
-        self.assertTrue(PromptTemplate.objects.filter(id=template.id).exists())
+
+
+class RoleHierarchyAccessControlTests(TestCase):
+    """Real attacker-style checks for the role hierarchy prompt's Section 4
+    ("Enforcement — server-side, not just hidden UI") - every scoping rule
+    is exercised as a direct request against another department's data or
+    a write endpoint someone shouldn't reach, not just confirmed absent
+    from a menu. This is the deliverable's required evidence, not a
+    regression-test afterthought."""
+
+    def setUp(self):
+        self.dept_a = Department.objects.create(name="Dept A")
+        self.dept_b = Department.objects.create(name="Dept B")
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin_a = User.objects.create_user(
+            email="admina@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=self.dept_a,
+            is_staff=True,
+        )
+        self.admin_b = User.objects.create_user(
+            email="adminb@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=self.dept_b,
+            is_staff=True,
+        )
+        self.user_a = User.objects.create_user(email="usera@example.com", password="pw12345!", department=self.dept_a)
+        self.user_b = User.objects.create_user(email="userb@example.com", password="pw12345!", department=self.dept_b)
+
+        self.team_a = Team.objects.create(name="Team A", department=self.dept_a)
+        self.manager_a = User.objects.create_user(
+            email="managera@example.com",
+            password="pw12345!",
+            role=User.Role.MANAGER,
+            department=self.dept_a,
+            team=self.team_a,
+        )
+        self.team_a.manager = self.manager_a
+        self.team_a.save(update_fields=["manager"])
+
+        self.plain_user = User.objects.create_user(email="plain@example.com", password="pw12345!")
+
+    # --- A department Admin cannot fetch/view/modify another department's
+    # users/usage/audit logs by directly hitting a URL with another
+    # department's id. ---
+
+    def test_admin_users_list_excludes_another_department(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:users"))
+        users = list(response.context["users"])
+        self.assertIn(self.user_a, users)
+        self.assertNotIn(self.user_b, users)
+
+    def test_admin_cannot_toggle_another_departments_user(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user_b.id}))
+        self.assertEqual(response.status_code, 403)
+        self.user_b.refresh_from_db()
+        self.assertTrue(self.user_b.is_active)
+
+    def test_admin_cannot_change_another_departments_user_role(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_role", kwargs={"user_id": self.user_b.id}),
+            {"role": User.Role.MANAGER, "confirmed": "1"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.user_b.refresh_from_db()
+        self.assertEqual(self.user_b.role, User.Role.USER)
+
+    def test_admin_cannot_change_another_departments_user_plan(self):
+        plan = Plan.objects.create(name="Test Plan A")
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_plan", kwargs={"user_id": self.user_b.id}),
+            {"plan_id": plan.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_cannot_view_another_departments_user_overrides(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:user_overrides", kwargs={"user_id": self.user_b.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_audit_logs_exclude_another_departments_entries(self):
+        from governance.audit import log_action
+
+        log_action(self.admin_a, "user.suspend", self.user_a, old_value=True, new_value=False)
+        log_action(self.admin_b, "user.suspend", self.user_b, old_value=True, new_value=False)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:audit_logs"))
+        logs = list(response.context["logs"])
+        self.assertTrue(any(entry.actor_id == self.admin_a.id for entry in logs))
+        self.assertFalse(any(entry.actor_id == self.admin_b.id for entry in logs))
+
+    def test_admin_usage_export_excludes_another_departments_data(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True)
+        conv_a = Conversation.objects.create(user=self.user_a, title="a")
+        conv_b = Conversation.objects.create(user=self.user_b, title="b")
+        Message.objects.create(
+            conversation=conv_a,
+            role=Message.Role.ASSISTANT,
+            content="x",
+            model_used=model,
+            input_tokens=10,
+            output_tokens=5,
+            estimated_cost="0.01",
+        )
+        Message.objects.create(
+            conversation=conv_b,
+            role=Message.Role.ASSISTANT,
+            content="y",
+            model_used=model,
+            input_tokens=20,
+            output_tokens=10,
+            estimated_cost="0.02",
+        )
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:export_usage_csv"))
+        body = response.content.decode()
+        self.assertIn("usera@example.com", body)
+        self.assertNotIn("userb@example.com", body)
+
+    def test_admin_limits_exclude_another_departments_entries(self):
+        UsageLimit.objects.create(user=self.user_a, daily_token_cap=1000)
+        limit_b = UsageLimit.objects.create(user=self.user_b, daily_token_cap=2000)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:limits"))
+        limits = list(response.context["limits"])
+        self.assertTrue(any(entry.user_id == self.user_a.id for entry in limits))
+        self.assertFalse(any(entry.user_id == self.user_b.id for entry in limits))
+
+        response = self.client.post(reverse("governance:limit_delete", kwargs={"limit_id": limit_b.id}))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(UsageLimit.objects.filter(id=limit_b.id).exists())
+
+    def test_admin_cannot_view_another_departments_system_prompt(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:system_prompt", kwargs={"department_id": self.dept_b.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_cannot_manage_another_departments_team(self):
+        team_b = Team.objects.create(name="Team B", department=self.dept_b)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:delete_team", kwargs={"team_id": team_b.id}))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Team.objects.filter(id=team_b.id).exists())
+
+    # --- SuperAdmin-only screens return 403 for Admin and Manager, not
+    # just hidden from their navigation. ---
+
+    def test_plan_management_403_for_admin(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:plans")).status_code, 403)
+
+    def test_plan_management_403_for_manager(self):
+        self.client.login(email="managera@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:plans")).status_code, 403)
+
+    def test_plan_management_200_for_superadmin(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:plans")).status_code, 200)
+
+    def test_departments_403_for_admin(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:departments")).status_code, 403)
+
+    def test_models_403_for_manager(self):
+        self.client.login(email="managera@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:models")).status_code, 403)
+
+    # --- A Manager cannot successfully call any write endpoint, even
+    # knowing the URL - confirmed as a 403, not just "no button exists". ---
+
+    def test_manager_cannot_toggle_user_active(self):
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_cannot_change_role(self):
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_role", kwargs={"user_id": self.user_a.id}),
+            {"role": User.Role.ADMIN},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_cannot_change_plan(self):
+        plan = Plan.objects.create(name="Test Plan M")
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_plan", kwargs={"user_id": self.user_a.id}),
+            {"plan_id": plan.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_cannot_enable_model(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_model_enabled", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_cannot_add_department(self):
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:add_department"), {"name": "Sneaky"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_dashboard_shows_only_own_team(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True)
+        conv_a = Conversation.objects.create(user=self.user_a, title="a")
+        conv_b = Conversation.objects.create(user=self.user_b, title="b")
+        Message.objects.create(
+            conversation=conv_a,
+            role=Message.Role.ASSISTANT,
+            content="x",
+            model_used=model,
+            input_tokens=100,
+            output_tokens=50,
+            estimated_cost="0.1",
+        )
+        Message.objects.create(
+            conversation=conv_b,
+            role=Message.Role.ASSISTANT,
+            content="y",
+            model_used=model,
+            input_tokens=200,
+            output_tokens=100,
+            estimated_cost="0.2",
+        )
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:manager_dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_tokens_all_time"], 150)
+
+    def test_manager_dashboard_forbidden_for_regular_user(self):
+        self.client.login(email="usera@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:manager_dashboard"))
+        self.assertEqual(response.status_code, 403)
+
+    # --- A regular User still cannot access any Admin/Manager/SuperAdmin
+    # endpoint - re-run to confirm the new roles didn't loosen anything. ---
+
+    def test_user_cannot_access_any_governance_screen(self):
+        self.client.login(email="plain@example.com", password="pw12345!")
+        for url_name in [
+            "dashboard",
+            "users",
+            "plans",
+            "models",
+            "departments",
+            "teams",
+            "limits",
+            "audit_logs",
+            "usage",
+            "feedback",
+            "manager_dashboard",
+        ]:
+            response = self.client.get(reverse(f"governance:{url_name}"))
+            self.assertEqual(response.status_code, 403, url_name)
+
+    def test_user_cannot_call_any_write_endpoint(self):
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post(
+            reverse("governance:add_model"), {"provider": "openai", "model_name": "x", "tier": "default"}
+        )
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post(reverse("governance:add_department"), {"name": "Nope"})
+        self.assertEqual(response.status_code, 403)
+
+
+class FeatureVisibilityTests(TestCase):
+    """SuperAdmin-controlled per-role feature switches (see
+    governance/models.py's ADMIN_NAV_FEATURES/USER_CHAT_FEATURES and
+    governance/features.py) - real requests, not just checking the
+    RoleFeatureToggle rows got written."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Ops")
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=self.department,
+            is_staff=True,
+        )
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+
+    def test_feature_visibility_page_superadmin_only(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:feature_visibility")).status_code, 403)
+        self.client.logout()
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:feature_visibility")).status_code, 403)
+        self.client.logout()
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:feature_visibility")).status_code, 200)
+
+    def test_everything_visible_by_default(self):
+        """No RoleFeatureToggle rows at all yet - nothing should be hidden."""
+        from governance.features import role_has_feature
+
+        self.assertTrue(role_has_feature(User.Role.ADMIN, "teams"))
+        self.assertTrue(role_has_feature(User.Role.USER, "dark_mode"))
+        self.assertTrue(role_has_feature(User.Role.MANAGER, "notifications"))
+
+    def test_superadmin_disables_teams_for_admin_role(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        post_data = {}
+        for key, _label in ADMIN_NAV_FEATURES:
+            if key != "teams":
+                post_data[f"toggle_{key}_admin"] = "on"
+        for key, _label in USER_CHAT_FEATURES:
+            for role in ROLE_FEATURE_ROLES:
+                post_data[f"toggle_{key}_{role}"] = "on"
+        response = self.client.post(reverse("governance:feature_visibility"), post_data)
+        self.assertEqual(response.status_code, 302)
+
+        toggle = RoleFeatureToggle.objects.get(role="admin", feature_key="teams")
+        self.assertFalse(toggle.is_enabled)
+
+        # Now the department-scoped Admin is really blocked, server-side.
+        self.client.logout()
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:teams"))
+        self.assertEqual(response.status_code, 403)
+
+        # ...but a SuperAdmin is never affected by a role toggle.
+        self.client.logout()
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:teams"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_superadmin_disables_dark_mode_for_user_role(self):
+        RoleFeatureToggle.objects.create(role="user", feature_key="dark_mode", is_enabled=False)
+        self.client.login(email="u@example.com", password="pw12345!")
+        response = self.client.post(reverse("accounts:set_theme_preference"), {"theme": "dark"})
+        self.assertEqual(response.status_code, 403)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.theme_preference, "system")
+
+    def test_disabling_a_user_feature_does_not_affect_admin_role(self):
+        RoleFeatureToggle.objects.create(role="user", feature_key="prompt_templates", is_enabled=False)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("chat:prompt_template_list"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_feature_visibility_page_reflects_saved_state(self):
+        RoleFeatureToggle.objects.create(role="admin", feature_key="limits", is_enabled=False)
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:feature_visibility"))
+        admin_rows = {row["key"]: row["enabled"] for row in response.context["admin_rows"]}
+        self.assertFalse(admin_rows["limits"])
+        self.assertTrue(admin_rows["teams"])

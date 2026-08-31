@@ -4,6 +4,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 
+from governance.features import require_feature
 from notifications.models import EMAIL_TOGGLE_LABELS, Notification, NotificationPreference
 
 
@@ -14,12 +15,14 @@ def _bell_context(request):
 
 
 @login_required
+@require_feature("notifications")
 @require_GET
 def bell_dropdown(request):
     return render(request, "notifications/_bell_dropdown.html", _bell_context(request))
 
 
 @login_required
+@require_feature("notifications")
 @require_http_methods(["POST"])
 def mark_read(request, notification_id):
     notification = get_object_or_404(Notification, id=notification_id, user=request.user)
@@ -29,6 +32,7 @@ def mark_read(request, notification_id):
 
 
 @login_required
+@require_feature("notifications")
 @require_http_methods(["POST"])
 def mark_all_read(request):
     Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
@@ -36,6 +40,7 @@ def mark_all_read(request):
 
 
 @login_required
+@require_feature("notifications")
 @require_http_methods(["POST"])
 def update_preferences(request):
     preference, _created = NotificationPreference.objects.get_or_create(user=request.user)

@@ -51,7 +51,7 @@ A company-branded web portal where employees/clients log in and interact with Op
 | Claude Integration | Selected Claude models, abstracted behind internal model IDs |
 | Model Control | Admin decides who can use which model |
 | User Management | Add, edit, suspend users |
-| Role Management | User / Manager / Admin — **note:** the role hierarchy and a `ManagerRequiredMixin` exist in code, but no manager-specific view/dashboard has actually been built yet; today a Manager has the same access as a User. Not a bug, just an unbuilt gap, found while wiring the Plan system. |
+| Role Management | ~~User / Manager / Admin — note: the role hierarchy and a `ManagerRequiredMixin` exist in code, but no manager-specific view/dashboard has actually been built yet~~ **Resolved in Phase 8**: full 4-tier hierarchy — User / Manager (team-scoped, read-only) / Admin (department-scoped) / SuperAdmin (unscoped, the only role that can create Plans, enable models system-wide, or manage departments). Role changes happen from the Users list (Change Role, reusing the Change Plan interaction pattern), gated per-acting-role and confirmed before taking effect; every scoped rule is enforced server-side, not just hidden from the nav — see §7 Phase 8. |
 | Token Control | Daily/monthly/per-user limits |
 | Session Control | Sessions/messages/time limits |
 | Budget Control | User/department AI spending limits |
@@ -101,12 +101,24 @@ A company-branded web portal where employees/clients log in and interact with Op
 
 ```
 User
-  - id, email, password_hash, role (user/manager/admin), department_id, is_active, created_at
+  - id, email, password_hash, role (user/manager/admin/superadmin), department_id, is_active, created_at
   - has_seen_onboarding, preferred_language (en/ur/ar)          (added)
   - theme_preference (light/dark/system, default system)        (added)
+  - team_id (Team membership - separate from Team.manager, below)  (added)
 
 Department
   - id, name, default_system_prompt_id, monthly_budget_cap
+
+Team                                                            (added)
+  - id, name, department_id, manager_id (one-to-one -> User, nullable)
+  - a Manager's scope: kept separate from Department (which is what an
+    Admin is scoped to) rather than overloading one model to mean two things
+
+RoleFeatureToggle                                              (added)
+  - id, role, feature_key, is_enabled, updated_at
+  - unique(role, feature_key); no row = visible (default). SuperAdmin-only
+    to edit (see governance/features.py) - a per-ROLE app-capability
+    switch, distinct from Plan.feature_flags (a per-PLAN subscription grant)
 
 SystemPromptVersion
   - id, department_id, content, tone_preference, restricted_topics, created_by, created_at, is_active
@@ -209,14 +221,19 @@ route groups (see `PROJECT_MAP.md` for the full file-by-file breakdown):
 /notifications/mark-all-read/                     -> (added)
 /notifications/preferences/                       -> per-type email opt-out, Settings (added)
 
-/governance/                       -> admin overview + charts
+/governance/                       -> admin overview + charts (department-scoped for Admin, unscoped for SuperAdmin) (added scoping)
+/governance/my-team/               -> Manager's read-only team dashboard (added)
+/governance/teams/, /teams/add/, /teams/<id>/delete/         -> Team CRUD, department-scoped for Admin (added)
 /governance/users/                 -> list, role/department change, Change Plan, bulk-assign (added)
 /governance/users/<id>/overrides/, /overrides/clear/         -> view/clear per-user Plan overrides (added)
-/governance/plans/, /plans/new/, /plans/<id>/edit/          -> Plan CRUD (added)
-/governance/upgrade-requests/                                -> approve/dismiss (added)
-/governance/models/, /models/sync/, /models/sync/import/, /models/<id>/permissions/, ...   (sync added)
-/governance/limits/, /governance/usage/, /governance/usage/export.csv|.xlsx, /export-monthly-summary.xlsx   (export added)
-/governance/audit-logs/, /governance/departments/, /departments/<id>/templates/   (department templates added)
+/governance/feature-visibility/                               -> per-role feature on/off switches - SuperAdmin-only (added)
+/governance/plans/, /plans/new/, /plans/<id>/edit/          -> Plan CRUD - SuperAdmin-only (added, scoped Phase 8)
+/governance/upgrade-requests/                                -> approve/dismiss, department-scoped for Admin (added)
+/governance/models/, /models/sync/, /models/sync/import/, /models/<id>/permissions/, ...   -> SuperAdmin-only (sync added, scoped Phase 8)
+/governance/limits/, /governance/usage/, /governance/usage/export.csv|.xlsx   -> department-scoped for Admin (export added, scoped Phase 8)
+/governance/usage/export-monthly-summary.xlsx                -> SuperAdmin-only (cross-department by design) (added, scoped Phase 8)
+/governance/audit-logs/                                      -> department-scoped for Admin (added, scoped Phase 8)
+/governance/departments/, /departments/<id>/templates/       -> department CRUD is SuperAdmin-only; system prompt/templates are department-scoped for Admin (department templates added, scoped Phase 8)
 /governance/feedback/                                        -> response feedback review (added)
 ```
 
@@ -364,6 +381,21 @@ Triggered by a detailed client review (annotated screenshots + a 10-point list).
 - **New: dark mode** — `User.theme_preference` (Light/Dark/System, default System), CSS custom-property token swap (not a parallel stylesheet), applied server-side via `data-theme` on `<html>` (no flash-of-wrong-theme), covering chat, sidebar, Settings, modals, and the admin dashboard's Chart.js charts (palette/gridlines picked at render time from the same theme signal)
 - **A real bug found and fixed during Playwright verification**: the export "Download ready."/error toast was appended as a child of the `<details>` export menu — per the HTML spec, everything in a `<details>` except its `<summary>` is hidden the instant `open` is removed, which happens right when export starts, so the toast was invisible the whole time. Fixed by anchoring it to the always-visible `.chat-header-actions` container instead; re-verified with a real Playwright download (`page.expect_download()`, confirmed filename and visible toast text)
 - **Verification**: full regression suite **229/229 passing**, `black --check` clean across the repo, and a live Playwright pass covering all three requested states (no conversation selected, an open conversation, a long sidebar list) plus dark mode toggled live, the locked-model → upgrade-modal flow, and a real triggered file download — not just template/code review
+
+**Phase 8 — Full role hierarchy: SuperAdmin / Admin / Manager / User**
+
+Introduces a real 4-tier hierarchy, replacing the old binary User/Admin split (and wiring up `ManagerRequiredMixin`, which existed in code but was never actually used — flagged in the Phase 5 security audit as an unbuilt gap).
+
+- **SuperAdmin** (new, top of the hierarchy): the only role that can create/edit Plans, enable/disable models system-wide, and manage departments (create/rename/delete). Unscoped — sees every department.
+- **Admin** (existing role, now department-scoped): scoped to one department (`User.department`) — sees/manages only their department's users, usage, audit logs, limits, and upgrade requests; can promote/demote between User and Manager (never Admin/SuperAdmin) within their own department; applies Plans a SuperAdmin already made visible, never creates one. Also manages their own department's system prompt and team prompt templates (content, not structure, so this stays Admin-level rather than SuperAdmin-only).
+- **Manager** (wired up for real): read-only oversight of one `Team` — a new lightweight model (`id, name, department_id, manager` — kept separate from Department, which already means something else). No write access anywhere; the in-app flow for a change is "see something on your dashboard, ask your department's Admin," never an action button.
+- **User**: unchanged.
+- **Role management UI**: Users list gets a "Change Role" control (reusing the existing Change Plan interaction pattern), gated per-row to only the roles the acting user is allowed to grant, with a required confirmation step before it takes effect (mirroring the plan-downgrade-confirm pattern) — promoting to Manager requires picking a Team first, promoting to Admin requires picking a Department first; neither can be saved without one.
+- **Grandfathering decision** (required per-project rule: no existing user's access silently reduced) — explicitly confirmed before migrating: **every existing Admin-role user promoted to SuperAdmin**, preserving their exact current access level. Checked for ambiguity first (per the instruction to ask rather than guess if the current Admin setup was unclear) — found none: both local dev and production had zero Departments defined and every existing Admin already had `department=None`, so there was no case of an Admin already being informally department-specific. Applied via a dry-run/apply management command (`promote_admins_to_superadmin`, same pattern as the earlier Plan-restructuring command) — **2 Admins → SuperAdmin locally, 1 Admin → SuperAdmin in production** (production's dry-run has been reviewed; `--apply` has not been run there yet, pending the same "review the dry-run, then say go" step used for the Plan restructuring).
+- **Server-side enforcement, re-tested as real requests, not code review**: a new `RoleHierarchyAccessControlTests` class (24 tests) exercises the department-Admin-vs-department-Admin IDOR concern directly — Admin A fetching/toggling/role-changing/plan-changing Admin B's department's users, viewing their overrides, their audit log entries, their usage export, their limits, their system prompt, all return **403**, not just "hidden from the menu." A Manager posting to any write endpoint (toggle active, change role, change plan, enable a model, add a department) — also **403**, confirmed even though the Manager isn't shown a button for any of it. A plain User hitting every governance screen and every write endpoint — **403**, re-confirming the original security audit's finding still holds with two more roles added.
+- **Navigation is genuinely different per role**, not the same menu with items grayed out: SuperAdmin's sidebar gets a "Plan Management" section plus Models/Departments that Admin and Manager never see in their nav at all; Admin's nav is scoped (no Plan Management/Models/Departments, but gets Teams and a direct link to their own department's settings, since they can't reach the now-SuperAdmin-only Departments list to get there); Manager's nav collapses to a single "My Team" link, no Users/Limits/Models/Audit Log entries anywhere.
+- **Verification**: full regression suite **261/261 passing** (up from 229 — includes 24 new IDOR/RBAC tests plus fixes to pre-existing tests that exercised the old unscoped-Admin behavior), `black --check` clean, no pending migrations, and a live Playwright pass screenshotting all three views: SuperAdmin's Plan Management screen, a department-scoped Admin's Users list (nav confirmed missing Plan Management/Models/Departments, present Teams/Department settings), and a Manager's read-only team dashboard (nav confirmed down to just "My Team") — each cross-checked with a direct-URL request to a screen that role shouldn't reach, confirming the real HTTP status, not just what's visible.
+- **Feature Visibility** (added immediately after, in response to "I don't see anywhere to allow/disallow which options someone can use"): a new SuperAdmin-only screen (`/governance/feature-visibility/`) that's a genuinely separate control from Plans — Plans grant per-subscription capabilities to Users, this grants/hides whole app capabilities per ROLE, independent of any Plan. Two registries drive it (`ADMIN_NAV_FEATURES`: Teams/Upgrade Requests/Limits/Usage & Cost/Audit Logs/Feedback/Department Settings; `USER_CHAT_FEATURES`: Prompt Templates/Quick-switcher/Pin & Search/Dark Mode/Notifications/Request-Upgrade/Onboarding Tour), each backed by a `RoleFeatureToggle(role, feature_key, is_enabled)` row — absent means visible, so introducing the table changed nothing by default. SuperAdmin is always unscoped and never shows up as a toggleable row. Enforced in both places, not just one: a `has_feature` template filter hides the nav item/button, and a `require_feature`/`RequireFeatureMixin` on the actual view returns a real 403 — verified live (toggled "Teams" off for the Admin role from the real UI, confirmed the nav item disappeared for a real department Admin AND a direct hit to `/governance/teams/` returned 403, while a SuperAdmin hitting the same URL still got 200). 6 new tests, full suite now **267/267**.
 
 ---
 

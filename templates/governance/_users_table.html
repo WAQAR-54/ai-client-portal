@@ -27,16 +27,22 @@
             <td><input type="checkbox" name="user_ids" value="{{ u.id }}" form="bulk-plan-form" style="width:auto;"></td>
             <td>{{ u.email }}</td>
             <td>
+                {% if u.role in assignable_roles_values %}
                 <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
                     {% csrf_token %}
                     <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
-                        {% for value, label in roles %}
+                        {% for value, label in assignable_roles %}
                         <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </form>
+                {% else %}
+                {# A scoped Admin can only toggle User<->Manager - someone already at Admin/SuperAdmin isn't editable from here at all, not just grayed out. #}
+                <span class="badge badge-muted">{{ u.get_role_display }}</span>
+                {% endif %}
             </td>
             <td>
+                {% if request.user.is_superadmin %}
                 <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
                     {% csrf_token %}
                     <select name="department_id" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
@@ -46,6 +52,10 @@
                         {% endfor %}
                     </select>
                 </form>
+                {% else %}
+                {# Moving a user between departments is department-structure management - SuperAdmin-only, see governance/views.py::change_user_department. #}
+                <span class="text-muted">{{ u.department.name|default:"—" }}</span>
+                {% endif %}
             </td>
             <td>
                 <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.35rem; flex-wrap:wrap;">

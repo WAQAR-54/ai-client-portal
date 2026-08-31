@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "My Team" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+{% if not team %}
+<div class="card">
+    <h1>{% trans "My Team" %}</h1>
+    <p>{% trans "You haven't been assigned a team yet — ask your Admin to assign you one." %}</p>
+</div>
+{% else %}
+<div class="card">
+    <h1>{{ team.name }}</h1>
+    <p class="text-muted" style="margin-top:-0.5rem;">
+        {% blocktrans with department=team.department.name %}{{ department }} — read-only oversight of your team's usage. Need something changed? Reach out to your department's Admin.{% endblocktrans %}
+    </p>
+    <div class="stat-grid mt-4">
+        <div class="stat-tile"><div class="stat-label">{% trans "Team members" %}</div><div class="stat-value mono">{{ members|length }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (all time)" %}</div><div class="stat-value mono">{{ total_tokens_all_time }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Cost (all time)" %}</div><div class="stat-value mono">${{ total_cost_all_time|floatformat:2 }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (this month)" %}</div><div class="stat-value mono">{{ month_tokens }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Cost (this month)" %}</div><div class="stat-value mono">${{ month_cost|floatformat:2 }}</div></div>
+    </div>
+</div>
+
+<div class="card mt-5" style="overflow-x:auto;">
+    <h2>{% trans "Team activity" %}</h2>
+    <table class="data">
+        <thead><tr><th>{% trans "Member" %}</th><th>{% trans "Tokens" %}</th><th>{% trans "Cost" %}</th><th>{% trans "Engagement" %}</th></tr></thead>
+        <tbody>
+            {% for row in members %}
+            <tr>
+                <td>{{ row.user.email }}</td>
+                <td class="mono">{{ row.tokens }}</td>
+                <td class="mono">${{ row.cost|floatformat:2 }}</td>
+                <td class="mono">{% if row.engagement %}{{ row.engagement }}x{% else %}—{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr class="empty-state-row"><td colspan="4">{% trans "No members on this team yet." %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

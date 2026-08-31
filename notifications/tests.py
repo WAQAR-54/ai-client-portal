@@ -5,7 +5,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import User
+from accounts.models import Department, Team, User
 from chat.views import _notify_if_usage_warning
 from governance.models import Plan, UserPlanAssignment
 from governance.plans import assign_plan
@@ -138,17 +138,25 @@ class AdminChangeNotificationTests(TestCase):
     _notify_admin_change / _notify_plan_change."""
 
     def setUp(self):
+        self.department = Department.objects.create(name="Ops")
         self.admin = User.objects.create_user(
-            email="notifyadmin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+            email="notifyadmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=self.department,
+            is_staff=True,
         )
-        self.target = User.objects.create_user(email="notifytarget@example.com", password="pw12345!")
+        self.target = User.objects.create_user(
+            email="notifytarget@example.com", password="pw12345!", department=self.department
+        )
         self.client.login(email="notifyadmin@example.com", password="pw12345!")
 
     def test_role_change_fires_admin_change_notification(self):
+        team = Team.objects.create(name="Alpha", department=self.department)
         mail.outbox = []
         response = self.client.post(
             reverse("governance:change_user_role", kwargs={"user_id": self.target.id}),
-            {"role": User.Role.MANAGER},
+            {"role": User.Role.MANAGER, "team_id": team.id, "confirmed": "1"},
         )
         self.assertEqual(response.status_code, 302)
 

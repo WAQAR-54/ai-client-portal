@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages as django_messages
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import TruncDate
@@ -13,12 +14,24 @@ from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods
 from django.views.generic import ListView, TemplateView
 
-from accounts.models import Department, User
-from accounts.permissions import AdminRequiredMixin, role_required
+from accounts.models import Department, Team, User
+from accounts.permissions import AdminRequiredMixin, ManagerRequiredMixin, SuperAdminRequiredMixin, role_required
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from governance.audit import log_action
+from governance.features import RequireFeatureMixin, require_feature
 from governance.limits import _effective_limit, _metric
-from governance.models import AuditLog, KNOWN_FEATURE_FLAGS, Plan, SystemPromptVersion, UpgradeRequest, UsageLimit
+from governance.models import (
+    ADMIN_NAV_FEATURES,
+    AuditLog,
+    KNOWN_FEATURE_FLAGS,
+    Plan,
+    ROLE_FEATURE_ROLES,
+    RoleFeatureToggle,
+    SystemPromptVersion,
+    UpgradeRequest,
+    USER_CHAT_FEATURES,
+    UsageLimit,
+)
 from governance.plans import (
     assign_plan,
     clear_user_overrides,
@@ -28,6 +41,74 @@ from governance.plans import (
     get_plan_status,
     get_user_overrides,
 )
+
+# ---------- Department-scoping helpers ----------
+# A plain Admin only ever sees/touches their own department; a SuperAdmin is
+# unscoped. Every governance queryset/lookup below routes through one of
+# these rather than re-deriving the same `if role == ADMIN: filter(...)`
+# check ad hoc, so the scoping rule lives in one place per data shape.
+
+
+def _is_scoped_admin(user):
+    """True only for a plain (non-super) Admin — the one role that's
+    actually department-restricted. SuperAdmin is unscoped; Manager/User
+    never reach these governance views at all (blocked by the role
+    mixins/decorators before this is ever checked)."""
+    return user.role == User.Role.ADMIN
+
+
+def _scope_users(request, qs):
+    if _is_scoped_admin(request.user):
+        qs = qs.filter(department_id=request.user.department_id)
+    return qs
+
+
+def _scope_by_user_department(request, qs, path="user__department_id"):
+    """For querysets one hop away from User via `path` (e.g. Message via
+    conversation__user__department_id, UpgradeRequest via
+    user__department_id)."""
+    if _is_scoped_admin(request.user):
+        qs = qs.filter(**{path: request.user.department_id})
+    return qs
+
+
+def _get_scoped_user_or_403(request, user_id):
+    """Fetch a target user for a write action, enforcing that a scoped
+    Admin can only ever touch users in their own department — raises
+    PermissionDenied (403), not a silent 404, so this is testable as an
+    explicit access-control decision rather than looking like "not found"."""
+    target = get_object_or_404(User, id=user_id)
+    if _is_scoped_admin(request.user) and target.department_id != request.user.department_id:
+        raise PermissionDenied("That user is outside your department.")
+    return target
+
+
+def _scope_teams(request, qs):
+    if _is_scoped_admin(request.user):
+        qs = qs.filter(department_id=request.user.department_id)
+    return qs
+
+
+def _scope_limits(request, qs):
+    """A UsageLimit targets either a user or a department (never both, per
+    its own CheckConstraint) — scope on whichever is set."""
+    if _is_scoped_admin(request.user):
+        dept_id = request.user.department_id
+        qs = qs.filter(Q(user__department_id=dept_id) | Q(department_id=dept_id))
+    return qs
+
+
+def _scope_audit_logs(request, qs):
+    """AuditLog's target is a loose (target_type, target_id) pair, not a
+    real FK, so it can't be scoped with a simple join like the other
+    querysets here. An entry counts as "in the Admin's department" if
+    either the actor belongs to it, or the entry is about a User (role/
+    plan/department change, suspension, ...) who belongs to it."""
+    if not _is_scoped_admin(request.user):
+        return qs
+    dept_id = request.user.department_id
+    dept_user_ids = [str(uid) for uid in User.objects.filter(department_id=dept_id).values_list("id", flat=True)]
+    return qs.filter(Q(actor__department_id=dept_id) | Q(target_type="User", target_id__in=dept_user_ids))
 
 
 def _querystring_without(request, *exclude_keys):
@@ -55,16 +136,20 @@ class FilterableListMixin:
         return super().get_template_names()
 
 
-def _org_usage_overview():
+def _org_usage_overview(users=None):
     """Aggregate, read-only snapshot for the admin Overview page's usage
     ring: average pct-of-monthly-token-cap across users who have an
     effective limit with a monthly_token_cap set. Purely additive — reuses
     _effective_limit()/_metric() from governance.limits but never touches
-    check_usage_limits()/validate_upload()."""
+    check_usage_limits()/validate_upload(). `users` defaults to everyone
+    (SuperAdmin); DashboardView passes a department-scoped queryset for a
+    plain Admin."""
+    if users is None:
+        users = User.objects.all()
     month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     pct_values = []
     over_80_count = 0
-    for user in User.objects.all():
+    for user in users:
         limit = _effective_limit(user)
         if limit is None or limit.monthly_token_cap is None:
             continue
@@ -97,6 +182,10 @@ class DashboardView(AdminRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         assistant_messages = Message.objects.filter(role=Message.Role.ASSISTANT)
+        assistant_messages = _scope_by_user_department(
+            self.request, assistant_messages, "conversation__user__department_id"
+        )
+        scoped_users = _scope_users(self.request, User.objects.all())
         month_messages = assistant_messages.filter(created_at__gte=month_start)
 
         today = timezone.localdate()
@@ -125,13 +214,16 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         model_labels = [row["model_used__model_name"] for row in by_model]
         model_cost = [float(row["cost"] or 0) for row in by_model]
 
-        role_counts = User.objects.values("role").annotate(count=Count("id")).order_by("role")
+        role_counts = scoped_users.values("role").annotate(count=Count("id")).order_by("role")
         role_labels = [dict(User.Role.choices).get(row["role"], row["role"]) for row in role_counts]
         role_values = [row["count"] for row in role_counts]
 
+        scoped_conversations = Conversation.objects.all()
+        scoped_conversations = _scope_by_user_department(self.request, scoped_conversations, "user__department_id")
+
         return super().get_context_data(**kwargs) | {
-            "total_users": User.objects.count(),
-            "total_conversations": Conversation.objects.count(),
+            "total_users": scoped_users.count(),
+            "total_conversations": scoped_conversations.count(),
             "total_tokens_all_time": assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))[
                 "total"
             ]
@@ -154,7 +246,8 @@ class DashboardView(AdminRequiredMixin, TemplateView):
             "has_cost_data": any(daily_cost),
             "has_token_data": any(daily_tokens),
             "has_model_data": bool(model_labels),
-            "org_usage": _org_usage_overview(),
+            "org_usage": _org_usage_overview(scoped_users),
+            "is_department_scoped": _is_scoped_admin(self.request.user),
         }
 
 
@@ -165,7 +258,8 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
     context_object_name = "users"
 
     def get_queryset(self):
-        qs = User.objects.select_related("department", "plan_assignment__plan").order_by("email")
+        qs = User.objects.select_related("department", "team", "plan_assignment__plan").order_by("email")
+        qs = _scope_users(self.request, qs)
         search = self.request.GET.get("search", "").strip()
         if search:
             qs = qs.filter(
@@ -200,9 +294,26 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
             users.sort(key=lambda u: plan_info[u.id]["engagement"] or -1, reverse=True)
             ctx[self.context_object_name] = users
 
+        # A scoped Admin can only ever promote/demote between User and
+        # Manager, within their own department — never create another Admin
+        # or a SuperAdmin (that would let an Admin escalate their own
+        # department's access beyond what was granted to them). A
+        # SuperAdmin can set anyone to any role.
+        if _is_scoped_admin(self.request.user):
+            assignable_roles = [(v, l) for v, l in User.Role.choices if v in (User.Role.USER, User.Role.MANAGER)]
+            teams_qs = Team.objects.filter(department_id=self.request.user.department_id)
+            departments_qs = Department.objects.filter(id=self.request.user.department_id)
+        else:
+            assignable_roles = list(User.Role.choices)
+            teams_qs = Team.objects.select_related("department").order_by("department__name", "name")
+            departments_qs = Department.objects.order_by("name")
+
         return ctx | {
             "roles": User.Role.choices,
-            "departments": Department.objects.order_by("name"),
+            "assignable_roles": assignable_roles,
+            "assignable_roles_values": [v for v, _l in assignable_roles],
+            "departments": departments_qs,
+            "teams": teams_qs,
             "plans": Plan.objects.filter(is_active=True, is_visible_to_admins=True).order_by("name"),
             "plan_info": plan_info,
             "search": self.request.GET.get("search", ""),
@@ -210,14 +321,14 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
             "status_filter": self.request.GET.get("status", ""),
             "plan_filter": self.request.GET.get("plan", ""),
             "sort": self.request.GET.get("sort", ""),
-            "total_count": User.objects.count(),
+            "total_count": _scope_users(self.request, User.objects.all()).count(),
         }
 
 
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def toggle_user_active(request, user_id):
-    target = get_object_or_404(User, id=user_id)
+    target = _get_scoped_user_or_403(request, user_id)
     old_value = target.is_active
     target.is_active = not target.is_active
     target.save(update_fields=["is_active"])
@@ -234,21 +345,109 @@ def toggle_user_active(request, user_id):
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def change_user_role(request, user_id):
-    target = get_object_or_404(User, id=user_id)
+    """Two-step confirm, mirroring change_user_plan's downgrade-confirm
+    pattern below: a POST missing what's needed (a picked Team/Department,
+    or the final `confirmed=1`) re-renders the same confirmation partial
+    instead of applying anything — a role change never takes effect on the
+    first click, matching the plan-downgrade confirmation's level of care.
+
+    Permission rules (role hierarchy prompt, Section 1B): a SuperAdmin can
+    set anyone to any role. A scoped Admin can only toggle between User and
+    Manager, only for users already in their own department (enforced by
+    _get_scoped_user_or_403 above) — never create another Admin or a
+    SuperAdmin, which would let an Admin escalate their own department's
+    access beyond what was granted to them.
+    """
+    target = _get_scoped_user_or_403(request, user_id)
     new_role = request.POST.get("role")
     if new_role not in User.Role.values:
         return HttpResponseBadRequest("Invalid role")
+    if _is_scoped_admin(request.user) and new_role not in (User.Role.USER, User.Role.MANAGER):
+        raise PermissionDenied("Only a SuperAdmin can grant Admin or SuperAdmin access.")
+
+    confirmed = request.POST.get("confirmed") == "1"
+    new_role_label = dict(User.Role.choices).get(new_role, new_role)
+    team = None
+    department = None
+
+    if new_role == User.Role.MANAGER:
+        # A Manager without an assigned team has nothing to see — never
+        # allow saving that combination, always require a team first.
+        team_id = request.POST.get("team_id")
+        team = (
+            _scope_teams(request, Team.objects.select_related("department")).filter(id=team_id).first()
+            if team_id
+            else None
+        )
+        if not team or not confirmed:
+            return render(
+                request,
+                "governance/_role_change_confirm.html",
+                {
+                    "target": target,
+                    "new_role": new_role,
+                    "new_role_label": new_role_label,
+                    "teams": _scope_teams(request, Team.objects.select_related("department")),
+                    "selected_team_id": team.id if team else None,
+                },
+            )
+    elif new_role == User.Role.ADMIN:
+        # SuperAdmin-only (checked above), but a department-scoped Admin
+        # must have exactly one department — never allow saving without one.
+        department_id = request.POST.get("department_id")
+        department = Department.objects.filter(id=department_id).first() if department_id else None
+        if not department or not confirmed:
+            return render(
+                request,
+                "governance/_role_change_confirm.html",
+                {
+                    "target": target,
+                    "new_role": new_role,
+                    "new_role_label": new_role_label,
+                    "departments": Department.objects.order_by("name"),
+                    "selected_department_id": department.id if department else None,
+                },
+            )
+    elif not confirmed:
+        return render(
+            request,
+            "governance/_role_change_confirm.html",
+            {"target": target, "new_role": new_role, "new_role_label": new_role_label},
+        )
+
     old_value = target.role
-    target.role = new_role
-    target.save(update_fields=["role"])
+    with transaction.atomic():
+        # Demoting away from Manager releases the team they used to manage
+        # so it doesn't keep pointing at someone who's no longer a Manager.
+        if target.role == User.Role.MANAGER and new_role != User.Role.MANAGER:
+            Team.objects.filter(manager=target).update(manager=None)
+            target.team = None
+
+        target.role = new_role
+        if new_role == User.Role.MANAGER:
+            Team.objects.filter(manager=target).exclude(pk=team.pk).update(manager=None)
+            target.team = team
+            target.department_id = team.department_id
+            team.manager = target
+            team.save(update_fields=["manager"])
+        elif new_role == User.Role.ADMIN:
+            target.department = department
+
+        target.save()
+
     log_action(request.user, "user.role_change", target, old_value=old_value, new_value=new_role)
     _notify_admin_change(target, f"Your role was changed to {target.get_role_display()}.")
     return redirect("governance:users")
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def change_user_department(request, user_id):
+    """Moving a user between departments is department-structure
+    management, which is SuperAdmin-only per the role hierarchy prompt's
+    Section 1 ("The only role that can... manage departments") — a scoped
+    Admin manages the *users* within their department, not which
+    department a user belongs to."""
     target = get_object_or_404(User, id=user_id)
     department_id = request.POST.get("department_id") or None
     old_value = target.department_id
@@ -319,7 +518,7 @@ def _usage_exceeds_plan(user, plan):
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def change_user_plan(request, user_id):
-    target = get_object_or_404(User, id=user_id)
+    target = _get_scoped_user_or_403(request, user_id)
     plan = get_object_or_404(Plan, id=request.POST.get("plan_id"))
     confirmed = request.POST.get("confirmed") == "1"
 
@@ -344,7 +543,10 @@ def bulk_change_plan(request):
         return redirect("governance:users")
 
     plan = get_object_or_404(Plan, id=plan_id)
-    for target in User.objects.filter(id__in=user_ids):
+    # Scoped to the acting Admin's own department, same as the Users list
+    # itself — a manipulated user_ids list can't reach another department's
+    # users this way, it just silently has no effect on ids outside scope.
+    for target in _scope_users(request, User.objects.filter(id__in=user_ids)):
         old_assignment = get_assignment(target)
         old_plan_name = old_assignment.plan.name if old_assignment else "—"
         assign_plan(target, plan, assigned_by=request.user)
@@ -370,7 +572,7 @@ class UserOverridesView(AdminRequiredMixin, TemplateView):
     template_name = "governance/user_overrides.html"
 
     def get_context_data(self, **kwargs):
-        target = get_object_or_404(User, id=kwargs["user_id"])
+        target = _get_scoped_user_or_403(self.request, kwargs["user_id"])
         return super().get_context_data(**kwargs) | {
             "target": target,
             "overrides": get_user_overrides(target),
@@ -381,7 +583,7 @@ class UserOverridesView(AdminRequiredMixin, TemplateView):
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def clear_user_overrides_view(request, user_id):
-    target = get_object_or_404(User, id=user_id)
+    target = _get_scoped_user_or_403(request, user_id)
     if count_user_overrides(target) == 0:
         django_messages.warning(request, _("%(email)s has no overrides to clear.") % {"email": target.email})
         return redirect("governance:users")
@@ -395,14 +597,19 @@ def clear_user_overrides_view(request, user_id):
     return redirect("governance:users")
 
 
-class PlanListView(AdminRequiredMixin, ListView):
+class PlanListView(SuperAdminRequiredMixin, ListView):
+    """Plan Management is SuperAdmin-only (role hierarchy prompt, Section
+    1/2) — an Admin uses the Plans a SuperAdmin already made visible to
+    them (via Change Plan on the Users list), but cannot see this
+    create/edit screen at all, not just have it grayed out."""
+
     model = Plan
     template_name = "governance/plans.html"
     context_object_name = "plans"
     queryset = Plan.objects.order_by("-is_default", "name")
 
 
-class PlanFormView(AdminRequiredMixin, TemplateView):
+class PlanFormView(SuperAdminRequiredMixin, TemplateView):
     template_name = "governance/plan_form.html"
 
     def get_context_data(self, **kwargs):
@@ -457,19 +664,26 @@ class PlanFormView(AdminRequiredMixin, TemplateView):
         return redirect("governance:plans")
 
 
-class UpgradeRequestListView(AdminRequiredMixin, ListView):
+class UpgradeRequestListView(AdminRequiredMixin, RequireFeatureMixin, ListView):
+    feature_key = "upgrade_requests"
     model = UpgradeRequest
     template_name = "governance/upgrade_requests.html"
     context_object_name = "upgrade_requests"
-    queryset = UpgradeRequest.objects.select_related("user", "current_plan").filter(
-        status=UpgradeRequest.Status.PENDING,
-    )
+
+    def get_queryset(self):
+        qs = UpgradeRequest.objects.select_related("user", "current_plan").filter(
+            status=UpgradeRequest.Status.PENDING,
+        )
+        return _scope_by_user_department(self.request, qs)
 
 
 @role_required(User.Role.ADMIN)
+@require_feature("upgrade_requests")
 @require_http_methods(["POST"])
 def resolve_upgrade_request(request, request_id):
     upgrade_request = get_object_or_404(UpgradeRequest, id=request_id)
+    if _is_scoped_admin(request.user) and upgrade_request.user.department_id != request.user.department_id:
+        raise PermissionDenied("That upgrade request is outside your department.")
     action = request.POST.get("action")
 
     upgrade_request.resolved_at = timezone.now()
@@ -487,7 +701,11 @@ def resolve_upgrade_request(request, request_id):
     return redirect("governance:upgrade_requests")
 
 
-class ModelListView(FilterableListMixin, AdminRequiredMixin, ListView):
+class ModelListView(FilterableListMixin, SuperAdminRequiredMixin, ListView):
+    """Enabling/disabling models system-wide is SuperAdmin-only (role
+    hierarchy prompt, Section 1) — an Admin applies whatever models a Plan
+    already grants (via Change Plan), but never sees this screen."""
+
     model = ModelConfig
     template_name = "governance/models.html"
     partial_template_name = "governance/_models_table.html"
@@ -515,7 +733,7 @@ class ModelListView(FilterableListMixin, AdminRequiredMixin, ListView):
         }
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def toggle_model_enabled(request, model_id):
     model_config = get_object_or_404(ModelConfig, id=model_id)
@@ -547,7 +765,7 @@ def _int_or_none(raw):
     return int(raw) if raw.isdigit() else None
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_GET
 def sync_models_preview(request):
     from chat.model_sync import fetch_all_available_models, known_model_keys
@@ -560,7 +778,7 @@ def sync_models_preview(request):
     return render(request, "governance/model_sync.html", {"fetched": fetched, "tiers": ModelConfig.Tier.choices})
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def sync_models_import(request):
     created_count = 0
@@ -599,7 +817,7 @@ def sync_models_import(request):
     return redirect("governance:models")
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def add_model(request):
     provider = request.POST.get("provider", "")
@@ -619,7 +837,7 @@ def add_model(request):
     return redirect("governance:models")
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def update_model_pricing(request, model_id):
     model_config = get_object_or_404(ModelConfig, id=model_id)
@@ -638,7 +856,7 @@ def update_model_pricing(request, model_id):
     return redirect("governance:models")
 
 
-class ModelPermissionsView(AdminRequiredMixin, TemplateView):
+class ModelPermissionsView(SuperAdminRequiredMixin, TemplateView):
     template_name = "governance/model_permissions.html"
 
     def get_context_data(self, **kwargs):
@@ -678,8 +896,12 @@ class ModelPermissionsView(AdminRequiredMixin, TemplateView):
 def _filtered_assistant_messages(request):
     """Shared by the Usage & Cost screen and its CSV/XLSX exports, so
     "export respects whatever filter is active" is true by construction -
-    both read the exact same query, not two independently-maintained ones."""
+    both read the exact same query, not two independently-maintained ones.
+    Department-scoping lives here too for the same reason — a scoped Admin
+    can't get another department's usage data through the CSV/XLSX export
+    even though the on-screen table is scoped, since all three read this."""
     assistant_messages = Message.objects.filter(role=Message.Role.ASSISTANT)
+    assistant_messages = _scope_by_user_department(request, assistant_messages, "conversation__user__department_id")
 
     search = request.GET.get("search", "").strip()
     if search:
@@ -699,7 +921,8 @@ def _filtered_assistant_messages(request):
     return assistant_messages, {"search": search, "model_id": model_id, "date_from": date_from, "date_to": date_to}
 
 
-class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, TemplateView):
+class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    feature_key = "usage_cost"
     template_name = "governance/usage.html"
     partial_template_name = "governance/_usage_table.html"
 
@@ -738,6 +961,7 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, TemplateView):
 
 
 @role_required(User.Role.ADMIN)
+@require_feature("usage_cost")
 @require_GET
 def export_usage_csv(request):
     import csv
@@ -765,6 +989,7 @@ def export_usage_csv(request):
 
 
 @role_required(User.Role.ADMIN)
+@require_feature("usage_cost")
 @require_GET
 def export_usage_xlsx(request):
     from openpyxl import Workbook
@@ -808,12 +1033,15 @@ def export_usage_xlsx(request):
     return response
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_GET
 def export_usage_monthly_summary(request):
-    """Aggregates by department for one calendar month - suitable for
-    internal billing/chargeback, per spec. `month` is "YYYY-MM"; defaults
-    to the current month."""
+    """Aggregates ACROSS every department for one calendar month, by
+    design (that's the point of a chargeback summary) — a department-scoped
+    Admin seeing other departments' costs broken out would defeat the whole
+    scoping model, so this one export is SuperAdmin-only rather than
+    department-scoped like the rest of Usage & Cost. `month` is "YYYY-MM";
+    defaults to the current month."""
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
@@ -868,7 +1096,8 @@ def export_usage_monthly_summary(request):
     return response
 
 
-class AuditLogListView(FilterableListMixin, AdminRequiredMixin, ListView):
+class AuditLogListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, ListView):
+    feature_key = "audit_logs"
     model = AuditLog
     template_name = "governance/audit_logs.html"
     partial_template_name = "governance/_audit_logs_table.html"
@@ -876,7 +1105,7 @@ class AuditLogListView(FilterableListMixin, AdminRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        qs = AuditLog.objects.select_related("actor")
+        qs = _scope_audit_logs(self.request, AuditLog.objects.select_related("actor"))
         search = self.request.GET.get("search", "").strip()
         if search:
             qs = qs.filter(
@@ -900,15 +1129,16 @@ class AuditLogListView(FilterableListMixin, AdminRequiredMixin, ListView):
             "date_from": self.request.GET.get("date_from", ""),
             "date_to": self.request.GET.get("date_to", ""),
             "action_types": AuditLog.objects.values_list("action_type", flat=True).distinct().order_by("action_type"),
-            "total_count": AuditLog.objects.count(),
+            "total_count": _scope_audit_logs(self.request, AuditLog.objects.all()).count(),
             "querystring_without_page": _querystring_without(self.request, "page"),
         }
 
 
-class FeedbackListView(FilterableListMixin, AdminRequiredMixin, ListView):
+class FeedbackListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, ListView):
     """Response feedback (thumbs up/down) — visibility only, per spec: this
     never feeds back into model selection/routing automatically."""
 
+    feature_key = "feedback"
     model = MessageFeedback
     template_name = "governance/feedback.html"
     partial_template_name = "governance/_feedback_table.html"
@@ -917,6 +1147,7 @@ class FeedbackListView(FilterableListMixin, AdminRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = MessageFeedback.objects.select_related("user", "model_used", "message", "message__conversation")
+        qs = _scope_by_user_department(self.request, qs)
         search = self.request.GET.get("search", "").strip()
         if search:
             qs = qs.filter(Q(user__email__icontains=search) | Q(comment__icontains=search))
@@ -934,12 +1165,16 @@ class FeedbackListView(FilterableListMixin, AdminRequiredMixin, ListView):
             "rating_filter": self.request.GET.get("rating", ""),
             "model_filter": self.request.GET.get("model", ""),
             "models": ModelConfig.objects.all(),
-            "total_count": MessageFeedback.objects.count(),
+            "total_count": _scope_by_user_department(self.request, MessageFeedback.objects.all()).count(),
             "querystring_without_page": _querystring_without(self.request, "page"),
         }
 
 
-class DepartmentListView(FilterableListMixin, AdminRequiredMixin, ListView):
+class DepartmentListView(FilterableListMixin, SuperAdminRequiredMixin, ListView):
+    """Managing departments is SuperAdmin-only (role hierarchy prompt,
+    Section 1) — a department-scoped Admin operates *within* a department,
+    they don't create/edit/delete departments themselves."""
+
     model = Department
     template_name = "governance/departments.html"
     partial_template_name = "governance/_departments_table.html"
@@ -959,7 +1194,7 @@ class DepartmentListView(FilterableListMixin, AdminRequiredMixin, ListView):
         }
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def add_department(request):
     name = request.POST.get("name", "").strip()
@@ -975,7 +1210,7 @@ def add_department(request):
     return redirect("governance:departments")
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def update_department(request, department_id):
     department = get_object_or_404(Department, id=department_id)
@@ -996,7 +1231,7 @@ def update_department(request, department_id):
     return redirect("governance:departments")
 
 
-@role_required(User.Role.ADMIN)
+@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def delete_department(request, department_id):
     department = get_object_or_404(Department, id=department_id)
@@ -1005,11 +1240,23 @@ def delete_department(request, department_id):
     return redirect("governance:departments")
 
 
-class SystemPromptView(AdminRequiredMixin, TemplateView):
+def _get_scoped_department_or_403(request, department_id):
+    """Unlike department STRUCTURE (create/rename/delete — SuperAdmin-only,
+    see Section 1), a department's system prompt and team templates are
+    content an Admin operates within their own department, same footing as
+    everything else in Section 2 — so this is scoped, not SuperAdmin-only."""
+    department = get_object_or_404(Department, id=department_id)
+    if _is_scoped_admin(request.user) and department.id != request.user.department_id:
+        raise PermissionDenied("That department is outside your scope.")
+    return department
+
+
+class SystemPromptView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    feature_key = "department_settings"
     template_name = "governance/system_prompt.html"
 
     def get_context_data(self, **kwargs):
-        department = get_object_or_404(Department, id=kwargs["department_id"])
+        department = _get_scoped_department_or_403(self.request, kwargs["department_id"])
         return super().get_context_data(**kwargs) | {
             "department": department,
             "active_version": SystemPromptVersion.objects.filter(department=department, is_active=True).first(),
@@ -1017,7 +1264,7 @@ class SystemPromptView(AdminRequiredMixin, TemplateView):
         }
 
     def post(self, request, department_id):
-        department = get_object_or_404(Department, id=department_id)
+        department = _get_scoped_department_or_403(request, department_id)
         content = request.POST.get("content", "").strip()
         tone_preference = request.POST.get("tone_preference", SystemPromptVersion.Tone.FORMAL)
         restricted_topics = request.POST.get("restricted_topics", "").strip()
@@ -1036,22 +1283,23 @@ class SystemPromptView(AdminRequiredMixin, TemplateView):
         return redirect("governance:system_prompt", department_id=department.id)
 
 
-class DepartmentTemplatesView(AdminRequiredMixin, TemplateView):
+class DepartmentTemplatesView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
     """Team prompt templates for one department - visible to every user in
     that department alongside their own personal ones (see
     chat/views.py::_visible_prompt_templates)."""
 
+    feature_key = "department_settings"
     template_name = "governance/department_templates.html"
 
     def get_context_data(self, **kwargs):
-        department = get_object_or_404(Department, id=kwargs["department_id"])
+        department = _get_scoped_department_or_403(self.request, kwargs["department_id"])
         return super().get_context_data(**kwargs) | {
             "department": department,
             "templates": PromptTemplate.objects.filter(department=department),
         }
 
     def post(self, request, department_id):
-        department = get_object_or_404(Department, id=department_id)
+        department = _get_scoped_department_or_403(request, department_id)
         name = request.POST.get("name", "").strip()
         content = request.POST.get("content", "").strip()
         if name and content:
@@ -1061,22 +1309,25 @@ class DepartmentTemplatesView(AdminRequiredMixin, TemplateView):
 
 
 @role_required(User.Role.ADMIN)
+@require_feature("department_settings")
 @require_http_methods(["POST"])
 def delete_department_template(request, department_id, template_id):
+    _get_scoped_department_or_403(request, department_id)
     template = get_object_or_404(PromptTemplate, id=template_id, department_id=department_id)
     log_action(request.user, "prompt_template.delete", template, old_value=template.name)
     template.delete()
     return redirect("governance:department_templates", department_id=department_id)
 
 
-class LimitListView(FilterableListMixin, AdminRequiredMixin, ListView):
+class LimitListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, ListView):
+    feature_key = "limits"
     model = UsageLimit
     template_name = "governance/limits.html"
     partial_template_name = "governance/_limits_table.html"
     context_object_name = "limits"
 
     def get_queryset(self):
-        qs = UsageLimit.objects.select_related("user", "department")
+        qs = _scope_limits(self.request, UsageLimit.objects.select_related("user", "department"))
         search = self.request.GET.get("search", "").strip()
         if search:
             qs = qs.filter(Q(user__email__icontains=search) | Q(department__name__icontains=search))
@@ -1089,25 +1340,37 @@ class LimitListView(FilterableListMixin, AdminRequiredMixin, ListView):
             "default_upload_mb": settings.DEFAULT_MAX_UPLOAD_SIZE_MB,
             "default_extensions": settings.DEFAULT_ALLOWED_FILE_EXTENSIONS,
             "search": self.request.GET.get("search", ""),
-            "total_count": UsageLimit.objects.count(),
+            "total_count": _scope_limits(self.request, UsageLimit.objects.all()).count(),
         }
 
 
-class LimitFormView(AdminRequiredMixin, TemplateView):
+class LimitFormView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    feature_key = "limits"
     template_name = "governance/limit_form.html"
 
     def get_context_data(self, **kwargs):
         limit = None
         if kwargs.get("limit_id"):
-            limit = get_object_or_404(UsageLimit, id=kwargs["limit_id"])
+            limit = _scope_limits(self.request, UsageLimit.objects.filter(id=kwargs["limit_id"])).first()
+            if limit is None:
+                raise PermissionDenied("That limit is outside your scope.")
         return super().get_context_data(**kwargs) | {
             "limit": limit,
-            "users": User.objects.order_by("email"),
-            "departments": Department.objects.order_by("name"),
+            "users": _scope_users(self.request, User.objects.order_by("email")),
+            "departments": (
+                Department.objects.filter(id=self.request.user.department_id)
+                if _is_scoped_admin(self.request.user)
+                else Department.objects.order_by("name")
+            ),
         }
 
     def post(self, request, limit_id=None):
-        limit = get_object_or_404(UsageLimit, id=limit_id) if limit_id else UsageLimit()
+        if limit_id:
+            limit = _scope_limits(request, UsageLimit.objects.filter(id=limit_id)).first()
+            if limit is None:
+                raise PermissionDenied("That limit is outside your scope.")
+        else:
+            limit = UsageLimit()
 
         target_type = request.POST.get("target_type")
         if target_type == "user":
@@ -1119,6 +1382,17 @@ class LimitFormView(AdminRequiredMixin, TemplateView):
 
         if not limit.user_id and not limit.department_id:
             return HttpResponseBadRequest("Pick a user or a department")
+
+        # A scoped Admin can only ever target their own department or a
+        # user within it — re-checked here (not just via the picker
+        # querysets above) since POST data is attacker-controlled.
+        if _is_scoped_admin(request.user):
+            dept_id = request.user.department_id
+            target_user = User.objects.filter(id=limit.user_id).first() if limit.user_id else None
+            if (limit.user_id and (target_user is None or target_user.department_id != dept_id)) or (
+                limit.department_id and str(limit.department_id) != str(dept_id)
+            ):
+                raise PermissionDenied("That target is outside your department.")
 
         def _int_or_none(key):
             raw = (request.POST.get(key) or "").strip()
@@ -1145,9 +1419,186 @@ class LimitFormView(AdminRequiredMixin, TemplateView):
 
 
 @role_required(User.Role.ADMIN)
+@require_feature("limits")
 @require_http_methods(["POST"])
 def delete_limit(request, limit_id):
-    limit = get_object_or_404(UsageLimit, id=limit_id)
+    limit = _scope_limits(request, UsageLimit.objects.filter(id=limit_id)).first()
+    if limit is None:
+        raise PermissionDenied("That limit is outside your scope.")
     log_action(request.user, "limit.delete", limit, old_value=str(limit))
     limit.delete()
     return redirect("governance:limits")
+
+
+class TeamListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, ListView):
+    """Team management is NOT SuperAdmin-only like Plans/Models/Departments
+    — a team is day-to-day department operations (who a Manager oversees),
+    not a system-wide capability, so a department-scoped Admin needs to be
+    able to create one before they can even promote someone to Manager
+    (Section 1B requires a team to already exist to complete that action).
+    An Admin manages only their own department's teams; a SuperAdmin
+    manages any team in any department."""
+
+    feature_key = "teams"
+    model = Team
+    template_name = "governance/teams.html"
+    partial_template_name = "governance/_teams_table.html"
+    context_object_name = "teams"
+
+    def get_queryset(self):
+        qs = _scope_teams(
+            self.request,
+            Team.objects.select_related("department", "manager").annotate(member_count=Count("members")),
+        )
+        search = self.request.GET.get("search", "").strip()
+        if search:
+            qs = qs.filter(Q(name__icontains=search) | Q(department__name__icontains=search))
+        return qs
+
+    def get_context_data(self, **kwargs):
+        departments = (
+            Department.objects.filter(id=self.request.user.department_id)
+            if _is_scoped_admin(self.request.user)
+            else Department.objects.order_by("name")
+        )
+        return super().get_context_data(**kwargs) | {
+            "departments": departments,
+            "search": self.request.GET.get("search", ""),
+            "total_count": _scope_teams(self.request, Team.objects.all()).count(),
+        }
+
+
+@role_required(User.Role.ADMIN)
+@require_feature("teams")
+@require_http_methods(["POST"])
+def add_team(request):
+    name = request.POST.get("name", "").strip()
+    if not name:
+        return HttpResponseBadRequest("Name is required")
+    if _is_scoped_admin(request.user):
+        department_id = request.user.department_id
+        if not department_id:
+            return HttpResponseBadRequest("You have no department assigned — ask a SuperAdmin to assign one first.")
+    else:
+        department_id = request.POST.get("department_id")
+        if not department_id:
+            return HttpResponseBadRequest("Department is required")
+    team, created = Team.objects.get_or_create(name=name, department_id=department_id)
+    if created:
+        log_action(request.user, "team.add", team, new_value=name)
+    return redirect("governance:teams")
+
+
+@role_required(User.Role.ADMIN)
+@require_feature("teams")
+@require_http_methods(["POST"])
+def delete_team(request, team_id):
+    team = _scope_teams(request, Team.objects.filter(id=team_id)).first()
+    if team is None:
+        raise PermissionDenied("That team is outside your scope.")
+    # Deleting a team shouldn't silently change anyone's role — members and
+    # the former manager just lose their team reference, nothing else.
+    User.objects.filter(team=team).update(team=None)
+    log_action(request.user, "team.delete", team, old_value=team.name)
+    team.delete()
+    return redirect("governance:teams")
+
+
+class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
+    """A Manager's own simplified, dashboard-only view — usage/activity for
+    their team, nothing else. No write actions are exposed here or
+    anywhere else to a Manager (role hierarchy prompt, Section 1): if
+    something needs to change, the flow is "reach out to your department's
+    Admin", never an in-app action button."""
+
+    template_name = "governance/manager_dashboard.html"
+
+    def get_context_data(self, **kwargs):
+        team = getattr(self.request.user, "managed_team", None)
+        if team is None:
+            return super().get_context_data(**kwargs) | {"team": None, "members": []}
+
+        members = User.objects.filter(team=team).order_by("email")
+        month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        assistant_messages = Message.objects.filter(role=Message.Role.ASSISTANT, conversation__user__team=team)
+        month_messages = assistant_messages.filter(created_at__gte=month_start)
+
+        member_stats = []
+        for member in members:
+            agg = assistant_messages.filter(conversation__user=member).aggregate(
+                tokens=Sum(F("input_tokens") + F("output_tokens")), cost=Sum("estimated_cost")
+            )
+            member_stats.append(
+                {
+                    "user": member,
+                    "tokens": agg["tokens"] or 0,
+                    "cost": agg["cost"] or 0,
+                    "engagement": engagement_score(member),
+                }
+            )
+
+        return super().get_context_data(**kwargs) | {
+            "team": team,
+            "members": member_stats,
+            "total_tokens_all_time": assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))[
+                "total"
+            ]
+            or 0,
+            "total_cost_all_time": assistant_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0,
+            "month_tokens": month_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0,
+            "month_cost": month_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0,
+        }
+
+
+class FeatureVisibilityView(SuperAdminRequiredMixin, TemplateView):
+    """SuperAdmin-only master switch panel: which app capabilities are
+    visible to the Admin role (ADMIN_NAV_FEATURES) and which chat/Settings
+    features are visible to User/Manager/Admin (USER_CHAT_FEATURES) - see
+    governance/models.py for the registries and RoleFeatureToggle, and
+    governance/features.py for the enforcement helper every gated
+    view/template actually calls. Independent of the per-Plan
+    KNOWN_FEATURE_FLAGS - this is a role-wide switch, not a subscription
+    grant."""
+
+    template_name = "governance/feature_visibility.html"
+
+    def get_context_data(self, **kwargs):
+        existing = {(t.role, t.feature_key): t.is_enabled for t in RoleFeatureToggle.objects.all()}
+        admin_rows = [
+            {"key": key, "label": label, "enabled": existing.get(("admin", key), True)}
+            for key, label in ADMIN_NAV_FEATURES
+        ]
+        user_rows = [
+            {
+                "key": key,
+                "label": label,
+                "enabled_by_role": {role: existing.get((role, key), True) for role in ROLE_FEATURE_ROLES},
+            }
+            for key, label in USER_CHAT_FEATURES
+        ]
+        return super().get_context_data(**kwargs) | {
+            "admin_rows": admin_rows,
+            "user_rows": user_rows,
+            "roles": ROLE_FEATURE_ROLES,
+        }
+
+    def post(self, request):
+        changed = []
+        with transaction.atomic():
+            for key, _label in ADMIN_NAV_FEATURES:
+                enabled = request.POST.get(f"toggle_{key}_admin") == "on"
+                toggle, _created = RoleFeatureToggle.objects.update_or_create(
+                    role="admin", feature_key=key, defaults={"is_enabled": enabled}
+                )
+                changed.append(f"admin:{key}={enabled}")
+            for key, _label in USER_CHAT_FEATURES:
+                for role in ROLE_FEATURE_ROLES:
+                    enabled = request.POST.get(f"toggle_{key}_{role}") == "on"
+                    RoleFeatureToggle.objects.update_or_create(
+                        role=role, feature_key=key, defaults={"is_enabled": enabled}
+                    )
+                    changed.append(f"{role}:{key}={enabled}")
+
+        log_action(request.user, "feature_visibility.update", request.user, new_value=", ".join(changed)[:2000])
+        django_messages.success(request, _("Feature visibility updated."))
+        return redirect("governance:feature_visibility")

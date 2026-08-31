@@ -11,3 +11,14 @@ def dict_get(mapping, key):
     if mapping is None:
         return None
     return mapping.get(key)
+
+
+@register.filter
+def has_feature(user, feature_key):
+    """{{ request.user|has_feature:"teams" }} - see governance/features.py.
+    Gates template-level visibility; the matching view/endpoint enforces
+    the same check server-side, so this is never the only thing standing
+    between a role and a hidden feature."""
+    from governance.features import user_has_feature
+
+    return user_has_feature(user, feature_key)

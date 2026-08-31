@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n governance_extras %}
 {% block title %}{% trans "Chat" %} — {% trans "AI Client Portal" %}{% endblock %}
 
 {% block sidebar %}
@@ -11,10 +11,12 @@
         {% trans "New chat" %}
     </button>
 </form>
+{% if user|has_feature:"conversation_pin_search" %}
 <div class="filter-search sidebar-conv-search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input type="search" id="conv-search-input" placeholder="{% trans 'Search conversations...' %}" autocomplete="off">
 </div>
+{% endif %}
 <div class="conv-list-wrap">
     {% include "chat/_conversation_list.html" %}
     <div id="conv-list-skeleton" class="sidebar-skeleton">
@@ -70,12 +72,19 @@
     <div class="sidebar-user-chip">
         <span class="msg-avatar msg-avatar-user">{{ user.email|first|upper }}</span>
         <span class="sidebar-user-email">{{ user.email }}</span>
+        {% if user|has_feature:"notifications" %}
         <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"></div>
+        {% endif %}
     </div>
     {% if user.is_admin %}
     <a href="{% url 'governance:dashboard' %}" id="tour-admin-link">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         {% trans "Admin" %}
+    </a>
+    {% elif user.is_manager %}
+    <a href="{% url 'governance:manager_dashboard' %}" id="tour-admin-link">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        {% trans "My Team" %}
     </a>
     {% endif %}
     <a href="{% url 'accounts:profile' %}">
@@ -93,6 +102,7 @@
 {% endblock %}
 
 {% block content %}
+{% if user|has_feature:"quick_switcher" %}
 <div id="quick-switcher-overlay" class="quick-switcher-overlay" style="display:none;">
     <div class="quick-switcher-box">
         <input type="text" id="quick-switcher-input" class="input" placeholder="{% trans 'Search conversations, or start a new one...' %}" autocomplete="off">
@@ -165,7 +175,9 @@
     input.addEventListener("input", function() { render(input.value); });
 })();
 </script>
+{% endif %}
 
+{% if user|has_feature:"upgrade_request" %}
 <div id="upgrade-modal-overlay" class="upgrade-modal-overlay" style="display:none;">
     <div class="upgrade-modal-box">
         <h3>{% trans "Request an upgrade" %}</h3>
@@ -189,6 +201,7 @@
         </form>
     </div>
 </div>
+{% endif %}
 <script>
 var portalUpgradeModalText = {
     availableOn: "{% trans 'is available on the' %}",
@@ -196,8 +209,14 @@ var portalUpgradeModalText = {
     noPlanYet: "{% trans 'isn’t included in any plan yet — let an admin know you need access.' %}",
     interestedIn: "{% trans 'Interested in access to' %}",
 };
+// The modal markup above only exists when the "upgrade_request" role
+// feature is on (see governance/features.py) - these two functions stay
+// defined either way (a locked-model click elsewhere on this page always
+// calls portalOpenUpgradeModal, whether or not the feature is on) and just
+// no-op if the overlay isn't in the DOM.
 function portalOpenUpgradeModal(opts) {
     var overlay = document.getElementById("upgrade-modal-overlay");
+    if (!overlay) return;
     var context = document.getElementById("upgrade-modal-context");
     var planSelect = document.getElementById("upgrade-modal-plan");
     var messageBox = document.getElementById("upgrade-modal-message");
@@ -218,11 +237,16 @@ function portalOpenUpgradeModal(opts) {
     overlay.style.display = "flex";
 }
 function portalCloseUpgradeModal() {
-    document.getElementById("upgrade-modal-overlay").style.display = "none";
+    var overlay = document.getElementById("upgrade-modal-overlay");
+    if (overlay) overlay.style.display = "none";
 }
-document.getElementById("upgrade-modal-overlay").addEventListener("mousedown", function(evt) {
-    if (evt.target === this) portalCloseUpgradeModal();
-});
+(function() {
+    var overlay = document.getElementById("upgrade-modal-overlay");
+    if (!overlay) return;
+    overlay.addEventListener("mousedown", function(evt) {
+        if (evt.target === overlay) portalCloseUpgradeModal();
+    });
+})();
 </script>
 <section class="chat-panel">
     <header class="chat-header">
@@ -262,7 +286,7 @@ document.getElementById("upgrade-modal-overlay").addEventListener("mousedown", f
                     <div class="usage-widget-card">
                         {% include "chat/_usage_widget.html" %}
                     </div>
-                    {% if can_request_upgrade %}
+                    {% if can_request_upgrade and user|has_feature:"upgrade_request" %}
                     <button type="button" class="btn-small btn-ghost mt-3" onclick="portalOpenUpgradeModal()">{% trans "Request upgrade" %}</button>
                     {% endif %}
                 </div>
@@ -342,6 +366,7 @@ document.getElementById("upgrade-modal-overlay").addEventListener("mousedown", f
             </details>
             <input type="hidden" name="model_id" id="model-select" value="">
             <div class="composer-toolbar-spacer"></div>
+            {% if user|has_feature:"prompt_templates" %}
             <details class="template-picker" id="prompt-template-picker">
                 <summary class="btn-small btn-ghost no-marker" title="{% trans 'Insert a saved prompt (or type "/")' %}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -355,6 +380,7 @@ document.getElementById("upgrade-modal-overlay").addEventListener("mousedown", f
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
                 {% trans "Save as template" %}
             </button>
+            {% endif %}
         </div>
         <form id="composer-form" class="chat-composer"
               hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
@@ -637,7 +663,7 @@ document.addEventListener("click", function(evt) {
 })();
 </script>
 
-{% if not user.has_seen_onboarding %}
+{% if not user.has_seen_onboarding and user|has_feature:"onboarding_tour" %}
 <div id="onboarding-overlay" class="onboarding-overlay" style="display:none;">
     <div id="onboarding-ring" class="onboarding-ring"></div>
     <div id="onboarding-card" class="onboarding-card">

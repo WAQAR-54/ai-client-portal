@@ -7,11 +7,12 @@ from django.utils import timezone
 @shared_task
 def check_for_new_models():
     """Daily discovery pass: looks for provider model IDs not yet tracked
-    as a ModelConfig and, if any are found, notifies admins - it never
-    creates or enables anything itself. An admin still has to visit
-    Models -> Sync Models and explicitly choose what to import, same as
-    clicking the button manually; this task only saves them from having to
-    remember to check."""
+    as a ModelConfig and, if any are found, notifies SuperAdmins - it never
+    creates or enables anything itself. Model sync/enable is SuperAdmin-only
+    (role hierarchy prompt) - a SuperAdmin still has to visit Models -> Sync
+    Models and explicitly choose what to import, same as clicking the
+    button manually; this task only saves them from having to remember to
+    check."""
     from accounts.models import User
     from chat.model_sync import fetch_all_available_models, known_model_keys
     from notifications.models import NotificationType
@@ -31,7 +32,7 @@ def check_for_new_models():
         return
 
     preview = ", ".join(new_ids[:5]) + ("..." if len(new_ids) > 5 else "")
-    for admin in User.objects.filter(role=User.Role.ADMIN, is_active=True):
+    for admin in User.objects.filter(role=User.Role.SUPERADMIN, is_active=True):
         if recently_notified(admin, NotificationType.MODEL_SYNC_AVAILABLE, since=timezone.now() - timedelta(hours=20)):
             continue
         notify(

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load i18n governance_extras %}
+{% block title %}{% trans "Feature Visibility" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+
+    <div class="card" style="margin-bottom:1.5rem;">
+        <h1>{% trans "Feature Visibility" %}</h1>
+        <p>{% trans "Control which app capabilities are visible to each role — independent of Plans. A SuperAdmin always has everything; this only affects User, Manager, and Admin." %}</p>
+        <button type="submit">{% trans "Save changes" %}</button>
+    </div>
+
+    <div class="card" style="overflow-x:auto; margin-bottom:1.5rem;">
+        <h2>{% trans "Admin capabilities" %}</h2>
+        <p class="text-muted" style="margin-top:-0.5rem;">
+            {% trans "Sections of the Admin dashboard a department-scoped Admin can see. Manager and User can never reach these regardless, so there's only one switch per item." %}
+        </p>
+        <table class="data">
+            <thead><tr><th>{% trans "Feature" %}</th><th style="width:120px;">{% trans "Visible to Admin" %}</th></tr></thead>
+            <tbody>
+                {% for row in admin_rows %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    <td>
+                        <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin:0;">
+                            <input type="checkbox" name="toggle_{{ row.key }}_admin" {% if row.enabled %}checked{% endif %} style="width:auto;">
+                        </label>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card" style="overflow-x:auto;">
+        <h2>{% trans "User-facing features" %}</h2>
+        <p class="text-muted" style="margin-top:-0.5rem;">
+            {% trans "Chat and Settings features, independent of what a user's Plan grants. Toggle separately per role." %}
+        </p>
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>{% trans "Feature" %}</th>
+                    <th style="width:100px;">{% trans "User" %}</th>
+                    <th style="width:100px;">{% trans "Manager" %}</th>
+                    <th style="width:100px;">{% trans "Admin" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in user_rows %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    {% for role in roles %}
+                    <td>
+                        <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin:0;">
+                            <input type="checkbox" name="toggle_{{ row.key }}_{{ role }}" {% if row.enabled_by_role|dict_get:role %}checked{% endif %} style="width:auto;">
+                        </label>
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <button type="submit" class="mt-4">{% trans "Save changes" %}</button>
+</form>
+{% endblock %}

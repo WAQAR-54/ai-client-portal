@@ -1,8 +1,15 @@
 """RBAC helpers for view-level role enforcement.
 
-Roles are hierarchical: admin > manager > user. `role_required` and
-`RoleRequiredMixin` grant access to the given role and any role above it
+Roles are hierarchical: superadmin > admin > manager > user. `role_required`
+and `RoleRequiredMixin` grant access to the given role and any role above it
 in the hierarchy, unless `exact=True` is passed.
+
+Hierarchy alone only gets you "Admin-or-above can see this screen" — it does
+NOT express department/team scoping (an Admin sees only their own
+department) or the SuperAdmin-only carve-outs (Plan Management, model/
+department management). Those are enforced separately, inline in each
+governance view — see governance/views.py's `_require_superadmin`,
+`_scope_users_to_department`, and friends.
 """
 
 from functools import wraps
@@ -17,6 +24,7 @@ ROLE_LEVEL = {
     User.Role.USER: 0,
     User.Role.MANAGER: 1,
     User.Role.ADMIN: 2,
+    User.Role.SUPERADMIN: 3,
 }
 
 
@@ -65,3 +73,14 @@ class ManagerRequiredMixin(RoleRequiredMixin):
 
 class AdminRequiredMixin(RoleRequiredMixin):
     required_role = User.Role.ADMIN
+
+
+class SuperAdminRequiredMixin(RoleRequiredMixin):
+    """For screens that are SuperAdmin-only even though an Admin can reach
+    every other governance screen (Plan Management, system-wide model
+    enable/disable, department management) — exact=True since nothing
+    above SuperAdmin exists to inherit through anyway, but it also makes
+    the intent explicit at the call site."""
+
+    required_role = User.Role.SUPERADMIN
+    exact_role = True

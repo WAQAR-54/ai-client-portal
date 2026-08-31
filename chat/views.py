@@ -21,6 +21,7 @@ from chat.response_cache import get_cached_response, store_cached_response
 from chat.router import NoModelAvailableError, classify_complexity, models_visible_to_user, select_model_candidates
 from chat.utils import group_conversations
 from governance.audit import log_action
+from governance.features import require_feature
 from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, get_usage_status, validate_upload
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ def render_message(request, conversation_id, message_id):
 
 
 @login_required
+@require_feature("upgrade_request")
 @require_http_methods(["POST"])
 def request_upgrade(request):
     from django.contrib import messages
@@ -192,6 +194,7 @@ def create_conversation(request):
 
 
 @login_required
+@require_feature("conversation_pin_search")
 @require_http_methods(["POST"])
 def toggle_pin(request, conversation_id):
     conversation = _owned_conversation_or_404(request, conversation_id)
@@ -476,12 +479,14 @@ def _visible_prompt_templates(user):
 
 
 @login_required
+@require_feature("prompt_templates")
 @require_GET
 def prompt_template_list(request):
     return render(request, "chat/_prompt_template_picker.html", {"templates": _visible_prompt_templates(request.user)})
 
 
 @login_required
+@require_feature("prompt_templates")
 @require_http_methods(["POST"])
 def save_prompt_template(request):
     name = request.POST.get("name", "").strip()
@@ -495,6 +500,7 @@ def save_prompt_template(request):
 
 
 @login_required
+@require_feature("prompt_templates")
 @require_http_methods(["POST"])
 def delete_prompt_template(request, template_id):
     # Owner-only - a department template has owner=None and can never

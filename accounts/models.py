@@ -22,6 +22,34 @@ class Department(models.Model):
         return self.name
 
 
+class Team(models.Model):
+    """A Manager's scope within a Department. Kept as its own model rather
+    than overloading Department (which already means something else — the
+    unit an Admin is scoped to) — a department can have many teams, each
+    with its own Manager and member list."""
+
+    name = models.CharField(max_length=150)
+    department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name="teams")
+    manager = models.OneToOneField(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_team",
+        help_text="Kept in sync with that user's `team` field whenever their role is set to Manager.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["department__name", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["department", "name"], name="unique_team_name_per_department"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.department.name})"
+
+
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
@@ -58,6 +86,7 @@ class User(AbstractUser):
         USER = "user", _("User")
         MANAGER = "manager", _("Manager")
         ADMIN = "admin", _("Admin")
+        SUPERADMIN = "superadmin", _("SuperAdmin")
 
     username = None
     email = models.EmailField(unique=True)
@@ -68,6 +97,15 @@ class User(AbstractUser):
         null=True,
         blank=True,
         related_name="users",
+        help_text="For an Admin, this is what scopes their access. For a SuperAdmin it's unused (unscoped).",
+    )
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="members",
+        help_text="A Manager's own team is tracked via Team.manager instead — this is for team MEMBERSHIP.",
     )
     has_seen_onboarding = models.BooleanField(
         default=False,
@@ -100,7 +138,15 @@ class User(AbstractUser):
 
     @property
     def is_admin(self):
-        return self.role == self.Role.ADMIN
+        """True for Admin AND SuperAdmin — this is "can see the Admin
+        section at all" (used to gate nav visibility), not "is exactly
+        Admin". Use `is_superadmin` where the SuperAdmin-only distinction
+        actually matters (Plan Management, model/department management)."""
+        return self.role in (self.Role.ADMIN, self.Role.SUPERADMIN)
+
+    @property
+    def is_superadmin(self):
+        return self.role == self.Role.SUPERADMIN
 
     @property
     def is_manager(self):

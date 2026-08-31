@@ -1,0 +1,23 @@
+{% load i18n %}
+<div class="filter-result-count">{% blocktrans count counter=teams|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> team{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> teams{% endblocktrans %}</div>
+<table class="data">
+    <thead><tr><th>{% trans "Team" %}</th><th>{% trans "Department" %}</th><th>{% trans "Manager" %}</th><th>{% trans "Members" %}</th><th></th></tr></thead>
+    <tbody>
+        {% for t in teams %}
+        <tr>
+            <td>{{ t.name }}</td>
+            <td>{{ t.department.name }}</td>
+            <td>{% if t.manager %}{{ t.manager.email }}{% else %}<span class="text-faint">{% trans "— unassigned —" %}</span>{% endif %}</td>
+            <td class="mono">{{ t.member_count }}</td>
+            <td style="white-space:nowrap;">
+                <form method="post" action="{% url 'governance:delete_team' team_id=t.id %}" style="display:inline;" onsubmit="return confirm('{% blocktrans with name=t.name %}Delete {{ name }}? Members and its manager keep their role but lose this team.{% endblocktrans %}');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-small btn-danger">{% trans "Delete" %}</button>
+                </form>
+            </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="5">{% trans "No teams match your search." %}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

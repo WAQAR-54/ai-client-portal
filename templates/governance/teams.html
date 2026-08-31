@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Teams" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <h2>{% trans "Add a team" %}</h2>
+    <form method="post" action="{% url 'governance:add_team' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
+        {% csrf_token %}
+        <div style="flex:2; min-width:200px;">
+            <label for="name">{% trans "Name" %}</label>
+            <input class="input" type="text" name="name" id="name" placeholder="{% trans 'e.g. Growth' %}" style="margin:0;" required>
+        </div>
+        {% if departments|length > 1 %}
+        <div style="flex:1; min-width:160px;">
+            <label for="department_id">{% trans "Department" %}</label>
+            <select class="input" name="department_id" id="department_id" style="margin:0;" required>
+                {% for d in departments %}
+                <option value="{{ d.id }}">{{ d.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <button type="submit">{% trans "Add team" %}</button>
+    </form>
+</div>
+
+<div class="card" style="overflow-x:auto;">
+    <h1>{% trans "Teams" %}</h1>
+    <p>{% trans "A Manager's scope — assign someone as Manager of a team from the Users list." %}</p>
+
+    {% url 'governance:teams' as filter_url %}
+    <form class="filter-toolbar">
+        <div class="filter-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search team or department name...' %}"
+                   hx-get="{{ filter_url }}" hx-target="#teams-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+        </div>
+    </form>
+
+    <div id="teams-table">
+        {% include "governance/_teams_table.html" %}
+    </div>
+</div>
+{% endblock %}

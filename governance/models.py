@@ -20,6 +20,43 @@ KNOWN_FEATURE_FLAGS = [
     ("long_context", "Long-context requests"),
 ]
 
+# ---------- Role-wide feature visibility ----------
+# Distinct from KNOWN_FEATURE_FLAGS above, which is a per-PLAN grant (what a
+# given user's subscription includes). This is a per-ROLE switch a
+# SuperAdmin controls directly ("hide this whole capability from every
+# Admin", "hide this from every plain User") - independent of which Plan
+# anyone is on. See RoleFeatureToggle below and governance/features.py for
+# the enforcement helper.
+
+# Admin nav sections a SuperAdmin can hide from the Admin role. Manager and
+# User can never reach these regardless (blocked by role_required's
+# hierarchy before a feature toggle is even checked), so these are only
+# ever meaningful for the "admin" role.
+ADMIN_NAV_FEATURES = [
+    ("teams", "Teams"),
+    ("upgrade_requests", "Upgrade Requests"),
+    ("limits", "Limits"),
+    ("usage_cost", "Usage & Cost"),
+    ("audit_logs", "Audit Logs"),
+    ("feedback", "Feedback"),
+    ("department_settings", "Department Settings (system prompt / templates)"),
+]
+
+# Chat/Settings features any signed-in role (User, Manager, Admin) uses -
+# independent of the per-plan KNOWN_FEATURE_FLAGS above. A SuperAdmin always
+# has all of these; that's not a row here since it's not actually a choice.
+USER_CHAT_FEATURES = [
+    ("prompt_templates", "Prompt templates (save/insert in composer)"),
+    ("quick_switcher", "Keyboard shortcuts / Ctrl+K quick-switcher"),
+    ("conversation_pin_search", "Pin & search conversations"),
+    ("dark_mode", "Dark mode toggle (Settings > Display)"),
+    ("notifications", "Notifications (bell + email preferences)"),
+    ("upgrade_request", '"Request upgrade" button/flow'),
+    ("onboarding_tour", "Guided onboarding tour"),
+]
+
+ROLE_FEATURE_ROLES = ["user", "manager", "admin"]
+
 
 class SystemPromptVersionManager(models.Manager):
     def create_new_version(self, department, content, created_by=None, tone_preference=None, restricted_topics=""):
@@ -317,3 +354,25 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.actor} {self.action_type} {self.target_type}:{self.target_id}"
+
+
+class RoleFeatureToggle(models.Model):
+    """SuperAdmin-controlled, per-role visibility switch for a whole app
+    capability (see ADMIN_NAV_FEATURES / USER_CHAT_FEATURES above) - not
+    tied to any Plan. Absence of a row for a (role, feature_key) pair means
+    "visible" (the default, so nothing silently disappears the moment this
+    table is introduced) - only an explicit is_enabled=False row hides it,
+    via governance/features.py's role_has_feature()."""
+
+    role = models.CharField(max_length=20)
+    feature_key = models.CharField(max_length=50)
+    is_enabled = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["role", "feature_key"], name="unique_role_feature_toggle"),
+        ]
+
+    def __str__(self):
+        return f"{self.role}:{self.feature_key} = {self.is_enabled}"

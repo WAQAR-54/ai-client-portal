@@ -14,6 +14,7 @@ from django.views.generic import RedirectView, TemplateView
 
 from accounts.forms import EmailAuthenticationForm, ProfileForm, SignupForm
 from accounts.permissions import AdminRequiredMixin
+from governance.features import require_feature
 
 
 @login_required
@@ -32,6 +33,7 @@ def set_language_preference(request):
 
 
 @login_required
+@require_feature("dark_mode")
 @require_POST
 def set_theme_preference(request):
     """Settings -> Display tab. Persisted to the user's own record (not just
@@ -57,6 +59,7 @@ def complete_onboarding(request):
 
 
 @login_required
+@require_feature("onboarding_tour")
 @require_POST
 def replay_onboarding(request):
     """Settings -> "Replay tour": resets the flag and sends the user back

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Confirm role change" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px;">
+    <h1>{% trans "Confirm role change" %}</h1>
+    <p>
+        {% blocktrans with email=target.email old_role=target.get_role_display new_role=new_role_label %}
+        Change <strong>{{ email }}</strong>'s role from <strong>{{ old_role }}</strong> to <strong>{{ new_role }}</strong>?
+        {% endblocktrans %}
+    </p>
+    <form method="post" action="{% url 'governance:change_user_role' user_id=target.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="role" value="{{ new_role }}">
+
+        {% if teams is not None %}
+        <label for="team_id">{% trans "Team" %}</label>
+        <select class="input" name="team_id" id="team_id" required>
+            <option value="">{% trans "Select a team…" %}</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {% if t.id == selected_team_id %}selected{% endif %}>{{ t.name }} ({{ t.department.name }})</option>
+            {% endfor %}
+        </select>
+        {% if not teams %}
+        <p class="text-faint" style="font-size:0.82rem;">
+            {% trans "No teams exist yet in your department — create one first from Teams, then come back here." %}
+        </p>
+        {% endif %}
+        {% endif %}
+
+        {% if departments is not None %}
+        <label for="department_id">{% trans "Department" %}</label>
+        <select class="input" name="department_id" id="department_id" required>
+            <option value="">{% trans "Select a department…" %}</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}" {% if d.id == selected_department_id %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
+        <input type="hidden" name="confirmed" value="1">
+        <button type="submit">{% trans "Confirm" %}</button>
+        <a href="{% url 'governance:users' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">{% trans "Cancel" %}</a>
+    </form>
+</div>
+{% endblock %}
