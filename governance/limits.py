@@ -58,7 +58,7 @@ def check_usage_limits(user, conversation):
     """Raise UsageLimitExceeded if sending another message would (or already
     does) violate the user's effective daily/monthly/session/budget caps,
     or if their Plan has expired past its grace window."""
-    from governance.plans import get_plan_status
+    from governance.plans import check_request_count_limit, get_plan_status
 
     plan_state = get_plan_status(user)["state"]
     if plan_state == "expired":
@@ -70,6 +70,11 @@ def check_usage_limits(user, conversation):
                 "contact your administrator to continue chatting."
             )
         )
+
+    # Plan-level request-COUNT cap, independent of the token-volume checks
+    # below - see governance/plans.py::check_request_count_limit for why
+    # both are enforced rather than one replacing the other.
+    check_request_count_limit(user, conversation)
 
     limit = _effective_limit(user)
     if limit is None:

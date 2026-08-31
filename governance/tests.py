@@ -1,3 +1,6 @@
+from io import StringIO
+
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 
@@ -5,7 +8,8 @@ from accounts.models import Department, User
 from chat.models import Conversation, Message, ModelConfig, PromptTemplate, UserModelPermission
 from chat.prompts import build_system_prompt
 from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, validate_upload
-from governance.models import AuditLog, SystemPromptVersion, UsageLimit
+from governance.models import AuditLog, Plan, SystemPromptVersion, UsageLimit
+from governance.plans import assign_plan, check_request_count_limit, validate_context_tokens
 
 
 class UsageLimitTests(TestCase):
@@ -71,6 +75,177 @@ class UsageLimitTests(TestCase):
         UsageLimit.objects.create(user=self.user, daily_token_cap=10_000)
         self._add_assistant_message(30, 30, 0)
         check_usage_limits(self.user, self.conversation)  # personal limit wins, should not raise
+
+
+class PlanRestructureTests(TestCase):
+    """The 4-dimension extension: max_requests_per_period/period,
+    max_context_tokens, the new feature_flags keys, and the
+    restructure_plans management command's rename/dry-run behavior."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="restructure@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    def _plan(self, **overrides):
+        defaults = {"name": "TestPlan", "max_requests_per_period": None, "period": None}
+        defaults.update(overrides)
+        plan = Plan.objects.create(**defaults)
+        assign_plan(self.user, plan)
+        return plan
+
+    # ---- max_requests_per_period / period ----
+
+    def test_no_period_configured_is_unrestricted(self):
+        self._plan()
+        check_request_count_limit(self.user, self.conversation)  # should not raise
+
+    def test_session_period_counts_only_this_conversation(self):
+        self._plan(max_requests_per_period=2, period="session")
+        Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="1")
+        Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="2")
+        with self.assertRaises(UsageLimitExceeded):
+            check_request_count_limit(self.user, self.conversation)
+
+        other_conversation = Conversation.objects.create(user=self.user)
+        check_request_count_limit(self.user, other_conversation)  # different session, should not raise
+
+    def test_day_period_counts_across_all_conversations_today(self):
+        self._plan(max_requests_per_period=2, period="day")
+        other_conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="1")
+        Message.objects.create(conversation=other_conversation, role=Message.Role.USER, content="2")
+        with self.assertRaises(UsageLimitExceeded):
+            check_request_count_limit(self.user, self.conversation)
+
+    def test_month_period_allows_when_under(self):
+        self._plan(max_requests_per_period=5, period="month")
+        Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="1")
+        check_request_count_limit(self.user, self.conversation)  # should not raise
+
+    def test_no_plan_assigned_is_unrestricted(self):
+        # No assign_plan() call at all - matches the app-wide rule that an
+        # unassigned user is unrestricted, not silently locked out.
+        check_request_count_limit(self.user, self.conversation)
+
+    # ---- max_context_tokens ----
+
+    def test_no_context_cap_configured_is_unrestricted(self):
+        self._plan()
+        validate_context_tokens(self.user, "system prompt", [{"role": "user", "content": "hi"}])
+
+    def test_context_under_cap_allowed(self):
+        self._plan(max_context_tokens=1000)
+        validate_context_tokens(self.user, "short", [{"role": "user", "content": "also short"}])
+
+    def test_context_over_cap_rejected(self):
+        self._plan(max_context_tokens=10)  # ~40 characters allowed
+        long_history = [{"role": "user", "content": "x" * 500}]
+        with self.assertRaises(UsageLimitExceeded):
+            validate_context_tokens(self.user, "system prompt", long_history)
+
+    def test_context_cap_counts_system_prompt_and_full_history(self):
+        self._plan(max_context_tokens=50)  # ~200 characters allowed
+        history = [{"role": "user", "content": "x" * 90}, {"role": "assistant", "content": "y" * 90}]
+        with self.assertRaises(UsageLimitExceeded):
+            validate_context_tokens(self.user, "z" * 90, history)
+
+    # ---- feature_flags (new keys reuse the existing dict/mechanism) ----
+
+    def test_new_feature_flag_keys_read_correctly(self):
+        plan = self._plan(
+            feature_flags={"tools": True, "priority_queue": False, "long_context": True},
+        )
+        self.assertTrue(plan.has_feature("tools"))
+        self.assertFalse(plan.has_feature("priority_queue"))
+        self.assertTrue(plan.has_feature("long_context"))
+
+    def test_unset_new_flag_defaults_to_false(self):
+        plan = self._plan(feature_flags={})
+        self.assertFalse(plan.has_feature("tools"))
+
+
+class RestructurePlansCommandTests(TestCase):
+    """The one-time rename/extend command - dry-run must never write,
+    --apply must rename Standard/Premium IN PLACE (same id) so existing
+    UserPlanAssignment rows keep resolving, and Full must be created
+    fresh."""
+
+    def setUp(self):
+        # Standard/Premium/Demo already exist here, seeded by migration
+        # 0005_seed_plans (runs automatically for every fresh test DB) -
+        # fetch and normalize them rather than creating duplicates, which
+        # would violate the unique name constraint.
+        self.standard = Plan.objects.get(name="Standard")
+        self.standard.feature_flags = {"file_upload": True}
+        self.standard.save(update_fields=["feature_flags"])
+        self.premium = Plan.objects.get(name="Premium")
+        self.premium.feature_flags = {"file_upload": True, "export": True}
+        self.premium.save(update_fields=["feature_flags"])
+        self.demo = Plan.objects.get(name="Demo")
+        self.user_on_standard = User.objects.create_user(email="onstandard@example.com", password="pw12345!")
+        assign_plan(self.user_on_standard, self.standard)
+
+    def test_dry_run_writes_nothing(self):
+        out = StringIO()
+        call_command("restructure_plans", stdout=out)
+        self.standard.refresh_from_db()
+        self.assertEqual(self.standard.name, "Standard")
+        self.assertIsNone(self.standard.max_requests_per_period)
+        self.assertFalse(Plan.objects.filter(name="Full").exists())
+        self.assertIn("DRY RUN", out.getvalue())
+
+    def test_apply_renames_in_place_preserving_id(self):
+        standard_id = self.standard.id
+        premium_id = self.premium.id
+        call_command("restructure_plans", "--apply", stdout=StringIO())
+
+        renamed_basic = Plan.objects.get(id=standard_id)
+        self.assertEqual(renamed_basic.name, "Basic")
+        self.assertEqual(renamed_basic.max_requests_per_period, 50)
+        self.assertEqual(renamed_basic.period, "day")
+        self.assertTrue(renamed_basic.feature_flags["file_upload"])  # existing key preserved
+        self.assertFalse(renamed_basic.feature_flags["tools"])  # new key added
+
+        renamed_advanced = Plan.objects.get(id=premium_id)
+        self.assertEqual(renamed_advanced.name, "Advanced")
+        self.assertEqual(renamed_advanced.max_requests_per_period, 200)
+        self.assertTrue(renamed_advanced.feature_flags["export"])  # existing key preserved
+        self.assertTrue(renamed_advanced.feature_flags["tools"])  # new key added
+
+    def test_apply_creates_full_plan_fresh(self):
+        call_command("restructure_plans", "--apply", stdout=StringIO())
+        full = Plan.objects.get(name="Full")
+        self.assertEqual(full.max_requests_per_period, 1000)
+        self.assertEqual(full.max_context_tokens, 128000)
+        self.assertTrue(full.feature_flags["priority_queue"])
+
+    def test_existing_user_assignment_still_resolves_after_rename(self):
+        call_command("restructure_plans", "--apply", stdout=StringIO())
+        self.user_on_standard.refresh_from_db()
+        assignment = self.user_on_standard.plan_assignment
+        self.assertEqual(assignment.plan.name, "Basic")
+        self.assertEqual(assignment.plan_id, self.standard.id)
+
+    def test_apply_updates_demo_in_place(self):
+        call_command("restructure_plans", "--apply", stdout=StringIO())
+        self.demo.refresh_from_db()
+        self.assertEqual(self.demo.name, "Demo")  # not renamed
+        self.assertEqual(self.demo.max_requests_per_period, 10)
+        self.assertEqual(self.demo.max_context_tokens, 4000)
+
+    def test_missing_plan_does_not_crash(self):
+        # UserPlanAssignment.plan is on_delete=PROTECT (by design - a plan
+        # with real users assigned can't be deleted out from under them),
+        # so detach the assignment first to simulate "Standard doesn't
+        # exist in this environment" without fighting that protection.
+        self.user_on_standard.plan_assignment.delete()
+        self.standard.delete()
+        out = StringIO()
+        call_command("restructure_plans", "--apply", stdout=out)
+        self.assertIn("not found", out.getvalue())
+        # Premium/Demo/Full still process fine despite Standard missing.
+        self.assertTrue(Plan.objects.filter(name="Advanced").exists())
+        self.assertTrue(Plan.objects.filter(name="Full").exists())
 
 
 class ChatPostMessageLimitIntegrationTests(TestCase):

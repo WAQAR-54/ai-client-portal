@@ -413,6 +413,7 @@ class PlanFormView(AdminRequiredMixin, TemplateView):
             "models": ModelConfig.objects.order_by("provider", "model_name"),
             "selected_model_ids": set(plan.allowed_models.values_list("id", flat=True)) if plan else set(),
             "known_flags": [(key, label, bool(existing_flags.get(key))) for key, label in KNOWN_FEATURE_FLAGS],
+            "period_choices": Plan.Period.choices,
         }
 
     def post(self, request, plan_id=None):
@@ -432,6 +433,9 @@ class PlanFormView(AdminRequiredMixin, TemplateView):
         plan.messages_per_session_limit = _int_or_none(request.POST.get("messages_per_session_limit"))
         plan.sessions_per_day_limit = _int_or_none(request.POST.get("sessions_per_day_limit"))
         plan.monthly_budget_cap = _parse_decimal(request.POST.get("monthly_budget_cap"))
+        plan.max_requests_per_period = _int_or_none(request.POST.get("max_requests_per_period"))
+        plan.period = request.POST.get("period") or None
+        plan.max_context_tokens = _int_or_none(request.POST.get("max_context_tokens"))
         plan.feature_flags = {key: request.POST.get(f"flag_{key}") == "on" for key, _label in KNOWN_FEATURE_FLAGS}
         plan.is_active = request.POST.get("is_active") == "on"
         plan.is_visible_to_admins = request.POST.get("is_visible_to_admins") == "on"

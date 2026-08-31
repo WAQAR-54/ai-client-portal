@@ -233,6 +233,77 @@ def check_session_creation_limit(user):
         )
 
 
+def check_request_count_limit(user, conversation):
+    """Raise UsageLimitExceeded if sending another message would exceed
+    this user's Plan's max_requests_per_period, counted over whatever
+    window `period` specifies. Deliberately independent of and additional
+    to the token-VOLUME caps in governance/limits.py::check_usage_limits()
+    - request count and token volume are different things worth capping
+    separately (many short messages vs. a few very long ones can each trip
+    one cap without tripping the other)."""
+    from governance.limits import UsageLimitExceeded
+    from chat.models import Message
+
+    status = get_plan_status(user)
+    plan = status["plan"]
+    if plan is None or plan.max_requests_per_period is None or not plan.period:
+        return
+
+    if plan.period == "session":
+        sent = conversation.messages.filter(role=Message.Role.USER).count()
+        window_label = "this conversation"
+    elif plan.period == "day":
+        start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        sent = Message.objects.filter(conversation__user=user, role=Message.Role.USER, created_at__gte=start).count()
+        window_label = "today"
+    elif plan.period == "month":
+        start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        sent = Message.objects.filter(conversation__user=user, role=Message.Role.USER, created_at__gte=start).count()
+        window_label = "this month"
+    else:
+        return
+
+    if sent >= plan.max_requests_per_period:
+        period_label = plan.get_period_display().lower()
+        raise UsageLimitExceeded(
+            f"You've reached your plan's limit of {plan.max_requests_per_period} message(s) per {period_label} "
+            f"({window_label}). Try again later or contact your administrator."
+        )
+
+
+# ~4 characters per token is the standard rough estimate for English text
+# (no tokenizer dependency added just for this - it's an approximation, not
+# an exact count, and is documented as such rather than presented as exact).
+_CHARS_PER_TOKEN_ESTIMATE = 4
+
+
+def validate_context_tokens(user, system_prompt, history):
+    """Raise UsageLimitExceeded if the assembled prompt (system prompt +
+    full message history, including any extracted-attachment text) for the
+    NEXT request would exceed this user's Plan's max_context_tokens.
+    Rejects rather than truncates: silently dropping earlier turns to fit
+    would send the model a coherence-broken conversation and could produce
+    a confusing reply with no indication anything was cut - an explicit,
+    visible rejection (matching how every other Plan limit in this app
+    behaves) is safer than a silent degradation the user has no way to
+    notice from the reply alone."""
+    from governance.limits import UsageLimitExceeded
+
+    status = get_plan_status(user)
+    plan = status["plan"]
+    if plan is None or plan.max_context_tokens is None:
+        return
+
+    total_chars = len(system_prompt) + sum(len(turn.get("content", "")) for turn in history)
+    estimated = max(1, total_chars // _CHARS_PER_TOKEN_ESTIMATE)
+    if estimated > plan.max_context_tokens:
+        raise UsageLimitExceeded(
+            f"This conversation is too long for your plan's per-request context limit "
+            f"(~{estimated} tokens estimated, {plan.max_context_tokens} allowed). "
+            "Start a new chat or contact your administrator for a higher limit."
+        )
+
+
 def engagement_score(user):
     """Simple heuristic for surfacing "engaged demo users worth upgrading":
     (% of their plan's monthly token limit used) / (% of their trial

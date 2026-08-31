@@ -7,6 +7,17 @@ KNOWN_FEATURE_FLAGS = [
     ("file_upload", "File upload in chat"),
     ("export", "Conversation export"),
     ("priority_routing", "Priority model routing"),
+    # Added for the 4-dimension Plan restructure. "tools" and "priority_queue"
+    # are stored/editable here but have no enforcement point anywhere in the
+    # app yet - no function/tool-calling capability or request-priority queue
+    # exists to gate. "long_context" is enforced only indirectly: it's not
+    # independently checked, since a plan's own max_context_tokens value
+    # already controls its actual context ceiling (see governance/plans.py's
+    # validate_context_tokens) - this flag is descriptive of that, not a
+    # separate gate. Documented here rather than silently wired to nothing.
+    ("tools", "Tool/function calling"),
+    ("priority_queue", "Priority request queue"),
+    ("long_context", "Long-context requests"),
 ]
 
 
@@ -148,11 +159,50 @@ class Plan(models.Model):
     )
     monthly_budget_cap = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    # Request-COUNT cap, independent of the token-volume caps above (a user
+    # could send many short messages without tripping daily_token_limit, or
+    # few very long ones without tripping this) - both are enforced.
+    max_requests_per_period = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max messages allowed within one `period`. Null = no request-count cap.",
+    )
+
+    class Period(models.TextChoices):
+        SESSION = "session", "Session"
+        DAY = "day", "Day"
+        MONTH = "month", "Month"
+
+    period = models.CharField(
+        max_length=10,
+        choices=Period.choices,
+        null=True,
+        blank=True,
+        help_text="Which window max_requests_per_period counts against.",
+    )
+    max_context_tokens = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Per-request cap on assembled prompt size (system prompt + history + attachments), "
+            "distinct from daily_token_limit/monthly_token_limit which cap cumulative usage over time."
+        ),
+    )
+    auto_upgrade_threshold_spend = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Reserved for future use (auto-suggest an upgrade past this spend). Not yet enforced anywhere.",
+    )
+
     allowed_models = models.ManyToManyField("chat.ModelConfig", blank=True, related_name="plans")
     feature_flags = models.JSONField(
         default=dict,
         blank=True,
-        help_text='e.g. {"file_upload": true, "export": true}',
+        help_text=(
+            'e.g. {"file_upload": true, "export": true, "tools": true, ' '"priority_queue": true, "long_context": true}'
+        ),
     )
 
     is_active = models.BooleanField(

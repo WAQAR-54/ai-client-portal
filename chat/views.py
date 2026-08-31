@@ -568,6 +568,16 @@ def stream_message(request, conversation_id, message_id):
 
         system_prompt = build_system_prompt(request.user)
 
+        from governance.plans import validate_context_tokens
+
+        try:
+            validate_context_tokens(request.user, system_prompt, history)
+        except UsageLimitExceeded as exc:
+            message.content = str(exc)
+            message.save(update_fields=["content"])
+            yield _sse_event("done", "")
+            return
+
         # Exact-match cache: only ever checked against candidates[0] (the
         # model this request would actually use first), keyed on the full
         # history so a repeat of the identical exchange - not just the
