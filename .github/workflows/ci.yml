@@ -99,9 +99,16 @@ jobs:
             cd ~/ai-client-portal
             git rev-parse HEAD > /tmp/ai_client_portal_prev_sha
             git pull origin main
+            # migrate + collectstatic are NOT run here — docker-entrypoint.sh
+            # already runs both as part of the "web" container's own startup,
+            # before gunicorn binds. Running them again here raced that same
+            # entrypoint process on Postgres whenever a push had a genuinely
+            # new migration to apply (harmless as a no-op otherwise, which is
+            # why this looked intermittent) — root-caused after two
+            # consecutive automated deploy failures whose steps both
+            # reproduced cleanly by hand, one command at a time, right after
+            # the rollback.
             docker compose up -d --build
-            docker compose exec -T web python manage.py migrate --noinput
-            docker compose exec -T web python manage.py collectstatic --noinput
             echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) deployed $(git rev-parse HEAD)" >> ~/ai-client-portal/deploy.log
 
       # Real client's-eye-view check, not just "did the SSH commands exit 0" -
