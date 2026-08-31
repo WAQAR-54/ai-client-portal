@@ -165,6 +165,65 @@
     input.addEventListener("input", function() { render(input.value); });
 })();
 </script>
+
+<div id="upgrade-modal-overlay" class="upgrade-modal-overlay" style="display:none;">
+    <div class="upgrade-modal-box">
+        <h3>{% trans "Request an upgrade" %}</h3>
+        <p class="text-muted" style="margin-top:-0.2rem;">{% trans "An admin will review your request." %}</p>
+        <div id="upgrade-modal-context" class="upgrade-modal-context" style="display:none;"></div>
+        <form method="post" action="{% url 'chat:request_upgrade' %}">
+            {% csrf_token %}
+            <label for="upgrade-modal-plan">{% trans "Plan" %}</label>
+            <select class="input" name="requested_plan_id" id="upgrade-modal-plan">
+                <option value="">{% trans "Not sure — let the admin decide" %}</option>
+                {% for p in upgrade_plan_choices %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+            <label for="upgrade-modal-message">{% trans "Message (optional)" %}</label>
+            <textarea class="input" name="message" id="upgrade-modal-message" rows="2" placeholder="{% trans 'Anything else to add? (optional)' %}"></textarea>
+            <div class="upgrade-modal-actions">
+                <button type="button" class="btn-small btn-ghost" onclick="portalCloseUpgradeModal()">{% trans "Cancel" %}</button>
+                <button type="submit" class="btn-small">{% trans "Request upgrade" %}</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+var portalUpgradeModalText = {
+    availableOn: "{% trans 'is available on the' %}",
+    plan: "{% trans 'plan.' %}",
+    noPlanYet: "{% trans 'isn’t included in any plan yet — let an admin know you need access.' %}",
+    interestedIn: "{% trans 'Interested in access to' %}",
+};
+function portalOpenUpgradeModal(opts) {
+    var overlay = document.getElementById("upgrade-modal-overlay");
+    var context = document.getElementById("upgrade-modal-context");
+    var planSelect = document.getElementById("upgrade-modal-plan");
+    var messageBox = document.getElementById("upgrade-modal-message");
+    opts = opts || {};
+    if (opts.modelName) {
+        context.style.display = "block";
+        context.textContent = opts.planName
+            ? opts.modelName + " " + portalUpgradeModalText.availableOn + " " + opts.planName + " " + portalUpgradeModalText.plan
+            : opts.modelName + " " + portalUpgradeModalText.noPlanYet;
+        planSelect.value = opts.planId || "";
+        messageBox.value = portalUpgradeModalText.interestedIn + " " + opts.modelName + ".";
+    } else {
+        context.style.display = "none";
+        context.textContent = "";
+        planSelect.value = "";
+        messageBox.value = "";
+    }
+    overlay.style.display = "flex";
+}
+function portalCloseUpgradeModal() {
+    document.getElementById("upgrade-modal-overlay").style.display = "none";
+}
+document.getElementById("upgrade-modal-overlay").addEventListener("mousedown", function(evt) {
+    if (evt.target === this) portalCloseUpgradeModal();
+});
+</script>
 <section class="chat-panel">
     <header class="chat-header">
         <span class="chat-toolbar-title">{% if conversation %}{{ conversation.title }}{% endif %}</span>
@@ -172,13 +231,13 @@
             {% if conversation %}
             <details class="export-menu">
                 <summary class="btn-small btn-ghost no-marker" title="{% trans 'Export conversation' %}">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                    <span id="export-summary-icon"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
                     {% trans "Export" %}
                 </summary>
                 <div class="export-menu-panel">
-                    <a href="{% url 'chat:export_conversation_pdf' conversation_id=conversation.id %}">{% trans "Export as PDF" %}</a>
-                    <a href="{% url 'chat:export_conversation_markdown' conversation_id=conversation.id %}">{% trans "Export as Markdown" %}</a>
-                    <a href="{% url 'chat:export_conversation_text' conversation_id=conversation.id %}">{% trans "Export as plain text" %}</a>
+                    <a href="{% url 'chat:export_conversation_pdf' conversation_id=conversation.id %}" data-export data-export-label="{% trans 'PDF' %}">{% trans "Export as PDF" %}</a>
+                    <a href="{% url 'chat:export_conversation_markdown' conversation_id=conversation.id %}" data-export data-export-label="{% trans 'Markdown' %}">{% trans "Export as Markdown" %}</a>
+                    <a href="{% url 'chat:export_conversation_text' conversation_id=conversation.id %}" data-export data-export-label="{% trans 'plain text' %}">{% trans "Export as plain text" %}</a>
                 </div>
             </details>
             {% endif %}
@@ -204,20 +263,7 @@
                         {% include "chat/_usage_widget.html" %}
                     </div>
                     {% if can_request_upgrade %}
-                    <details class="mt-3">
-                        <summary class="btn-small btn-ghost no-marker">{% trans "Request upgrade" %}</summary>
-                        <form method="post" action="{% url 'chat:request_upgrade' %}" class="mt-2">
-                            {% csrf_token %}
-                            <select class="input" name="requested_plan_id">
-                                <option value="">{% trans "Not sure — let the admin decide" %}</option>
-                                {% for p in upgrade_plan_choices %}
-                                <option value="{{ p.id }}">{{ p.name }}</option>
-                                {% endfor %}
-                            </select>
-                            <textarea class="input" name="message" rows="2" placeholder="{% trans 'Anything else to add? (optional)' %}"></textarea>
-                            <button type="submit" class="btn-small mt-2">{% trans "Send request" %}</button>
-                        </form>
-                    </details>
+                    <button type="button" class="btn-small btn-ghost mt-3" onclick="portalOpenUpgradeModal()">{% trans "Request upgrade" %}</button>
                     {% endif %}
                 </div>
             </details>
@@ -272,11 +318,24 @@
                 </summary>
                 <div class="model-select-panel">
                     <button type="button" class="model-select-option is-selected" data-value="" data-label="{{ auto_routing_label }}">{{ auto_routing_label }}</button>
-                    {% regroup available_models by get_tier_display as tier_groups %}
+                    {% regroup model_rows by model.get_tier_display as tier_groups %}
                     {% for group in tier_groups %}
                     <div class="model-select-group-label">{{ group.grouper }}</div>
-                    {% for m in group.list %}
-                    <button type="button" class="model-select-option" data-value="{{ m.id }}" data-label="{{ m.display_label }}">{{ m.display_label }}</button>
+                    {% for row in group.list %}
+                    {% if row.locked %}
+                    <button type="button" class="model-select-option model-select-option-locked"
+                            data-model-name="{{ row.model.display_label }}"
+                            data-required-plan-id="{% if row.required_plan %}{{ row.required_plan.id }}{% endif %}"
+                            data-required-plan-name="{% if row.required_plan %}{{ row.required_plan.name }}{% endif %}">
+                        <span class="model-select-option-label">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            {{ row.model.display_label }}
+                        </span>
+                        {% if row.required_plan %}<span class="model-select-locked-tier">{{ row.required_plan.name }}</span>{% endif %}
+                    </button>
+                    {% else %}
+                    <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">{{ row.model.display_label }}</button>
+                    {% endif %}
                     {% endfor %}
                     {% endfor %}
                 </div>
@@ -406,6 +465,68 @@ function portalCancelEdit() {
     textarea.value = "";
     textarea.style.height = "auto";
 }
+(function() {
+    var exportMenu = document.querySelector(".export-menu");
+    if (!exportMenu) return;
+    // The status toast is appended to .chat-header-actions, not .export-menu
+    // itself - .export-menu is a <details>, and per the HTML spec everything
+    // inside one except the <summary> is hidden the instant `open` is
+    // removed, which happens right when the export starts. A toast parented
+    // there would vanish along with the rest of the collapsed panel.
+    var statusHost = document.querySelector(".chat-header-actions");
+    var summaryIcon = document.getElementById("export-summary-icon");
+    var originalIconHTML = summaryIcon ? summaryIcon.innerHTML : "";
+    var successLabel = "{% trans 'Download ready.' %}";
+    var errorLabel = "{% trans 'Export failed — try again.' %}";
+
+    function showStatus(kind, text) {
+        var existing = document.getElementById("export-status");
+        if (existing) existing.remove();
+        var el = document.createElement("div");
+        el.id = "export-status";
+        el.className = "export-status export-status-" + kind;
+        el.textContent = text;
+        statusHost.appendChild(el);
+        setTimeout(function() { el.remove(); }, 4000);
+    }
+
+    exportMenu.querySelectorAll("a[data-export]").forEach(function(link) {
+        link.addEventListener("click", function(evt) {
+            evt.preventDefault();
+            exportMenu.removeAttribute("open");
+            if (summaryIcon) summaryIcon.innerHTML = '<span class="export-spinner"></span>';
+            exportMenu.querySelectorAll("a[data-export]").forEach(function(a) { a.setAttribute("aria-disabled", "true"); });
+
+            fetch(link.href, {credentials: "same-origin"})
+                .then(function(resp) {
+                    if (!resp.ok) throw new Error("export failed");
+                    var disposition = resp.headers.get("Content-Disposition") || "";
+                    var match = disposition.match(/filename="?([^"]+)"?/);
+                    var filename = match ? match[1] : "conversation";
+                    return resp.blob().then(function(blob) { return {blob: blob, filename: filename}; });
+                })
+                .then(function(result) {
+                    var url = URL.createObjectURL(result.blob);
+                    var a = document.createElement("a");
+                    a.href = url;
+                    a.download = result.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(function() { URL.revokeObjectURL(url); }, 800);
+                    showStatus("success", successLabel);
+                })
+                .catch(function() {
+                    showStatus("error", errorLabel);
+                })
+                .finally(function() {
+                    if (summaryIcon) summaryIcon.innerHTML = originalIconHTML;
+                    exportMenu.querySelectorAll("a[data-export]").forEach(function(a) { a.removeAttribute("aria-disabled"); });
+                });
+        });
+    });
+})();
+
 function portalCopyMessage(btn) {
     var text = btn.getAttribute("data-copy-text");
     navigator.clipboard.writeText(text).then(function() {
@@ -424,7 +545,7 @@ function portalCopyMessage(btn) {
     if (!dropdown) return;
     var hiddenInput = document.getElementById("model-select");
     var label = document.getElementById("model-select-label");
-    dropdown.querySelectorAll(".model-select-option").forEach(function(opt) {
+    dropdown.querySelectorAll(".model-select-option:not(.model-select-option-locked)").forEach(function(opt) {
         opt.addEventListener("click", function() {
             hiddenInput.value = opt.getAttribute("data-value");
             label.textContent = opt.getAttribute("data-label");
@@ -432,6 +553,19 @@ function portalCopyMessage(btn) {
                 o.classList.toggle("is-selected", o === opt);
             });
             dropdown.removeAttribute("open");
+        });
+    });
+    // A locked model never selects — it opens the shared upgrade modal,
+    // prefilled with which plan actually unlocks it (pulled server-side
+    // from Plan.allowed_models, see chat/views.py::_model_catalog_rows).
+    dropdown.querySelectorAll(".model-select-option-locked").forEach(function(opt) {
+        opt.addEventListener("click", function() {
+            dropdown.removeAttribute("open");
+            portalOpenUpgradeModal({
+                modelName: opt.getAttribute("data-model-name"),
+                planId: opt.getAttribute("data-required-plan-id"),
+                planName: opt.getAttribute("data-required-plan-name"),
+            });
         });
     });
 })();

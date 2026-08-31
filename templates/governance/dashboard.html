@@ -97,9 +97,18 @@
     // that might appear inside a string value.
     const readJSON = (id) => JSON.parse(document.getElementById(id).textContent);
 
-    const palette = ["#122268", "#00aef0", "#1e8e5a", "#c77700", "#7a8a99", "#d9363e", "#5b6472", "#7a5ea8"];
-    const gridColor = "#dde2ea";
-    const textColor = "#5b6472";
+    // Chart.js needs real color strings, not CSS variables, so pick a
+    // palette up front based on the same dark-mode signal main.css itself
+    // reacts to (an explicit data-theme, falling back to the OS/browser
+    // preference for "System") - this runs once at chart creation, matching
+    // how the rest of this page is server-rendered once per load.
+    const explicitTheme = document.documentElement.getAttribute("data-theme");
+    const isDark = explicitTheme === "dark" || (explicitTheme !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const palette = isDark
+        ? ["#7686f0", "#35c5fb", "#3ddc92", "#f0ac4c", "#a3a9ba", "#ff7a7e", "#c9cede", "#c99ce8"]
+        : ["#122268", "#00aef0", "#1e8e5a", "#c77700", "#7a8a99", "#d9363e", "#5b6472", "#7a5ea8"];
+    const gridColor = isDark ? "#343a48" : "#dde2ea";
+    const textColor = isDark ? "#a3a9ba" : "#5b6472";
     Chart.defaults.font.family = "Inter, -apple-system, sans-serif";
     Chart.defaults.color = textColor;
 

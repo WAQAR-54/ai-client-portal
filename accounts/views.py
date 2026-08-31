@@ -33,6 +33,21 @@ def set_language_preference(request):
 
 @login_required
 @require_POST
+def set_theme_preference(request):
+    """Settings -> Display tab. Persisted to the user's own record (not just
+    localStorage) so the choice follows them across devices/logins, per the
+    dark-mode spec. Returns 204 (no redirect) since this is called via
+    fetch() from the Settings page so the new theme applies instantly
+    without a full page reload."""
+    theme = request.POST.get("theme", "").strip()
+    if theme in {"light", "dark", "system"}:
+        request.user.theme_preference = theme
+        request.user.save(update_fields=["theme_preference"])
+    return HttpResponse(status=204)
+
+
+@login_required
+@require_POST
 def complete_onboarding(request):
     """Marks the first-login guided tour seen (Next-through-the-end or
     Skip both call this - there's no meaningful difference in outcome)."""

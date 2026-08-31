@@ -58,6 +58,80 @@
     --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+/* ---------- Dark mode ----------
+   Every color above is a token, so dark mode is a second value per token,
+   not a second stylesheet. Two selectors apply them: the media-query block
+   covers "System" (no explicit choice - the OS/browser decides), and the
+   `[data-theme="dark"]` block covers an explicit Settings > Display choice,
+   which always wins regardless of OS preference. `:not([data-theme="light"])`
+   on the media-query block is what lets an explicit "Light" choice override
+   a dark OS preference. Values are real dark-mode decisions, not inverted
+   light-mode ones: a dark neutral (not pure black), contrast-checked text,
+   and a lightened indigo/cyan/success/warning/danger so each stays legible
+   on the darker surfaces (the light-mode shades are too low-contrast here). */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --color-bg: #14161c;
+        --color-surface: #1c1f27;
+        --color-surface-muted: #262a35;
+        --color-border: #343a48;
+        --color-text: #e8eaf0;
+        --color-text-muted: #a3a9ba;
+        --color-text-faint: #6f7789;
+
+        --color-primary: #7686f0;
+        --color-primary-hover: #8fa0f7;
+        --color-primary-soft: #262c4a;
+        --color-primary-text: #b0bcf8;
+        --color-accent-2: #35c5fb;
+
+        --color-success: #3ddc92;
+        --color-success-soft: #113827;
+        --color-danger: #ff7a7e;
+        --color-danger-soft: #3d1a1c;
+        --color-danger-hover: #ff9599;
+        --color-warning: #f0ac4c;
+        --color-warning-soft: #3a2a10;
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+        --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.28);
+        --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.24);
+        --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.32), 0 2px 5px rgba(0, 0, 0, 0.26);
+        color-scheme: dark;
+    }
+}
+:root[data-theme="dark"] {
+    --color-bg: #14161c;
+    --color-surface: #1c1f27;
+    --color-surface-muted: #262a35;
+    --color-border: #343a48;
+    --color-text: #e8eaf0;
+    --color-text-muted: #a3a9ba;
+    --color-text-faint: #6f7789;
+
+    --color-primary: #7686f0;
+    --color-primary-hover: #8fa0f7;
+    --color-primary-soft: #262c4a;
+    --color-primary-text: #b0bcf8;
+    --color-accent-2: #35c5fb;
+
+    --color-success: #3ddc92;
+    --color-success-soft: #113827;
+    --color-danger: #ff7a7e;
+    --color-danger-soft: #3d1a1c;
+    --color-danger-hover: #ff9599;
+    --color-warning: #f0ac4c;
+    --color-warning-soft: #3a2a10;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.28);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.24);
+    --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.32), 0 2px 5px rgba(0, 0, 0, 0.26);
+    color-scheme: dark;
+}
+
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 @keyframes fade-in-up {
@@ -689,6 +763,60 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .section-nav a:hover { color: var(--color-text); background: var(--color-surface-muted); text-decoration: none; }
 .section-nav a.active { color: var(--color-primary); }
 
+/* ---------- Settings page: horizontal section tabs ---------- */
+.settings-tabs {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-5);
+}
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tab {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 0.7rem 1rem;
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+    transition: color 150ms ease, border-color 150ms ease;
+}
+.settings-tab:hover { color: var(--color-text); }
+.settings-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.settings-tab-panel { display: none; }
+.settings-tab-panel.active { display: block; animation: fade-in-up 150ms ease-out; }
+
+/* ---------- Display / theme picker (Settings > Display) ---------- */
+.theme-picker { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.theme-option { position: relative; }
+.theme-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.theme-option label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+.theme-option label:hover { background: var(--color-surface-muted); }
+.theme-option input:checked + label { border-color: var(--color-primary); color: var(--color-primary-text); background: var(--color-primary-soft); }
+.theme-option input:focus-visible + label { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.theme-option svg { width: 16px; height: 16px; }
+
 /* ---------- Auth pages: split screen ---------- */
 .auth-split {
     min-height: 100vh;
@@ -1015,7 +1143,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.chat-header-actions { display: flex; align-items: center; gap: 0.6rem; margin-left: auto; }
+.chat-header-actions { position: relative; display: flex; align-items: center; gap: 0.6rem; margin-left: auto; }
 .chat-header-actions .btn-ghost { border-radius: 999px; }
 
 .usage-popover { position: relative; }
@@ -1034,6 +1162,49 @@ table.data tbody tr:last-child td { border-bottom: none; }
 }
 .usage-popover-panel select { margin: 0 0 0.5rem; }
 .usage-popover-panel textarea { margin: 0 0 0.5rem; }
+/* The usage widget and the "Request upgrade" action read as two distinct
+   things ("here's my usage" / "here's an action"), not one merged block -
+   the widget gets its own flat card surface, the button sits below it with
+   real spacing and no shared border between them. */
+.usage-widget-card {
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+}
+.usage-popover-panel .btn-small.mt-3 { width: 100%; }
+
+/* ---------- Upgrade modal (shared by the sidebar/header "Request upgrade"
+   button and a locked model in the model selector - one mechanism, two
+   entry points, so the request flow only needs to exist once). ---------- */
+.upgrade-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 23, 43, 0.45);
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+}
+.upgrade-modal-box {
+    width: min(420px, 100%);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-5);
+    animation: scale-fade-in 150ms ease-out;
+}
+.upgrade-modal-box h3 { margin-bottom: 0.3rem; }
+.upgrade-modal-context {
+    font-size: 0.88rem;
+    color: var(--color-text-muted);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.75rem;
+    margin-bottom: var(--space-4);
+}
+.upgrade-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: var(--space-2); }
 
 .export-menu { position: relative; }
 .export-menu-panel {
@@ -1059,6 +1230,32 @@ table.data tbody tr:last-child td { border-bottom: none; }
     font-weight: 500;
 }
 .export-menu-panel a:hover { background: var(--color-surface-muted); text-decoration: none; }
+.export-menu-panel a[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.export-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-text-faint);
+    border-top-color: var(--color-text);
+    border-radius: 50%;
+    animation: spin 700ms linear infinite;
+}
+.export-status {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: 220px;
+    padding: 0.55rem 0.75rem;
+    border-radius: var(--radius-md);
+    font-size: 0.82rem;
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    z-index: 21;
+    animation: fade-in-up 150ms ease-out;
+}
+.export-status-success { background: var(--color-success-soft); color: var(--color-success); }
+.export-status-error { background: var(--color-danger-soft); color: var(--color-danger); }
 .model-select-dropdown { position: relative; }
 .model-select-summary {
     display: inline-flex;
@@ -1119,6 +1316,27 @@ table.data tbody tr:last-child td { border-bottom: none; }
 }
 .model-select-option:hover { background: var(--color-surface-muted); }
 .model-select-option.is-selected { color: var(--color-primary-text); background: var(--color-primary-soft); font-weight: 650; }
+.model-select-option-locked {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    color: var(--color-text-faint);
+}
+.model-select-option-locked:hover { background: var(--color-surface-muted); color: var(--color-text-muted); }
+.model-select-option-locked .model-select-option-label { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-select-option-locked svg { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.8; }
+.model-select-locked-tier {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-text-faint);
+    background: var(--color-surface-muted);
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+}
 
 .chat-messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); }
 .chat-column { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-5); }

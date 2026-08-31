@@ -35,6 +35,7 @@ A company-branded web portal where employees/clients log in and interact with Op
 | Secrets Management | `.env` (dev, gitignored) / Railway environment variables (prod) *(added)* |
 | Backups | **`django-axes`'s neighbor, `boto3`** *(added)* — `python manage.py backup_database` dumps Postgres via `pg_dump` and uploads to S3-compatible storage with retention pruning (confirmed: 30-day retention, the settings default, is what's actually active). See `docs/BACKUP_RESTORE.md` — the Postgres/S3 path itself is still unverified (no Postgres/pg_dump/S3 available in the build environment), though a logical backup/restore cycle *was* verified for real against the SQLite dev database as a partial substitute (see that doc's Status section for exact evidence). |
 | Internationalization | Django i18n *(added)* — English/Urdu/Arabic UI (labels/menus only, never AI reply content), toggle in Settings, persisted per-user in the DB (not session-only). First-visit language additionally auto-guessed from the visitor's IP country (`accounts/geo.py`, via `geoip2fast` — offline, no API key/account needed) for anonymous users who haven't chosen yet; never overrides an explicit choice. RTL layout (`dir="rtl"`) applied automatically for Urdu/Arabic. |
+| Theming / Dark Mode | CSS custom properties *(added)* — every color in `static/css/main.css` is a `--color-*` token; dark mode is a second value per token (`@media (prefers-color-scheme: dark)` for "System", `:root[data-theme="dark"]` for an explicit override), not a parallel stylesheet. Persisted per-user (`User.theme_preference`, Light/Dark/System), applied server-side via `data-theme` on `<html>` so there's no flash-of-wrong-theme on load. Admin dashboard's Chart.js charts pick a matching palette/gridline color at render time from the same signal. |
 
 **Frontend decision — resolved:** Django + HTMX was chosen over React, given the timeline and that a rich SPA framework wasn't required to hit the ChatGPT/Claude-quality UX target (streaming, Markdown, a polished design system) — confirmed in practice across several redesign passes without hitting a wall that actually needed React.
 
@@ -87,6 +88,12 @@ A company-branded web portal where employees/clients log in and interact with Op
 | Exact-Match Response Caching | Redis-backed cache keyed on user + model + exact prompt history (not fuzzy/semantic matching — deliberately out of scope, see §8). 1-hour TTL. Never shared across users. Admin → Usage & Cost shows a live cache-hit-rate / estimated-cost-saved metric. **Verified live**: a mocked-provider test proves the second identical prompt makes zero provider calls and still returns the correct cached answer *(added)* |
 | Per-User Plan Override Visibility | Users list shows "N custom overrides beyond Plan defaults — view/clear" whenever a user has a personal `UsageLimit` or `UserModelPermission` row layered on top of their Plan; a detail page lists exactly what's overridden and lets an admin clear all of it back to pure Plan behavior in one action, audit-logged *(added)* |
 | First-Time Onboarding Tour | A brand-new user's first login shows a 3-4 step guided tour (New chat, usage widget, model selector, Admin link for admin-role users) with Skip/Next; "Replay tour" in Settings re-triggers it anytime. Tracked via `has_seen_onboarding` on the user *(added)* |
+| Message Hover Actions | Copy + Edit on a user's own messages, Copy + Regenerate on assistant replies — small muted icons, hidden until the row is hovered (fade/scale-in, not a hard snap). Edit discards everything after that message and regenerates the conversation forward from the edit point; Regenerate replaces the current reply in place (not offered as a side-by-side alternate) — both behaviors explicitly confirmed with the client before building, not guessed *(added)* |
+| Typing/Thinking Indicator | Three pulsing dots shown where the assistant's reply will appear, from the moment a message is sent until the first streamed token arrives; replaced by the real content the instant it starts, via a pure-CSS `:has()` selector so the two states are never both on screen at once — no JS coordination needed *(added)* |
+| Settings — Horizontal Tabs | The Settings page (`/accounts/profile/`) is tabbed (Profile, Language, Password, Notifications, Display, Shortcuts) instead of one long scroll — clicking a tab shows only that section, active tab has a clear underline indicator, deep-links via `#hash`, and auto-lands on Password/Profile if that tab's form just failed validation. Tabs scroll horizontally on narrow widths instead of wrapping *(added)* |
+| Model Selector — Full Catalog with Locked Models | The model dropdown now lists every enabled model grouped by tier, not just the ones the user's plan already allows. A model outside the user's plan is shown dimmed with a lock icon and its required plan's name as a small badge (e.g. "Advanced") — pulled live from `Plan.allowed_models`, never a hardcoded model→plan mapping, so an admin's plan edit is reflected immediately. Clicking a locked model never selects it; it opens the shared upgrade-request modal, prefilled with which model and which plan unlocks it *(added)* |
+| Shared Upgrade-Request Modal | One modal, two entry points: the sidebar/header "Request upgrade" button (generic) and a locked model in the selector (prefilled with model name + target plan). Replaces the old nested-`<details>` upgrade form, and keeps the usage widget and the upgrade action as two visually distinct elements (a self-contained usage card, then a separate button below it) rather than one merged block *(added)* |
+| Export — Loading/Success/Failure Feedback | Export (PDF/Markdown/plain text) now runs through `fetch()` instead of a plain link: the export icon swaps for a small spinner while the file is generated, a "Download ready." toast confirms success (auto-downloaded via a blob), and a real error message appears on failure instead of a silent no-op *(added)* |
 
 ---
 
@@ -96,6 +103,7 @@ A company-branded web portal where employees/clients log in and interact with Op
 User
   - id, email, password_hash, role (user/manager/admin), department_id, is_active, created_at
   - has_seen_onboarding, preferred_language (en/ur/ar)          (added)
+  - theme_preference (light/dark/system, default system)        (added)
 
 Department
   - id, name, default_system_prompt_id, monthly_budget_cap
@@ -182,6 +190,7 @@ route groups (see `PROJECT_MAP.md` for the full file-by-file breakdown):
 ```
 /accounts/login/, /accounts/logout/, /accounts/signup/, /accounts/profile/
 /accounts/set-language/                           -> language toggle, persisted per-user (added)
+/accounts/set-theme/                              -> Light/Dark/System toggle, persisted per-user (added)
 
 /chat/                                            -> chat home / conversation list
 /chat/conversations/<id>/                         -> open a conversation
@@ -342,6 +351,19 @@ Everything below was built after Phase 5, each item verified with real evidence 
 - Docker + docker-compose added (see Containerization row, §2) — reviewed carefully, not yet run end-to-end (no Docker available in the build environment)
 - Confirmed CI passes for real on a real pushed commit (`f5364cc`) — [test + lint both succeeded](https://github.com/WAQAR-54/ai-client-portal/actions/runs/33316462139), not just the workflow file existing
 - Full regression suite: **212/212 passing** as of this phase (up from 105 at the start of Phase 5's cleanup)
+
+**Phase 7 — UI/UX polish pass, model-access transparency, dark mode**
+
+Triggered by a detailed client review (annotated screenshots + a 10-point list). Before building anything, the current app was actually rendered with Playwright and compared point-by-point against the list — several items turned out to already be fixed by earlier work in this codebase (the sidebar's flex-column layout, the empty-state CTA, message hover actions, the typing-dots indicator, and the export dropdown menu all already matched the request when actually screenshotted), so effort went to the genuinely missing pieces rather than re-doing working code:
+
+- **Already correct, verified not rebuilt**: sidebar layout (flex column, conversation list scrolls internally, account/nav footer anchored to the bottom), main-content empty state (icon + message + a visible "New chat" CTA), message hover actions (Copy/Edit on user messages, Copy/Regenerate on assistant replies), the typing/thinking indicator, and the export dropdown menu (labeled, icon, not a plain browser prompt)
+- **New: Settings horizontal tabs** — Profile/Language/Password/Notifications/Display/Shortcuts, replacing one long scroll page
+- **New: Model selector shows the full catalog, not just allowed models** — locked models dimmed with a lock icon and their required plan's name, clicking one opens an upgrade-request modal prefilled with the model and target plan (reusing `Plan.allowed_models`, never a hardcoded mapping)
+- **New: shared upgrade-request modal** — one modal for both the sidebar "Request upgrade" button and a locked-model click; also separates the usage widget from the upgrade button into two visually distinct elements (per the client's explicit ask), replacing a nested-`<details>` form
+- **New: export loading/success/failure feedback** — `fetch()`-driven download with a spinner, a "Download ready." toast, and a real error message on failure
+- **New: dark mode** — `User.theme_preference` (Light/Dark/System, default System), CSS custom-property token swap (not a parallel stylesheet), applied server-side via `data-theme` on `<html>` (no flash-of-wrong-theme), covering chat, sidebar, Settings, modals, and the admin dashboard's Chart.js charts (palette/gridlines picked at render time from the same theme signal)
+- **A real bug found and fixed during Playwright verification**: the export "Download ready."/error toast was appended as a child of the `<details>` export menu — per the HTML spec, everything in a `<details>` except its `<summary>` is hidden the instant `open` is removed, which happens right when export starts, so the toast was invisible the whole time. Fixed by anchoring it to the always-visible `.chat-header-actions` container instead; re-verified with a real Playwright download (`page.expect_download()`, confirmed filename and visible toast text)
+- **Verification**: full regression suite **229/229 passing**, `black --check` clean across the repo, and a live Playwright pass covering all three requested states (no conversation selected, an open conversation, a long sidebar list) plus dark mode toggled live, the locked-model → upgrade-modal flow, and a real triggered file download — not just template/code review
 
 ---
 

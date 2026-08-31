@@ -82,6 +82,13 @@ class User(AbstractUser):
         "the conversation naturally). Set from Settings; see "
         "accounts/middleware.py for how this is applied on every request.",
     )
+    theme_preference = models.CharField(
+        max_length=10,
+        choices=[("light", "Light"), ("dark", "Dark"), ("system", "System")],
+        default="system",
+        help_text="UI color theme. 'System' follows the OS/browser preference "
+        "automatically. Set from Settings; see base.html for how this is applied.",
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

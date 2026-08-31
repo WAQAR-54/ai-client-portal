@@ -66,20 +66,51 @@ def chat_home(request, conversation_id=None):
 
     available_models = models_visible_to_user(request.user)
     plan_status = get_plan_status(request.user)
+    upgrade_plan_choices = Plan.objects.filter(is_active=True, is_visible_to_admins=True).exclude(
+        pk=plan_status["plan"].pk if plan_status["plan"] else None,
+    )
     context = {
         **_conversation_list_context(request, conversation),
         "conversation": conversation,
         "messages_list": conversation.messages.all() if conversation else [],
         "has_models_available": available_models.exists(),
         "available_models": available_models,
+        "model_rows": _model_catalog_rows(available_models, upgrade_plan_choices),
         "plan_status": plan_status,
         "usage": get_usage_status(request.user, conversation=conversation),
         "can_request_upgrade": bool(plan_status["plan"]),
-        "upgrade_plan_choices": Plan.objects.filter(is_active=True, is_visible_to_admins=True).exclude(
-            pk=plan_status["plan"].pk if plan_status["plan"] else None,
-        ),
+        "upgrade_plan_choices": upgrade_plan_choices,
     }
     return render(request, "chat/chat_home.html", context)
+
+
+def _model_catalog_rows(available_models, upgrade_plan_choices):
+    """Every enabled model, annotated with whether the user's own plan
+    already includes it. A model the user can't use yet is still shown
+    (dimmed/locked in the template) together with the cheapest plan that
+    *does* include it, pulled from Plan.allowed_models rather than any
+    hardcoded model->plan mapping, so a plan edit in the admin dashboard
+    is reflected here automatically."""
+    all_enabled = ModelConfig.objects.filter(is_enabled=True).order_by("tier", "display_name")
+    allowed_ids = set(available_models.values_list("id", flat=True))
+
+    plans_by_model_id = {}
+    for plan in upgrade_plan_choices.prefetch_related("allowed_models"):
+        for model in plan.allowed_models.all():
+            plans_by_model_id.setdefault(model.id, []).append(plan)
+
+    rows = []
+    for model in all_enabled:
+        locked = model.id not in allowed_ids
+        candidate_plans = plans_by_model_id.get(model.id, []) if locked else []
+        rows.append(
+            {
+                "model": model,
+                "locked": locked,
+                "required_plan": candidate_plans[0] if candidate_plans else None,
+            }
+        )
+    return rows
 
 
 def _conversation_list_context(request, active_conversation=None):
