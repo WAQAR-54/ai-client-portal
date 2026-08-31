@@ -34,6 +34,12 @@ ALLOWED_HOSTS = env.list(
     # is wired up. Set ALLOWED_HOSTS explicitly once you have a real domain.
     default=["localhost", "127.0.0.1", ".railway.app", ".onrender.com"],
 )
+# Needed explicitly for POSTs to work once real domains are behind a
+# reverse proxy (Cloudflare, Nginx) — Django's CSRF check compares the
+# request's Origin/Referer against this list, and ALLOWED_HOSTS alone
+# doesn't satisfy it. Must be full origins (scheme + host), not bare
+# hostnames like ALLOWED_HOSTS.
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 # Fail loudly instead of silently running production on a throwaway dev key —
 # DEBUG=False is our signal that this is a real deployment, not local dev.
