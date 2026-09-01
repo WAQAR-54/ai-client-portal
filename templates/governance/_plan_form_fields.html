@@ -1,0 +1,114 @@
+{% load i18n %}
+<form method="post"
+      action="{% if plan %}{% url 'governance:plan_edit' plan_id=plan.id %}{% else %}{% url 'governance:plan_new' %}{% endif %}"
+      hx-post="{% if plan %}{% url 'governance:plan_edit' plan_id=plan.id %}{% else %}{% url 'governance:plan_new' %}{% endif %}"
+      hx-swap="none">
+    {% csrf_token %}
+
+    <div class="form-section-label">{% trans "Basics" %}</div>
+    <label for="name">{% trans "Name" %}</label>
+    <input class="input" type="text" name="name" id="name" value="{{ plan.name|default:"" }}" required>
+
+    <label for="description">{% trans "Description" %}</label>
+    <input class="input" type="text" name="description" id="description" value="{{ plan.description|default:"" }}">
+
+    <div class="toggle-row-group toggle-row-wrap">
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="is_demo" {% if plan.is_demo %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{% trans "Time-limited demo plan" %}</span>
+        </label>
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="is_active" {% if not plan or plan.is_active %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{% trans "Active" %}</span>
+        </label>
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="is_default" {% if plan.is_default %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{% trans "Default for new users" %}</span>
+        </label>
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="is_visible_to_admins" {% if not plan or plan.is_visible_to_admins %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{% trans "Visible in Change Plan picker" %}</span>
+        </label>
+    </div>
+
+    <label for="demo_duration_days">{% trans 'Demo duration (days) — only used if "time-limited demo plan" is checked' %}</label>
+    <input class="input" type="number" name="demo_duration_days" id="demo_duration_days" value="{{ plan.demo_duration_days|default_if_none:"" }}">
+
+    {% trans "unlimited" as unlimited_placeholder %}
+    <div class="form-section-label">{% trans "Usage limits" %}</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
+        <div>
+            <label for="daily_token_limit">{% trans "Daily token limit" %}</label>
+            <input class="input" type="number" name="daily_token_limit" id="daily_token_limit" value="{{ plan.daily_token_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
+        <div>
+            <label for="monthly_token_limit">{% trans "Monthly token limit" %}</label>
+            <input class="input" type="number" name="monthly_token_limit" id="monthly_token_limit" value="{{ plan.monthly_token_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
+        <div>
+            <label for="messages_per_session_limit">{% trans "Messages per session" %}</label>
+            <input class="input" type="number" name="messages_per_session_limit" id="messages_per_session_limit" value="{{ plan.messages_per_session_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
+        <div>
+            <label for="sessions_per_day_limit">{% trans "New conversations per day" %}</label>
+            <input class="input" type="number" name="sessions_per_day_limit" id="sessions_per_day_limit" value="{{ plan.sessions_per_day_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
+    </div>
+    <label for="monthly_budget_cap">{% trans "Monthly budget cap (USD)" %}</label>
+    <input class="input" type="number" step="0.01" name="monthly_budget_cap" id="monthly_budget_cap" value="{{ plan.monthly_budget_cap|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+
+    <div class="form-section-label">{% trans "Per-request caps" %}</div>
+    <p class="text-faint" style="font-size:0.82rem; margin:-0.5rem 0 0.75rem;">
+        {% trans "Independent of the token-volume limits above (a request-count cap and a per-request context-size cap catch different problems: many short messages vs. one very long one)." %}
+    </p>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 1rem;">
+        <div>
+            <label for="max_requests_per_period">{% trans "Max requests" %}</label>
+            <input class="input" type="number" name="max_requests_per_period" id="max_requests_per_period" value="{{ plan.max_requests_per_period|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
+        <div>
+            <label for="period">{% trans "Per" %}</label>
+            <select class="input" name="period" id="period">
+                <option value="">{% trans "— none —" %}</option>
+                {% for value, label in period_choices %}
+                <option value="{{ value }}" {% if plan.period == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="max_context_tokens">{% trans "Max context tokens" %}</label>
+            <input class="input" type="number" name="max_context_tokens" id="max_context_tokens" value="{{ plan.max_context_tokens|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
+    </div>
+
+    <div class="form-section-label">{% trans "Features" %}</div>
+    <div class="toggle-row-group toggle-row-wrap">
+        {% for key, label, checked in known_flags %}
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="flag_{{ key }}" {% if checked %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-section-label">{% trans "Allowed models" %}</div>
+    <div class="toggle-row-group" style="max-height:220px; overflow-y:auto; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:0.75rem;">
+        {% for m in models %}
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="model_ids" value="{{ m.id }}" {% if m.id in selected_model_ids %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{{ m.display_label }} <span class="text-faint" style="font-size:0.8rem;">({{ m.get_provider_display }} · {{ m.get_tier_display }})</span></span>
+        </label>
+        {% empty %}
+        <span class="text-faint">{% trans "No models configured yet." %}</span>
+        {% endfor %}
+    </div>
+
+    <button type="submit">{% if plan %}{% trans "Save changes" %}{% else %}{% trans "Create plan" %}{% endif %}</button>
+    <a href="{% url 'governance:plans' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">{% trans "Cancel" %}</a>
+</form>

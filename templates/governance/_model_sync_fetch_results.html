@@ -1,0 +1,36 @@
+{% load i18n %}
+{% for provider, entry in fetched.items %}
+<div class="fetched-provider-group" data-provider="{{ provider }}">
+    {% if not entry.configured %}
+    <p class="form-hint">{% trans "No API key configured for this provider — set it in your environment to sync." %}</p>
+    {% elif entry.error %}
+    <p style="color:var(--color-danger); font-size:var(--text-sm);">{% blocktrans with error=entry.error %}Couldn't fetch models: {{ error }}{% endblocktrans %}</p>
+    {% else %}
+        {% if entry.new_models %}
+        {% for model_id in entry.new_models %}
+        <div class="fetched-item">
+            <div class="fetched-item-head">
+                <input type="checkbox" name="model" value="{{ provider }}::{{ model_id }}" id="fetched-model-{{ provider }}-{{ forloop.counter }}">
+                <label for="fetched-model-{{ provider }}-{{ forloop.counter }}" class="mono" style="cursor:pointer;">{{ model_id }}</label>
+            </div>
+            <div class="fetched-item-sub">
+                <select class="input" style="margin-top:0.4rem; width:auto; padding:0.35rem 0.5rem;" name="tier__{{ provider }}::{{ model_id }}">
+                    {% for value, label in tiers %}<option value="{{ value }}" {% if value == "default" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="form-hint">{% trans "No new models — everything returned is already tracked." %}</p>
+        {% endif %}
+        {% if entry.already_tracked %}
+        <details>
+            <summary class="form-hint" style="cursor:pointer;">{% blocktrans count counter=entry.already_tracked|length %}{{ counter }} already tracked (not shown above){% plural %}{{ counter }} already tracked (not shown above){% endblocktrans %}</summary>
+            <p class="mono form-hint" style="margin-top:0.4rem;">{{ entry.already_tracked|join:", " }}</p>
+        </details>
+        {% endif %}
+    {% endif %}
+</div>
+{% empty %}
+<p class="form-hint">{% trans "No providers configured." %}</p>
+{% endfor %}

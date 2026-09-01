@@ -1,42 +1,90 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n governance_extras %}
 {% block title %}{% trans "Admin Dashboard" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block admin_page_title %}{% trans "Dashboard" %}{% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 {% endblock %}
 {% block content %}
 {% trans "No usage yet — data will appear here once conversations start." as chart_empty_msg %}
-<div class="card">
-    <div class="overview-head">
-        <h1>{% trans "Overview" %}</h1>
-        {% if org_usage.has_data %}
-        <div class="org-usage-ring">
-            {% include "chat/_usage_ring.html" with pct=org_usage.avg_pct level=org_usage.level size=64 %}
-            <div class="org-usage-ring-label">
-                <strong>{% trans "Avg usage" %}</strong> {% trans "across users with limits" %}
-                <div class="text-muted mono" style="font-size: var(--text-xs);">{% blocktrans with over=org_usage.over_80_count total=org_usage.tracked_users %}{{ over }} of {{ total }} users over 80%{% endblocktrans %}</div>
-            </div>
+<div class="admin-eyebrow">{% trans "Last updated a minute ago" %}</div>
+<div class="overview-head">
+    <h1>{% blocktrans %}Good {{ greeting_time }}, {{ greeting_name }}{% endblocktrans %}</h1>
+    {% if org_usage.has_data %}
+    <div class="org-usage-ring">
+        {% include "chat/_usage_ring.html" with pct=org_usage.avg_pct level=org_usage.level size=64 %}
+        <div class="org-usage-ring-label">
+            <strong>{% trans "Avg usage" %}</strong> {% trans "across users with limits" %}
+            <div class="text-muted mono" style="font-size: var(--text-xs);">{% blocktrans with over=org_usage.over_80_count total=org_usage.tracked_users %}{{ over }} of {{ total }} users over 80%{% endblocktrans %}</div>
         </div>
-        {% endif %}
     </div>
-    <div class="stat-grid mt-4">
-        <div class="stat-tile"><div class="stat-label">{% trans "Users" %}</div><div class="stat-value mono">{{ total_users }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Conversations" %}</div><div class="stat-value mono">{{ total_conversations }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Enabled models" %}</div><div class="stat-value mono">{{ enabled_model_count }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (all time)" %}</div><div class="stat-value mono">{{ total_tokens_all_time }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Cost (all time)" %}</div><div class="stat-value mono">${{ total_cost_all_time|floatformat:2 }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (this month)" %}</div><div class="stat-value mono">{{ month_tokens }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Cost (this month)" %}</div><div class="stat-value mono">${{ month_cost|floatformat:2 }}</div></div>
+    {% endif %}
+</div>
+<div class="kpi-grid mt-4">
+    <div class="kpi-card"><div class="kpi-label">{% trans "Users" %}</div><div class="kpi-value mono" data-target="{{ total_users_display }}">{{ total_users_display }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{% trans "Conversations" %}</div><div class="kpi-value mono" data-target="{{ total_conversations_display }}">{{ total_conversations_display }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{% trans "Enabled models" %}</div><div class="kpi-value mono" data-target="{{ enabled_model_count }}">{{ enabled_model_count }}</div></div>
+    <div class="kpi-card">
+        <div class="kpi-label">{% trans "Pending upgrade requests" %}</div>
+        <div class="kpi-value mono" data-target="{{ pending_upgrade_requests }}">{{ pending_upgrade_requests }}</div>
+        {% if pending_upgrade_requests %}<div class="kpi-delta warn">{% trans "Needs review" %}</div>{% endif %}
+    </div>
+    <div class="kpi-card"><div class="kpi-label">{% trans "Tokens (all time)" %}</div><div class="kpi-value mono" data-target="{{ tokens_all_time_target }}" data-suffix="{{ tokens_all_time_suffix }}">{{ tokens_all_time_target }}{{ tokens_all_time_suffix }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{% trans "Cost (all time)" %}</div><div class="kpi-value mono" data-target="{{ cost_all_time_display }}">{{ cost_all_time_display }}</div></div>
+    <div class="kpi-card">
+        <div class="kpi-label">{% trans "Tokens (this month)" %}</div>
+        <div class="kpi-value mono" data-target="{{ month_tokens_target }}" data-suffix="{{ month_tokens_suffix }}">{{ month_tokens_target }}{{ month_tokens_suffix }}</div>
+        <div class="spark">{% for pct in spark_tokens %}<div style="height:{{ pct }}%"></div>{% endfor %}</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">{% trans "Cost (this month)" %}</div>
+        <div class="kpi-value mono" data-target="{{ month_cost_display }}">{{ month_cost_display }}</div>
+        <div class="spark">{% for pct in spark_cost %}<div style="height:{{ pct }}%"></div>{% endfor %}</div>
     </div>
 </div>
 
-<div class="chart-grid mt-5">
+{% if recent_upgrade_requests %}
+<div class="panel mt-5">
+    <div class="panel-head">
+        <div class="panel-head-title">{% trans "Recent plan requests" %}</div>
+        <a href="{% url 'governance:upgrade_requests' %}" class="text-faint" style="font-size:var(--text-xs);">{% trans "View all" %}</a>
+    </div>
+    <table class="data">
+        <thead><tr><th>{% trans "User" %}</th><th>{% trans "Current plan" %}</th><th>{% trans "Requested plan" %}</th><th>{% trans "Requested" %}</th><th></th></tr></thead>
+        <tbody id="recent-upgrade-requests-body">
+            {% for req in recent_upgrade_requests %}
+            <tr id="upgrade-request-row-{{ req.id }}">
+                <td class="name">{{ req.user.email }}</td>
+                <td><span class="badge {{ req.current_plan.name|plan_tier_class }}">{{ req.current_plan.name|default:"—" }}</span></td>
+                <td><span class="badge {{ req.requested_plan.name|plan_tier_class }}">{{ req.requested_plan.name|default:"—" }}</span></td>
+                <td class="text-faint">{{ req.created_at|timesince }} {% trans "ago" %}</td>
+                <td>
+                    <form hx-post="{% url 'governance:resolve_upgrade_request' request_id=req.id %}"
+                          hx-vals='{"action": "approve"}'
+                          hx-target="closest tr" hx-swap="outerHTML swap:400ms">
+                        {% csrf_token %}
+                        <button type="submit" class="row-btn">{% trans "Approve" %}</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="chart-row mt-5">
     <div class="card chart-card">
-        <h2>{% trans "Cost — last 14 days" %}</h2>
-        {% if has_cost_data %}
+        <div class="card-title">{% trans "Cost & tokens over time" %}</div>
+        <div class="card-body">
+        {% if has_cost_data or has_token_data %}
         <div class="chart-wrap">
             <div class="skeleton-block"></div>
-            <canvas id="chartDailyCost" height="200"></canvas>
+            <canvas id="chartCostTokens" height="140"></canvas>
+        </div>
+        <div class="legend">
+            <span><i style="background:var(--accent);"></i>{% trans "Cost" %}</span>
+            <span><i style="background:var(--secondary); opacity:.6;"></i>{% trans "Tokens" %}</span>
         </div>
         {% else %}
         <div class="chart-empty-state">
@@ -44,40 +92,44 @@
             <span>{{ chart_empty_msg }}</span>
         </div>
         {% endif %}
+        </div>
     </div>
     <div class="card chart-card">
-        <h2>{% trans "Tokens — last 14 days" %}</h2>
-        {% if has_token_data %}
-        <div class="chart-wrap">
-            <div class="skeleton-block"></div>
-            <canvas id="chartDailyTokens" height="200"></canvas>
-        </div>
-        {% else %}
-        <div class="chart-empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="14" width="3" height="4"/></svg>
-            <span>{{ chart_empty_msg }}</span>
-        </div>
-        {% endif %}
-    </div>
-    <div class="card chart-card">
-        <h2>{% trans "Cost by model" %}</h2>
+        <div class="card-title">{% trans "Cost by model" %}</div>
+        <div class="card-body">
         {% if has_model_data %}
-        <div class="chart-wrap">
-            <div class="skeleton-block"></div>
-            <canvas id="chartByModel" height="200"></canvas>
+        {% for row in model_cost_rows %}
+        <div class="bar-row">
+            <div class="label-row"><span>{{ row.label }}</span><span class="mono">${{ row.value|floatformat:2 }}</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:{{ row.pct }}%; background:{% if forloop.first %}var(--accent){% elif forloop.counter == 2 %}var(--secondary){% else %}var(--color-surface-active){% endif %};"></div></div>
         </div>
+        {% endfor %}
         {% else %}
         <div class="chart-empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="14" width="3" height="4"/></svg>
             <span>{{ chart_empty_msg }}</span>
         </div>
         {% endif %}
+        </div>
     </div>
     <div class="card chart-card">
-        <h2>{% trans "Users by role" %}</h2>
-        <div class="chart-wrap">
-            <div class="skeleton-block"></div>
-            <canvas id="chartByRole" height="200"></canvas>
+        <div class="card-title">{% trans "Users by role" %}</div>
+        <div class="card-body">
+        <div class="donut-wrap">
+            <svg width="88" height="88" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--color-surface-muted)" stroke-width="4.5"/>
+                {% for seg in role_donut %}
+                <circle cx="18" cy="18" r="15.5" fill="none" stroke="{{ seg.color }}" stroke-width="4.5"
+                    stroke-dasharray="{{ seg.dasharray }}" stroke-dashoffset="{{ seg.dashoffset }}"
+                    transform="rotate(-90 18 18)" stroke-linecap="round" class="donut-seg"></circle>
+                {% endfor %}
+            </svg>
+            <div class="donut-legend">
+                {% for seg in role_donut %}
+                <div class="donut-legend-row"><span class="donut-legend-swatch" style="background:{{ seg.color }};"></span>{{ seg.label }} · {{ seg.pct }}%</div>
+                {% endfor %}
+            </div>
+        </div>
         </div>
     </div>
 </div>
@@ -85,10 +137,6 @@
 {{ chart_daily_labels|json_script:"chart-daily-labels" }}
 {{ chart_daily_tokens|json_script:"chart-daily-tokens" }}
 {{ chart_daily_cost|json_script:"chart-daily-cost" }}
-{{ chart_model_labels|json_script:"chart-model-labels" }}
-{{ chart_model_cost|json_script:"chart-model-cost" }}
-{{ chart_role_labels|json_script:"chart-role-labels" }}
-{{ chart_role_values|json_script:"chart-role-values" }}
 <script>
 (function() {
     // json_script (not `|safe`) so admin-controlled free text (e.g. a
@@ -105,77 +153,104 @@
     const explicitTheme = document.documentElement.getAttribute("data-theme");
     const isDark = explicitTheme === "dark" || (explicitTheme !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
     const palette = isDark
-        ? ["#7686f0", "#35c5fb", "#3ddc92", "#f0ac4c", "#a3a9ba", "#ff7a7e", "#c9cede", "#c99ce8"]
+        ? ["#93a5f2", "#00aef0", "#5fbf7a", "#d98f3b", "#aeb2be", "#e27171", "#c9cede", "#c99ce8"]
         : ["#122268", "#00aef0", "#1e8e5a", "#c77700", "#7a8a99", "#d9363e", "#5b6472", "#7a5ea8"];
-    const gridColor = isDark ? "#343a48" : "#dde2ea";
-    const textColor = isDark ? "#a3a9ba" : "#5b6472";
-    Chart.defaults.font.family = "Inter, -apple-system, sans-serif";
+    const gridColor = isDark ? "#262b37" : "#dde2ea";
+    const textColor = isDark ? "#aeb2be" : "#5b6472";
+    Chart.defaults.font.family = "Manrope, -apple-system, sans-serif";
     Chart.defaults.color = textColor;
 
     const dailyLabels = readJSON("chart-daily-labels");
 
-    {% if has_cost_data %}
-    new Chart(document.getElementById("chartDailyCost"), {
-        type: "bar",
+    {% if has_cost_data or has_token_data %}
+    new Chart(document.getElementById("chartCostTokens"), {
+        type: "line",
         data: {
             labels: dailyLabels,
-            datasets: [{ data: readJSON("chart-daily-cost"), backgroundColor: palette[0], borderRadius: 4 }],
+            datasets: [
+                {
+                    label: "{% trans 'Cost' %}", data: readJSON("chart-daily-cost"), borderColor: palette[1],
+                    backgroundColor: palette[1] + "1a", fill: true, tension: 0.35, pointRadius: 0, yAxisID: "y",
+                },
+                {
+                    label: "{% trans 'Tokens' %}", data: readJSON("chart-daily-tokens"), borderColor: palette[0],
+                    backgroundColor: "transparent", borderDash: [4, 3], tension: 0.35, pointRadius: 0, yAxisID: "y1",
+                },
+            ],
         },
         options: {
+            interaction: { mode: "index", intersect: false },
             plugins: { legend: { display: false } },
             scales: {
                 y: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: v => "$" + v } },
+                y1: { beginAtZero: true, position: "right", grid: { display: false } },
                 x: { grid: { display: false } },
             },
         },
     });
     {% endif %}
 
-    {% if has_token_data %}
-    new Chart(document.getElementById("chartDailyTokens"), {
-        type: "line",
-        data: {
-            labels: dailyLabels,
-            datasets: [{
-                data: readJSON("chart-daily-tokens"), borderColor: palette[1], backgroundColor: palette[1] + "33",
-                fill: true, tension: 0.3,
-            }],
-        },
-        options: {
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, grid: { color: gridColor } }, x: { grid: { display: false } } },
-        },
-    });
-    {% endif %}
-
-    {% if has_model_data %}
-    new Chart(document.getElementById("chartByModel"), {
-        type: "bar",
-        data: {
-            labels: readJSON("chart-model-labels"),
-            datasets: [{ data: readJSON("chart-model-cost"), backgroundColor: palette, borderRadius: 4 }],
-        },
-        options: {
-            indexAxis: "y",
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: v => "$" + v } },
-                y: { grid: { display: false } },
-            },
-        },
-    });
-    {% endif %}
-
-    new Chart(document.getElementById("chartByRole"), {
-        type: "doughnut",
-        data: {
-            labels: readJSON("chart-role-labels"),
-            datasets: [{ data: readJSON("chart-role-values"), backgroundColor: palette }],
-        },
-        options: { plugins: { legend: { position: "bottom" } } },
-    });
-
     document.querySelectorAll(".chart-wrap").forEach((wrap) => wrap.classList.add("chart-loaded"));
+
+    // ---- entrance: a quiet stagger across the KPI row, then the chart row ----
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function animateEntrance() {
+        const groups = [document.querySelectorAll(".kpi-card"), document.querySelectorAll(".mt-5.panel"), document.querySelectorAll(".chart-row .card")];
+        let delay = 0;
+        groups.forEach((list) => {
+            list.forEach((el, i) => {
+                el.style.opacity = "0";
+                el.style.transform = "translateY(10px)";
+                el.style.transition = "opacity .5s var(--ease), transform .5s var(--ease)";
+                setTimeout(() => {
+                    el.style.opacity = "1";
+                    el.style.transform = "translateY(0)";
+                    // Clear the inline styles once settled - left in place they'd
+                    // permanently out-specificity the CSS :hover lift on these cards.
+                    setTimeout(() => {
+                        el.style.opacity = "";
+                        el.style.transform = "";
+                        el.style.transition = "";
+                    }, 520);
+                }, delay + i * 55);
+            });
+            delay += list.length * 55 + 80;
+        });
+    }
+
+    // ---- KPI values count up from 0 to their server-rendered target ----
+    function animateNumbers() {
+        document.querySelectorAll(".kpi-value[data-target]").forEach((el, i) => {
+            const target = el.getAttribute("data-target");
+            const suffix = el.getAttribute("data-suffix") || "";
+            const numeric = parseFloat(target.replace(/[^0-9.]/g, "")) || 0;
+            const prefix = target.trim().startsWith("$") ? "$" : "";
+            const start = performance.now() + i * 55;
+            function frame(now) {
+                const p = Math.min(Math.max((now - start) / 650, 0), 1);
+                const eased = 1 - Math.pow(1 - p, 3);
+                const val = numeric * eased;
+                const shown = numeric >= 1000 ? Math.round(val).toLocaleString() : (numeric % 1 ? val.toFixed(1) : Math.round(val));
+                el.textContent = prefix + shown + suffix;
+                if (p < 1) requestAnimationFrame(frame); else el.textContent = target + suffix;
+            }
+            requestAnimationFrame(frame);
+        });
+    }
+
+    // ---- bar-fills and sparklines draw in from zero ----
+    function animateBars() {
+        document.querySelectorAll(".bar-track .bar-fill").forEach((el) => {
+            const w = el.style.width; el.style.width = "0%";
+            setTimeout(() => { el.style.width = w; }, 150);
+        });
+        document.querySelectorAll(".spark div").forEach((el, i) => {
+            const h = el.style.height; el.style.height = "0%";
+            setTimeout(() => { el.style.height = h; }, 200 + i * 40);
+        });
+    }
+
+    if (!reduceMotion) { animateEntrance(); animateNumbers(); animateBars(); }
 })();
 </script>
 {% endblock %}

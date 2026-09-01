@@ -1,5 +1,6 @@
 import logging
 import re
+from urllib.parse import quote
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
@@ -63,7 +64,7 @@ def chat_home(request, conversation_id=None):
         conversation = _owned_conversation_or_404(request, conversation_id)
 
     from governance.models import Plan
-    from governance.plans import get_plan_status
+    from governance.plans import get_plan_status, get_request_count_status, has_feature
 
     available_models = models_visible_to_user(request.user)
     plan_status = get_plan_status(request.user)
@@ -79,6 +80,8 @@ def chat_home(request, conversation_id=None):
         "model_rows": _model_catalog_rows(available_models, upgrade_plan_choices),
         "plan_status": plan_status,
         "usage": get_usage_status(request.user, conversation=conversation),
+        "request_count": get_request_count_status(request.user, conversation=conversation),
+        "can_select_model": has_feature(request.user, "model_selection"),
         "can_request_upgrade": bool(plan_status["plan"]),
         "upgrade_plan_choices": upgrade_plan_choices,
     }
@@ -190,7 +193,11 @@ def create_conversation(request):
         return redirect("chat:chat_home")
 
     conversation = Conversation.objects.create(user=request.user, title=_("New chat"))
-    return redirect("chat:chat_conversation", conversation_id=conversation.id)
+    url = reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id})
+    starter_text = request.POST.get("starter_text", "").strip()
+    if starter_text:
+        url = f"{url}?starter={quote(starter_text)}"
+    return redirect(url)
 
 
 @login_required
@@ -273,8 +280,16 @@ def post_message(request, conversation_id):
 
     # Only offer a manually-picked model if it's actually one this user is
     # currently allowed to use — otherwise silently fall back to auto-routing
-    # rather than trusting a stale/tampered value from the form.
+    # rather than trusting a stale/tampered value from the form. Same
+    # reasoning for the plan-level model_selection flag: the dropdown is
+    # already hidden client-side when a plan disallows it (see chat_home's
+    # can_select_model), but a POSTed model_id shouldn't be trusted just
+    # because the UI that would normally set it wasn't shown.
+    from governance.plans import has_feature
+
     model_id = request.POST.get("model_id", "").strip()
+    if model_id and not has_feature(request.user, "model_selection"):
+        model_id = ""
     if model_id and not models_visible_to_user(request.user).filter(id=model_id).exists():
         model_id = ""
 

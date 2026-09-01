@@ -1,12 +1,13 @@
-{% load i18n %}
+{% load i18n governance_extras %}
 <div class="filter-result-count">{% blocktrans count counter=logs|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> event{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> events{% endblocktrans %}</div>
 <table class="data">
     <thead>
-        <tr><th>{% trans "Time" %}</th><th>{% trans "Actor" %}</th><th>{% trans "Action" %}</th><th>{% trans "Target" %}</th><th>{% trans "Old" %}</th><th>{% trans "New" %}</th></tr>
+        <tr><th style="width:1.5rem;"></th><th>{% trans "Time" %}</th><th>{% trans "Actor" %}</th><th>{% trans "Action" %}</th><th>{% trans "Target" %}</th><th>{% trans "Old" %}</th><th>{% trans "New" %}</th></tr>
     </thead>
     <tbody>
         {% for log in logs %}
         <tr>
+            <td><span class="log-dot log-dot-{{ log.action_type|audit_severity }}" title="{{ log.action_type|audit_severity }}"></span></td>
             <td class="text-muted mono">{{ log.timestamp|date:"Y-m-d H:i" }}</td>
             <td>{{ log.actor|default:"—" }}</td>
             <td><span class="badge badge-muted">{{ log.action_type }}</span></td>
@@ -15,7 +16,7 @@
             <td class="text-muted">{{ log.new_value|truncatechars:40 }}</td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="6">{% trans "No audit events match your search/filters." %}</td></tr>
+        <tr class="empty-state-row"><td colspan="7">{% trans "No audit events match your search/filters." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

@@ -18,6 +18,14 @@ KNOWN_FEATURE_FLAGS = [
     ("tools", "Tool/function calling"),
     ("priority_queue", "Priority request queue"),
     ("long_context", "Long-context requests"),
+    # Unlike the flags above (informational only, no enforcement point yet),
+    # this one IS enforced - see governance/plans.py::has_feature and its use
+    # in chat/views.py::chat_home. Existing plans were backfilled to True by
+    # migration 0010 so this addition doesn't silently take the dropdown away
+    # from anyone already relying on it; a newly created plan defaults to
+    # unchecked/off like every other flag in this list, requiring an explicit
+    # opt-in.
+    ("model_selection", "Manual model selection"),
 ]
 
 # ---------- Role-wide feature visibility ----------

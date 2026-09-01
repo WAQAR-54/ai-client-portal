@@ -1,0 +1,28 @@
+{% load i18n %}
+{% if query|length < 2 %}
+<div class="form-hint" style="padding:0.6rem 0.75rem;">{% trans "Type at least 2 characters…" %}</div>
+{% elif not results_users and not results_plans and not results_logs %}
+<div class="form-hint" style="padding:0.6rem 0.75rem;">{% trans "No matches." %}</div>
+{% else %}
+    {% if results_users %}
+    <div class="model-select-group-label">{% trans "Users" %}</div>
+    {% for u in results_users %}
+    <a class="model-select-option" href="{% url 'governance:users' %}?search={{ u.email|urlencode }}">{{ u.email }}</a>
+    {% endfor %}
+    {% endif %}
+    {% if results_plans %}
+    <div class="model-select-group-label">{% trans "Plans" %}</div>
+    {% for p in results_plans %}
+    <a class="model-select-option" href="{% url 'governance:plans' %}">{{ p.name }}</a>
+    {% endfor %}
+    {% endif %}
+    {% if results_logs %}
+    <div class="model-select-group-label">{% trans "Audit log" %}</div>
+    {% for log in results_logs %}
+    <a class="model-select-option" href="{% url 'governance:audit_logs' %}?search={{ log.action_type|urlencode }}">
+        <span class="mono" style="font-size:0.8rem;">{{ log.action_type }}</span>
+        <span class="text-faint" style="font-size:0.78rem;"> — {{ log.actor|default:"—" }}</span>
+    </a>
+    {% endfor %}
+    {% endif %}
+{% endif %}

@@ -1,39 +1,68 @@
 {% extends "base.html" %}
 {% load i18n %}
 {% block title %}{% trans "Users" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block admin_page_title %}{% trans "Users" %}{% endblock %}
 {% block content %}
-<div class="card" style="overflow-x:auto;">
-    <h1>{% trans "Users" %}</h1>
-    <p>{% trans "Change a user's role, department, or access — everything here takes effect immediately." %}</p>
-
-    {% url 'governance:users' as filter_url %}
-    <form class="filter-toolbar">
-        <div class="filter-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search name or email...' %}"
-                   hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
-        </div>
-        <select name="role" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
-            <option value="">{% trans "All roles" %}</option>
-            {% for value, label in roles %}
-            <option value="{{ value }}" {% if role_filter == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </select>
-        <select name="status" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
-            <option value="">{% trans "All statuses" %}</option>
-            <option value="active" {% if status_filter == "active" %}selected{% endif %}>{% trans "Active" %}</option>
-            <option value="suspended" {% if status_filter == "suspended" %}selected{% endif %}>{% trans "Suspended" %}</option>
-        </select>
-        <select name="plan" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
-            <option value="">{% trans "All plans" %}</option>
-            {% for p in plans %}
-            <option value="{{ p.id }}" {% if plan_filter == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>
-            {% endfor %}
-        </select>
-    </form>
-
-    <div id="users-table">
-        {% include "governance/_users_table.html" %}
-    </div>
+<div class="admin-eyebrow">{{ total_count|default:"" }} {% trans "total users" %}</div>
+<div class="page-head-row" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.25rem;">
+    <h1 style="margin-bottom:0;">{% trans "Users" %}</h1>
 </div>
+<p class="text-muted">{% trans "Change a user's role, department, or access — everything here takes effect immediately." %}</p>
+
+{% url 'governance:users' as filter_url %}
+<form class="filter-toolbar" id="users-filter-form">
+    <div class="filter-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="input" type="search" name="search" value="{{ search }}" placeholder="{% trans 'Search name or email...' %}"
+               hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="input changed delay:300ms, search" hx-include="closest form">
+    </div>
+    <select name="role" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+        <option value="">{% trans "All roles" %}</option>
+        {% for value, label in roles %}
+        <option value="{{ value }}" {% if role_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <select name="status" hx-get="{{ filter_url }}" hx-target="#users-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+        <option value="">{% trans "All statuses" %}</option>
+        <option value="active" {% if status_filter == "active" %}selected{% endif %}>{% trans "Active" %}</option>
+        <option value="suspended" {% if status_filter == "suspended" %}selected{% endif %}>{% trans "Suspended" %}</option>
+    </select>
+</form>
+
+<div class="filter-row mt-3" id="plan-filter-chips">
+    <div class="filter-indicator" data-indicator-for="#plan-filter-chips" data-indicator-axis="x"></div>
+    <button type="button" class="filter-chip{% if not plan_filter %} active{% endif %}"
+            hx-get="{{ filter_url }}" hx-vals='{"plan": ""}' hx-include="#users-filter-form"
+            hx-target="#users-table" hx-push-url="true"
+            onclick="portalActivateFilterChip(this)">{% trans "All" %}</button>
+    {% for p in plans %}
+    <button type="button" class="filter-chip{% if plan_filter == p.id|stringformat:'s' %} active{% endif %}"
+            hx-get="{{ filter_url }}" hx-vals='{"plan": "{{ p.id }}"}' hx-include="#users-filter-form"
+            hx-target="#users-table" hx-push-url="true"
+            onclick="portalActivateFilterChip(this)">{{ p.name }}</button>
+    {% endfor %}
+</div>
+
+{% comment %}
+overflow-x:auto (not overflow:hidden) directly on the htmx-swap target itself, not a
+wrapper div - htmx's default innerHTML swap replaces everything INSIDE #users-table, so
+any wrapper element placed inside it would be destroyed on the first filter/search swap.
+overflow-y:hidden still clips the table to the card's rounded corners on this one axis.
+{% endcomment %}
+<div class="card mt-4" style="padding:0; overflow-x:auto; overflow-y:hidden;" id="users-table">
+    {% include "governance/_users_table.html" %}
+</div>
+<script>
+// The chip row itself is never htmx-swapped (only #users-table is), so the
+// active/indicator state has to be updated client-side immediately rather
+// than waiting on a full page re-render - same reasoning as the reference
+// mockup's filter chips, which are a real SPA behavior here too since only
+// the table target changes.
+function portalActivateFilterChip(chipEl) {
+    var row = chipEl.closest(".filter-row");
+    row.querySelectorAll(".filter-chip").forEach(function(c) { c.classList.remove("active"); });
+    chipEl.classList.add("active");
+    portalMoveIndicator(row.querySelector(".filter-indicator"), chipEl, "x");
+}
+</script>
 {% endblock %}

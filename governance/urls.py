@@ -6,6 +6,7 @@ app_name = "governance"
 
 urlpatterns = [
     path("", views.DashboardView.as_view(), name="dashboard"),
+    path("search/", views.global_search, name="global_search"),
     path("my-team/", views.ManagerDashboardView.as_view(), name="manager_dashboard"),
     path("users/", views.UserListView.as_view(), name="users"),
     path("users/<int:user_id>/toggle-active/", views.toggle_user_active, name="toggle_user_active"),

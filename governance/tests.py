@@ -402,9 +402,9 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.assertIn(b"No usage yet", response.content)
 
     def test_dashboard_chart_data_cannot_break_out_of_script_tag(self):
-        """A model_name containing "</script>" must never let the dashboard's
-        chart data terminate the real <script> block early - regression test
-        for the chart-data-XSS fix (json_script instead of |safe)."""
+        """A model_name containing "</script>" must never let it inject a real
+        <script> tag - the "Cost by model" card renders it server-side via
+        Django's normal HTML autoescaping (it's no longer JS-chart-driven)."""
         conversation = Conversation.objects.create(user=self.user, title="c")
         model = ModelConfig.objects.create(
             provider=ModelConfig.Provider.OPENAI,
@@ -428,7 +428,7 @@ class GovernanceRBACAndAuditTests(TestCase):
         body = response.content.decode()
 
         self.assertNotIn("<script>alert(1)</script>", body)
-        self.assertIn("\\u003C/script\\u003E", body)
+        self.assertIn("&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;", body)
 
     def test_change_user_role_writes_audit_log(self):
         """Promoting to Manager requires a Team (Section 1B) - the request

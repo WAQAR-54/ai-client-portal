@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal — reference UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink-0:#0E1015; --ink-1:#12151C; --ink-2:#1A1E28; --ink-3:#232836;
+    --hairline:#262B37; --hairline-strong:#3A4152;
+    --text-hi:#EDEEF2; --text-mid:#AEB2BE; --text-lo:#6C7280;
+    --accent:#00AEF0; --accent-dim:#0F3D52;
+    --secondary-text:#93A5F2; --secondary-bg:#122268;
+    --warn:#D98F3B; --warn-dim:#3D2F18;
+    --green:#5FBF7A; --green-dim:#1B3324;
+    --red:#E27171; --red-dim:#3A1E1E;
+    --ease:cubic-bezier(0.16,1,0.3,1); --ease-soft:cubic-bezier(0.4,0,0.2,1); --ease-spring:cubic-bezier(0.34,1.56,0.64,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  ::selection{background:rgba(0,174,240,0.25);}
+  body{background:var(--ink-0);color:var(--text-hi);font-family:'Inter',sans-serif;height:100vh;overflow:hidden;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  .view-toggle{
+    position:fixed;top:14px;left:14px;z-index:50;display:flex;
+    background:var(--ink-2);border:1px solid var(--hairline-strong);border-radius:20px;padding:3px;gap:2px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.3);
+  }
+  .view-toggle-indicator{position:absolute;top:3px;bottom:3px;left:3px;border-radius:16px;background:var(--ink-3);transition:transform .35s var(--ease),width .35s var(--ease);z-index:0;}
+  .view-btn{position:relative;z-index:1;font-size:12px;padding:6px 13px;border-radius:16px;color:var(--text-lo);cursor:pointer;transition:color .2s var(--ease-soft);user-select:none;}
+  .view-btn.active{color:var(--text-hi);}
+  .view-btn:hover:not(.active){color:var(--text-mid);}
+
+  .app{position:relative;height:100vh;width:100vw;}
+  .view{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity .25s var(--ease-soft);}
+  .view.active{opacity:1;pointer-events:auto;}
+
+  .shell{display:grid;grid-template-columns:256px 1fr;height:100vh;position:relative;}
+  .ambient{position:absolute;top:-120px;left:256px;width:820px;height:520px;background:radial-gradient(ellipse at center, rgba(0,174,240,0.10) 0%, rgba(0,174,240,0.035) 40%, transparent 72%);pointer-events:none;z-index:0;}
+
+  /* ---- shared sidebar chrome ---- */
+  .sidebar{background:var(--ink-1);border-right:1px solid var(--hairline);display:flex;flex-direction:column;padding:18px 12px;position:relative;z-index:1;}
+  .brand{display:flex;align-items:center;gap:9px;padding:2px 6px 22px;}
+  .brand-mark{width:24px;height:24px;border-radius:6px;background:var(--secondary-bg);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:var(--accent);}
+  .brand-name{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:500;}
+  .brand-badge{font-size:10px;color:var(--text-lo);border:1px solid var(--hairline-strong);padding:2px 7px;border-radius:10px;margin-left:auto;}
+  .section-label{font-size:11px;color:var(--text-lo);padding:0 8px 7px;}
+  .thread-gap{height:16px;}
+  .sidebar-footer{margin-top:auto;border-top:1px solid var(--hairline);padding-top:14px;display:flex;align-items:center;gap:10px;}
+  .avatar{width:27px;height:27px;border-radius:50%;background:var(--secondary-bg);color:var(--secondary-text);font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .plan-tag{font-size:11px;color:var(--text-lo);}
+  .footer-name{font-size:13px;color:var(--text-hi);}
+
+  /* ---- chat-only sidebar bits ---- */
+  .new-chat-btn{display:flex;align-items:center;gap:8px;background:var(--ink-2);border:1px solid var(--hairline-strong);color:var(--text-hi);font-size:13px;padding:9px 12px;border-radius:8px;cursor:pointer;margin-bottom:20px;transition:border-color .15s ease,background .15s ease;}
+  .new-chat-btn:hover{border-color:var(--hairline-strong);background:var(--ink-3);}
+  .new-chat-btn svg{width:14px;height:14px;flex-shrink:0;}
+  .thread-list{display:flex;flex-direction:column;gap:1px;}
+  .thread-item{display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:7px;font-size:13px;color:var(--text-mid);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .12s ease,color .12s ease;}
+  .thread-item:hover{background:var(--ink-2);color:var(--text-hi);}
+  .thread-item.active{background:var(--ink-3);color:var(--text-hi);}
+  .thread-item .pin-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;}
+
+  /* ---- chat main ---- */
+  .main{display:flex;flex-direction:column;height:100vh;position:relative;z-index:1;}
+  .topbar{height:54px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;justify-content:space-between;padding:0 22px;flex-shrink:0;}
+  .model-switch{display:flex;align-items:center;gap:9px;background:var(--ink-2);border:1px solid var(--hairline-strong);padding:6px 10px;border-radius:20px;cursor:pointer;transition:border-color .15s ease;position:relative;}
+  .model-switch:hover{border-color:var(--accent-dim);}
+  .model-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 5px rgba(0,174,240,0.7);}
+  .model-name{font-size:13px;font-weight:500;}
+  .model-switch svg{width:12px;height:12px;color:var(--text-lo);transition:transform .15s ease;}
+  .model-switch.open svg{transform:rotate(180deg);}
+  .model-dropdown{position:absolute;top:calc(100% + 6px);left:0;width:210px;background:var(--ink-2);border:1px solid var(--hairline-strong);border-radius:10px;padding:5px;display:none;box-shadow:0 12px 28px rgba(0,0,0,0.35);}
+  .model-dropdown.show{display:block;}
+  .model-option{display:flex;align-items:center;justify-content:space-between;padding:8px 9px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--text-mid);}
+  .model-option:hover{background:var(--ink-3);color:var(--text-hi);}
+  .model-option .tag{font-size:10px;color:var(--text-lo);}
+  .topbar-right{display:flex;align-items:center;gap:12px;}
+  .usage-pill{font-size:11px;color:var(--text-lo);border:1px solid var(--hairline);padding:5px 10px;border-radius:14px;}
+  .usage-pill span{color:var(--text-mid);}
+  .canvas{flex:1;overflow-y:auto;padding:36px 0 20px;display:flex;justify-content:center;}
+  .canvas-inner{width:100%;max-width:660px;padding:0 20px;}
+  .hero{margin-top:56px;}
+  .hero-eyebrow{font-size:12px;color:var(--secondary-text);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+  .hero-eyebrow::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--secondary-text);}
+  .hero-title{font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:500;line-height:1.28;max-width:500px;letter-spacing:-0.2px;}
+  .hero-sub{font-size:14px;color:var(--text-mid);margin-top:12px;max-width:450px;line-height:1.65;}
+  .quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:30px;}
+  .quick-card{background:var(--ink-2);border:1px solid var(--hairline);border-radius:10px;padding:13px 15px;cursor:pointer;transition:border-color .15s ease,background .15s ease;}
+  .quick-card:hover{border-color:var(--hairline-strong);background:var(--ink-3);}
+  .quick-card-title{font-size:13px;font-weight:500;margin-bottom:3px;}
+  .quick-card-sub{font-size:12px;color:var(--text-lo);}
+  .thread{display:none;}
+  .thread.show{display:block;}
+  .msg{display:flex;gap:11px;margin-bottom:24px;opacity:0;animation:rise .32s ease forwards;}
+  @keyframes rise{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  .msg-avatar{width:25px;height:25px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;margin-top:1px;}
+  .msg-avatar.user{background:var(--ink-3);color:var(--text-mid);}
+  .msg-avatar.model{background:var(--accent-dim);color:var(--accent);}
+  .msg-body{font-size:14.5px;line-height:1.65;color:var(--text-hi);padding-top:3px;}
+  .msg-meta{font-size:11px;color:var(--text-lo);margin-bottom:5px;}
+  .typing{display:flex;gap:4px;padding-top:7px;}
+  .typing span{width:5px;height:5px;border-radius:50%;background:var(--text-lo);animation:blink 1.1s infinite ease-in-out;}
+  .typing span:nth-child(2){animation-delay:.15s;} .typing span:nth-child(3){animation-delay:.3s;}
+  @keyframes blink{0%,80%,100%{opacity:.25;}40%{opacity:1;}}
+  .composer-wrap{display:flex;justify-content:center;padding:0 0 20px;flex-shrink:0;}
+  .composer{width:100%;max-width:660px;margin:0 20px;background:var(--ink-2);border:1px solid var(--hairline-strong);border-radius:14px;padding:12px 14px 10px;transition:border-color .15s ease,box-shadow .15s ease;}
+  .composer.focused{border-color:var(--accent-dim);box-shadow:0 0 0 3px rgba(0,174,240,0.06);}
+  .composer textarea{width:100%;background:transparent;border:none;outline:none;resize:none;color:var(--text-hi);font-family:'Inter',sans-serif;font-size:14px;line-height:1.5;height:24px;}
+  .composer textarea::placeholder{color:var(--text-lo);}
+  .composer-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px;}
+  .composer-chips{display:flex;gap:6px;}
+  .chip{font-size:11px;color:var(--text-mid);border:1px solid var(--hairline);padding:4px 10px;border-radius:12px;cursor:pointer;transition:all .12s ease;}
+  .chip:hover{border-color:var(--hairline-strong);}
+  .chip.active{color:var(--accent);border-color:var(--accent-dim);background:rgba(0,174,240,0.08);}
+  .send-btn{width:29px;height:29px;border-radius:8px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .1s ease,opacity .15s ease;}
+  .send-btn:hover{transform:scale(1.05);}
+  .send-btn:active{transform:scale(0.94);}
+  .send-btn svg{width:14px;height:14px;}
+
+  /* ================= ADMIN ================= */
+  .admin-nav-wrap{position:relative;}
+  .nav-indicator{position:absolute;left:0;right:0;top:0;height:0;border-radius:7px;background:var(--ink-3);transition:transform .32s var(--ease),height .2s var(--ease-soft);z-index:0;pointer-events:none;}
+  .nav-list{display:flex;flex-direction:column;gap:1px;position:relative;z-index:1;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 9px;border-radius:7px;font-size:13px;color:var(--text-mid);cursor:pointer;transition:color .15s var(--ease-soft),padding-left .15s var(--ease-soft);position:relative;z-index:1;}
+  .nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:.8;transition:opacity .15s ease,color .15s ease;}
+  .nav-item:hover{color:var(--text-hi);padding-left:12px;}
+  .nav-item.active{color:var(--text-hi);}
+  .nav-item.active svg{opacity:1;color:var(--accent);}
+  .nav-badge{margin-left:auto;font-size:10px;background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:8px;}
+
+  .admin-main{display:flex;flex-direction:column;height:100vh;position:relative;z-index:1;}
+  .admin-topbar{height:54px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;justify-content:space-between;padding:0 26px;flex-shrink:0;}
+  .admin-title{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:500;}
+  .admin-search{display:flex;align-items:center;gap:8px;background:var(--ink-2);border:1px solid var(--hairline);border-radius:8px;padding:6px 12px;width:240px;transition:border-color .2s var(--ease-soft);}
+  .admin-search:focus-within{border-color:var(--hairline-strong);}
+  .admin-search svg{width:14px;height:14px;color:var(--text-lo);flex-shrink:0;}
+  .admin-search input{background:transparent;border:none;outline:none;color:var(--text-hi);font-size:12.5px;width:100%;}
+  .admin-search input::placeholder{color:var(--text-lo);}
+  .admin-search-clear{width:14px;height:14px;color:var(--text-lo);cursor:pointer;flex-shrink:0;opacity:0;transform:scale(.7);transition:opacity .15s var(--ease-soft),transform .15s var(--ease-soft);pointer-events:none;}
+  .admin-search-clear.show{opacity:1;transform:scale(1);pointer-events:auto;}
+  .admin-search-clear:hover{color:var(--text-hi);}
+  .admin-body{flex:1;overflow-y:auto;padding:28px 32px 40px;}
+  .admin-page{display:none;animation:pagefade .3s var(--ease-soft) forwards;}
+  .admin-page.show{display:block;}
+  @keyframes pagefade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  .admin-eyebrow{font-size:12px;color:var(--secondary-text);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .admin-eyebrow::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--secondary-text);}
+  .admin-heading{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:500;margin-bottom:24px;}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+  .kpi-card{background:var(--ink-1);border:1px solid var(--hairline);border-radius:12px;padding:16px 18px;transition:border-color .2s var(--ease-soft),transform .2s var(--ease);animation:rise .45s var(--ease) both;}
+  .kpi-card:nth-child(1){animation-delay:.02s} .kpi-card:nth-child(2){animation-delay:.07s} .kpi-card:nth-child(3){animation-delay:.12s} .kpi-card:nth-child(4){animation-delay:.17s}
+  .kpi-card:hover{border-color:var(--hairline-strong);transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,0.28);}
+  .kpi-label{font-size:12px;color:var(--text-lo);margin-bottom:8px;}
+  .kpi-value{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:500;margin-bottom:8px;}
+  .kpi-delta{font-size:11px;display:flex;align-items:center;gap:4px;}
+  .kpi-delta.up{color:var(--green);} .kpi-delta.warn{color:var(--warn);}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:10px;}
+  .spark div{flex:1;background:var(--hairline-strong);border-radius:1px;transition:background .2s ease;}
+  .kpi-card:hover .spark div{background:var(--accent-dim);}
+
+  .panel{background:var(--ink-1);border:1px solid var(--hairline);border-radius:12px;overflow:hidden;margin-bottom:20px;}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--hairline);}
+  .panel-head-title{font-size:13.5px;font-weight:500;}
+  .panel-action{font-size:12px;color:var(--text-lo);cursor:pointer;transition:color .15s var(--ease-soft);}
+  .panel-action:hover{color:var(--accent);}
+
+  table{width:100%;border-collapse:collapse;}
+  th{text-align:left;font-size:11px;color:var(--text-lo);font-weight:500;padding:10px 18px;border-bottom:1px solid var(--hairline);}
+  td{font-size:13px;padding:12px 18px;border-bottom:1px solid var(--hairline);color:var(--text-mid);}
+  tr:last-child td{border-bottom:none;}
+  tr{transition:background .15s var(--ease-soft), opacity .3s var(--ease-soft), max-height .35s var(--ease-soft), padding .35s var(--ease-soft);}
+  tbody tr{opacity:0;animation:rise .4s var(--ease) both;}
+  tbody tr:nth-child(1){animation-delay:.03s} tbody tr:nth-child(2){animation-delay:.08s} tbody tr:nth-child(3){animation-delay:.13s}
+  tbody tr:nth-child(4){animation-delay:.18s} tbody tr:nth-child(5){animation-delay:.23s} tbody tr:nth-child(6){animation-delay:.28s}
+  tbody tr:hover{background:var(--ink-2);}
+  tbody{display:table-row-group;transition:opacity .15s var(--ease-soft);}
+  tbody.fading{opacity:0;}
+  tr.collapsing{opacity:0 !important;max-height:0 !important;}
+  tr.collapsing td{padding-top:0;padding-bottom:0;}
+  td.name{color:var(--text-hi);}
+  .badge{font-size:11px;padding:3px 9px;border-radius:10px;display:inline-block;}
+  .badge.demo{background:var(--ink-3);color:var(--text-mid);}
+  .badge.basic{background:var(--secondary-bg);color:var(--secondary-text);}
+  .badge.advanced{background:var(--warn-dim);color:var(--warn);}
+  .badge.full{background:var(--green-dim);color:var(--green);}
+  .badge.active-status{background:var(--green-dim);color:var(--green);}
+  .badge.expired{background:var(--red-dim);color:var(--red);}
+  .row-btn{font-size:11px;color:var(--text-lo);border:1px solid var(--hairline);padding:4px 10px;border-radius:7px;cursor:pointer;transition:border-color .15s var(--ease-soft),color .15s var(--ease-soft);}
+  .row-btn:hover{border-color:var(--accent-dim);color:var(--accent);}
+
+  select.plan-select{
+    background:var(--ink-2);color:var(--text-mid);border:1px solid var(--hairline);border-radius:6px;
+    font-size:12px;padding:4px 8px;cursor:pointer;transition:border-color .15s ease;
+  }
+  select.plan-select:hover{border-color:var(--hairline-strong);}
+
+  .filter-row{display:flex;gap:2px;margin-bottom:16px;position:relative;background:var(--ink-1);border:1px solid var(--hairline);border-radius:16px;padding:3px;width:max-content;}
+  .filter-indicator{position:absolute;top:3px;bottom:3px;left:3px;border-radius:13px;background:var(--ink-3);transition:transform .3s var(--ease),width .3s var(--ease);z-index:0;}
+  .filter-chip{position:relative;z-index:1;font-size:12px;color:var(--text-mid);padding:6px 13px;border-radius:13px;cursor:pointer;transition:color .2s var(--ease-soft);}
+  .filter-chip.active{color:var(--accent);}
+  .filter-chip:hover:not(.active){color:var(--text-hi);}
+
+  .plan-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .plan-card{background:var(--ink-1);border:1px solid var(--hairline);border-radius:12px;padding:18px;transition:border-color .2s var(--ease-soft),transform .2s var(--ease);}
+  .plan-card:hover{border-color:var(--hairline-strong);transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,0.28);}
+  .plan-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .plan-card-title{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:500;}
+  .plan-edit{font-size:11px;color:var(--text-lo);cursor:pointer;transition:color .15s ease;}
+  .plan-edit:hover{color:var(--accent);}
+  .plan-row{display:flex;justify-content:space-between;font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--hairline);color:var(--text-mid);}
+  .plan-row:last-child{border-bottom:none;}
+  .plan-row span:last-child{color:var(--text-hi);}
+  .feat-list{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;}
+  .feat-tag{font-size:10.5px;padding:3px 8px;border-radius:8px;}
+  .feat-tag.on{background:var(--green-dim);color:var(--green);}
+  .feat-tag.off{background:var(--ink-2);color:var(--text-lo);}
+
+  .model-list{display:flex;flex-direction:column;}
+  .model-row{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--hairline);}
+  .model-row:last-child{border-bottom:none;}
+  .model-icon{width:32px;height:32px;border-radius:8px;background:var(--ink-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text-mid);flex-shrink:0;}
+  .model-info{flex:1;}
+  .model-info-name{font-size:13.5px;color:var(--text-hi);font-weight:500;}
+  .model-info-sub{font-size:11.5px;color:var(--text-lo);margin-top:2px;}
+  .model-cost{font-size:12.5px;color:var(--text-mid);width:110px;}
+  .toggle{width:36px;height:20px;border-radius:12px;background:var(--hairline-strong);position:relative;cursor:pointer;transition:background .25s var(--ease-soft);flex-shrink:0;}
+  .toggle.on{background:var(--accent);}
+  .toggle-knob{width:16px;height:16px;border-radius:50%;background:var(--text-hi);position:absolute;top:2px;left:2px;transition:transform .35s var(--ease-spring);}
+  .toggle.on .toggle-knob{transform:translateX(16px);}
+
+  .bar-chart{display:flex;align-items:flex-end;gap:10px;height:140px;padding:10px 4px 0;}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .bar-fill{width:100%;background:var(--ink-3);border-radius:4px 4px 0 0;transition:background .2s ease;position:relative;}
+  .bar-col:hover .bar-fill{background:var(--accent-dim);}
+  .bar-label{font-size:10.5px;color:var(--text-lo);}
+  .budget-bar{height:8px;background:var(--ink-2);border-radius:4px;overflow:hidden;margin-top:10px;}
+  .budget-fill{height:100%;background:var(--warn);border-radius:4px;}
+
+  .log-item{display:flex;gap:12px;padding:13px 18px;border-bottom:1px solid var(--hairline);}
+  .log-item:last-child{border-bottom:none;}
+  .log-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+  .log-dot.info{background:var(--secondary-text);} .log-dot.warn{background:var(--warn);} .log-dot.danger{background:var(--red);}
+  .log-text{font-size:13px;color:var(--text-hi);}
+  .log-meta{font-size:11px;color:var(--text-lo);margin-top:3px;}
+
+  /* ---- header action button ---- */
+  .btn-primary{background:var(--accent);color:#0A1440;border:none;padding:8px 15px;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:500;transition:transform .15s var(--ease),background .15s ease;}
+  .btn-primary:hover{transform:scale(1.03);}
+  .btn-primary:active{transform:scale(0.97);}
+  .btn-secondary{background:transparent;border:1px solid var(--hairline-strong);color:var(--text-mid);padding:8px 15px;border-radius:8px;font-size:12.5px;cursor:pointer;transition:color .15s ease,border-color .15s ease;}
+  .btn-secondary:hover{color:var(--text-hi);border-color:var(--text-lo);}
+  .page-head-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .page-head-row .admin-heading{margin-bottom:0;}
+
+  /* ---- modal ---- */
+  .modal-overlay{position:fixed;inset:0;background:rgba(8,9,12,0.6);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .2s var(--ease-soft);}
+  .modal-overlay.show{opacity:1;pointer-events:auto;}
+  .modal-box{background:var(--ink-1);border:1px solid var(--hairline-strong);border-radius:14px;width:460px;max-width:90vw;max-height:82vh;overflow-y:auto;transform:translateY(12px) scale(.97);transition:transform .28s var(--ease);box-shadow:0 30px 70px rgba(0,0,0,0.55);}
+  .modal-overlay.show .modal-box{transform:translateY(0) scale(1);}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--hairline);}
+  .modal-title{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:500;}
+  .modal-close{cursor:pointer;color:var(--text-lo);width:18px;height:18px;transition:color .15s ease;}
+  .modal-close:hover{color:var(--text-hi);}
+  .modal-body{padding:18px 20px;display:flex;flex-direction:column;gap:14px;}
+  .modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--hairline);}
+  .form-group{display:flex;flex-direction:column;gap:6px;}
+  .form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .form-label{font-size:12px;color:var(--text-lo);}
+  .form-input,.form-select{background:var(--ink-2);border:1px solid var(--hairline);border-radius:8px;padding:8px 10px;color:var(--text-hi);font-size:13px;font-family:'Inter',sans-serif;transition:border-color .15s ease;width:100%;}
+  .form-input:focus,.form-select:focus{outline:none;border-color:var(--accent-dim);}
+  .form-hint{font-size:11px;color:var(--text-lo);}
+  .check-row{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text-mid);padding:6px 0;cursor:pointer;}
+  .check-row input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;}
+  .divider-label{font-size:11px;color:var(--text-lo);margin-top:4px;}
+  .feature-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline);}
+  .feature-toggle-row:last-child{border-bottom:none;}
+  .feature-toggle-row span{font-size:13px;color:var(--text-mid);}
+
+  /* ---- fetch models flow ---- */
+  .provider-tabs{display:flex;gap:2px;background:var(--ink-2);border:1px solid var(--hairline);border-radius:10px;padding:3px;}
+  .provider-tab{flex:1;text-align:center;font-size:12.5px;padding:7px 0;border-radius:8px;color:var(--text-mid);cursor:pointer;transition:background .2s var(--ease-soft),color .2s var(--ease-soft);}
+  .provider-tab.active{background:var(--ink-3);color:var(--text-hi);}
+  .fetch-spinner{display:none;align-items:center;gap:8px;font-size:12.5px;color:var(--text-lo);padding:10px 0;}
+  .fetch-spinner.show{display:flex;}
+  .spin-icon{width:14px;height:14px;border:2px solid var(--hairline-strong);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .fetched-list{display:none;flex-direction:column;gap:10px;}
+  .fetched-list.show{display:flex;}
+  .fetched-item{background:var(--ink-2);border:1px solid var(--hairline);border-radius:10px;padding:11px 12px;opacity:0;animation:rise .3s var(--ease) both;}
+  .fetched-item-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
+  .fetched-item-head span{font-size:13px;font-weight:500;color:var(--text-hi);}
+  .price-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-left:24px;}
+  .price-inputs input{background:var(--ink-3);border:1px solid var(--hairline);border-radius:6px;padding:6px 8px;color:var(--text-mid);font-size:12px;width:100%;}
+  .price-inputs input:focus{outline:none;border-color:var(--accent-dim);color:var(--text-hi);}
+
+  .new-row-flash{animation:flashIn .9s var(--ease-soft);}
+  @keyframes flashIn{0%{background:rgba(0,174,240,0.14);}100%{background:transparent;}}
+</style>
+</head>
+<body>
+
+<div class="view-toggle">
+  <div class="view-toggle-indicator" id="viewIndicator"></div>
+  <div class="view-btn active" id="tabChat" onclick="switchView('chat')">Portal</div>
+  <div class="view-btn" id="tabAdmin" onclick="switchView('admin')">Admin</div>
+</div>
+
+<div class="app">
+
+  <!-- ================= CHAT (v2, unchanged) ================= -->
+  <div class="view active" id="viewChat">
+    <div class="shell">
+      <div class="ambient"></div>
+      <div class="sidebar">
+        <div class="brand"><div class="brand-mark">P</div><div class="brand-name">Portal</div></div>
+        <button class="new-chat-btn" onclick="resetToLanding()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          New conversation
+        </button>
+        <div class="section-label">Pinned</div>
+        <div class="thread-list"><div class="thread-item"><span class="pin-dot"></span>Q3 budget routing logic</div></div>
+        <div class="thread-gap"></div>
+        <div class="section-label">Today</div>
+        <div class="thread-list">
+          <div class="thread-item active">Plan tier migration plan</div>
+          <div class="thread-item">Model access edge cases</div>
+          <div class="thread-item">Sentry alert triage</div>
+          <div class="thread-item">Grandfathering existing users</div>
+        </div>
+        <div class="sidebar-footer">
+          <div class="avatar">MA</div>
+          <div><div class="footer-name">M. Ahmed</div><div class="plan-tag">Admin · Full access</div></div>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="topbar">
+          <div class="model-switch" id="modelSwitch" onclick="toggleDropdown(event)">
+            <div class="model-dot"></div>
+            <div class="model-name" id="modelName">Sonnet 5</div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <div class="model-dropdown" id="modelDropdown">
+              <div class="model-option" onclick="selectModel('Sonnet 5')">Sonnet 5 <span class="tag">balanced</span></div>
+              <div class="model-option" onclick="selectModel('GPT-5.6 Terra')">GPT-5.6 Terra <span class="tag">balanced</span></div>
+              <div class="model-option" onclick="selectModel('Haiku 4.5')">Haiku 4.5 <span class="tag">fast</span></div>
+            </div>
+          </div>
+          <div class="topbar-right"><div class="usage-pill"><span>142</span> / 200 requests today</div></div>
+        </div>
+
+        <div class="canvas" id="canvas">
+          <div class="canvas-inner">
+            <div class="hero" id="hero">
+              <div class="hero-eyebrow">Route any model, one workspace</div>
+              <div class="hero-title">What are we routing<br>through today?</div>
+              <div class="hero-sub">Chat with any allowed model, compare responses, and keep every conversation inside your team's budget and access rules.</div>
+              <div class="quick-grid">
+                <div class="quick-card" onclick="startFromPrompt('Compare how two models answer the same question')"><div class="quick-card-title">Compare two models</div><div class="quick-card-sub">Send one prompt, see both answers</div></div>
+                <div class="quick-card" onclick="startFromPrompt('Summarize this document and pull out the key points')"><div class="quick-card-title">Summarize a document</div><div class="quick-card-sub">Upload and get key points</div></div>
+                <div class="quick-card" onclick="startFromPrompt('Draft a first pass of this report')"><div class="quick-card-title">Draft a report</div><div class="quick-card-sub">Structured first pass, ready to edit</div></div>
+                <div class="quick-card" onclick="startFromPrompt('Review this code and flag issues')"><div class="quick-card-title">Review this code</div><div class="quick-card-sub">Paste a snippet or a file</div></div>
+              </div>
+            </div>
+            <div class="thread" id="thread"></div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer" id="composer">
+            <textarea id="input" placeholder="Ask anything, or paste a document to start" rows="1"></textarea>
+            <div class="composer-footer">
+              <div class="composer-chips">
+                <div class="chip active" data-chip="Sonnet 5">Sonnet 5</div>
+                <div class="chip" data-chip="GPT-5.6 Terra">GPT-5.6 Terra</div>
+                <div class="chip" data-chip="Haiku 4.5">Haiku 4.5</div>
+              </div>
+              <button class="send-btn" aria-label="Send" onclick="sendMessage()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#0A1440" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= ADMIN (expanded console) ================= -->
+  <div class="view" id="viewAdmin">
+    <div class="shell">
+      <div class="ambient" style="background:radial-gradient(ellipse at center, rgba(18,34,104,0.16) 0%, rgba(18,34,104,0.05) 40%, transparent 72%);"></div>
+      <div class="sidebar">
+        <div class="brand"><div class="brand-mark">P</div><div class="brand-name">Portal</div><div class="brand-badge">Admin</div></div>
+
+        <div class="admin-nav-wrap" id="adminNavWrap">
+          <div class="nav-indicator" id="navIndicator"></div>
+
+          <div class="section-label">Overview</div>
+          <div class="nav-list">
+            <div class="nav-item active" data-page="dashboard" onclick="switchAdminPage('dashboard', this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+              Dashboard
+            </div>
+            <div class="nav-item" data-page="users" onclick="switchAdminPage('users', this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              Users <span class="nav-badge">6</span>
+            </div>
+            <div class="nav-item" data-page="plans" onclick="switchAdminPage('plans', this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+              Plans &amp; tiers
+            </div>
+            <div class="nav-item" data-page="models" onclick="switchAdminPage('models', this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path></svg>
+              Models
+            </div>
+            <div class="nav-item" data-page="billing" onclick="switchAdminPage('billing', this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
+              Usage &amp; billing
+            </div>
+          </div>
+
+          <div class="thread-gap"></div>
+          <div class="section-label">System</div>
+          <div class="nav-list">
+            <div class="nav-item" data-page="audit" onclick="switchAdminPage('audit', this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+              Audit log
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="avatar">MA</div>
+          <div><div class="footer-name">M. Ahmed</div><div class="plan-tag">Admin · Full access</div></div>
+        </div>
+      </div>
+
+      <div class="admin-main">
+        <div class="admin-topbar">
+          <div class="admin-title" id="adminTitle">Dashboard</div>
+          <div class="admin-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input placeholder="Search users, plans, logs" id="globalSearch" oninput="onSearchInput()">
+            <svg class="admin-search-clear" id="searchClear" onclick="clearSearch()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </div>
+        </div>
+
+        <div class="admin-body" id="adminBody">
+
+          <!-- DASHBOARD -->
+          <div class="admin-page show" id="page-dashboard">
+            <div class="admin-eyebrow">Last updated a minute ago</div>
+            <div class="admin-heading">Good afternoon, Ahmed</div>
+
+            <div class="kpi-grid" id="kpiGrid">
+              <div class="kpi-card"><div class="kpi-label">Active users</div><div class="kpi-value" data-target="318">0</div><div class="kpi-delta up">↑ 12 this week</div>
+                <div class="spark">
+                  <div style="height:40%"></div><div style="height:55%"></div><div style="height:45%"></div><div style="height:70%"></div><div style="height:60%"></div><div style="height:85%"></div><div style="height:100%"></div>
+                </div>
+              </div>
+              <div class="kpi-card"><div class="kpi-label">Demo → paid conversion</div><div class="kpi-value" data-target="24" data-suffix="%">0%</div><div class="kpi-delta up">↑ 3pts vs last month</div>
+                <div class="spark"><div style="height:30%"></div><div style="height:35%"></div><div style="height:50%"></div><div style="height:40%"></div><div style="height:60%"></div><div style="height:55%"></div><div style="height:75%"></div></div>
+              </div>
+              <div class="kpi-card"><div class="kpi-label">Requests today</div><div class="kpi-value" data-target="12.4" data-suffix="k">0k</div><div class="kpi-delta warn">Nearing daily budget</div>
+                <div class="spark"><div style="height:60%"></div><div style="height:65%"></div><div style="height:70%"></div><div style="height:80%"></div><div style="height:75%"></div><div style="height:90%"></div><div style="height:95%"></div></div>
+              </div>
+              <div class="kpi-card"><div class="kpi-label">Pending upgrade requests</div><div class="kpi-value" data-target="6">0</div><div class="kpi-delta warn">Needs review</div>
+                <div class="spark"><div style="height:20%"></div><div style="height:40%"></div><div style="height:30%"></div><div style="height:50%"></div><div style="height:35%"></div><div style="height:45%"></div><div style="height:60%"></div></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head"><div class="panel-head-title">Recent plan requests</div><div class="panel-action" onclick="switchAdminPage('users', document.querySelector('[data-page=users]'))">View all</div></div>
+              <table>
+                <thead><tr><th>User</th><th>Current plan</th><th>Requested</th><th>Usage (7d)</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td class="name">Sara Khan</td><td><span class="badge demo">Demo</span></td><td><span class="badge basic">Basic</span></td><td>92 requests</td><td><span class="row-btn" onclick="approveRow(this)">Approve</span></td></tr>
+                  <tr><td class="name">Hamza Iqbal</td><td><span class="badge basic">Basic</span></td><td><span class="badge advanced">Advanced</span></td><td>340 requests</td><td><span class="row-btn" onclick="approveRow(this)">Approve</span></td></tr>
+                  <tr><td class="name">Ayesha Noor</td><td><span class="badge advanced">Advanced</span></td><td><span class="badge full">Full</span></td><td>612 requests</td><td><span class="row-btn" onclick="approveRow(this)">Approve</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- USERS -->
+          <div class="admin-page" id="page-users">
+            <div class="admin-eyebrow">318 total users</div>
+            <div class="page-head-row">
+              <div class="admin-heading">Users</div>
+              <div class="btn-primary" onclick="openInviteModal()">Invite user</div>
+            </div>
+            <div class="filter-row" id="filterRow">
+              <div class="filter-indicator" id="filterIndicator"></div>
+              <div class="filter-chip active" data-filter="all" onclick="setUserFilter('all', this)">All</div>
+              <div class="filter-chip" data-filter="demo" onclick="setUserFilter('demo', this)">Demo</div>
+              <div class="filter-chip" data-filter="basic" onclick="setUserFilter('basic', this)">Basic</div>
+              <div class="filter-chip" data-filter="advanced" onclick="setUserFilter('advanced', this)">Advanced</div>
+              <div class="filter-chip" data-filter="full" onclick="setUserFilter('full', this)">Full</div>
+            </div>
+            <div class="panel">
+              <table>
+                <thead><tr><th>Name</th><th>Plan</th><th>Status</th><th>Requests (30d)</th><th>Change plan</th></tr></thead>
+                <tbody id="userTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- PLANS -->
+          <div class="admin-page" id="page-plans">
+            <div class="admin-eyebrow">4 active tiers</div>
+            <div class="admin-heading">Plans &amp; tiers</div>
+            <div class="plan-grid">
+              <div class="plan-card" id="plancard-demo">
+                <div class="plan-card-head"><div class="plan-card-title">Demo</div><div class="plan-edit" onclick="openEditPlanModal('demo')">Edit</div></div>
+                <div class="plan-row"><span>Models</span><span id="demo-models">Haiku, GPT-4o-mini</span></div>
+                <div class="plan-row"><span>Requests</span><span id="demo-requests">10 / day</span></div>
+                <div class="plan-row"><span>Context</span><span id="demo-context">4k tokens</span></div>
+                <div class="plan-row"><span>Expiry</span><span id="demo-expiry">2 days</span></div>
+                <div class="feat-list" id="demo-feats"><span class="feat-tag off">File upload</span><span class="feat-tag off">Tools</span></div>
+              </div>
+              <div class="plan-card" id="plancard-basic">
+                <div class="plan-card-head"><div class="plan-card-title">Basic</div><div class="plan-edit" onclick="openEditPlanModal('basic')">Edit</div></div>
+                <div class="plan-row"><span>Models</span><span id="basic-models">Sonnet, GPT-4o</span></div>
+                <div class="plan-row"><span>Requests</span><span id="basic-requests">50 / day</span></div>
+                <div class="plan-row"><span>Context</span><span id="basic-context">16k tokens</span></div>
+                <div class="plan-row"><span>Expiry</span><span id="basic-expiry">No expiry</span></div>
+                <div class="feat-list" id="basic-feats"><span class="feat-tag on">File upload</span><span class="feat-tag off">Tools</span></div>
+              </div>
+              <div class="plan-card" id="plancard-advanced">
+                <div class="plan-card-head"><div class="plan-card-title">Advanced</div><div class="plan-edit" onclick="openEditPlanModal('advanced')">Edit</div></div>
+                <div class="plan-row"><span>Models</span><span id="advanced-models">Opus, GPT-5.6 Terra</span></div>
+                <div class="plan-row"><span>Requests</span><span id="advanced-requests">200 / day</span></div>
+                <div class="plan-row"><span>Context</span><span id="advanced-context">64k tokens</span></div>
+                <div class="plan-row"><span>Expiry</span><span id="advanced-expiry">No expiry</span></div>
+                <div class="feat-list" id="advanced-feats"><span class="feat-tag on">File upload</span><span class="feat-tag on">Tools</span></div>
+              </div>
+              <div class="plan-card" id="plancard-full">
+                <div class="plan-card-head"><div class="plan-card-title">Full</div><div class="plan-edit" onclick="openEditPlanModal('full')">Edit</div></div>
+                <div class="plan-row"><span>Models</span><span id="full-models">All available</span></div>
+                <div class="plan-row"><span>Requests</span><span id="full-requests">1000 / day</span></div>
+                <div class="plan-row"><span>Context</span><span id="full-context">128k tokens</span></div>
+                <div class="plan-row"><span>Expiry</span><span id="full-expiry">No expiry</span></div>
+                <div class="feat-list" id="full-feats"><span class="feat-tag on">File upload</span><span class="feat-tag on">Tools</span><span class="feat-tag on">Priority</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODELS -->
+          <div class="admin-page" id="page-models">
+            <div class="admin-eyebrow">7 models connected</div>
+            <div class="page-head-row">
+              <div class="admin-heading">Models</div>
+              <div class="btn-primary" onclick="openAddModelModal()">Add model</div>
+            </div>
+            <div class="panel">
+              <div class="model-list" id="modelList">
+                <div class="model-row"><div class="model-icon">S5</div><div class="model-info"><div class="model-info-name">Claude Sonnet 5</div><div class="model-info-sub">Anthropic · balanced</div></div><div class="model-cost">$2 / $10 per MTok</div><div class="toggle on" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+                <div class="model-row"><div class="model-icon">O5</div><div class="model-info"><div class="model-info-name">Claude Opus 5</div><div class="model-info-sub">Anthropic · high reasoning</div></div><div class="model-cost">$5 / $25 per MTok</div><div class="toggle on" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+                <div class="model-row"><div class="model-icon">H4</div><div class="model-info"><div class="model-info-name">Claude Haiku 4.5</div><div class="model-info-sub">Anthropic · fast</div></div><div class="model-cost">$1 / $5 per MTok</div><div class="toggle on" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+                <div class="model-row"><div class="model-icon">GT</div><div class="model-info"><div class="model-info-name">GPT-5.6 Terra</div><div class="model-info-sub">OpenAI · balanced</div></div><div class="model-cost">Provider rate</div><div class="toggle on" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+                <div class="model-row"><div class="model-icon">GS</div><div class="model-info"><div class="model-info-name">GPT-5.6 Sol</div><div class="model-info-sub">OpenAI · high reasoning</div></div><div class="model-cost">Provider rate</div><div class="toggle" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+                <div class="model-row"><div class="model-icon">GL</div><div class="model-info"><div class="model-info-name">GPT-5.6 Luna</div><div class="model-info-sub">OpenAI · fast</div></div><div class="model-cost">Provider rate</div><div class="toggle on" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+                <div class="model-row"><div class="model-icon">F5</div><div class="model-info"><div class="model-info-name">Claude Fable 5</div><div class="model-info-sub">Anthropic · premium</div></div><div class="model-cost">$10 / $50 per MTok</div><div class="toggle" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BILLING -->
+          <div class="admin-page" id="page-billing">
+            <div class="admin-eyebrow">August 2026</div>
+            <div class="admin-heading">Usage &amp; billing</div>
+            <div class="panel" style="padding:20px 24px;">
+              <div class="panel-head-title" style="margin-bottom:4px;">Monthly budget</div>
+              <div style="font-size:12px;color:var(--text-lo);">$8,240 of $10,000 used</div>
+              <div class="budget-bar"><div class="budget-fill" style="width:82%"></div></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-head-title">Requests by day, this week</div></div>
+              <div class="bar-chart" style="padding:16px 24px 20px;">
+                <div class="bar-col"><div class="bar-fill" style="height:60px"></div><div class="bar-label">Mon</div></div>
+                <div class="bar-col"><div class="bar-fill" style="height:80px"></div><div class="bar-label">Tue</div></div>
+                <div class="bar-col"><div class="bar-fill" style="height:70px"></div><div class="bar-label">Wed</div></div>
+                <div class="bar-col"><div class="bar-fill" style="height:95px"></div><div class="bar-label">Thu</div></div>
+                <div class="bar-col"><div class="bar-fill" style="height:85px"></div><div class="bar-label">Fri</div></div>
+                <div class="bar-col"><div class="bar-fill" style="height:40px"></div><div class="bar-label">Sat</div></div>
+                <div class="bar-col"><div class="bar-fill" style="height:30px"></div><div class="bar-label">Sun</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AUDIT -->
+          <div class="admin-page" id="page-audit">
+            <div class="admin-eyebrow">Last 24 hours</div>
+            <div class="admin-heading">Audit log</div>
+            <div class="panel">
+              <div class="log-item"><div class="log-dot info"></div><div><div class="log-text">M. Ahmed approved Sara Khan's upgrade to Basic</div><div class="log-meta">2 minutes ago</div></div></div>
+              <div class="log-item"><div class="log-dot warn"></div><div><div class="log-text">Fable 5 disabled for all non-Full plans</div><div class="log-meta">41 minutes ago</div></div></div>
+              <div class="log-item"><div class="log-dot info"></div><div><div class="log-text">Bulk plan assignment run for 12 users</div><div class="log-meta">3 hours ago</div></div></div>
+              <div class="log-item"><div class="log-dot danger"></div><div><div class="log-text">Demo user exceeded daily request limit, blocked automatically</div><div class="log-meta">5 hours ago</div></div></div>
+              <div class="log-item"><div class="log-dot info"></div><div><div class="log-text">M. Ahmed updated Advanced plan context limit to 64k</div><div class="log-meta">Yesterday</div></div></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== INVITE USER MODAL ===== -->
+<div class="modal-overlay" id="inviteModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title">Invite user</div>
+      <svg class="modal-close" onclick="closeModal('inviteModal')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="form-label">Full name</div>
+        <input class="form-input" id="inviteName" placeholder="e.g. Zara Malik">
+      </div>
+      <div class="form-group">
+        <div class="form-label">Work email</div>
+        <input class="form-input" id="inviteEmail" placeholder="name@company.com">
+      </div>
+      <div class="form-group">
+        <div class="form-label">Starting plan</div>
+        <select class="form-select" id="invitePlan">
+          <option value="demo">Demo</option>
+          <option value="basic">Basic</option>
+          <option value="advanced">Advanced</option>
+          <option value="full">Full</option>
+        </select>
+        <div class="form-hint">New signups are auto-assigned to Demo by default. Choose another plan to skip the demo period for this user.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="btn-secondary" onclick="closeModal('inviteModal')">Cancel</div>
+      <div class="btn-primary" onclick="submitInvite()">Send invite</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ADD MODEL MODAL ===== -->
+<div class="modal-overlay" id="addModelModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title">Add model</div>
+      <svg class="modal-close" onclick="closeModal('addModelModal')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="form-label">Provider</div>
+        <div class="provider-tabs">
+          <div class="provider-tab active" id="tabAnthropic" onclick="setProvider('anthropic')">Anthropic</div>
+          <div class="provider-tab" id="tabOpenAI" onclick="setProvider('openai')">OpenAI</div>
+        </div>
+      </div>
+      <div class="btn-secondary" style="text-align:center;" onclick="fetchModels()">Fetch available models</div>
+      <div class="fetch-spinner" id="fetchSpinner"><div class="spin-icon"></div>Checking provider API for new models…</div>
+      <div class="fetched-list" id="fetchedList"></div>
+    </div>
+    <div class="modal-footer">
+      <div class="btn-secondary" onclick="closeModal('addModelModal')">Cancel</div>
+      <div class="btn-primary" onclick="submitAddModels()">Add selected</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== EDIT PLAN MODAL ===== -->
+<div class="modal-overlay" id="editPlanModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title" id="editPlanTitle">Edit plan</div>
+      <svg class="modal-close" onclick="closeModal('editPlanModal')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="form-label">Allowed models</div>
+        <label class="check-row"><input type="checkbox" id="chk-haiku"> Claude Haiku 4.5</label>
+        <label class="check-row"><input type="checkbox" id="chk-sonnet"> Claude Sonnet 5</label>
+        <label class="check-row"><input type="checkbox" id="chk-opus"> Claude Opus 5</label>
+        <label class="check-row"><input type="checkbox" id="chk-fable"> Claude Fable 5</label>
+        <label class="check-row"><input type="checkbox" id="chk-gpt"> GPT-5.6 Terra</label>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <div class="form-label">Requests</div>
+          <input class="form-input" type="number" id="editRequests" min="1">
+        </div>
+        <div class="form-group">
+          <div class="form-label">Per</div>
+          <select class="form-select" id="editPeriod">
+            <option value="session">Session</option>
+            <option value="day">Day</option>
+            <option value="month">Month</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-label">Max context (tokens)</div>
+        <input class="form-input" type="number" id="editContext" step="1000">
+      </div>
+      <div class="form-group">
+        <div class="form-label">Expiry (days, blank = no expiry)</div>
+        <input class="form-input" type="number" id="editExpiry" placeholder="No expiry">
+      </div>
+      <div class="form-group">
+        <div class="form-label">Features</div>
+        <div class="feature-toggle-row"><span>File upload</span><div class="toggle" id="feat-upload" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+        <div class="feature-toggle-row"><span>Tools</span><div class="toggle" id="feat-tools" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+        <div class="feature-toggle-row"><span>Priority queue</span><div class="toggle" id="feat-priority" onclick="toggleModel(this)"><div class="toggle-knob"></div></div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="btn-secondary" onclick="closeModal('editPlanModal')">Cancel</div>
+      <div class="btn-primary" onclick="submitEditPlan()">Save changes</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ---- chat logic (v2, unchanged) ---- */
+  const hero=document.getElementById('hero'), thread=document.getElementById('thread'), canvas=document.getElementById('canvas');
+  const input=document.getElementById('input'), composer=document.getElementById('composer');
+  const modelSwitch=document.getElementById('modelSwitch'), modelDropdown=document.getElementById('modelDropdown'), modelName=document.getElementById('modelName');
+  const chips=document.querySelectorAll('.chip');
+  input.addEventListener('focus',()=>composer.classList.add('focused'));
+  input.addEventListener('blur',()=>composer.classList.remove('focused'));
+  input.addEventListener('input',()=>{input.style.height='24px';input.style.height=Math.min(input.scrollHeight,120)+'px';});
+  input.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
+  chips.forEach(chip=>chip.addEventListener('click',()=>{chips.forEach(c=>c.classList.remove('active'));chip.classList.add('active');modelName.textContent=chip.dataset.chip;}));
+  function toggleDropdown(e){e.stopPropagation();modelDropdown.classList.toggle('show');modelSwitch.classList.toggle('open');}
+  document.addEventListener('click',()=>{modelDropdown.classList.remove('show');modelSwitch.classList.remove('open');});
+  function selectModel(name){modelName.textContent=name;chips.forEach(c=>c.classList.toggle('active',c.dataset.chip===name));}
+  function startFromPrompt(text){input.value=text;sendMessage();}
+  function resetToLanding(){thread.innerHTML='';thread.classList.remove('show');hero.style.display='block';}
+  function sendMessage(){
+    const text=input.value.trim(); if(!text)return;
+    hero.style.display='none'; thread.classList.add('show');
+    const userMsg=document.createElement('div'); userMsg.className='msg';
+    userMsg.innerHTML=`<div class="msg-avatar user">MA</div><div><div class="msg-meta">You</div><div class="msg-body"></div></div>`;
+    userMsg.querySelector('.msg-body').textContent=text; thread.appendChild(userMsg);
+    input.value=''; input.style.height='24px'; canvas.scrollTop=canvas.scrollHeight;
+    const typingMsg=document.createElement('div'); typingMsg.className='msg';
+    typingMsg.innerHTML=`<div class="msg-avatar model">${modelName.textContent[0]}</div><div><div class="msg-meta">${modelName.textContent}</div><div class="typing"><span></span><span></span><span></span></div></div>`;
+    thread.appendChild(typingMsg); canvas.scrollTop=canvas.scrollHeight;
+    setTimeout(()=>{
+      typingMsg.querySelector('div:last-child').outerHTML='<div class="msg-body">Here\'s a first pass based on your request. In a live build, this response would stream in from the selected model, respecting your plan\'s token and rate limits.</div>';
+      canvas.scrollTop=canvas.scrollHeight;
+    },1100);
+  }
+
+  /* ---- view toggle with sliding indicator ---- */
+  function moveViewIndicator(el){
+    const ind=document.getElementById('viewIndicator');
+    ind.style.width=el.offsetWidth+'px';
+    ind.style.transform=`translateX(${el.offsetLeft-3}px)`;
+  }
+  function switchView(name){
+    const chatBtn=document.getElementById('tabChat'), adminBtn=document.getElementById('tabAdmin');
+    chatBtn.classList.toggle('active',name==='chat');
+    adminBtn.classList.toggle('active',name==='admin');
+    document.getElementById('viewChat').classList.toggle('active',name==='chat');
+    document.getElementById('viewAdmin').classList.toggle('active',name==='admin');
+    moveViewIndicator(name==='chat'?chatBtn:adminBtn);
+  }
+
+  /* ---- admin nav with sliding indicator ---- */
+  function moveNavIndicator(el){
+    const wrap=document.getElementById('adminNavWrap');
+    const indicator=document.getElementById('navIndicator');
+    const wrapRect=wrap.getBoundingClientRect();
+    const elRect=el.getBoundingClientRect();
+    indicator.style.transform=`translateY(${elRect.top-wrapRect.top}px)`;
+    indicator.style.height=elRect.height+'px';
+  }
+
+  const pageTitles={dashboard:'Dashboard',users:'Users',plans:'Plans & tiers',models:'Models',billing:'Usage & billing',audit:'Audit log'};
+  function switchAdminPage(page, el){
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    el.classList.add('active');
+    moveNavIndicator(el);
+    document.querySelectorAll('.admin-page').forEach(p=>p.classList.remove('show'));
+    document.getElementById('page-'+page).classList.add('show');
+    document.getElementById('adminTitle').textContent=pageTitles[page];
+    document.getElementById('adminBody').scrollTo({top:0,behavior:'smooth'});
+    if(page==='users'){ renderUsers(); moveFilterIndicator(document.querySelector('.filter-chip.active')); }
+    if(page==='dashboard') animateAllKPIs();
+  }
+
+  /* ---- KPI count-up ---- */
+  function animateValue(el){
+    const target=parseFloat(el.dataset.target);
+    const suffix=el.dataset.suffix||'';
+    const isDecimal=String(el.dataset.target).includes('.');
+    const duration=800;
+    const start=performance.now();
+    function frame(now){
+      const p=Math.min((now-start)/duration,1);
+      const eased=1-Math.pow(1-p,3);
+      const val=target*eased;
+      el.textContent=(isDecimal?val.toFixed(1):Math.round(val))+suffix;
+      if(p<1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  function animateAllKPIs(){
+    document.querySelectorAll('#kpiGrid .kpi-value').forEach(el=>animateValue(el));
+  }
+
+  function approveRow(el){
+    el.textContent='Approved'; el.style.pointerEvents='none'; el.style.color='var(--green)'; el.style.borderColor='var(--green-dim)';
+    const row=el.closest('tr');
+    setTimeout(()=>{
+      row.style.maxHeight=row.offsetHeight+'px';
+      requestAnimationFrame(()=>{ row.classList.add('collapsing'); });
+      setTimeout(()=>row.remove(),380);
+    },700);
+  }
+
+  function toggleModel(el){ el.classList.toggle('on'); }
+
+  const users=[
+    {name:'Sara Khan',plan:'demo',status:'active',reqs:92},
+    {name:'Hamza Iqbal',plan:'basic',status:'active',reqs:340},
+    {name:'Ayesha Noor',plan:'advanced',status:'active',reqs:612},
+    {name:'Bilal Ahmed',plan:'demo',status:'expired',reqs:44},
+    {name:'Fatima Raza',plan:'full',status:'active',reqs:980},
+    {name:'Usman Tariq',plan:'basic',status:'active',reqs:210},
+  ];
+  let currentFilter='all';
+  let searchDebounce=null;
+  function moveFilterIndicator(el){
+    const row=document.getElementById('filterRow');
+    const indicator=document.getElementById('filterIndicator');
+    indicator.style.width=el.offsetWidth+'px';
+    indicator.style.transform=`translateX(${el.offsetLeft-3}px)`;
+  }
+  function setUserFilter(f, el){
+    currentFilter=f;
+    document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active');
+    moveFilterIndicator(el);
+    renderUsers();
+  }
+  function onSearchInput(){
+    const val=document.getElementById('globalSearch').value;
+    document.getElementById('searchClear').classList.toggle('show', val.length>0);
+    clearTimeout(searchDebounce);
+    searchDebounce=setTimeout(renderUsers,120);
+  }
+  function clearSearch(){
+    const input=document.getElementById('globalSearch');
+    input.value=''; input.focus();
+    document.getElementById('searchClear').classList.remove('show');
+    renderUsers();
+  }
+  function renderUsers(){
+    const body=document.getElementById('userTableBody');
+    body.classList.add('fading');
+    setTimeout(()=>{
+      const q=(document.getElementById('globalSearch').value||'').toLowerCase();
+      body.innerHTML='';
+      users.filter(u=>(currentFilter==='all'||u.plan===currentFilter) && u.name.toLowerCase().includes(q)).forEach(u=>{
+        const tr=document.createElement('tr');
+        const statusBadge = u.status==='active' ? '<span class="badge active-status">Active</span>' : '<span class="badge expired">Expired</span>';
+        tr.innerHTML=`<td class="name">${u.name}</td><td><span class="badge ${u.plan}">${u.plan.charAt(0).toUpperCase()+u.plan.slice(1)}</span></td><td>${statusBadge}</td><td>${u.reqs} requests</td>
+          <td><select class="plan-select">
+            <option ${u.plan==='demo'?'selected':''}>Demo</option>
+            <option ${u.plan==='basic'?'selected':''}>Basic</option>
+            <option ${u.plan==='advanced'?'selected':''}>Advanced</option>
+            <option ${u.plan==='full'?'selected':''}>Full</option>
+          </select></td>`;
+        body.appendChild(tr);
+      });
+      body.classList.remove('fading');
+    },130);
+  }
+  renderUsers();
+
+  window.addEventListener('load',()=>{
+    moveViewIndicator(document.getElementById('tabChat'));
+    moveNavIndicator(document.querySelector('[data-page="dashboard"]'));
+    animateAllKPIs();
+  });
+  window.addEventListener('resize',()=>{
+    const activeTab=document.querySelector('.view-btn.active');
+    if(activeTab) moveViewIndicator(activeTab);
+    const activeNav=document.querySelector('.nav-item.active');
+    if(activeNav && document.getElementById('viewAdmin').classList.contains('active')) moveNavIndicator(activeNav);
+  });
+
+  /* ---- modal shell ---- */
+  function openModal(id){ document.getElementById(id).classList.add('show'); }
+  function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+  document.querySelectorAll('.modal-overlay').forEach(ov=>{
+    ov.addEventListener('click',(e)=>{ if(e.target===ov) closeModal(ov.id); });
+  });
+
+  /* ---- invite user ---- */
+  function openInviteModal(){
+    document.getElementById('inviteName').value='';
+    document.getElementById('inviteEmail').value='';
+    document.getElementById('invitePlan').value='demo';
+    openModal('inviteModal');
+  }
+  function submitInvite(){
+    const name=document.getElementById('inviteName').value.trim();
+    const email=document.getElementById('inviteEmail').value.trim();
+    const plan=document.getElementById('invitePlan').value;
+    if(!name || !email){ return; }
+    users.unshift({name:name, plan:plan, status:'active', reqs:0});
+    closeModal('inviteModal');
+    if(currentFilter!=='all' && currentFilter!==plan) setUserFilter('all', document.querySelector('.filter-chip[data-filter="all"]'));
+    else renderUsers();
+    setTimeout(()=>{
+      const firstRow=document.querySelector('#userTableBody tr');
+      if(firstRow) firstRow.classList.add('new-row-flash');
+    },160);
+  }
+
+  /* ---- add model (fetch flow) ---- */
+  let currentProvider='anthropic';
+  const providerCatalog={
+    anthropic:[
+      {id:'m-opus5', name:'Claude Opus 5', sub:'Anthropic · high reasoning', input:5, output:25},
+      {id:'m-fable5', name:'Claude Fable 5', sub:'Anthropic · premium', input:10, output:50}
+    ],
+    openai:[
+      {id:'m-gptsol', name:'GPT-5.6 Sol', sub:'OpenAI · high reasoning', input:null, output:null},
+      {id:'m-gptluna', name:'GPT-5.6 Luna', sub:'OpenAI · fast', input:null, output:null}
+    ]
+  };
+  function openAddModelModal(){
+    document.getElementById('fetchedList').innerHTML='';
+    document.getElementById('fetchedList').classList.remove('show');
+    document.getElementById('fetchSpinner').classList.remove('show');
+    setProvider('anthropic');
+    openModal('addModelModal');
+  }
+  function setProvider(p){
+    currentProvider=p;
+    document.getElementById('tabAnthropic').classList.toggle('active', p==='anthropic');
+    document.getElementById('tabOpenAI').classList.toggle('active', p==='openai');
+    document.getElementById('fetchedList').innerHTML='';
+    document.getElementById('fetchedList').classList.remove('show');
+  }
+  function fetchModels(){
+    const spinner=document.getElementById('fetchSpinner');
+    const list=document.getElementById('fetchedList');
+    list.classList.remove('show'); list.innerHTML='';
+    spinner.classList.add('show');
+    setTimeout(()=>{
+      spinner.classList.remove('show');
+      const models=providerCatalog[currentProvider];
+      models.forEach((m,i)=>{
+        const priceRow = m.input!==null
+          ? `<div class="price-inputs"><input type="number" value="${m.input}" step="0.5" data-role="input" id="${m.id}-in"><input type="number" value="${m.output}" step="0.5" data-role="output" id="${m.id}-out"></div>`
+          : `<div class="price-inputs"><input type="number" placeholder="Input $/MTok" id="${m.id}-in"><input type="number" placeholder="Output $/MTok" id="${m.id}-out"></div>`;
+        const el=document.createElement('div');
+        el.className='fetched-item';
+        el.style.animationDelay=(i*0.06)+'s';
+        el.innerHTML=`<div class="fetched-item-head"><input type="checkbox" id="${m.id}-chk" checked><span>${m.name}</span></div>
+          <div class="form-hint" style="padding-left:24px;margin-bottom:6px;">${m.sub}</div>${priceRow}`;
+        list.appendChild(el);
+      });
+      list.classList.add('show');
+    },900);
+  }
+  function submitAddModels(){
+    const models=providerCatalog[currentProvider];
+    const modelListEl=document.getElementById('modelList');
+    models.forEach(m=>{
+      const chk=document.getElementById(m.id+'-chk');
+      if(chk && chk.checked){
+        const inputPrice=document.getElementById(m.id+'-in').value;
+        const outputPrice=document.getElementById(m.id+'-out').value;
+        const costLabel = inputPrice && outputPrice ? `$${inputPrice} / $${outputPrice} per MTok` : 'Provider rate';
+        const initials=m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+        const row=document.createElement('div');
+        row.className='model-row';
+        row.style.opacity='0'; row.style.animation='rise .35s var(--ease) both';
+        row.innerHTML=`<div class="model-icon">${initials}</div><div class="model-info"><div class="model-info-name">${m.name}</div><div class="model-info-sub">${m.sub}</div></div><div class="model-cost">${costLabel}</div><div class="toggle on" onclick="toggleModel(this)"><div class="toggle-knob"></div></div>`;
+        modelListEl.appendChild(row);
+      }
+    });
+    closeModal('addModelModal');
+  }
+
+  /* ---- edit plan ---- */
+  const planData={
+    demo:{models:['haiku'],requests:10,period:'day',context:4000,expiry:2,features:{upload:false,tools:false,priority:false}},
+    basic:{models:['sonnet'],requests:50,period:'day',context:16000,expiry:'',features:{upload:true,tools:false,priority:false}},
+    advanced:{models:['opus','gpt'],requests:200,period:'day',context:64000,expiry:'',features:{upload:true,tools:true,priority:false}},
+    full:{models:['haiku','sonnet','opus','fable','gpt'],requests:1000,period:'day',context:128000,expiry:'',features:{upload:true,tools:true,priority:true}}
+  };
+  let editingPlan=null;
+  function openEditPlanModal(planId){
+    editingPlan=planId;
+    const d=planData[planId];
+    document.getElementById('editPlanTitle').textContent='Edit '+planId.charAt(0).toUpperCase()+planId.slice(1)+' plan';
+    ['haiku','sonnet','opus','fable','gpt'].forEach(m=>{ document.getElementById('chk-'+m).checked = d.models.includes(m); });
+    document.getElementById('editRequests').value=d.requests;
+    document.getElementById('editPeriod').value=d.period;
+    document.getElementById('editContext').value=d.context;
+    document.getElementById('editExpiry').value=d.expiry;
+    document.getElementById('feat-upload').classList.toggle('on', d.features.upload);
+    document.getElementById('feat-tools').classList.toggle('on', d.features.tools);
+    document.getElementById('feat-priority').classList.toggle('on', d.features.priority);
+    openModal('editPlanModal');
+  }
+  function submitEditPlan(){
+    if(!editingPlan) return;
+    const p=editingPlan;
+    const requests=document.getElementById('editRequests').value;
+    const period=document.getElementById('editPeriod').value;
+    const context=document.getElementById('editContext').value;
+    const expiry=document.getElementById('editExpiry').value;
+    const upload=document.getElementById('feat-upload').classList.contains('on');
+    const tools=document.getElementById('feat-tools').classList.contains('on');
+    const priority=document.getElementById('feat-priority').classList.contains('on');
+
+    document.getElementById(p+'-requests').textContent=`${requests} / ${period}`;
+    document.getElementById(p+'-context').textContent=`${Math.round(context/1000)}k tokens`;
+    document.getElementById(p+'-expiry').textContent=expiry ? `${expiry} days` : 'No expiry';
+
+    const names={haiku:'Haiku',sonnet:'Sonnet',opus:'Opus',fable:'Fable',gpt:'GPT-5.6 Terra'};
+    const selected=['haiku','sonnet','opus','fable','gpt'].filter(m=>document.getElementById('chk-'+m).checked).map(m=>names[m]);
+    document.getElementById(p+'-models').textContent = selected.length ? selected.join(', ') : 'None selected';
+
+    const featEl=document.getElementById(p+'-feats');
+    featEl.innerHTML =
+      `<span class="feat-tag ${upload?'on':'off'}">File upload</span>` +
+      `<span class="feat-tag ${tools?'on':'off'}">Tools</span>` +
+      (priority ? '<span class="feat-tag on">Priority</span>' : '');
+
+    const card=document.getElementById('plancard-'+p);
+    card.style.animation='none'; card.offsetHeight; card.style.animation='rise .4s var(--ease) both';
+    closeModal('editPlanModal');
+  }
+</script>
+</body>
+</html>

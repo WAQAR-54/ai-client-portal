@@ -2,41 +2,56 @@
 {% load i18n %}
 {% block title %}{% trans "Plans" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
-<div class="card" style="overflow-x:auto;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1>{% trans "Plans" %}</h1>
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+        <h1 style="margin-bottom:0;">{% trans "Plans" %}</h1>
         <a href="{% url 'governance:plan_new' %}" class="btn">+ {% trans "New plan" %}</a>
     </div>
     <p>{% trans "A user's Plan sets their model access, limits, and features all at once. Personal overrides on the Limits/Models screens still win over a Plan when set." %}</p>
-    <table class="data">
-        <thead>
-            <tr><th>{% trans "Name" %}</th><th>{% trans "Type" %}</th><th>{% trans "Daily tokens" %}</th><th>{% trans "Per-request" %}</th><th>{% trans "Monthly budget" %}</th><th>{% trans "Models" %}</th><th>{% trans "Features" %}</th><th>{% trans "Status" %}</th><th></th></tr>
-        </thead>
-        <tbody>
-            {% for p in plans %}
-            <tr>
-                <td>
-                    {{ p.name }}
-                    {% if p.is_default %}<span class="badge">{% trans "Default" %}</span>{% endif %}
-                </td>
-                <td>{% if p.is_demo %}<span class="badge badge-muted">{% blocktrans with days=p.demo_duration_days %}Demo · {{ days }}d{% endblocktrans %}</span>{% else %}<span class="text-muted">{% trans "Ongoing" %}</span>{% endif %}</td>
-                <td class="mono">{{ p.daily_token_limit|default:"—" }}</td>
-                <td class="mono text-faint" style="font-size:0.82rem;">{% if p.max_requests_per_period %}{{ p.max_requests_per_period }}/{{ p.get_period_display }}{% else %}—{% endif %}</td>
-                <td class="mono">{% if p.monthly_budget_cap %}${{ p.monthly_budget_cap }}{% else %}—{% endif %}</td>
-                <td class="text-muted">{% blocktrans count counter=p.allowed_models.count %}{{ counter }} model{% plural %}{{ counter }} models{% endblocktrans %}</td>
-                <td class="text-muted">
-                    {% for key, label in p.feature_flags.items %}{% if label %}{{ key }} {% endif %}{% endfor %}
-                </td>
-                <td>
-                    {% if p.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% else %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
-                    {% if not p.is_visible_to_admins %}<span class="badge badge-muted">{% trans "Hidden" %}</span>{% endif %}
-                </td>
-                <td><a href="{% url 'governance:plan_edit' plan_id=p.id %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Edit" %}</a></td>
-            </tr>
-            {% empty %}
-            <tr class="empty-state-row"><td colspan="9">{% trans "No plans yet." %}</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+
+    <div class="plan-grid mt-4" data-stagger data-stagger-items=".plan-card">
+        {% for p in plans %}
+        <div class="plan-card">
+            <div class="plan-card-head">
+                <div class="plan-card-title">{{ p.name }}</div>
+                <button type="button" class="plan-edit"
+                        hx-get="{% url 'governance:plan_edit' plan_id=p.id %}"
+                        hx-target="#editPlanModalBody" hx-swap="innerHTML"
+                        onclick="document.getElementById('editPlanModalTitle').textContent = '{{ p.name|escapejs }}'; portalOpenModal('editPlanModal');">{% trans "Edit" %}</button>
+            </div>
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                {% if p.is_default %}<span class="badge">{% trans "Default" %}</span>{% endif %}
+                {% if p.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% else %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
+                {% if not p.is_visible_to_admins %}<span class="badge badge-muted">{% trans "Hidden" %}</span>{% endif %}
+            </div>
+            <div class="plan-row"><span>{% trans "Type" %}</span><span>{% if p.is_demo %}{% blocktrans with days=p.demo_duration_days %}Demo · {{ days }}d{% endblocktrans %}{% else %}{% trans "Ongoing" %}{% endif %}</span></div>
+            <div class="plan-row"><span>{% trans "Daily tokens" %}</span><span class="mono">{{ p.daily_token_limit|default:"—" }}</span></div>
+            <div class="plan-row"><span>{% trans "Per-request" %}</span><span class="mono">{% if p.max_requests_per_period %}{{ p.max_requests_per_period }}/{{ p.get_period_display }}{% else %}—{% endif %}</span></div>
+            <div class="plan-row"><span>{% trans "Monthly budget" %}</span><span class="mono">{% if p.monthly_budget_cap %}${{ p.monthly_budget_cap }}{% else %}—{% endif %}</span></div>
+            <div class="plan-row"><span>{% trans "Models" %}</span><span>{% blocktrans count counter=p.allowed_models.count %}{{ counter }} model{% plural %}{{ counter }} models{% endblocktrans %}</span></div>
+            <div class="feat-list">
+                {% for key, label in p.feature_flags.items %}
+                <span class="feat-tag {% if label %}on{% else %}off{% endif %}">{{ key }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-faint">{% trans "No plans yet." %}</p>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="modal-overlay" id="editPlanModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="editPlanModalTitle">{% trans "Edit plan" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('editPlanModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="editPlanModalBody">
+            <!-- Populated by htmx from governance:plan_edit -->
+        </div>
+    </div>
 </div>
 {% endblock %}

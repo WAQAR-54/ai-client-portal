@@ -21,6 +21,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 GRACE_PERIOD_DAYS = getattr(settings, "DEMO_GRACE_PERIOD_DAYS", 2)
 
@@ -233,6 +234,35 @@ def check_session_creation_limit(user):
         )
 
 
+def _request_count_window(user, plan, conversation):
+    """(sent_count, window_label) for plan.max_requests_per_period's window -
+    shared by the real enforcement check below and the read-only status
+    snapshot, so the two can never drift on what counts as "sent". Returns
+    (None, None) when this plan has no request-count cap configured, or
+    when period="session" but no conversation was given to count within."""
+    from chat.models import Message
+
+    if plan is None or plan.max_requests_per_period is None or not plan.period:
+        return None, None
+
+    if plan.period == "session":
+        if conversation is None:
+            return None, None
+        sent = conversation.messages.filter(role=Message.Role.USER).count()
+        window_label = _("this conversation")
+    elif plan.period == "day":
+        start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        sent = Message.objects.filter(conversation__user=user, role=Message.Role.USER, created_at__gte=start).count()
+        window_label = _("today")
+    elif plan.period == "month":
+        start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        sent = Message.objects.filter(conversation__user=user, role=Message.Role.USER, created_at__gte=start).count()
+        window_label = _("this month")
+    else:
+        return None, None
+    return sent, window_label
+
+
 def check_request_count_limit(user, conversation):
     """Raise UsageLimitExceeded if sending another message would exceed
     this user's Plan's max_requests_per_period, counted over whatever
@@ -242,25 +272,10 @@ def check_request_count_limit(user, conversation):
     separately (many short messages vs. a few very long ones can each trip
     one cap without tripping the other)."""
     from governance.limits import UsageLimitExceeded
-    from chat.models import Message
 
-    status = get_plan_status(user)
-    plan = status["plan"]
-    if plan is None or plan.max_requests_per_period is None or not plan.period:
-        return
-
-    if plan.period == "session":
-        sent = conversation.messages.filter(role=Message.Role.USER).count()
-        window_label = "this conversation"
-    elif plan.period == "day":
-        start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        sent = Message.objects.filter(conversation__user=user, role=Message.Role.USER, created_at__gte=start).count()
-        window_label = "today"
-    elif plan.period == "month":
-        start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        sent = Message.objects.filter(conversation__user=user, role=Message.Role.USER, created_at__gte=start).count()
-        window_label = "this month"
-    else:
+    plan = get_plan_status(user)["plan"]
+    sent, window_label = _request_count_window(user, plan, conversation)
+    if sent is None:
         return
 
     if sent >= plan.max_requests_per_period:
@@ -269,6 +284,19 @@ def check_request_count_limit(user, conversation):
             f"You've reached your plan's limit of {plan.max_requests_per_period} message(s) per {period_label} "
             f"({window_label}). Try again later or contact your administrator."
         )
+
+
+def get_request_count_status(user, conversation=None):
+    """Read-only {used, cap, window_label} snapshot of this user's request-
+    count usage against their Plan's max_requests_per_period, or None if
+    their plan has no such cap configured. Mirrors check_request_count_limit's
+    window logic without enforcing anything - for the chat header's usage
+    pill, which needs to show a live count without gating anything."""
+    plan = get_plan_status(user)["plan"]
+    sent, window_label = _request_count_window(user, plan, conversation)
+    if sent is None:
+        return None
+    return {"used": sent, "cap": plan.max_requests_per_period, "window_label": window_label}
 
 
 # ~4 characters per token is the standard rough estimate for English text

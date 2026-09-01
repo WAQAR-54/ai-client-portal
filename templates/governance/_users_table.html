@@ -1,103 +1,119 @@
 {% load governance_extras i18n %}
-<div class="filter-result-count">{% blocktrans count counter=users|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> user{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> users{% endblocktrans %}</div>
+<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; padding:var(--space-3) var(--space-4); border-bottom:1px solid var(--color-border);">
+    <div class="filter-result-count" style="margin:0;">{% blocktrans count counter=users|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> user{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> users{% endblocktrans %}</div>
+    <form id="bulk-plan-form" method="post" action="{% url 'governance:bulk_change_plan' %}" style="display:flex; gap:0.5rem; align-items:center;">
+        {% csrf_token %}
+        <span class="text-muted" style="font-size:0.85rem;">{% trans "With selected:" %}</span>
+        <select name="plan_id" style="margin:0; width:auto;">
+            <option value="">{% trans "Choose a plan…" %}</option>
+            {% for p in plans %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn-small btn-ghost">{% trans "Assign plan to selected" %}</button>
+    </form>
+</div>
 
-<form id="bulk-plan-form" method="post" action="{% url 'governance:bulk_change_plan' %}" style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
-    {% csrf_token %}
-    <span class="text-muted" style="font-size:0.85rem;">{% trans "With selected:" %}</span>
-    <select name="plan_id" style="margin:0; width:auto;">
-        <option value="">{% trans "Choose a plan…" %}</option>
-        {% for p in plans %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
-    </select>
-    <button type="submit" class="btn-small btn-ghost">{% trans "Assign plan to selected" %}</button>
-</form>
-
+{% comment %}
+Matches the approved design's exact column set - User, Plan, Status, Requests (30d), Change
+plan - all visible directly in the row, nothing tucked behind hover. Role and Department
+don't fit that structure (the design never needed them), so they've moved out of the row
+entirely into the "⋯" actions menu at the end, alongside Suspend/Activate and the plan-
+override link - real functionality, just relocated instead of hidden behind an interaction.
+{% endcomment %}
 <table class="data">
     <thead>
         <tr>
             <th style="width:2rem;"></th>
-            <th>{% trans "Email" %}</th><th>{% trans "Role" %}</th><th>{% trans "Department" %}</th>
-            <th>{% trans "Plan" %} <a href="?sort=engagement" class="text-faint" style="font-weight:400; text-transform:none; font-size:0.85em;" title="{% trans 'Sort by engagement (fastest limit burn vs. trial time elapsed)' %}">↕ {% trans "engagement" %}</a></th>
-            <th>{% trans "Status" %}</th><th></th>
+            <th>{% trans "User" %}</th>
+            <th>{% trans "Plan" %}</th>
+            <th>{% trans "Status" %}</th>
+            <th>{% trans "Requests (30d)" %}</th>
+            <th>{% trans "Change plan" %}</th>
+            <th style="width:2rem;"></th>
         </tr>
     </thead>
-    <tbody>
+    <tbody data-stagger>
         {% for u in users %}
         {% with info=plan_info|dict_get:u.id %}
         <tr>
-            <td><input type="checkbox" name="user_ids" value="{{ u.id }}" form="bulk-plan-form" style="width:auto;"></td>
-            <td>{{ u.email }}</td>
+            <td><input type="checkbox" name="user_ids" value="{{ u.id }}" form="bulk-plan-form" class="row-checkbox" style="width:auto;"></td>
+            <td class="user-cell-name">{{ u.email }}</td>
             <td>
-                {% if u.role in assignable_roles_values %}
-                <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
-                    {% csrf_token %}
-                    <select name="role" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
-                        {% for value, label in assignable_roles %}
-                        <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
-                {% else %}
-                {# A scoped Admin can only toggle User<->Manager - someone already at Admin/SuperAdmin isn't editable from here at all, not just grayed out. #}
-                <span class="badge badge-muted">{{ u.get_role_display }}</span>
-                {% endif %}
+                {% trans "No plan" as no_plan_label %}
+                <span class="badge {{ info.plan.name|plan_tier_class }}">{{ info.plan.name|default:no_plan_label }}</span>
             </td>
             <td>
-                {% if request.user.is_superadmin %}
-                <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
-                    {% csrf_token %}
-                    <select name="department_id" onchange="this.form.requestSubmit()" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
-                        <option value="">{% trans "— none —" %}</option>
-                        {% for d in departments %}
-                        <option value="{{ d.id }}" {% if u.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
+                {% if not u.is_active %}
+                    <span class="badge badge-danger">{% trans "Suspended" %}</span>
+                {% elif info.state == "expired" %}
+                    <span class="badge badge-danger">{% trans "Expired" %}</span>
+                {% elif info.state == "grace" %}
+                    <span class="badge badge-danger">{% blocktrans with days=info.grace_days_remaining %}Grace: {{ days }}d{% endblocktrans %}</span>
                 {% else %}
-                {# Moving a user between departments is department-structure management - SuperAdmin-only, see governance/views.py::change_user_department. #}
-                <span class="text-muted">{{ u.department.name|default:"—" }}</span>
+                    <span class="badge badge-success">{% trans "Active" %}</span>
                 {% endif %}
             </td>
+            <td class="text-muted">{% blocktrans count counter=info.request_count_30d %}{{ counter }} request{% plural %}{{ counter }} requests{% endblocktrans %}</td>
             <td>
-                <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.35rem; flex-wrap:wrap;">
-                    {% trans "No plan" as no_plan_label %}
-                    <span class="badge badge-muted">{{ info.plan.name|default:no_plan_label }}</span>
-                    {% if info.state == "active" and info.days_remaining is not None %}
-                        <span class="text-faint mono" style="font-size:0.78rem;">{% blocktrans with days=info.days_remaining %}{{ days }}d left{% endblocktrans %}</span>
-                    {% elif info.state == "grace" %}
-                        <span class="badge badge-danger">{% blocktrans with days=info.grace_days_remaining %}Grace: {{ days }}d{% endblocktrans %}</span>
-                    {% elif info.state == "expired" %}
-                        <span class="badge badge-danger">{% trans "Expired" %}</span>
-                    {% endif %}
-                    {% if info.engagement and info.engagement >= 0.8 %}
-                        <span class="badge badge-success" title="{% trans 'Using their limit faster than their trial time is passing' %}">🔥 {{ info.engagement }}x</span>
-                    {% endif %}
-                </div>
-                {% if info.override_count %}
-                <a href="{% url 'governance:user_overrides' user_id=u.id %}" class="text-faint" style="font-size:0.78rem; display:block; margin-bottom:0.35rem;">
-                    {% blocktrans count counter=info.override_count %}{{ counter }} custom override beyond Plan defaults — view/clear{% plural %}{{ counter }} custom overrides beyond Plan defaults — view/clear{% endblocktrans %}
-                </a>
-                {% endif %}
-                <form method="post" action="{% url 'governance:change_user_plan' user_id=u.id %}" style="display:flex; gap:0.3rem;">
+                <form method="post" action="{% url 'governance:change_user_plan' user_id=u.id %}">
                     {% csrf_token %}
-                    <select name="plan_id" style="margin:0; padding:0.4rem 0.6rem; font-size:0.85rem;">
+                    <select name="plan_id" onchange="this.form.requestSubmit()" class="table-select-visible">
                         {% for p in plans %}
                         <option value="{{ p.id }}" {% if info.plan.id == p.id %}selected{% endif %}>{{ p.name }}</option>
                         {% endfor %}
                     </select>
-                    <button type="submit" class="btn-small btn-ghost">{% trans "Change" %}</button>
                 </form>
             </td>
             <td>
-                {% if u.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>
-                {% else %}<span class="badge badge-danger">{% trans "Suspended" %}</span>{% endif %}
-            </td>
-            <td>
-                <form method="post" action="{% url 'governance:toggle_user_active' user_id=u.id %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn-small {% if u.is_active %}btn-danger{% else %}btn-ghost{% endif %}">
-                        {% if u.is_active %}{% trans "Suspend" %}{% else %}{% trans "Activate" %}{% endif %}
-                    </button>
-                </form>
+                <details class="row-menu">
+                    <summary aria-label="{% trans 'More actions' %}">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+                    </summary>
+                    <div class="row-menu-panel">
+                        <div class="row-menu-label">{% trans "Role" %}</div>
+                        {% if u.role in assignable_roles_values %}
+                        <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
+                            {% csrf_token %}
+                            <select name="role" onchange="this.form.requestSubmit()">
+                                {% for value, label in assignable_roles %}
+                                <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% else %}
+                        {# A scoped Admin can only toggle User<->Manager - someone already at Admin/SuperAdmin isn't editable from here at all, not just grayed out. #}
+                        <span class="badge badge-muted">{{ u.get_role_display }}</span>
+                        {% endif %}
+
+                        {% if request.user.is_superadmin %}
+                        <div class="row-menu-label">{% trans "Department" %}</div>
+                        <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
+                            {% csrf_token %}
+                            <select name="department_id" onchange="this.form.requestSubmit()">
+                                <option value="">{% trans "— none —" %}</option>
+                                {% for d in departments %}
+                                <option value="{{ d.id }}" {% if u.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% elif u.department %}
+                        <div class="row-menu-label">{% trans "Department" %}</div>
+                        <div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">{{ u.department.name }}</div>
+                        {% endif %}
+
+                        {% if info.override_count %}
+                        <a href="{% url 'governance:user_overrides' user_id=u.id %}" class="text-faint" style="font-size:0.78rem; display:block; margin-bottom:0.6rem;">
+                            {% blocktrans count counter=info.override_count %}{{ counter }} custom override beyond Plan defaults — view/clear{% plural %}{{ counter }} custom overrides beyond Plan defaults — view/clear{% endblocktrans %}
+                        </a>
+                        {% endif %}
+
+                        <form method="post" action="{% url 'governance:toggle_user_active' user_id=u.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-small {% if u.is_active %}btn-danger{% else %}btn-ghost{% endif %}" style="width:100%;">
+                                {% if u.is_active %}{% trans "Suspend user" %}{% else %}{% trans "Activate user" %}{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                </details>
             </td>
         </tr>
         {% endwith %}

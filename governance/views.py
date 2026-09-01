@@ -1,3 +1,4 @@
+import math
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages as django_messages
@@ -176,10 +177,45 @@ def _org_usage_overview(users=None):
     }
 
 
+@role_required(User.Role.ADMIN)
+@require_GET
+def global_search(request):
+    """Backs the admin topbar's search box - a handful of matches each
+    from Users/Plans/Audit logs, scoped the same way the rest of the admin
+    console is for a department-scoped Admin. Not a full-text index, just
+    icontains across a few fields - fine at this data volume."""
+    query = request.GET.get("q", "").strip()
+    if len(query) < 2:
+        return render(request, "governance/_global_search_results.html", {"query": query})
+
+    users = _scope_users(request, User.objects.filter(email__icontains=query)).order_by("email")[:5]
+    plans = Plan.objects.filter(name__icontains=query).order_by("name")[:5]
+    logs = _scope_audit_logs(request, AuditLog.objects.select_related("actor")).filter(
+        Q(action_type__icontains=query) | Q(actor__email__icontains=query) | Q(target_type__icontains=query)
+    ).order_by("-timestamp")[:5]
+
+    return render(
+        request,
+        "governance/_global_search_results.html",
+        {"query": query, "results_users": users, "results_plans": plans, "results_logs": logs},
+    )
+
+
 class DashboardView(AdminRequiredMixin, TemplateView):
     template_name = "governance/dashboard.html"
 
     def get_context_data(self, **kwargs):
+        local_hour = timezone.localtime().hour
+        if local_hour < 12:
+            greeting_time = _("morning")
+        elif local_hour < 18:
+            greeting_time = _("afternoon")
+        else:
+            greeting_time = _("evening")
+        # No first/last name field on User - the email's local part is the
+        # closest thing to a display name this app has.
+        greeting_name = self.request.user.email.split("@")[0].replace(".", " ").title()
+
         month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         assistant_messages = Message.objects.filter(role=Message.Role.ASSISTANT)
         assistant_messages = _scope_by_user_department(
@@ -214,23 +250,100 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         model_labels = [row["model_used__model_name"] for row in by_model]
         model_cost = [float(row["cost"] or 0) for row in by_model]
 
-        role_counts = scoped_users.values("role").annotate(count=Count("id")).order_by("role")
+        role_counts = scoped_users.values("role").annotate(count=Count("id")).order_by("-count")
         role_labels = [dict(User.Role.choices).get(row["role"], row["role"]) for row in role_counts]
         role_values = [row["count"] for row in role_counts]
 
         scoped_conversations = Conversation.objects.all()
         scoped_conversations = _scope_by_user_department(self.request, scoped_conversations, "user__department_id")
 
+        pending_requests_qs = _scope_by_user_department(
+            self.request,
+            UpgradeRequest.objects.select_related("user", "current_plan", "requested_plan").filter(
+                status=UpgradeRequest.Status.PENDING
+            ),
+        )
+        recent_upgrade_requests = pending_requests_qs.order_by("-created_at")[:5]
+
+        # Sparklines reuse the 14-day series already computed above rather
+        # than running a second aggregation query - last 7 days, normalized
+        # to a 0-100 bar height so the template can render plain divs.
+        def _spark(values):
+            last_7 = values[-7:]
+            peak = max(last_7) or 1
+            return [round(v / peak * 100) for v in last_7]
+
+        # Compact display for large counters ("2.4" + "M") - the KPI count-up
+        # animation reads data-target/data-suffix back apart, so these are
+        # returned as a (number-string, suffix) pair rather than one string.
+        def _compact(value):
+            value = float(value)
+            if value >= 1_000_000:
+                num = f"{value / 1_000_000:.1f}".rstrip("0").rstrip(".")
+                return num, "M"
+            if value >= 1_000:
+                num = f"{value / 1_000:.1f}".rstrip("0").rstrip(".")
+                return num, "K"
+            return f"{int(value):,}", ""
+
+        # Horizontal bar-list rows (admin dashboard "Cost by model" card) -
+        # width % is computed here, once, rather than re-derived client-side.
+        def _bar_rows(labels, values):
+            peak = max(values) if values else 0
+            peak = peak or 1
+            return [{"label": label, "value": value, "pct": round(value / peak * 100)} for label, value in zip(labels, values)]
+
+        # Donut segments (admin dashboard "Users by role" card) - stroke-dasharray/
+        # -dashoffset computed server-side against a fixed r=15.5 circle (matching
+        # the SVG markup in the template) so the template just plugs in numbers.
+        def _donut_segments(labels, values):
+            total = sum(values) or 1
+            circumference = round(2 * math.pi * 15.5, 1)
+            colors = ["var(--secondary)", "var(--accent)", "var(--color-surface-active)", "var(--warn)", "var(--color-danger)"]
+            segments = []
+            offset = 0.0
+            for i, (label, value) in enumerate(zip(labels, values)):
+                seg_len = value / total * circumference
+                segments.append(
+                    {
+                        "label": label,
+                        "pct": round(value / total * 100),
+                        "color": colors[i % len(colors)],
+                        "dasharray": f"{seg_len:.2f} {circumference - seg_len:.2f}",
+                        "dashoffset": round(-offset, 2),
+                    }
+                )
+                offset += seg_len
+            return segments
+
+        tokens_all_time = (
+            assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
+        )
+        tokens_all_time_target, tokens_all_time_suffix = _compact(tokens_all_time)
+        month_tokens_total = month_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
+        month_tokens_target, month_tokens_suffix = _compact(month_tokens_total)
+        cost_all_time = assistant_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0
+        month_cost_total = month_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0
+        users_count = scoped_users.count()
+        conversations_count = scoped_conversations.count()
+
         return super().get_context_data(**kwargs) | {
-            "total_users": scoped_users.count(),
-            "total_conversations": scoped_conversations.count(),
-            "total_tokens_all_time": assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))[
-                "total"
-            ]
-            or 0,
-            "total_cost_all_time": assistant_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0,
-            "month_tokens": month_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0,
-            "month_cost": month_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0,
+            "total_users": users_count,
+            "total_conversations": conversations_count,
+            "total_users_display": f"{users_count:,}",
+            "total_conversations_display": f"{conversations_count:,}",
+            "total_tokens_all_time": tokens_all_time,
+            "total_cost_all_time": cost_all_time,
+            "month_tokens": month_tokens_total,
+            "month_cost": month_cost_total,
+            "tokens_all_time_target": tokens_all_time_target,
+            "tokens_all_time_suffix": tokens_all_time_suffix,
+            "cost_all_time_display": f"${cost_all_time:,.2f}",
+            "month_tokens_target": month_tokens_target,
+            "month_tokens_suffix": month_tokens_suffix,
+            "month_cost_display": f"${month_cost_total:,.2f}",
+            "model_cost_rows": _bar_rows(model_labels, model_cost),
+            "role_donut": _donut_segments(role_labels, role_values),
             "enabled_model_count": ModelConfig.objects.filter(is_enabled=True).count(),
             # Passed as plain Python values, not pre-`json.dumps`'d strings —
             # rendered via the `json_script` template filter (not `|safe`)
@@ -248,6 +361,12 @@ class DashboardView(AdminRequiredMixin, TemplateView):
             "has_model_data": bool(model_labels),
             "org_usage": _org_usage_overview(scoped_users),
             "is_department_scoped": _is_scoped_admin(self.request.user),
+            "pending_upgrade_requests": pending_requests_qs.count(),
+            "recent_upgrade_requests": recent_upgrade_requests,
+            "spark_tokens": _spark(daily_tokens),
+            "spark_cost": _spark(daily_cost),
+            "greeting_time": greeting_time,
+            "greeting_name": greeting_name,
         }
 
 
@@ -281,6 +400,20 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         users = list(ctx[self.context_object_name])
+
+        # One aggregated query for the whole page's "Requests (30d)" column,
+        # not one query per row - counts the user's own messages (not the
+        # assistant's replies) sent in the last 30 days.
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
+        request_counts = dict(
+            Message.objects.filter(
+                role=Message.Role.USER, created_at__gte=thirty_days_ago, conversation__user__in=users
+            )
+            .values("conversation__user_id")
+            .annotate(count=Count("id"))
+            .values_list("conversation__user_id", "count")
+        )
+
         plan_info = {}
         for u in users:
             status = get_plan_status(u)
@@ -288,6 +421,7 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
                 **status,
                 "engagement": engagement_score(u),
                 "override_count": count_user_overrides(u),
+                "request_count_30d": request_counts.get(u.id, 0),
             }
 
         if self.request.GET.get("sort") == "engagement":
@@ -612,6 +746,11 @@ class PlanListView(SuperAdminRequiredMixin, ListView):
 class PlanFormView(SuperAdminRequiredMixin, TemplateView):
     template_name = "governance/plan_form.html"
 
+    def get_template_names(self):
+        if self.request.headers.get("HX-Request"):
+            return ["governance/_plan_form_fields.html"]
+        return [self.template_name]
+
     def get_context_data(self, **kwargs):
         plan = get_object_or_404(Plan, id=kwargs["plan_id"]) if kwargs.get("plan_id") else None
         existing_flags = plan.feature_flags if plan else {}
@@ -661,6 +800,10 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
                 plan.save(update_fields=["is_default"])
 
         log_action(request.user, "plan.create" if is_new else "plan.update", plan, new_value=plan.name)
+        if request.headers.get("HX-Request"):
+            response = HttpResponse(status=204)
+            response["HX-Redirect"] = reverse("governance:plans")
+            return response
         return redirect("governance:plans")
 
 
@@ -693,11 +836,18 @@ def resolve_upgrade_request(request, request_id):
         upgrade_request.status = UpgradeRequest.Status.APPROVED
         upgrade_request.save()
         log_action(request.user, "upgrade_request.approve", upgrade_request)
+        if request.headers.get("HX-Request"):
+            # A 204 tells htmx "success, don't swap" (its documented
+            # behavior) - an empty 200 body is what actually makes the
+            # outerHTML swap remove the <tr> from the DOM.
+            return HttpResponse("")
         return redirect(f"{reverse('governance:users')}?search={upgrade_request.user.email}")
 
     upgrade_request.status = UpgradeRequest.Status.DISMISSED
     upgrade_request.save()
     log_action(request.user, "upgrade_request.dismiss", upgrade_request)
+    if request.headers.get("HX-Request"):
+        return HttpResponse("")
     return redirect("governance:upgrade_requests")
 
 
@@ -733,6 +883,23 @@ class ModelListView(FilterableListMixin, SuperAdminRequiredMixin, ListView):
         }
 
 
+def _models_table_context(request):
+    """Shared with ModelListView.get_queryset/get_context_data so the
+    toggle endpoint's htmx re-render respects the same search/status
+    filters the admin was already looking at, without duplicating pagination
+    or other ListView machinery just for this one partial."""
+    qs = ModelConfig.objects.order_by("provider", "tier", "model_name")
+    search = request.GET.get("search", "").strip()
+    if search:
+        qs = qs.filter(Q(model_name__icontains=search) | Q(provider__icontains=search))
+    status = request.GET.get("status", "")
+    if status == "enabled":
+        qs = qs.filter(is_enabled=True)
+    elif status == "disabled":
+        qs = qs.filter(is_enabled=False)
+    return {"models": qs, "total_count": ModelConfig.objects.count(), "search": search, "status_filter": status}
+
+
 @role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def toggle_model_enabled(request, model_id):
@@ -747,6 +914,8 @@ def toggle_model_enabled(request, model_id):
         old_value=old_value,
         new_value=model_config.is_enabled,
     )
+    if request.headers.get("HX-Request"):
+        return render(request, "governance/_models_table.html", _models_table_context(request))
     return redirect("governance:models")
 
 
@@ -775,7 +944,10 @@ def sync_models_preview(request):
     for provider, entry in fetched.items():
         entry["new_models"] = [m for m in entry["models"] if (provider, m) not in existing]
         entry["already_tracked"] = [m for m in entry["models"] if (provider, m) in existing]
-    return render(request, "governance/model_sync.html", {"fetched": fetched, "tiers": ModelConfig.Tier.choices})
+    context = {"fetched": fetched, "tiers": ModelConfig.Tier.choices}
+    if request.headers.get("HX-Request"):
+        return render(request, "governance/_model_sync_fetch_results.html", context)
+    return render(request, "governance/model_sync.html", context)
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)
@@ -929,6 +1101,26 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
     def get_context_data(self, **kwargs):
         assistant_messages, filters = _filtered_assistant_messages(self.request)
 
+        # Independent of the table's own search/model/date filters above -
+        # a stable "last 7 days" trend, scoped the same way (department)
+        # as the rest of the page but not narrowed by whatever the admin
+        # happens to have typed into the filter row. Same zero-fill shape
+        # as DashboardView's 14-day series, just a shorter window.
+        today = timezone.localdate()
+        seven_days_ago = today - timezone.timedelta(days=6)
+        week_scope = _scope_by_user_department(
+            self.request,
+            Message.objects.filter(role=Message.Role.ASSISTANT, created_at__date__gte=seven_days_ago),
+            "conversation__user__department_id",
+        )
+        weekly_rows = week_scope.annotate(day=TruncDate("created_at")).values("day").annotate(cost=Sum("estimated_cost"))
+        cost_by_day = {row["day"]: float(row["cost"] or 0) for row in weekly_rows}
+        week_range = [seven_days_ago + timezone.timedelta(days=i) for i in range(7)]
+        weekly_cost = [cost_by_day.get(d, 0.0) for d in week_range]
+        weekly_labels = [d.strftime("%a") for d in week_range]
+        peak_weekly_cost = max(weekly_cost) or 1
+        weekly_cost_pct = [round(c / peak_weekly_cost * 100) for c in weekly_cost]
+
         per_user = (
             assistant_messages.values("conversation__user__email")
             .annotate(
@@ -957,6 +1149,8 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
             "cache_hits": cache_stats["cache_hits"],
             "cache_hit_rate": cache_hit_rate,
             "cache_cost_saved": cache_stats["cost_saved"] or 0,
+            "weekly_bars": list(zip(weekly_labels, weekly_cost, weekly_cost_pct)),
+            "has_weekly_data": any(weekly_cost),
         }
 
 

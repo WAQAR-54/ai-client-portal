@@ -24,6 +24,22 @@
         </form>
     </div>
 
+    <div class="card mt-4" style="margin-bottom:var(--space-4);">
+        <h2 style="margin-bottom:0.25rem;">{% trans "Cost by day, last 7 days" %}</h2>
+        {% if has_weekly_data %}
+        <div class="bar-chart">
+            {% for label, cost, pct in weekly_bars %}
+            <div class="bar-col" title="${{ cost|floatformat:2 }}">
+                <div class="bar-fill" style="height:{{ pct }}%"></div>
+                <div class="bar-label">{{ label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-faint" style="font-size:0.85rem;">{% trans "No cost recorded in the last 7 days yet." %}</p>
+        {% endif %}
+    </div>
+
     {% url 'governance:usage' as filter_url %}
     <form class="filter-toolbar">
         <div class="filter-search">

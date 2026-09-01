@@ -4,7 +4,7 @@
     <thead>
         <tr><th>{% trans "Model" %}</th><th>{% trans "Provider" %}</th><th>{% trans "Tier" %}</th><th>{% trans "Display name / pricing" %}</th><th></th><th>{% trans "Status" %}</th><th></th></tr>
     </thead>
-    <tbody>
+    <tbody data-stagger>
         {% for m in models %}
         <tr>
             <td class="mono" style="font-size:0.85rem;">{{ m.model_name }}</td>
@@ -24,13 +24,15 @@
                 {% else %}<span class="badge badge-danger">{% trans "Disabled" %}</span>{% endif %}
             </td>
             <td style="white-space:nowrap;">
-                <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">{% trans "Who can use" %}</a>
-                <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}" style="display:inline;">
+                <a href="{% url 'governance:model_permissions' model_id=m.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.6rem;">{% trans "Who can use" %}</a>
+                <form method="post" action="{% url 'governance:toggle_model_enabled' model_id=m.id %}"
+                      hx-post="{% url 'governance:toggle_model_enabled' model_id=m.id %}"
+                      hx-target="#models-table" hx-swap="innerHTML" style="display:inline-block; vertical-align:middle;">
                     {% csrf_token %}
-                    <button type="submit" class="btn-small {% if m.is_enabled %}btn-danger{% else %}btn-ghost{% endif %}"
-                            {% if not m.is_enabled and m.input_cost_per_1m is None %}title="{% trans 'Set pricing first' %}"{% endif %}>
-                        {% if m.is_enabled %}{% trans "Disable" %}{% else %}{% trans "Enable" %}{% endif %}
-                    </button>
+                    <label class="toggle-switch" title="{% if m.is_enabled %}{% trans 'Disable' %}{% else %}{% trans 'Enable' %}{% endif %}{% if not m.is_enabled and m.input_cost_per_1m is None %} — {% trans 'set pricing first' %}{% endif %}">
+                        <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_enabled %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
                 </form>
             </td>
         </tr>

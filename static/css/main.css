@@ -1,40 +1,130 @@
 /* ---------- Design tokens ----------
-   Brand palette: navy primary + cyan secondary, on neutral cool-gray
-   surfaces (a warm cream/terracotta pass preceded this and was replaced
-   wholesale per explicit direction - every color role below is a token,
-   so a future palette swap only needs to change this block). */
+   Brand color system: navy (#122268) + cyan (#00aef0), assigned by ROLE,
+   not by "primary/secondary" naming convention - see the brand-color
+   prompt this was built from. Cyan fails WCAG AA as text on a light
+   background (~2.5:1) so it is FILL-ONLY there: buttons, active-state
+   pills, focus rings, chart accents - always paired with navy or white
+   as the label color, never used as the `color` of body/label text on a
+   light surface. Navy passes contrast almost everywhere (~14:1 as text on
+   light, ~14:1 as a bg with white text, ~5.7:1 as text on a cyan fill),
+   so navy is the flexible/dominant color and cyan is the accent that
+   always needs a host. Semantic status colors (--warn/--success/--danger)
+   are intentionally NOT brand colors - see the audit note further down
+   confirming no component uses the brand accent for a warning/status
+   state. */
 :root {
-    --color-bg: #f5f7fa;
-    --color-surface: #ffffff;
-    --color-surface-muted: #eef1f6;
-    --color-border: #dde2ea;
-    --color-text: #12172b;
-    --color-text-muted: #5b6472;
-    --color-text-faint: #8992a3;
+    /* Warm off-white/cream neutrals, not cool gray - a pure-white surface
+       right next to an almost-identical white page background is what
+       reads as glaring/stark; a warm, slightly-separated scale reads as
+       calm instead. See the design-concept artifact this was matched to. */
+    --color-bg: #f1f0eb;
+    --color-surface: #f9f8f4;
+    --color-surface-muted: #ecebe4;
+    /* A third, deeper-than-muted surface tone for "raised/active" states
+       (sliding indicator fills, active list items) - distinct from
+       --color-surface-muted so an active state still reads as a step up
+       from a plain hover state. */
+    --color-surface-active: #dfdcd2;
+    --color-border: rgba(32, 26, 10, 0.09);
+    /* A more visible border for interactive chrome that needs to stand out
+       against --color-border's subtle hairline (pill buttons, focus-ready
+       inputs) - not just a hover color, a permanently-stronger outline. */
+    --color-border-strong: #c9c4b5;
+    --color-text: #232019;
+    --color-text-muted: #6f6c62;
+    --color-text-faint: #9c988c;
 
-    --color-primary: #122268;
-    --color-primary-hover: #0b1848;
-    --color-primary-soft: #e3e7f3;
-    --color-primary-text: #122268;
-    --color-accent-2: #00aef0;
+    /* Secondary = navy. Structural/dominant in light mode: sidebar/header
+       fills, headings, body-text links, secondary-button borders+text. */
+    --secondary: #122268;
+    --secondary-hover: #0b1848;
+    --secondary-soft: #e3e7f3;
+    /* Text/icon color for content placed ON a solid --secondary (navy)
+       background in a dark-surface context (e.g. inside the navy sidebar,
+       below) - a light periwinkle, not navy-on-navy and not full white. */
+    --secondary-text: #93a5f2;
+    /* A DIFFERENT role from --secondary-text above, despite the similar
+       name: this one always contrasts with whatever --secondary currently
+       resolves to, for avatar-circle fills specifically (.msg-avatar-user,
+       .profile-menu summary). --secondary-text can't serve both jobs - it
+       also has to stay light-periwinkle in dark mode for eyebrow/log-dot
+       text sitting directly on the page background, but --secondary ITSELF
+       flips to that same light periwinkle in dark mode (for that same
+       reason), so an avatar using --secondary as its fill and
+       --secondary-text as its text would paint light-on-light and vanish.
+       Confirmed as a real, live bug (initials genuinely invisible in dark
+       mode, not just low-contrast) before this token existed. Light mode's
+       --secondary is already dark (navy), so the same light periwinkle as
+       --secondary-text still contrasts fine here - only dark mode needs a
+       genuinely different value below. */
+    --secondary-ink: #93a5f2;
+    /* Literal navy fill, mode-independent (declared once, like --accent-dim
+       below) - for elements that are ALWAYS a solid navy chip regardless of
+       overall page mode: the brand mark, avatars. Distinct from --secondary,
+       which flips to a periwinkle TEXT role in dark mode and stops being a
+       fill color there. */
+    --brand-navy: #122268;
 
-    --color-success: #1e8e5a;
+    /* Accent = cyan. Primary INTERACTIVE accent only: button fills,
+       active states, focus rings, selected nav items, chart accents,
+       links on dark surfaces. Never used as `color` on a light bg. */
+    --accent: #00aef0;
+    --accent-hover: #0299d6;
+    /* Light cyan wash - light-mode focus-ring glow, subtle hover washes. */
+    --accent-soft: #e3f6fd;
+    /* Dark desaturated cyan - badge/pill backgrounds on a DARK surface
+       (the navy sidebar in light mode; anywhere in dark mode). Same value
+       in both modes on purpose: its job (a dark-but-tinted host for an
+       accent-colored label) is identical regardless of overall page mode. */
+    --accent-dim: #0f3d52;
+    /* Navy text color to place ON an --accent (cyan) fill - the pairing
+       that actually passes contrast (~5.7:1), instead of white-on-cyan
+       (~2.5:1, fails). Mode-independent for the same reason as above. */
+    --accent-text: #122268;
+
+    /* Sidebar stays a neutral surface in both modes - only the active nav
+       item's icon takes the accent color; the highlight behind it stays
+       neutral gray, never colored. Kept as its own token layer (rather
+       than inlining --color-surface everywhere) so a future surface-level
+       treatment only needs to change here. */
+    --sidebar-bg: var(--color-surface);
+    --sidebar-text: var(--color-text);
+    --sidebar-text-muted: var(--color-text-muted);
+    --sidebar-hover-bg: var(--color-surface-muted);
+    --sidebar-active-bg: var(--color-surface-muted);
+    --sidebar-active-text: var(--color-text);
+    --sidebar-border: var(--color-border);
+
+    --color-success: #1e9a6c;
     --color-success-soft: #e3f5ec;
-    --color-danger: #d9363e;
+    --color-danger: #c7443f;
     --color-danger-soft: #fbe7e8;
-    --color-danger-hover: #b22a30;
-    --color-warning: #c77700;
-    --color-warning-soft: #fcf0dc;
+    --color-danger-hover: #a8332f;
+    /* Warning/status colors stay on a conventional amber regardless of
+       brand palette - a "nearing your budget" warning must never read as
+       "click here" just because it happens to share a color with a
+       button. Kept fully separate from --accent/--secondary. */
+    --warn: #b5761e;
+    --warn-soft: #fcf0dc;
+    --warn-dim: #3d2f18;
 
     --radius-sm: 6px;
     --radius-md: 10px;
     --radius-lg: 16px;
 
-    --shadow-sm: 0 1px 2px rgba(20, 21, 40, 0.05);
-    --shadow-md: 0 4px 14px rgba(20, 21, 40, 0.06), 0 1px 3px rgba(20, 21, 40, 0.04);
-    --shadow-lg: 0 12px 32px rgba(20, 21, 40, 0.10);
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
-    --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.08), 0 2px 5px rgba(0, 0, 0, 0.06);
+    /* Layered, warm-tinted shadows (not cool near-black) - soft elevation
+       is what separates a card from the page now, not a hard border, so
+       these do more visual work than before. */
+    --shadow-sm: 0 1px 2px rgba(32, 26, 10, 0.05);
+    --shadow-md: 0 1px 2px rgba(32, 26, 10, 0.05), 0 8px 22px -8px rgba(32, 26, 10, 0.11);
+    --shadow-lg: 0 4px 10px -2px rgba(32, 26, 10, 0.09), 0 18px 38px -14px rgba(32, 26, 10, 0.17);
+    --shadow-card: 0 1px 2px rgba(32, 26, 10, 0.05), 0 8px 22px -8px rgba(32, 26, 10, 0.11);
+    --shadow-card-hover: 0 4px 10px -2px rgba(32, 26, 10, 0.09), 0 18px 38px -14px rgba(32, 26, 10, 0.17);
+    /* Springier than a plain ease - for sliding-pill switches/indicators,
+       not general hover/fade transitions (those still use plain "ease" or
+       the timing already on each rule). */
+    --ease-spring: cubic-bezier(.16, .84, .24, 1);
+    --ease: cubic-bezier(.2, .7, .3, 1);
 
     --space-1: 0.25rem;
     --space-2: 0.5rem;
@@ -54,8 +144,12 @@
     --text-xl: 1.5rem;
     --text-2xl: 2rem;
 
-    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    /* Display face for headings/brand-name/KPI values/modal+card titles
+       only - never body copy. Falls back to --font-sans, so any selector
+       using it degrades cleanly if the font hasn't loaded yet. */
+    --font-display: "Space Grotesk", var(--font-sans);
 }
 
 /* ---------- Dark mode ----------
@@ -69,66 +163,122 @@
    light-mode ones: a dark neutral (not pure black), contrast-checked text,
    and a lightened indigo/cyan/success/warning/danger so each stays legible
    on the darker surfaces (the light-mode shades are too low-contrast here). */
+/* Dark-mode values below are rebuilt to match the reference mockup
+   (repo root, "New Text Document.txt") exactly, rather than being an
+   inverted light palette - read that file's :root if these ever need
+   re-deriving. The two blocks below are intentionally identical (see the
+   comment above this section on why two selectors exist) - keep them in
+   sync when editing either one. */
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-        --color-bg: #14161c;
-        --color-surface: #1c1f27;
-        --color-surface-muted: #262a35;
-        --color-border: #343a48;
-        --color-text: #e8eaf0;
-        --color-text-muted: #a3a9ba;
-        --color-text-faint: #6f7789;
+        --color-bg: #0e1015;
+        --color-surface: #12151c;
+        --color-surface-muted: #1a1e28;
+        --color-surface-active: #232836;
+        --color-border: #262b37;
+        --color-border-strong: #3a4152;
+        --color-text: #edeef2;
+        --color-text-muted: #aeb2be;
+        --color-text-faint: #6c7280;
 
-        --color-primary: #7686f0;
-        --color-primary-hover: #8fa0f7;
-        --color-primary-soft: #262c4a;
-        --color-primary-text: #b0bcf8;
-        --color-accent-2: #35c5fb;
+        /* Dominant color flips in dark mode: navy is too close in value to
+           this near-black surface to read as a distinct background, so it
+           steps back to a supporting role (avatars, brand mark - via the
+           mode-independent --brand-navy) and cyan becomes the single
+           dominant accent for active states, buttons, and highlights - see
+           the brand-color spec. --secondary itself becomes a periwinkle
+           TEXT role here (eyebrow labels, info log dots), matching the
+           reference's --secondary-text exactly. */
+        --secondary: #93a5f2;
+        --secondary-hover: #a8b7f7;
+        --secondary-soft: #262c4a;
+        --secondary-text: #93a5f2;
+        --secondary-ink: #122268;
 
-        --color-success: #3ddc92;
-        --color-success-soft: #113827;
-        --color-danger: #ff7a7e;
-        --color-danger-soft: #3d1a1c;
-        --color-danger-hover: #ff9599;
-        --color-warning: #f0ac4c;
-        --color-warning-soft: #3a2a10;
+        --accent: #00aef0;
+        --accent-hover: #35c5fb;
+        --accent-soft: #123244;
+        /* Missing here was the actual bug behind "selected" states (the
+           Display theme picker, etc.) rendering illegible dark-on-dark text
+           - --accent-text never got a dark-mode value, so it silently fell
+           back to the light-mode navy (#122268) even in dark mode, painted
+           on top of --accent-soft's now-dark background. */
+        --accent-text: #7fddfb;
 
-        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
-        --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.28);
-        --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
-        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.24);
-        --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.32), 0 2px 5px rgba(0, 0, 0, 0.26);
+        --warn: #e3ac5c;
+        --warn-soft: #3a2a10;
+
+        /* The sidebar is no longer a distinct navy-filled surface in dark
+           mode - it uses the same neutral dark surface as the rest of the
+           app, with the now-dominant cyan accent for the active item's
+           icon and --color-surface-active (not a brand color) behind it -
+           matches the light-mode block below exactly. */
+        --sidebar-bg: var(--color-surface);
+        --sidebar-text: var(--color-text);
+        --sidebar-text-muted: var(--color-text-muted);
+        --sidebar-hover-bg: var(--color-surface-muted);
+        --sidebar-active-bg: var(--color-surface-active);
+        --sidebar-active-text: var(--color-text);
+        --sidebar-border: var(--color-border);
+
+        --color-success: #3ecb8f;
+        --color-success-soft: #1b3324;
+        --color-danger: #f1817e;
+        --color-danger-soft: #3a1e1e;
+        --color-danger-hover: #f5a19e;
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -8px rgba(0, 0, 0, 0.5);
+        --shadow-lg: 0 6px 14px -2px rgba(0, 0, 0, 0.4), 0 24px 48px -14px rgba(0, 0, 0, 0.6);
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -8px rgba(0, 0, 0, 0.5);
+        --shadow-card-hover: 0 6px 14px -2px rgba(0, 0, 0, 0.4), 0 24px 48px -14px rgba(0, 0, 0, 0.6);
         color-scheme: dark;
     }
 }
 :root[data-theme="dark"] {
-    --color-bg: #14161c;
-    --color-surface: #1c1f27;
-    --color-surface-muted: #262a35;
-    --color-border: #343a48;
-    --color-text: #e8eaf0;
-    --color-text-muted: #a3a9ba;
-    --color-text-faint: #6f7789;
+    --color-bg: #0e1015;
+    --color-surface: #12151c;
+    --color-surface-muted: #1a1e28;
+    --color-surface-active: #232836;
+    --color-border: #262b37;
+    --color-border-strong: #3a4152;
+    --color-text: #edeef2;
+    --color-text-muted: #aeb2be;
+    --color-text-faint: #6c7280;
 
-    --color-primary: #7686f0;
-    --color-primary-hover: #8fa0f7;
-    --color-primary-soft: #262c4a;
-    --color-primary-text: #b0bcf8;
-    --color-accent-2: #35c5fb;
+    --secondary: #93a5f2;
+    --secondary-hover: #a8b7f7;
+    --secondary-soft: #262c4a;
+    --secondary-text: #93a5f2;
+    --secondary-ink: #122268;
 
-    --color-success: #3ddc92;
-    --color-success-soft: #113827;
-    --color-danger: #ff7a7e;
-    --color-danger-soft: #3d1a1c;
-    --color-danger-hover: #ff9599;
-    --color-warning: #f0ac4c;
-    --color-warning-soft: #3a2a10;
+    --accent: #00aef0;
+    --accent-hover: #35c5fb;
+    --accent-soft: #123244;
+    --accent-text: #7fddfb;
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
-    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.28);
-    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.24);
-    --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.32), 0 2px 5px rgba(0, 0, 0, 0.26);
+    --warn: #e3ac5c;
+    --warn-soft: #3a2a10;
+
+    --sidebar-bg: var(--color-surface);
+    --sidebar-text: var(--color-text);
+    --sidebar-text-muted: var(--color-text-muted);
+    --sidebar-hover-bg: var(--color-surface-muted);
+    --sidebar-active-bg: var(--color-surface-active);
+    --sidebar-active-text: var(--color-text);
+    --sidebar-border: var(--color-border);
+
+    --color-success: #3ecb8f;
+    --color-success-soft: #1b3324;
+    --color-danger: #f1817e;
+    --color-danger-soft: #3a1e1e;
+    --color-danger-hover: #f5a19e;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -8px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 6px 14px -2px rgba(0, 0, 0, 0.4), 0 24px 48px -14px rgba(0, 0, 0, 0.6);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -8px rgba(0, 0, 0, 0.5);
+    --shadow-card-hover: 0 6px 14px -2px rgba(0, 0, 0, 0.4), 0 24px 48px -14px rgba(0, 0, 0, 0.6);
     color-scheme: dark;
 }
 
@@ -140,8 +290,12 @@
 }
 
 @keyframes scale-fade-in {
-    from { opacity: 0; transform: scale(0.9); }
-    to { opacity: 1; transform: scale(1); }
+    from { opacity: 0; transform: scale(0.96) translateY(4px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes overlay-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 @keyframes skeleton-pulse {
@@ -179,16 +333,19 @@ h1, h2, h3 {
     letter-spacing: -0.015em;
     line-height: 1.25;
 }
-h1 { font-size: var(--text-xl); }
+/* Display face on page-level headings only - h2/h3 (section headers inside
+   cards, etc.) stay on --font-sans, matching the reference's use of Space
+   Grotesk for standalone headings/titles/values, never nested copy. */
+h1 { font-size: var(--text-xl); font-family: var(--font-display); }
 h2 { font-size: var(--text-lg); }
 
 p { margin: 0 0 var(--space-3); color: var(--color-text-muted); }
 
 a {
-    color: var(--color-primary);
+    color: var(--secondary);
     text-decoration: none;
 }
-a:hover { color: var(--color-primary-hover); text-decoration: underline; }
+a:hover { color: var(--secondary-hover); text-decoration: underline; }
 
 /* ---------- App shell: persistent left sidebar ---------- */
 .app-shell {
@@ -199,8 +356,8 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
 .app-sidebar {
     width: 260px;
     flex-shrink: 0;
-    background: var(--color-surface);
-    border-right: 1px solid var(--color-border);
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
     display: flex;
     flex-direction: column;
     padding: var(--space-5) var(--space-4);
@@ -220,18 +377,59 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     align-items: center;
     gap: 0.5rem;
     font-weight: 700;
+    font-family: var(--font-display);
     font-size: 1.05rem;
-    color: var(--color-text);
+    color: var(--sidebar-text);
     letter-spacing: -0.01em;
     padding: 0 var(--space-2);
     margin-bottom: var(--space-6);
 }
-.app-sidebar .brand:hover { text-decoration: none; color: var(--color-text); }
+.app-sidebar .brand:hover { text-decoration: none; color: var(--sidebar-text); }
 .app-sidebar .brand .dot {
     width: 9px; height: 9px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent-2));
+    background: var(--accent);
     flex-shrink: 0;
 }
+
+/* Chat/Admin segmented switch at the top of the sidebar - replaces the old
+   flat "Chat" + "Admin" links for anyone who can see both. A real <a href>
+   pair (full page navigation, this is an MPA, not the design concept's
+   client-side page swap), styled to slide like the concept's switches; the
+   pill position is set once per page load by the inline script next to the
+   markup, matching whichever link is server-rendered .active. */
+.app-switch {
+    position: relative;
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 11px;
+    background: var(--sidebar-hover-bg);
+}
+.app-switch-pill {
+    position: absolute;
+    top: 3px; left: 3px;
+    height: calc(100% - 6px);
+    border-radius: 8px;
+    background: var(--sidebar-bg);
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.38s var(--ease-spring), width 0.38s var(--ease-spring);
+}
+.app-switch a {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    text-align: center;
+    padding: 8px 0;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--sidebar-text-muted);
+    text-decoration: none;
+    transition: color 0.2s ease, transform 0.15s ease;
+}
+.app-switch a:hover { color: var(--sidebar-text); text-decoration: none; }
+.app-switch a:active { transform: scale(0.96); }
+.app-switch a.active { color: var(--sidebar-text); }
 
 .app-nav {
     display: flex;
@@ -241,48 +439,54 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     min-height: 0;
     overflow-y: auto;
 }
-.app-nav a {
+.app-nav a,
+.app-nav-sub a,
+.settings-tab-sidebar {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
-    padding: 0.65rem 0.75rem;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
+    gap: 11px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    color: var(--sidebar-text-muted);
     font-weight: 600;
-    font-size: 0.9rem;
-    border-left: 3px solid transparent;
-    margin-left: -3px;
+    font-size: 13.5px;
+    transition: color 0.2s var(--ease), background 0.2s var(--ease), transform 0.16s var(--ease);
 }
-.app-nav a:hover { background: var(--color-surface-muted); color: var(--color-text); text-decoration: none; }
-.app-nav a.active { background: var(--color-primary-soft); color: var(--color-primary-text); border-left-color: var(--color-primary); }
-.nav-icon { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.85; }
+/* .settings-tab-sidebar is a <button> (the profile-settings tab list
+   relocated into the sidebar, see accounts/profile.html), not an <a> - needs
+   its own reset plus an explicit background:none on the base rule AND on
+   :hover, or the generic button/button:hover rules (background: accent /
+   accent-hover) would outrank this on specificity, same bug already fixed
+   once for .filter-chip and .provider-tab. */
+.settings-tab-sidebar { background: none; border: none; width: 100%; text-align: left; cursor: pointer; }
+.app-nav a:hover,
+.app-nav-sub a:hover,
+.settings-tab-sidebar:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); text-decoration: none; }
+.app-nav a:active,
+.app-nav-sub a:active,
+.settings-tab-sidebar:active { transform: scale(0.98); }
+/* A solid navy pill with white text, not a tinted background + accent
+   border - matches the approved design concept's active nav-link state.
+   --brand-navy is the mode-independent literal navy fill (unlike --secondary,
+   which flips to a light periwinkle in dark mode for body-text contrast) so
+   white text stays legible on it in both themes without a separate override. */
+.app-nav a.active,
+.app-nav-sub a.active,
+.settings-tab-sidebar.active {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--brand-navy) 100%, white 12%), var(--brand-navy));
+    color: #fff;
+    box-shadow: var(--shadow-card);
+}
+.app-nav a.active .nav-icon,
+.app-nav-sub a.active .nav-icon,
+.settings-tab-sidebar.active .nav-icon { color: #fff; opacity: 1; }
+.nav-icon { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.85; transition: transform 0.18s var(--ease); }
 
-.app-nav-sub {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    margin: 0.25rem 0 0.6rem 1.55rem;
-    padding-left: var(--space-3);
-    border-left: 1px solid var(--color-border);
-}
-.app-nav-sub a {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.45rem 0.6rem;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
-    font-weight: 500;
-    font-size: 0.83rem;
-    border-left: 2px solid transparent;
-    margin-left: -0.6rem;
-}
-.app-nav-sub a .nav-icon { width: 14px; height: 14px; }
-.app-nav-sub a:hover { background: var(--color-surface-muted); color: var(--color-text); text-decoration: none; }
-.app-nav-sub a.active { background: var(--color-primary-soft); color: var(--color-primary-text); font-weight: 650; border-left-color: var(--color-primary); }
+.app-nav-sub { display: flex; flex-direction: column; gap: 2px; }
+.app-nav-sub a .nav-icon { width: 15px; height: 15px; }
 
 .app-sidebar-footer {
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--sidebar-border);
     padding-top: var(--space-3);
     margin-top: var(--space-4);
     display: flex;
@@ -295,8 +499,8 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     gap: 0.6rem;
     padding: 0.55rem 0.6rem;
     margin-bottom: var(--space-2);
-    background: var(--color-surface-muted);
-    border: 1px solid var(--color-border);
+    background: var(--sidebar-hover-bg);
+    border: 1px solid var(--sidebar-border);
     border-radius: var(--radius-md);
 }
 .app-sidebar-account-chip .msg-avatar { width: 28px; height: 28px; flex-shrink: 0; }
@@ -307,11 +511,11 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     gap: 0.65rem;
     padding: 0.6rem 0.75rem;
     border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
+    color: var(--sidebar-text-muted);
     font-weight: 600;
     font-size: 0.9rem;
 }
-.app-sidebar-footer a:hover, .app-sidebar-footer a.active { background: var(--color-surface-muted); color: var(--color-text); text-decoration: none; }
+.app-sidebar-footer a:hover, .app-sidebar-footer a.active { background: var(--sidebar-hover-bg); color: var(--sidebar-text); text-decoration: none; }
 .app-sidebar-footer form { margin: 0; }
 .app-sidebar-footer button.link-btn {
     display: flex;
@@ -325,7 +529,7 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     width: 100%;
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--sidebar-text-muted);
     font-weight: 600;
     font-size: 0.9rem;
     padding: 0.6rem 0.75rem;
@@ -333,15 +537,36 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     cursor: pointer;
     font-family: inherit;
 }
-.app-sidebar-footer button.link-btn:hover { background: var(--color-danger-soft); color: var(--color-danger); }
+.app-sidebar-footer button.link-btn:hover { background: var(--color-danger); color: #fff; }
 
 /* ---------- Top-right profile menu ---------- */
 .topbar-mini {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
     padding: var(--space-4) var(--space-5) 0;
 }
+.topbar-mini-left { display: flex; align-items: center; gap: var(--space-4); min-width: 0; flex: 1; }
+.topbar-mini-title { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; white-space: nowrap; }
+.topbar-mini-right { display: flex; align-items: center; flex-shrink: 0; }
+.admin-search { position: relative; width: 280px; max-width: 100%; }
+.admin-search-results {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    width: 320px;
+    max-width: 90vw;
+    max-height: 340px;
+    overflow-y: auto;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: 0.35rem;
+    z-index: 60;
+}
+.admin-search-results:empty { display: none; }
 .profile-menu { position: relative; }
 .profile-menu summary {
     list-style: none;
@@ -349,8 +574,8 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     width: 38px;
     height: 38px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent-2));
-    color: #fff;
+    background: var(--secondary);
+    color: var(--secondary-ink);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -425,6 +650,38 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     justify-content: center;
     position: relative;
 }
+
+/* Quick light/dark toggle, next to the profile avatar in the header - a
+   fast path that doesn't require going into Settings > Display for the
+   single most common preference change. Explicitly picks light or dark
+   (never "system") since a one-click header toggle needs a definite
+   opposite to switch to; the full 3-way choice (incl. "system") stays in
+   Settings > Display. Only one icon shows at a time - which one is decided
+   by plain CSS below, not JS, so it's correct on first paint. */
+.theme-toggle-quick {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--color-surface-muted);
+    color: var(--color-text-muted);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 100ms ease;
+}
+.theme-toggle-quick:hover { background: var(--color-border); color: var(--color-text); }
+.theme-toggle-quick:active { transform: scale(0.92); }
+.theme-toggle-quick svg { display: block; width: 18px; height: 18px; min-width: 18px; min-height: 18px; flex-shrink: 0; }
+.theme-toggle-quick .theme-icon-moon { display: none; }
+:root[data-theme="dark"] .theme-toggle-quick .theme-icon-sun { display: none; }
+:root[data-theme="dark"] .theme-toggle-quick .theme-icon-moon { display: block; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]):not([data-theme="dark"]) .theme-toggle-quick .theme-icon-sun { display: none; }
+    :root:not([data-theme="light"]):not([data-theme="dark"]) .theme-toggle-quick .theme-icon-moon { display: block; }
+}
 .notif-bell summary:hover { color: var(--color-text); background: var(--color-border); }
 .notif-bell summary::-webkit-details-marker { display: none; }
 .notif-bell summary::marker { content: ""; }
@@ -485,8 +742,8 @@ a:hover { color: var(--color-primary-hover); text-decoration: underline; }
     cursor: pointer;
 }
 .notif-item:hover { background: var(--color-surface-muted); }
-.notif-item-unread { background: var(--color-primary-soft); }
-.notif-item-unread:hover { background: var(--color-primary-soft); filter: brightness(0.97); }
+.notif-item-unread { background: var(--secondary-soft); }
+.notif-item-unread:hover { background: var(--secondary-soft); filter: brightness(0.97); }
 .notif-item-title { font-size: 0.85rem; font-weight: 600; color: var(--color-text); }
 .notif-item-body { font-size: 0.8rem; color: var(--color-text-muted); }
 .notif-item-time { font-size: 0.72rem; color: var(--color-text-faint); margin-top: 0.15rem; }
@@ -520,6 +777,21 @@ main.main-wide {
     max-width: 1440px;
     padding: var(--space-6) var(--space-6);
 }
+/* A quiet fade+rise on every page load - this is a server-rendered MPA, not
+   a SPA, so real page-to-page navigation (including the Chat/Admin switch)
+   can't slide or crossfade between two states the browser is actually
+   holding at once. What it CAN do is stop each fresh page from just
+   snapping into place - this is that: real, runs on every navigation
+   because it's a plain CSS animation tied to initial paint, not JS state
+   that would need wiring per page. */
+@keyframes page-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+main { animation: page-fade-in 240ms var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+    main { animation: none; }
+}
 
 /* ---------- Card ---------- */
 .card {
@@ -534,6 +806,14 @@ main.main-wide {
     box-shadow: var(--shadow-card-hover);
     transform: translateY(-2px);
 }
+
+/* A flatter, non-interactive box than .card - wraps ONE content module (a
+   table, a list) rather than an entire page's worth of heading+filters+
+   table. No hover-lift, no page-level padding (children like .panel-head
+   and table cells supply their own). */
+.panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+.panel-head-title { font-size: 0.95rem; font-weight: 600; margin: 0; }
 
 /* ---------- Forms ---------- */
 label {
@@ -560,19 +840,23 @@ input[type="text"], input[type="email"], input[type="password"], select, textare
 }
 .input:focus, input:focus, select:focus, textarea:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-soft);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 textarea { resize: vertical; font-family: inherit; }
 
 /* ---------- Buttons ---------- */
+/* Fill = accent (cyan), text = accent-text (navy) - the pairing that
+   passes contrast (~5.7:1), not white-on-cyan (~2.5:1, fails). */
 button, .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    background: var(--color-primary);
-    color: #fff;
+    /* Flat fill, not a gradient - tried a glossy sheen here, reverted:
+       across the whole app it read as inconsistent/off rather than premium. */
+    background: var(--accent);
+    color: var(--accent-text);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-sm);
@@ -580,34 +864,32 @@ button, .btn {
     font-size: 0.9rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.15s ease, transform 100ms ease, box-shadow 0.15s ease;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 100ms ease;
 }
-button:hover, .btn:hover { background: var(--color-primary-hover); text-decoration: none; }
+button:hover, .btn:hover { background: var(--accent-hover); text-decoration: none; }
 button:active, .btn:active { transform: scale(0.98); }
-button:focus-visible, .btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
 
 .btn-small { padding: 0.4rem 0.85rem; font-size: 0.82rem; }
-.btn-danger { background: var(--color-danger); }
+.btn-danger { background: var(--color-danger); color: #fff; }
 .btn-danger:hover { background: var(--color-danger-hover); }
 .btn-ghost {
     background: transparent;
     color: var(--color-text-muted);
     border: 1px solid var(--color-border);
 }
-.btn-ghost:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.btn-ghost:hover { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
 
 /* ---------- Badge ---------- */
 .badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.2rem 0.65rem;
+    padding: 3px 10px;
     border-radius: 999px;
-    background: var(--color-primary-soft);
-    color: var(--color-primary-text);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    background: var(--secondary-soft);
+    color: var(--secondary);
+    font-size: 11px;
+    font-weight: 800;
 }
 .badge-muted { background: var(--color-surface-muted); color: var(--color-text-muted); }
 .badge-danger { background: var(--color-danger-soft); color: var(--color-danger); }
@@ -617,22 +899,143 @@ button:focus-visible, .btn:focus-visible { outline: 2px solid var(--color-primar
 table.data {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.88rem;
+    font-size: 13.5px;
 }
 table.data th, table.data td {
     text-align: left;
-    padding: 0.9rem 1rem;
-    border-bottom: 1px solid var(--color-border);
+    padding: 14px 16px;
+}
+table.data td {
+    border-top: 1px solid var(--color-border);
+    vertical-align: middle;
 }
 table.data th {
     color: var(--color-text-faint);
-    font-size: var(--text-xs);
-    font-weight: 700;
+    font-size: 10.5px;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
+    /* A plain 14px/10px pairing (not flush-zero on top) - the concept's
+       zero-top-padding header assumed the table sits right at the card's
+       top edge, but on Users (and anywhere else with a toolbar bar above
+       the table) that reads as the header being crushed against the bar
+       above it instead of "hugging the card". A small, even gap here works
+       in both contexts instead of only the one the concept pictured. */
+    padding-top: 14px;
+    padding-bottom: 10px;
 }
 table.data tbody tr:hover { background: var(--color-surface-muted); }
-table.data tbody tr:last-child td { border-bottom: none; }
+/* Row-collapse-on-approve (Dashboard "Recent plan requests") - htmx swaps
+   the class in via hx-swap="outerHTML swap:400ms" before removing the row,
+   giving the collapse something to animate instead of an instant pop. The
+   background transition is the same quiet hover fade used table-wide. */
+table.data tbody tr {
+    transition: background 150ms var(--ease), opacity 300ms ease, max-height 350ms ease, padding 350ms ease;
+}
+table.data tbody tr.htmx-swapping {
+    opacity: 0;
+    max-height: 0;
+    display: block;
+}
+/* User-identity cell (Users table) - reuses the same circular initials
+   avatar already used for chat messages and the sidebar account chip,
+   rather than a one-off avatar just for this table. Sized up slightly from
+   the chat-bubble default (28px) to read as a people-directory row rather
+   than a message thread. */
+.user-cell { display: flex; align-items: center; gap: 0.7rem; }
+.user-cell .msg-avatar { width: 34px; height: 34px; font-size: 0.85rem; }
+.user-cell-name { font-weight: 700; color: var(--color-text); }
+
+/* Ghost-style select/inputs for inline editing inside a dense data-table
+   row (Users: role/department/plan) - borderless and text-like at rest, a
+   visible control only on hover/focus. Without this, a row with three real
+   editable fields reads as a form buried in a table instead of the clean,
+   glanceable directory the approved design concept calls for. */
+.table-select {
+    display: inline-block;
+    width: auto;
+    margin: 0;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: background 150ms var(--ease), border-color 150ms var(--ease);
+}
+.table-select:hover, .table-select:focus { background: var(--color-surface-muted); border-color: var(--color-border); }
+
+/* Visible (bordered) compact select for a table cell that IS the row's
+   primary control, not a secondary edit affordance - the Users table's
+   "Change plan" column, always shown, matching the approved design exactly
+   (no hover needed to find or use it). */
+.table-select-visible {
+    display: inline-block;
+    width: auto;
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 0.85rem;
+}
+
+/* "..." row-actions menu (Users table) - a native <details> popover, same
+   pattern as the notification bell / profile menu. Holds real functionality
+   (role, department, suspend) that doesn't fit the approved design's fixed
+   column set, so it moved here instead of living inline or behind hover. */
+.row-menu { position: relative; display: inline-block; }
+.row-menu summary {
+    list-style: none;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-faint);
+    transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+.row-menu summary::-webkit-details-marker { display: none; }
+.row-menu summary::marker { content: ""; }
+.row-menu summary:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.row-menu-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.3rem);
+    min-width: 220px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 20;
+    padding: 0.7rem;
+}
+.row-menu-panel select { margin: 0 0 0.6rem; font-size: 0.85rem; }
+.row-menu-panel form:last-of-type select { margin-bottom: 0; }
+.row-menu-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-faint); margin-bottom: 0.3rem; }
+
+/* Bulk-select checkbox (Users table) - present and fully functional, but
+   near-invisible at rest so it doesn't read as its own dedicated column at
+   a glance. Stays visible once checked, or mid-interaction, not just on
+   hover, so a selection is never silently hidden from the user who made it. */
+.row-checkbox { opacity: 0; transition: opacity 150ms var(--ease); }
+tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opacity: 1; }
+
+.row-btn {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    border: 1px solid var(--color-border);
+    background: none;
+    padding: 0.35rem 0.7rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease;
+}
+.row-btn:hover { border-color: var(--accent-dim); color: var(--accent); background: none; }
 
 /* ---------- Filter toolbar (search + filter pills, admin list screens) ---------- */
 .filter-toolbar {
@@ -713,7 +1116,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     font-size: 0.88rem;
 }
 .alert-danger { background: var(--color-danger-soft); color: var(--color-danger); }
-.alert-warning { background: var(--color-warning-soft); color: var(--color-warning); }
+.alert-warning { background: var(--warn-soft); color: var(--warn); }
 
 .errorlist { color: var(--color-danger); list-style: none; padding: 0; font-size: 0.82rem; margin: -0.5rem 0 0.75rem; }
 
@@ -730,12 +1133,32 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .stat-tile .stat-value { font-size: var(--text-xl); font-weight: 650; margin-top: 0.25rem; letter-spacing: -0.02em; color: var(--color-text); }
 
 /* ---------- Charts (governance dashboard) ---------- */
-.chart-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-    gap: var(--space-5);
+.chart-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: var(--space-4); align-items: stretch; }
+@media (max-width: 900px) {
+    .chart-row { grid-template-columns: 1fr; }
 }
-.chart-card h2 { margin-bottom: var(--space-4); }
+.card.chart-card { display: flex; flex-direction: column; padding: var(--space-5); border-radius: 18px; }
+.chart-card .card-title { font-size: 13.5px; font-weight: 700; margin-bottom: var(--space-4); }
+.chart-card .card-body { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+.legend { display: flex; gap: var(--space-4); margin-top: var(--space-2); }
+.legend span { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); }
+.legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+.bar-row { margin-bottom: var(--space-3); transition: transform 150ms var(--ease); }
+.bar-row:last-child { margin-bottom: 0; }
+.bar-row .label-row { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); margin-bottom: 5px; transition: color 150ms var(--ease); }
+.bar-row:hover .label-row { color: var(--color-text); }
+.bar-row:hover { transform: translateX(2px); }
+.bar-track { height: 7px; border-radius: 6px; background: var(--color-surface-muted); overflow: hidden; }
+.bar-track .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s var(--ease); }
+
+.donut-wrap { display: flex; align-items: center; gap: var(--space-4); }
+.donut-legend { display: flex; flex-direction: column; gap: 8px; }
+.donut-legend-row { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); transition: color 150ms var(--ease); }
+.donut-legend-row:hover { color: var(--color-text); }
+.donut-legend-swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+.donut-seg { transition: stroke-dasharray 0.6s var(--ease); }
 
 /* ---------- Skeleton loading (admin charts) ---------- */
 .chart-wrap { position: relative; }
@@ -759,38 +1182,25 @@ table.data tbody tr:last-child td { border-bottom: none; }
     font-weight: 600;
     font-size: 0.88rem;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-}
-.section-nav a:hover { color: var(--color-text); background: var(--color-surface-muted); text-decoration: none; }
-.section-nav a.active { color: var(--color-primary); }
-
-/* ---------- Settings page: horizontal section tabs ---------- */
-.settings-tabs {
-    display: flex;
-    gap: 0.25rem;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    border-bottom: 1px solid var(--color-border);
-    margin-bottom: var(--space-5);
-}
-.settings-tabs::-webkit-scrollbar { display: none; }
-.settings-tab {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    padding: 0.7rem 1rem;
-    font-family: inherit;
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: var(--color-text-muted);
-    cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
-    white-space: nowrap;
-    transition: color 150ms ease, border-color 150ms ease;
 }
-.settings-tab:hover { color: var(--color-text); }
-.settings-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.section-nav a:hover { color: var(--color-text); background: var(--color-surface-muted); text-decoration: none; }
+/* Active-state text stays navy, not cyan - cyan fails contrast as text on
+   this light background. The accent color instead marks "active" via the
+   underline, matching the settings-tab pattern below. */
+.section-nav a.active { color: var(--secondary); border-bottom-color: var(--accent); }
+
+/* ---------- Settings page: tab panels ---------- */
+/* The tab TRIGGERS used to be a horizontal underlined strip styled here
+   (.settings-tabs/.settings-tab/.settings-tab.active) - now relocated into
+   the sidebar as .settings-tab-sidebar (styled alongside .app-nav a, see
+   above), which shares the .settings-tab class only so the tab-switching
+   JS in accounts/profile.html can still find them by one selector. Keeping
+   the old rules here too would silently win the cascade on color/padding
+   (same specificity, declared later in the file) and fight the sidebar
+   styling - removed rather than left as dead-but-conflicting CSS. Only the
+   panel-visibility rules below are still live. */
 .settings-tab-panel { display: none; }
 .settings-tab-panel.active { display: block; animation: fade-in-up 150ms ease-out; }
 
@@ -813,8 +1223,8 @@ table.data tbody tr:last-child td { border-bottom: none; }
     transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
 }
 .theme-option label:hover { background: var(--color-surface-muted); }
-.theme-option input:checked + label { border-color: var(--color-primary); color: var(--color-primary-text); background: var(--color-primary-soft); }
-.theme-option input:focus-visible + label { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.theme-option input:checked + label { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+.theme-option input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
 .theme-option svg { width: 16px; height: 16px; }
 
 /* ---------- Auth pages: split screen ---------- */
@@ -829,7 +1239,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     flex-direction: column;
     justify-content: center;
     padding: var(--space-8);
-    background: linear-gradient(160deg, var(--color-primary-hover) 0%, var(--color-primary) 55%, var(--color-accent-2) 100%);
+    background: linear-gradient(160deg, var(--secondary-hover) 0%, var(--secondary) 55%, var(--accent) 100%);
     color: #fff;
     position: relative;
     overflow: hidden;
@@ -892,6 +1302,26 @@ table.data tbody tr:last-child td { border-bottom: none; }
    via {% block sidebar %} on the chat page - one sidebar total, matching
    the Claude/ChatGPT pattern, not a second nested panel). ---------- */
 .new-chat-form { margin-bottom: var(--space-4); }
+/* A quiet bordered button, not the loud solid-accent-fill .btn - matches
+   the approved chat reference, where "New chat" reads as understated sidebar
+   chrome rather than a shouted call to action. */
+.new-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.65rem 1rem;
+    background: var(--sidebar-hover-bg);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: background 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease);
+}
+.new-chat-btn:hover { background: var(--sidebar-active-bg); border-color: var(--color-border-strong); text-decoration: none; }
+.new-chat-btn:active { transform: scale(0.98); }
 .sidebar-conv-search {
     /* .filter-search's flex:1 is meant for a horizontal filter row - inside
        the sidebar's column layout it instead stretched this box vertically
@@ -906,29 +1336,49 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .sidebar-conv-search input {
     width: 100%;
     padding: 0.55rem 0.75rem 0.55rem 2.1rem;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--sidebar-border);
     border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
+    background: var(--sidebar-hover-bg);
     font-size: var(--text-sm);
     font-family: inherit;
-    color: var(--color-text);
+    color: var(--sidebar-text);
 }
+.sidebar-conv-search input::placeholder { color: var(--sidebar-text-muted); }
+.sidebar-conv-search svg { color: var(--sidebar-text-muted); }
 .sidebar-conv-search input:focus {
     outline: none;
-    border-color: var(--color-primary);
-    background: var(--color-surface);
-    box-shadow: 0 0 0 3px var(--color-primary-soft);
+    border-color: var(--accent);
+    background: var(--sidebar-hover-bg);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 .app-sidebar .btn { width: 100%; justify-content: center; }
-.chat-sidebar-label {
-    font-size: var(--text-xs);
-    font-weight: 700;
+/* Admin sidebar's grouped-nav section headers (Overview/People/Plans &
+   access/...) - bold, spaced, uppercase, matching the approved dashboard
+   concept. Split from .chat-sidebar-label below: the chat page's own group
+   labels (Pinned/Today) want a lighter, sentence-case treatment instead -
+   they used to share one class and one style, which was wrong for one of
+   the two contexts no matter which way it was set. */
+.nav-group-label {
+    font-size: 10.5px;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-text-faint);
-    padding: var(--space-2) 0.6rem 0.4rem;
+    letter-spacing: 0.08em;
+    color: var(--sidebar-text-muted);
+    padding: 18px 12px 7px;
     flex-shrink: 0;
 }
+.nav-group-label:first-of-type { padding-top: 0; }
+
+/* Chat sidebar's conversation-group labels (Pinned/Today/Yesterday) - a
+   quieter, sentence-case heading, not shouting uppercase. */
+.chat-sidebar-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    padding: 14px 12px 6px;
+    flex-shrink: 0;
+}
+.chat-sidebar-label:first-of-type { padding-top: 0; }
 .conv-list-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -0.4rem; padding: 0 0.4rem; }
 .conv-group { list-style: none; padding: 0; margin: 0 0 0.4rem; display: flex; flex-direction: column; gap: 0.1rem; }
 
@@ -938,9 +1388,9 @@ table.data tbody tr:last-child td { border-bottom: none; }
     align-items: center;
     border-radius: var(--radius-sm);
     animation: fade-in-up 180ms ease-out;
-    transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+    transition: background-color 150ms ease, transform 150ms ease;
 }
-.conv-item:hover { background: var(--color-surface-muted); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+.conv-item:hover { background: var(--sidebar-hover-bg); transform: translateY(-1px); }
 .conv-item-link {
     position: relative;
     display: flex;
@@ -949,26 +1399,27 @@ table.data tbody tr:last-child td { border-bottom: none; }
     flex: 1;
     min-width: 0;
     padding: 0.75rem 0.6rem;
-    color: var(--color-text-muted);
+    color: var(--sidebar-text-muted);
     font-size: var(--text-sm);
     border-radius: var(--radius-sm);
 }
 .conv-item-link .nav-icon { opacity: 0.6; flex-shrink: 0; }
+.pin-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin: 0 5.5px; }
 .conv-item-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-item-link:hover { color: var(--color-text); text-decoration: none; }
-.conv-item-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
-.conv-item-link.active { background: var(--color-primary-soft); color: var(--color-primary-text); font-weight: 600; }
-.conv-item-link.active .nav-icon { opacity: 1; }
+.conv-item-link:hover { color: var(--sidebar-text); text-decoration: none; }
+.conv-item-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.conv-item-link.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); font-weight: 600; }
+.conv-item-link.active .nav-icon { opacity: 1; color: var(--accent); }
 /* Signature detail: a thin, slowly-shifting gradient outline marks the
    active conversation - the one recurring flourish in an otherwise quiet
-   UI, reusing the same primary/accent pair as the brand dot and avatars. */
+   UI, using the same secondary/accent pair as the brand dot and avatars. */
 .conv-item-link.active::before {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: var(--radius-sm);
     padding: 1px;
-    background: linear-gradient(120deg, var(--color-primary), var(--color-accent-2), var(--color-primary));
+    background: linear-gradient(120deg, var(--accent), var(--secondary-text), var(--accent));
     background-size: 200% 200%;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -980,7 +1431,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
 }
-.empty-hint { color: var(--color-text-faint); font-size: var(--text-sm); padding: 0.5rem 0.6rem; list-style: none; }
+.empty-hint { color: var(--sidebar-text-muted); font-size: var(--text-sm); padding: 0.5rem 0.6rem; list-style: none; }
 
 .sidebar-empty-state {
     display: flex;
@@ -989,10 +1440,10 @@ table.data tbody tr:last-child td { border-bottom: none; }
     text-align: center;
     gap: 0.6rem;
     padding: var(--space-6) var(--space-3);
-    color: var(--color-text-faint);
+    color: var(--sidebar-text-muted);
     font-size: var(--text-sm);
 }
-.sidebar-empty-state .empty-icon-badge { width: 40px; height: 40px; }
+.sidebar-empty-state .empty-icon-badge { width: 40px; height: 40px; background: var(--sidebar-hover-bg); color: var(--sidebar-text-muted); }
 .sidebar-empty-state .empty-icon-badge svg { width: 18px; height: 18px; }
 
 .conv-item-actions {
@@ -1016,16 +1467,16 @@ table.data tbody tr:last-child td { border-bottom: none; }
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--color-text-faint);
+    color: var(--sidebar-text-muted);
     cursor: pointer;
 }
-.conv-action-btn:hover { background: var(--color-border); color: var(--color-text); }
-.conv-action-btn.conv-action-active { color: var(--color-primary); }
-.conv-action-btn.conv-action-danger:hover { background: var(--color-danger-soft); color: var(--color-danger); }
+.conv-action-btn:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
+.conv-action-btn.conv-action-active { color: var(--accent); }
+.conv-action-btn.conv-action-danger:hover { background: var(--color-danger); color: #fff; }
 
 .sidebar-user-chip { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; position: relative; }
 .sidebar-user-chip .msg-avatar { width: 26px; height: 26px; }
-.sidebar-user-email { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-user-email { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--sidebar-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-user-chip .notif-bell summary { width: 30px; height: 30px; }
 /* The bell sits in the sidebar footer, near the bottom of the screen, and
    .app-sidebar clips overflow (see its own comment) so a dropdown opening
@@ -1045,13 +1496,13 @@ table.data tbody tr:last-child td { border-bottom: none; }
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.5rem 0.4rem 0;
-    background: var(--color-surface);
+    background: var(--sidebar-bg);
     opacity: 0;
     pointer-events: none;
     transition: opacity 100ms ease;
 }
 .sidebar-skeleton.htmx-request { opacity: 1; }
-.sidebar-skeleton .skeleton-block { height: 36px; }
+.sidebar-skeleton .skeleton-block { height: 36px; background: var(--sidebar-hover-bg); animation: none; }
 
 /* ---------- Usage widget (sidebar, user-scoped) ---------- */
 .usage-widget {
@@ -1085,7 +1536,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     from { stroke-dashoffset: 100; }
     to { stroke-dashoffset: var(--ring-offset, 0); }
 }
-.usage-ring-warn .usage-ring-fill { stroke: var(--color-warning); }
+.usage-ring-warn .usage-ring-fill { stroke: var(--warn); }
 .usage-ring-danger .usage-ring-fill { stroke: var(--color-danger); }
 .usage-ring-text { font-family: var(--font-mono); font-size: 0.62rem; font-weight: 600; fill: var(--color-text); transform: rotate(0deg); }
 
@@ -1113,9 +1564,9 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .usage-bar { height: 5px; border-radius: 999px; background: var(--color-border); overflow: hidden; }
 .usage-bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
 .usage-bar-ok { background: var(--color-success); }
-.usage-bar-warn { background: var(--color-warning); }
+.usage-bar-warn { background: var(--warn); }
 .usage-bar-danger { background: var(--color-danger); }
-.usage-metric-warning { font-size: 0.74rem; margin-top: 0.25rem; color: var(--color-warning); }
+.usage-metric-warning { font-size: 0.74rem; margin-top: 0.25rem; color: var(--warn); }
 .usage-metric:has(.usage-bar-danger) .usage-metric-warning { color: var(--color-danger); }
 
 .chat-panel {
@@ -1147,6 +1598,27 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .chat-header-actions .btn-ghost { border-radius: 999px; }
 
 .usage-popover { position: relative; }
+/* A live "142 / 200 requests today" pill, not a plain "Usage" button label -
+   only rendered when the user's plan actually has a request-count cap to
+   report (get_request_count_status returns None otherwise, falling back to
+   the plain-label summary right below). Opens the exact same usage-popover
+   panel either way. */
+.usage-count-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background 150ms var(--ease), border-color 150ms var(--ease);
+}
+.usage-count-pill:hover { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
 .usage-popover summary { display: inline-flex; align-items: center; gap: 0.4rem; }
 .usage-popover-panel {
     position: absolute;
@@ -1185,6 +1657,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     align-items: center;
     justify-content: center;
     padding: var(--space-4);
+    animation: overlay-fade-in 150ms var(--ease);
 }
 .upgrade-modal-box {
     width: min(420px, 100%);
@@ -1193,7 +1666,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: var(--space-5);
-    animation: scale-fade-in 150ms ease-out;
+    animation: scale-fade-in 220ms var(--ease-spring);
 }
 .upgrade-modal-box h3 { margin-bottom: 0.3rem; }
 .upgrade-modal-context {
@@ -1274,13 +1747,20 @@ table.data tbody tr:last-child td { border-bottom: none; }
     max-width: 220px;
 }
 .model-select-summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px rgba(0, 174, 240, 0.7); flex-shrink: 0; }
 .model-select-summary:hover { background: var(--color-surface); border-color: var(--color-text-faint); }
-.model-select-dropdown[open] .model-select-summary { background: var(--color-surface); border-color: var(--color-primary); color: var(--color-text); }
+.model-select-dropdown[open] .model-select-summary { background: var(--color-surface); border-color: var(--accent-dim); color: var(--color-text); }
+/* The static "your plan doesn't include this" version of the same pill -
+   same look, just not clickable (no chevron, default cursor). */
+.model-select-locked { cursor: default; opacity: 0.75; }
 .model-select-dropdown .chevron-icon { width: 14px; height: 14px; flex-shrink: 0; transition: transform 150ms ease; }
 .model-select-dropdown[open] .chevron-icon { transform: rotate(180deg); }
 .model-select-panel {
     position: absolute;
-    bottom: calc(100% + 0.5rem);
+    /* Opens downward, not upward - this dropdown now lives in the page
+       header (moved there from the composer toolbar at the bottom of the
+       screen), so "up" would mean off the top of the viewport. */
+    top: calc(100% + 0.5rem);
     left: 0;
     width: 220px;
     max-height: 320px;
@@ -1315,7 +1795,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     cursor: pointer;
 }
 .model-select-option:hover { background: var(--color-surface-muted); }
-.model-select-option.is-selected { color: var(--color-primary-text); background: var(--color-primary-soft); font-weight: 650; }
+.model-select-option.is-selected { color: var(--accent); background: rgba(0, 174, 240, 0.08); border: 1px solid var(--accent-dim); font-weight: 650; }
 .model-select-option-locked {
     display: flex;
     align-items: center;
@@ -1341,27 +1821,63 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .chat-messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); }
 .chat-column { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-5); }
 
-.chat-empty {
+/* ---------- Chat hero / quick-start empty state ---------- */
+.chat-hero {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    color: var(--color-text-faint);
-    padding: var(--space-6);
+    max-width: 660px;
+    margin: 0 auto;
+    width: 100%;
+    padding: var(--space-8) var(--space-4) var(--space-6);
 }
-.chat-empty h2 { color: var(--color-text); margin: var(--space-4) 0 0; font-size: 1.3rem; letter-spacing: -0.01em; }
-.chat-empty p { color: inherit; margin: 0 0 var(--space-2); max-width: 320px; font-size: var(--text-sm); }
-.chat-empty .btn { width: auto; padding-left: var(--space-5); padding-right: var(--space-5); }
+.hero-eyebrow {
+    font-size: var(--text-xs);
+    color: var(--secondary-text);
+    margin-bottom: var(--space-3);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.hero-eyebrow-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--secondary-text); flex-shrink: 0; }
+/* Same treatment as .hero-eyebrow, for admin pages - kept as its own class
+   (not a shared selector) since chat and admin pages never share a template. */
+.admin-eyebrow { font-size: var(--text-xs); color: var(--secondary-text); margin-bottom: var(--space-2); display: flex; align-items: center; gap: 0.4rem; }
+.admin-eyebrow::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--secondary-text); flex-shrink: 0; }
+.hero-title {
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 500;
+    line-height: 1.28;
+    max-width: 500px;
+    letter-spacing: -0.01em;
+    color: var(--color-text);
+}
+.hero-sub { font-size: var(--text-sm); color: var(--color-text-muted); margin-top: var(--space-3); max-width: 450px; line-height: 1.65; }
+
+.quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-top: var(--space-6); }
+.quick-card-form { display: contents; }
+.quick-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--color-surface);
+    color: inherit;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.8rem 0.9rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.quick-card:hover { border-color: var(--color-border-strong); background: var(--color-surface-muted); }
+.quick-card-title { font-size: var(--text-sm); font-weight: 600; margin-bottom: 0.2rem; color: var(--color-text); }
+.quick-card-sub { font-size: var(--text-xs); color: var(--color-text-faint); }
+.hero-plain-start { margin-top: var(--space-5); }
 
 .empty-icon-badge {
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: var(--color-primary-soft);
-    color: var(--color-primary);
+    background: var(--secondary-soft);
+    color: var(--secondary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1389,8 +1905,11 @@ table.data tbody tr:last-child td { border-bottom: none; }
     font-weight: 700;
     margin-top: 0.15rem;
 }
-.msg-avatar-user { background: var(--color-primary-soft); color: var(--color-primary-text); }
-.msg-avatar-assistant { background: linear-gradient(135deg, var(--color-primary), var(--color-accent-2)); color: #fff; }
+.msg-avatar-user { background: var(--secondary); color: var(--secondary-ink); }
+/* Rounded square, not a circle - matches the approved chat concept exactly
+   (the assistant's avatar is visually distinct from the user's circular
+   one, not just a different color). */
+.msg-avatar-assistant { width: 26px; height: 26px; border-radius: 8px; background: var(--accent-dim); color: var(--accent); }
 .msg-avatar-assistant svg { width: 15px; height: 15px; }
 
 .msg-content-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -1456,7 +1975,10 @@ table.data tbody tr:last-child td { border-bottom: none; }
     flex: 1;
     min-width: 0;
     padding-top: 0.2rem;
-    font-size: var(--text-base);
+    /* 14.5px, not the 16px --text-base - the approved chat concept sets its
+       message body a size down from the app's default body copy, matching
+       how a dense chat thread reads best. */
+    font-size: 14.5px;
     line-height: 1.65;
     color: var(--color-text);
 }
@@ -1509,19 +2031,21 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .msg-markdown a { text-decoration: underline; }
 
 .msg-bubble {
-    max-width: 68%;
-    padding: 0.65rem 1rem;
-    border-radius: var(--radius-md);
+    max-width: 78%;
+    padding: 12px 16px;
+    /* All four corners explicit (not a radius token + one override) - the
+       approved chat concept's exact shape: soft everywhere except the
+       bottom-right corner, which points at the avatar-less send side. */
+    border-radius: 18px 18px 4px 18px;
     white-space: pre-wrap;
     word-break: break-word;
-    font-size: var(--text-base);
-    line-height: 1.55;
+    font-size: 14.5px;
+    line-height: 1.6;
     /* A soft warm tint with dark text, not a saturated color block with
        white text - Claude's user bubble reads as part of the same warm
        page rather than a loud UI element. */
-    background: var(--color-primary-soft);
+    background: var(--secondary-soft);
     color: var(--color-text);
-    border-bottom-right-radius: 4px;
 }
 
 .msg-attachment {
@@ -1553,8 +2077,8 @@ table.data tbody tr:last-child td { border-bottom: none; }
     justify-content: space-between;
     gap: 0.6rem;
     padding: 0.5rem 0.9rem;
-    background: var(--color-primary-soft);
-    color: var(--color-primary-text);
+    background: var(--secondary-soft);
+    color: var(--secondary);
     border-radius: var(--radius-sm);
     font-size: var(--text-sm);
     font-weight: 500;
@@ -1575,10 +2099,10 @@ table.data tbody tr:last-child td { border-bottom: none; }
     margin: 0 auto var(--space-3);
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     flex-wrap: wrap;
     gap: 0.5rem;
 }
-.composer-toolbar-spacer { flex: 1 1 auto; }
 .template-picker { position: relative; }
 .template-picker-panel {
     position: absolute;
@@ -1636,52 +2160,75 @@ table.data tbody tr:last-child td { border-bottom: none; }
 }
 .template-item-delete:hover { background: var(--color-danger-soft); color: var(--color-danger); }
 .template-empty { padding: 0.6rem; color: var(--color-text-faint); font-size: 0.82rem; margin: 0; }
+/* A two-row card (textarea, then a footer of chips + send), not a single-row
+   pill - matches the approved chat concept exactly (see .composer/.composer-
+   footer in the concept artifact). */
 .chat-composer {
     max-width: 760px;
     margin: 0 auto;
     display: flex;
-    align-items: flex-end;
-    gap: 0.6rem;
+    flex-direction: column;
     background: var(--color-surface-muted);
     border: 1px solid var(--color-border);
-    border-radius: 1.5rem;
-    padding: 0.5rem 0.5rem 0.5rem 0.9rem;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    border-radius: 22px;
+    padding: 16px 18px 12px;
+    transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s var(--ease);
 }
-.chat-composer:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); background: var(--color-surface); }
+.chat-composer:focus-within { border-color: var(--accent-dim); box-shadow: 0 0 0 5px var(--accent-soft); background: var(--color-surface); }
 .chat-composer textarea {
-    flex: 1;
+    width: 100%;
     margin: 0;
     border: none;
     background: transparent;
-    padding: 0.45rem 0;
+    padding: 0;
     resize: none;
     max-height: 200px;
     overflow-y: auto;
     font-family: inherit;
-    font-size: 0.95rem;
+    font-size: 14.5px;
     line-height: 1.5;
 }
 .chat-composer textarea:focus { border: none; box-shadow: none; }
-.chat-composer button { flex-shrink: 0; margin-bottom: 0.1rem; }
 .chat-disclaimer { text-align: center; font-size: var(--text-xs); color: var(--color-text-faint); margin: 0.6rem 0 0; }
+
+.composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 10px; }
+.composer-footer-left { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.composer-chips { display: flex; align-items: center; gap: 6px; overflow-x: auto; }
+.composer-chip {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    background: none;
+    border: 1px solid var(--color-border);
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: border-color 0.16s var(--ease), color 0.16s var(--ease), background 0.16s var(--ease);
+}
+.composer-chip:hover { border-color: var(--color-border-strong); color: var(--color-text); background: none; }
+.composer-chip.is-selected,
+.composer-chip.is-selected:hover { color: var(--accent-text); border-color: var(--accent); background: var(--accent-soft); }
 
 .attach-btn, .send-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2.2rem;
-    height: 2.2rem;
     flex-shrink: 0;
     border-radius: 50%;
     cursor: pointer;
 }
-.attach-btn { border: none; background: transparent; color: var(--color-text-muted); transition: background-color 0.15s ease, transform 100ms ease; }
-.attach-btn svg { width: 17px; height: 17px; }
+.attach-btn { width: 2rem; height: 2rem; border: none; background: transparent; color: var(--color-text-muted); transition: background-color 0.15s ease, transform 100ms ease; }
+.attach-btn svg { width: 16px; height: 16px; }
 .attach-btn:hover { background: var(--color-border); color: var(--color-text); }
 .attach-btn:active { transform: scale(0.92); }
-.send-btn { padding: 0; }
-.send-btn svg { width: 16px; height: 16px; }
+/* Solid navy, not the cyan gradient every other primary button gets - the
+   approved concept's send button is deliberately the "structural" brand
+   color (matching the sidebar's active-nav pill), not the accent color. */
+.send-btn { width: 32px; height: 32px; padding: 0; background: var(--brand-navy); border: none; transition: transform 0.16s var(--ease); }
+.send-btn:hover { background: var(--brand-navy); transform: scale(1.06); }
+.send-btn:active { transform: scale(0.94); }
+.send-btn svg { width: 15px; height: 15px; stroke: #fff; }
 
 /* ---------- Mobile top bar + hamburger (hidden on desktop) ---------- */
 .mobile-topbar { display: none; }
@@ -1714,7 +2261,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     .mobile-topbar-brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: var(--color-text); }
     .mobile-topbar-brand .dot {
         width: 9px; height: 9px; border-radius: 50%;
-        background: linear-gradient(135deg, var(--color-primary), var(--color-accent-2)); flex-shrink: 0;
+        background: var(--accent); flex-shrink: 0;
     }
 
     .app-shell { flex-direction: column; }
@@ -1774,6 +2321,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     align-items: flex-start;
     justify-content: center;
     padding-top: 12vh;
+    animation: overlay-fade-in 120ms var(--ease);
 }
 .quick-switcher-box {
     width: min(560px, 90vw);
@@ -1782,7 +2330,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
     padding: var(--space-3);
-    animation: scale-fade-in 120ms ease-out;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .quick-switcher-box .input { margin: 0 0 var(--space-2); }
 .quick-switcher-results { display: flex; flex-direction: column; gap: 0.15rem; max-height: 50vh; overflow-y: auto; }
@@ -1802,7 +2350,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
     cursor: pointer;
 }
 .quick-switcher-item:hover { background: var(--color-surface-muted); text-decoration: none; }
-.quick-switcher-item-new { color: var(--color-primary-text); font-weight: 600; }
+.quick-switcher-item-new { color: var(--secondary); font-weight: 600; }
 .quick-switcher-empty { padding: 0.6rem 0.75rem; color: var(--color-text-faint); font-size: 0.85rem; }
 
 /* ---------- Onboarding tour ---------- */
@@ -1814,7 +2362,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
        "spotlight cutout" trick - it IS the dark backdrop everywhere except
        this rectangle, so no separate full-screen overlay is needed. */
     box-shadow: 0 0 0 9999px rgba(17, 23, 43, 0.55);
-    border: 2px solid var(--color-accent-2);
+    border: 2px solid var(--accent);
     pointer-events: none;
     transition: top 200ms ease, left 200ms ease, width 200ms ease, height 200ms ease;
     z-index: 111;
@@ -1834,6 +2382,282 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .onboarding-card h3 { margin: 0 0 0.4rem; font-size: 1rem; }
 .onboarding-card p { margin: 0 0 var(--space-3); font-size: 0.85rem; color: var(--color-text-muted); }
 .onboarding-card-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* ---------- Redesign components ----------
+   Shared building blocks for the admin console redesign: a generic modal
+   shell (new; the existing .upgrade-modal-* pair stays separate/untouched),
+   a toggle switch, sliding-indicator chips/nav, KPI cards, plan cards,
+   provider-fetch UI, a simple bar chart, and per-plan-tier badge colors.
+   All token-based, so both themes work automatically. */
+
+/* Generic modal - open/close via portalOpenModal(id)/portalCloseModal(id)
+   in static/js/ui-kit.js. */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 23, 43, 0.45);
+    z-index: 120;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+    /* display:none -> flex (toggled by portalOpenModal in ui-kit.js) is
+       enough on its own to restart this animation each time the modal
+       opens - an element isn't rendered/animating at all while display:none,
+       so it always plays fresh from 0% the moment it re-enters the tree. */
+    animation: overlay-fade-in 150ms var(--ease);
+}
+.modal-box {
+    width: min(460px, 100%);
+    max-height: 82vh;
+    overflow-y: auto;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    animation: scale-fade-in 220ms var(--ease-spring);
+}
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--color-border);
+}
+.modal-title { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; margin: 0; }
+.modal-close { cursor: pointer; color: var(--color-text-faint); width: 18px; height: 18px; background: none; border: none; padding: 0; }
+.modal-close:hover { color: var(--color-text); background: none; }
+.modal-body { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+.modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+.form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.form-hint { font-size: var(--text-xs); color: var(--color-text-faint); }
+.check-row { display: flex; align-items: center; gap: 0.55rem; font-size: var(--text-sm); color: var(--color-text-muted); padding: 0.35rem 0; cursor: pointer; }
+.check-row input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
+/* Toggle switch - a real checkbox under the hood (label > input[hidden] +
+   visual span) so it stays a working form field / htmx-submit trigger, not
+   just a styled div. */
+/* gap only matters when a trailing text label sits inside the switch (the
+   plan-edit form's toggle rows below) - harmless no-op for the icon-only
+   usages elsewhere (Models page) since there's nothing else to space from. */
+.toggle-switch { display: inline-flex; align-items: center; gap: 0.6rem; cursor: pointer; position: relative; }
+/* Covers the whole visible track (not a 1x1px dot) so the real click target
+   matches what's visually clickable - a tiny offscreen input relies on
+   label-click delegation alone, which is fragile across browsers/automation. */
+.toggle-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+.toggle-switch .toggle {
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--color-border-strong);
+    position: relative;
+    transition: background 280ms var(--ease);
+    flex-shrink: 0;
+}
+.toggle-switch .toggle-knob {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-surface);
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 300ms var(--ease-spring), width 120ms var(--ease);
+    box-shadow: var(--shadow-sm);
+}
+.toggle-switch input:checked + .toggle { background: var(--accent); }
+.toggle-switch input:checked + .toggle .toggle-knob { transform: translateX(16px); }
+.toggle-switch input:focus-visible + .toggle { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
+/* A tactile knob-stretch on hover/press, like a physical switch - subtle,
+   but it's the difference between a toggle that feels inert and one that
+   feels alive under the cursor before you've even clicked it. */
+.toggle-switch:hover .toggle-knob { width: 17px; }
+.toggle-switch input:active ~ .toggle .toggle-knob { width: 19px; }
+
+/* Section grouping inside a long form (plan-edit modal) - a small caption
+   plus a hairline rule, so a dense stack of fields reads as a few clear
+   groups instead of one undifferentiated wall. */
+.form-section-label {
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-faint);
+    margin: var(--space-5) 0 var(--space-2);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+}
+.form-section-label:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.toggle-row-group { display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: var(--space-2); }
+.toggle-row-group.toggle-row-wrap { flex-direction: row; flex-wrap: wrap; gap: 1.25rem; }
+.toggle-row { font-weight: 500; }
+.toggle-row .toggle { flex-shrink: 0; }
+
+/* Sliding-indicator chip row (Users plan filter) - positioned/animated via
+   portalMoveIndicator() in ui-kit.js. */
+.filter-row {
+    display: inline-flex;
+    gap: 2px;
+    position: relative;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 11px;
+    padding: 3px;
+}
+.filter-indicator {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 0;
+    border-radius: 8px;
+    background: var(--color-surface-active);
+    transition: transform 360ms var(--ease-spring), width 360ms var(--ease-spring);
+    z-index: 0;
+}
+.filter-chip {
+    position: relative;
+    z-index: 1;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 200ms var(--ease), transform 150ms var(--ease);
+    white-space: nowrap;
+}
+/* Explicit background:none here (not just on .filter-chip) - without it,
+   the generic `button:hover { background: var(--accent-hover) }` rule
+   outranks .filter-chip's own background:none on specificity (a type
+   selector + :hover beats a single class alone), so a hovered chip would
+   flash accent-colored instead of staying transparent over the pill. */
+.filter-chip:hover { color: var(--color-text); background: none; text-decoration: none; }
+.filter-chip:active { transform: scale(0.94); }
+/* Active state reads from the sliding pill behind it, not from a color
+   change on the text - matches the approved design concept (a tonal
+   accent color on the label would fight the pill for "what's selected"). */
+.filter-chip.active { color: var(--color-text); }
+
+/* KPI cards (admin Dashboard) */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); margin-bottom: var(--space-5); align-items: stretch; }
+.kpi-card {
+    display: flex;
+    flex-direction: column;
+    /* Every card gets the same minimum height and justify-content pushes
+       label/value to the top with any delta/spark at the bottom - so a
+       card with just a value and one with a full delta+spark still line
+       up across a grid row instead of leaving ragged empty space. */
+    min-height: 112px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 18px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow-card);
+    transition: transform 220ms var(--ease-spring), box-shadow 220ms var(--ease-spring);
+}
+.kpi-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); }
+.kpi-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-faint); margin-bottom: 10px; }
+.kpi-value { font-family: var(--font-display); font-size: 27px; font-weight: 700; margin-bottom: 0.4rem; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+/* margin-top:auto (not space-between on the card) so label+value stay
+   grouped together at the top and only this trailing element gets pushed
+   to the bottom - keeps 2-line and 4-line cards aligned across a row
+   without the label/value themselves stretching apart. */
+.kpi-delta { font-size: var(--text-xs); font-weight: 700; display: flex; align-items: center; gap: 0.25rem; margin-top: auto; padding-top: 0.6rem; }
+.kpi-delta.up { color: var(--color-success); }
+.kpi-delta.warn { color: var(--warn); }
+.spark { display: flex; align-items: flex-end; gap: 2.5px; height: 20px; margin-top: auto; padding-top: 0.6rem; }
+.spark div { flex: 1; background: var(--color-border-strong); border-radius: 2px; min-height: 2px; transition: background 200ms var(--ease), height 450ms var(--ease); }
+/* Today's bar (the last one) stays the accent color at rest, not just on
+   hover - it's the one live figure in an otherwise-past 7-day trend. */
+.spark div:last-child { background: var(--accent); }
+.kpi-card:hover .spark div { background: var(--accent-dim); }
+.kpi-card:hover .spark div:last-child { background: var(--accent); }
+
+/* Provider-fetch modal (admin Models > Add model) */
+.provider-tabs { display: flex; gap: 2px; background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 3px; }
+.provider-tab {
+    flex: 1;
+    text-align: center;
+    font-size: var(--text-sm);
+    padding: 0.45rem 0;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    background: none;
+    border: none;
+    transition: background 150ms ease, color 150ms ease;
+}
+/* Explicit background:none on :hover too - without it the generic
+   `button:hover { background: var(--accent-hover) }` rule outranks this
+   plain class on specificity (see .filter-chip:hover for the same fix). */
+.provider-tab:hover:not(.active) { background: none; color: var(--color-text); }
+.provider-tab.active { background: var(--color-surface-active); color: var(--color-text); }
+/* Shown via hx-indicator, which toggles htmx's own .htmx-request class on
+   this element during the in-flight request - not a class we set ourselves. */
+.fetch-spinner { display: none; align-items: center; gap: 0.5rem; font-size: var(--text-sm); color: var(--color-text-faint); padding: 0.6rem 0; }
+.fetch-spinner.htmx-request { display: flex; }
+.spin-icon { width: 14px; height: 14px; border: 2px solid var(--color-border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 700ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fetched-list { display: flex; flex-direction: column; gap: 0.6rem; }
+.fetched-item { background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.7rem 0.8rem; }
+.fetched-item-head { display: flex; align-items: center; gap: 0.55rem; }
+.fetched-item-head span { font-size: var(--text-sm); font-weight: 600; color: var(--color-text); }
+.fetched-item-sub { font-size: var(--text-xs); color: var(--color-text-faint); padding-left: 1.5rem; margin-top: 0.2rem; }
+
+/* Plan cards (admin Plans & tiers) */
+.plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
+@media (max-width: 1000px) { .plan-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .plan-grid { grid-template-columns: 1fr; } }
+/* Same elevated-card language as the Dashboard's KPI/chart cards - shadow
+   + hover-lift, not just a flat border - rather than a separate, flatter
+   treatment just for this grid. */
+.plan-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 18px;
+    padding: var(--space-5);
+    box-shadow: var(--shadow-card);
+    transition: transform 220ms var(--ease-spring), box-shadow 220ms var(--ease-spring);
+}
+.plan-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); }
+.plan-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+.plan-card-title { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; }
+.plan-edit { font-size: var(--text-xs); color: var(--color-text-faint); cursor: pointer; background: none; border: none; padding: 0; }
+.plan-edit:hover { color: var(--accent); background: none; }
+.plan-row { display: flex; justify-content: space-between; font-size: var(--text-xs); padding: 0.45rem 0; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); }
+.plan-row:last-child { border-bottom: none; }
+.plan-row span:last-child { color: var(--color-text); }
+.feat-list { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.feat-tag { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-sm); }
+.feat-tag.on { background: var(--color-success-soft); color: var(--color-success); }
+.feat-tag.off { background: var(--color-surface-muted); color: var(--color-text-faint); }
+
+/* Simple bar chart (admin Usage & billing - 7-day cost) */
+.bar-chart { display: flex; align-items: flex-end; gap: 0.6rem; height: 140px; padding: 0.6rem 0.25rem 0; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; height: 100%; justify-content: flex-end; }
+.bar-fill { width: 100%; background: var(--color-surface-active); border-radius: 4px 4px 0 0; min-height: 2px; transition: height 0.5s var(--ease), background 200ms var(--ease); }
+/* Today's bar stays the accent color, same reasoning as the Dashboard KPI
+   sparklines - it's the one live figure in an otherwise-past 7-day trend. */
+.bar-col:last-child .bar-fill { background: var(--accent); }
+.bar-label { font-size: 0.65rem; color: var(--color-text-faint); }
+
+/* Audit log severity dot */
+.log-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.log-dot-info { background: var(--secondary-text); }
+.log-dot-warn { background: var(--warn); }
+.log-dot-danger { background: var(--color-danger); }
+
+/* Per-plan-tier badge colors, layered on the existing .badge base class -
+   mapped from Plan.name (free text) via the plan_tier_class template
+   filter, which falls back to .badge-muted for any non-standard name. */
+.badge-plan-demo { background: var(--color-surface-muted); color: var(--color-text-muted); }
+.badge-plan-basic { background: var(--secondary-soft); color: var(--secondary); }
+.badge-plan-advanced { background: var(--warn-dim); color: var(--warn); }
+.badge-plan-full { background: var(--color-success-soft); color: var(--color-success); }
 
 /* ---------- Misc ---------- */
 .text-muted { color: var(--color-text-muted); }

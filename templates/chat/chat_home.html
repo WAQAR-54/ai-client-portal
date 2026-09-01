@@ -4,9 +4,26 @@
 
 {% block sidebar %}
 <a class="brand" href="{% url 'accounts:dashboard' %}"><span class="dot"></span>{% trans "AI Client Portal" %}</a>
+{% if user.is_admin %}
+<div class="app-switch" role="group" aria-label="{% trans 'Switch product area' %}" style="margin-bottom: var(--space-4);">
+    <div class="app-switch-pill" id="appSwitchPill"></div>
+    <a href="{% url 'chat:chat_home' %}" id="appSwitchChat" class="active">{% trans "Chat" %}</a>
+    <a href="{% url 'governance:dashboard' %}" id="appSwitchAdmin">{% trans "Admin" %}</a>
+</div>
+<script>
+    (function() {
+        var pill = document.getElementById("appSwitchPill");
+        var active = document.getElementById("appSwitchChat");
+        if (pill && active) {
+            pill.style.width = active.offsetWidth + "px";
+            pill.style.transform = "translateX(" + active.offsetLeft + "px)";
+        }
+    })();
+</script>
+{% endif %}
 <form method="post" action="{% url 'chat:create_conversation' %}" class="new-chat-form">
     {% csrf_token %}
-    <button type="submit" class="btn" id="tour-new-chat">
+    <button type="submit" class="new-chat-btn" id="tour-new-chat">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         {% trans "New chat" %}
     </button>
@@ -76,12 +93,7 @@
         <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"></div>
         {% endif %}
     </div>
-    {% if user.is_admin %}
-    <a href="{% url 'governance:dashboard' %}" id="tour-admin-link">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-        {% trans "Admin" %}
-    </a>
-    {% elif user.is_manager %}
+    {% if user.is_manager %}
     <a href="{% url 'governance:manager_dashboard' %}" id="tour-admin-link">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         {% trans "My Team" %}
@@ -250,7 +262,50 @@ function portalCloseUpgradeModal() {
 </script>
 <section class="chat-panel">
     <header class="chat-header">
-        <span class="chat-toolbar-title">{% if conversation %}{{ conversation.title }}{% endif %}</span>
+        {% if conversation %}
+        {% trans "Smart Routing" as auto_routing_label %}
+        {% if can_select_model %}
+        <details class="model-select-dropdown" id="model-select-dropdown">
+            <summary class="model-select-summary no-marker">
+                <span class="model-dot"></span>
+                <span id="model-select-label">{{ auto_routing_label }}</span>
+                <svg class="nav-icon chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="model-select-panel">
+                <button type="button" class="model-select-option is-selected" data-value="" data-label="{{ auto_routing_label }}">{{ auto_routing_label }}</button>
+                {% regroup model_rows by model.get_tier_display as tier_groups %}
+                {% for group in tier_groups %}
+                <div class="model-select-group-label">{{ group.grouper }}</div>
+                {% for row in group.list %}
+                {% if row.locked %}
+                <button type="button" class="model-select-option model-select-option-locked"
+                        data-model-name="{{ row.model.display_label }}"
+                        data-required-plan-id="{% if row.required_plan %}{{ row.required_plan.id }}{% endif %}"
+                        data-required-plan-name="{% if row.required_plan %}{{ row.required_plan.name }}{% endif %}">
+                    <span class="model-select-option-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        {{ row.model.display_label }}
+                    </span>
+                    {% if row.required_plan %}<span class="model-select-locked-tier">{{ row.required_plan.name }}</span>{% endif %}
+                </button>
+                {% else %}
+                <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">{{ row.model.display_label }}</button>
+                {% endif %}
+                {% endfor %}
+                {% endfor %}
+            </div>
+        </details>
+        {% else %}
+        {# Plan disallows manual selection - a plain static label, not a dropdown with nothing to pick. #}
+        <span class="model-select-summary model-select-locked" title="{% trans 'Manual model selection is not included in your plan' %}">
+            <span class="model-dot"></span>
+            <span>{{ auto_routing_label }}</span>
+        </span>
+        {% endif %}
+        <input type="hidden" name="model_id" id="model-select" value="">
+        {% else %}
+        <span class="chat-toolbar-title"></span>
+        {% endif %}
         <div class="chat-header-actions">
             {% if conversation %}
             <details class="export-menu">
@@ -266,10 +321,17 @@ function portalCloseUpgradeModal() {
             </details>
             {% endif %}
             <details class="usage-popover">
+                {% if request_count %}
+                <summary class="usage-count-pill" id="tour-usage-btn" title="{% trans 'View usage details' %}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+                    {% blocktrans with used=request_count.used cap=request_count.cap window=request_count.window_label %}{{ used }} / {{ cap }} requests {{ window }}{% endblocktrans %}
+                </summary>
+                {% else %}
                 <summary class="btn-small btn-ghost no-marker" id="tour-usage-btn">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
                     {% trans "Usage" %}
                 </summary>
+                {% endif %}
                 <div class="usage-popover-panel">
                     {% if plan_status.plan %}
                     <p class="text-muted" style="margin:0 0 0.6rem; font-size:0.85rem;">
@@ -291,6 +353,14 @@ function portalCloseUpgradeModal() {
                     {% endif %}
                 </div>
             </details>
+            {% if user|has_feature:"dark_mode" %}
+            <button type="button" class="theme-toggle-quick"
+                    data-set-theme-url="{% url 'accounts:set_theme_preference' %}" data-csrf="{{ csrf_token }}"
+                    title="{% trans 'Switch light/dark' %}" aria-label="{% trans 'Switch light/dark theme' %}">
+                <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            {% endif %}
             <details class="profile-menu">
                 <summary class="profile-avatar">{{ user.email|first|upper }}</summary>
                 <div class="profile-dropdown">
@@ -334,38 +404,15 @@ function portalCloseUpgradeModal() {
             <button type="button" class="link-btn" onclick="portalCancelEdit()">{% trans "Cancel" %}</button>
         </div>
         <div class="composer-toolbar">
-            {% trans "Auto (smart routing)" as auto_routing_label %}
-            <details class="model-select-dropdown" id="model-select-dropdown">
-                <summary class="model-select-summary no-marker">
-                    <span id="model-select-label">{{ auto_routing_label }}</span>
-                    <svg class="nav-icon chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                </summary>
-                <div class="model-select-panel">
-                    <button type="button" class="model-select-option is-selected" data-value="" data-label="{{ auto_routing_label }}">{{ auto_routing_label }}</button>
-                    {% regroup model_rows by model.get_tier_display as tier_groups %}
-                    {% for group in tier_groups %}
-                    <div class="model-select-group-label">{{ group.grouper }}</div>
-                    {% for row in group.list %}
-                    {% if row.locked %}
-                    <button type="button" class="model-select-option model-select-option-locked"
-                            data-model-name="{{ row.model.display_label }}"
-                            data-required-plan-id="{% if row.required_plan %}{{ row.required_plan.id }}{% endif %}"
-                            data-required-plan-name="{% if row.required_plan %}{{ row.required_plan.name }}{% endif %}">
-                        <span class="model-select-option-label">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                            {{ row.model.display_label }}
-                        </span>
-                        {% if row.required_plan %}<span class="model-select-locked-tier">{{ row.required_plan.name }}</span>{% endif %}
-                    </button>
-                    {% else %}
-                    <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">{{ row.model.display_label }}</button>
-                    {% endif %}
-                    {% endfor %}
-                    {% endfor %}
-                </div>
-            </details>
-            <input type="hidden" name="model_id" id="model-select" value="">
-            <div class="composer-toolbar-spacer"></div>
+            {% comment %}
+            The model-select dropdown and its hidden #model-select input now
+            live in the page header instead of here (see chat-header above) -
+            a persistent top-of-page model switcher, matching the approved
+            chat reference, rather than one buried in the composer. #model-
+            select stays the hidden input's id either way, so
+            hx-include="#model-select" on the send form below still finds it
+            regardless of where in the DOM it actually sits.
+            {% endcomment %}
             {% if user|has_feature:"prompt_templates" %}
             <details class="template-picker" id="prompt-template-picker">
                 <summary class="btn-small btn-ghost no-marker" title="{% trans 'Insert a saved prompt (or type "/")' %}">
@@ -389,17 +436,37 @@ function portalCloseUpgradeModal() {
               hx-include="#model-select"
               hx-on::after-request="this.reset(); document.getElementById('composer-textarea').style.height='auto'; portalResetComposerAttrs();">
             {% csrf_token %}
-            <label class="attach-btn" title="{% trans 'Attach a PDF, Word, Excel, or text file — its content is read into this message as context' %}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                <input type="file" name="attachment" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
-            </label>
             <textarea id="composer-textarea" class="input" name="content" placeholder="{% trans 'Message the assistant...' %}"
                       rows="1" autocomplete="off"
                       onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.closest('form').requestSubmit();}"
                       oninput="this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,200)+'px';"></textarea>
-            <button type="submit" class="send-btn" title="{% trans 'Send' %}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
+            <div class="composer-footer">
+                <div class="composer-footer-left">
+                    <label class="attach-btn" title="{% trans 'Attach a PDF, Word, Excel, or text file — its content is read into this message as context' %}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                        <input type="file" name="attachment" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
+                    </label>
+                    {% if can_select_model %}
+                    {% comment %}
+                    A handful of quick-pick chips for fast access, syncing with the fuller header
+                    dropdown above (portalSelectModel in the script below is the single source of
+                    truth both write to) - locked models aren't offered here since a chip has no
+                    room for the "upgrade to unlock" affordance the dropdown already handles.
+                    {% endcomment %}
+                    <div class="composer-chips">
+                        <button type="button" class="composer-chip is-selected" data-value="" data-label="{{ auto_routing_label }}" onclick="portalSelectModel('', '{{ auto_routing_label|escapejs }}')">{{ auto_routing_label }}</button>
+                        {% for row in model_rows %}
+                        {% if not row.locked %}
+                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')">{{ row.model.display_label }}</button>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <button type="submit" class="send-btn" title="{% trans 'Send' %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+            </div>
         </form>
         <p class="chat-disclaimer">{% trans "AI responses may be inaccurate. Verify important information." %}</p>
     </div>
@@ -438,21 +505,96 @@ function portalCloseUpgradeModal() {
             }
         });
     })();
+    (function() {
+        // A quick-start card on the empty state passes its prompt through
+        // as ?starter= on the redirect to the new conversation - pick it up
+        // once, prefill + focus the composer, then strip it from the URL
+        // so a refresh doesn't silently re-fill an already-sent message.
+        var params = new URLSearchParams(window.location.search);
+        var starter = params.get("starter");
+        if (!starter) return;
+        var textarea = document.getElementById("composer-textarea");
+        if (textarea) {
+            textarea.value = starter;
+            textarea.style.height = "auto";
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+            textarea.focus();
+        }
+        params.delete("starter");
+        var qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+    })();
     </script>
     {% else %}
-    <div class="chat-empty">
-        <div class="empty-icon-badge">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+    <div class="chat-hero">
+        <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span>{% trans "Route any model, one workspace" %}</div>
+        <h1 class="hero-title">{% trans "What are we routing" %}<br>{% trans "through today?" %}</h1>
+        <p class="hero-sub">{% trans "Chat with any allowed model, compare responses, and keep every conversation inside your team's budget and access rules." %}</p>
+        <div class="quick-grid">
+            <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
+                {% csrf_token %}
+                <input type="hidden" name="starter_text" value="{% trans 'Compare how two models answer the same question' %}">
+                <button type="submit" class="quick-card">
+                    <div class="quick-card-title">{% trans "Compare two models" %}</div>
+                    <div class="quick-card-sub">{% trans "Send one prompt, see both answers" %}</div>
+                </button>
+            </form>
+            <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
+                {% csrf_token %}
+                <input type="hidden" name="starter_text" value="{% trans 'Summarize this document and pull out the key points' %}">
+                <button type="submit" class="quick-card">
+                    <div class="quick-card-title">{% trans "Summarize a document" %}</div>
+                    <div class="quick-card-sub">{% trans "Upload and get key points" %}</div>
+                </button>
+            </form>
+            <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
+                {% csrf_token %}
+                <input type="hidden" name="starter_text" value="{% trans 'Draft a first pass of this report' %}">
+                <button type="submit" class="quick-card">
+                    <div class="quick-card-title">{% trans "Draft a report" %}</div>
+                    <div class="quick-card-sub">{% trans "Structured first pass, ready to edit" %}</div>
+                </button>
+            </form>
+            <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
+                {% csrf_token %}
+                <input type="hidden" name="starter_text" value="{% trans 'Review this code and flag issues' %}">
+                <button type="submit" class="quick-card">
+                    <div class="quick-card-title">{% trans "Review this code" %}</div>
+                    <div class="quick-card-sub">{% trans "Paste a snippet or a file" %}</div>
+                </button>
+            </form>
         </div>
-        <h2>{% trans "Start a new conversation" %}</h2>
-        <p>{% trans "Select a conversation from the sidebar, or start a fresh one below." %}</p>
-        <form method="post" action="{% url 'chat:create_conversation' %}">
+        <form method="post" action="{% url 'chat:create_conversation' %}" class="hero-plain-start">
             {% csrf_token %}
-            <button type="submit" class="btn">
+            <button type="submit" class="btn btn-ghost btn-small">
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 {% trans "New chat" %}
             </button>
         </form>
+    </div>
+    {% comment %}
+    A real, working composer on the empty state too - not just the quick-start
+    cards - so typing and pressing Enter/Send starts a conversation the same
+    way a quick-start card does (create_conversation already accepts a typed
+    starter_text and redirects to the new conversation with it pre-filled,
+    same mechanism the quick-start cards above use). No model-select/attach/
+    templates row here - those need a real conversation id to act on, so
+    showing them here would be UI that doesn't yet do anything.
+    {% endcomment %}
+    <div class="chat-composer-wrap">
+        <form method="post" action="{% url 'chat:create_conversation' %}" class="chat-composer">
+            {% csrf_token %}
+            <textarea class="input" name="starter_text" placeholder="{% trans 'Ask anything, or paste a document to start' %}"
+                      rows="1" autocomplete="off"
+                      onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.closest('form').requestSubmit();}"
+                      oninput="this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,200)+'px';"></textarea>
+            <div class="composer-footer" style="justify-content:flex-end;">
+                <button type="submit" class="send-btn" title="{% trans 'Start' %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+            </div>
+        </form>
+        <p class="chat-disclaimer">{% trans "AI responses may be inaccurate. Verify important information." %}</p>
     </div>
     {% endif %}
 </section>
@@ -566,18 +708,30 @@ function portalCopyMessage(btn) {
     });
 }
 
+// Single source of truth for "which model is selected" - the header
+// dropdown and the composer's quick-pick chips are two different controls
+// over the SAME state (see the approved chat concept, which shows both at
+// once), so both write through here instead of each keeping its own copy
+// that could drift out of sync with the other.
+function portalSelectModel(value, labelText) {
+    var hiddenInput = document.getElementById("model-select");
+    var label = document.getElementById("model-select-label");
+    if (hiddenInput) hiddenInput.value = value;
+    if (label) label.textContent = labelText;
+    document.querySelectorAll(".model-select-option").forEach(function(o) {
+        o.classList.toggle("is-selected", o.getAttribute("data-value") === value);
+    });
+    document.querySelectorAll(".composer-chip").forEach(function(c) {
+        c.classList.toggle("is-selected", c.getAttribute("data-value") === value);
+    });
+}
+
 (function() {
     var dropdown = document.getElementById("model-select-dropdown");
     if (!dropdown) return;
-    var hiddenInput = document.getElementById("model-select");
-    var label = document.getElementById("model-select-label");
     dropdown.querySelectorAll(".model-select-option:not(.model-select-option-locked)").forEach(function(opt) {
         opt.addEventListener("click", function() {
-            hiddenInput.value = opt.getAttribute("data-value");
-            label.textContent = opt.getAttribute("data-label");
-            dropdown.querySelectorAll(".model-select-option").forEach(function(o) {
-                o.classList.toggle("is-selected", o === opt);
-            });
+            portalSelectModel(opt.getAttribute("data-value"), opt.getAttribute("data-label"));
             dropdown.removeAttribute("open");
         });
     });
@@ -682,7 +836,7 @@ document.addEventListener("click", function(evt) {
         {selector: "#tour-new-chat", title: "{% trans 'Start a new conversation' %}", body: "{% trans 'Click here any time to begin a fresh chat.' %}"},
         {selector: "#tour-usage-btn", title: "{% trans 'Track your usage' %}", body: "{% trans 'See your token and budget usage here, and request an upgrade if you need more.' %}"},
         {selector: "#model-select-dropdown", title: "{% trans 'Pick a model' %}", body: "{% trans 'Auto-routing picks a model for you, or choose one manually here once a conversation is open.' %}"},
-        {selector: "#tour-admin-link", title: "{% trans 'Admin dashboard' %}", body: "{% trans 'Manage users, models, limits, and more from here.' %}"}
+        {selector: "#appSwitchAdmin, #tour-admin-link", title: "{% trans 'Admin dashboard' %}", body: "{% trans 'Manage users, models, limits, and more from here.' %}"}
     ];
 
     var overlay = document.getElementById("onboarding-overlay");
