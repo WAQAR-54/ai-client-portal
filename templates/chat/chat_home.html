@@ -323,7 +323,6 @@ function portalCloseUpgradeModal() {
             <details class="usage-popover">
                 {% if request_count %}
                 <summary class="usage-count-pill" id="tour-usage-btn" title="{% trans 'View usage details' %}">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
                     {% blocktrans with used=request_count.used cap=request_count.cap window=request_count.window_label %}{{ used }} / {{ cap }} requests {{ window }}{% endblocktrans %}
                 </summary>
                 {% else %}
