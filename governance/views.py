@@ -190,9 +190,11 @@ def global_search(request):
 
     users = _scope_users(request, User.objects.filter(email__icontains=query)).order_by("email")[:5]
     plans = Plan.objects.filter(name__icontains=query).order_by("name")[:5]
-    logs = _scope_audit_logs(request, AuditLog.objects.select_related("actor")).filter(
-        Q(action_type__icontains=query) | Q(actor__email__icontains=query) | Q(target_type__icontains=query)
-    ).order_by("-timestamp")[:5]
+    logs = (
+        _scope_audit_logs(request, AuditLog.objects.select_related("actor"))
+        .filter(Q(action_type__icontains=query) | Q(actor__email__icontains=query) | Q(target_type__icontains=query))
+        .order_by("-timestamp")[:5]
+    )
 
     return render(
         request,
@@ -291,7 +293,10 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         def _bar_rows(labels, values):
             peak = max(values) if values else 0
             peak = peak or 1
-            return [{"label": label, "value": value, "pct": round(value / peak * 100)} for label, value in zip(labels, values)]
+            return [
+                {"label": label, "value": value, "pct": round(value / peak * 100)}
+                for label, value in zip(labels, values)
+            ]
 
         # Donut segments (admin dashboard "Users by role" card) - stroke-dasharray/
         # -dashoffset computed server-side against a fixed r=15.5 circle (matching
@@ -299,7 +304,13 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         def _donut_segments(labels, values):
             total = sum(values) or 1
             circumference = round(2 * math.pi * 15.5, 1)
-            colors = ["var(--secondary)", "var(--accent)", "var(--color-surface-active)", "var(--warn)", "var(--color-danger)"]
+            colors = [
+                "var(--secondary)",
+                "var(--accent)",
+                "var(--color-surface-active)",
+                "var(--warn)",
+                "var(--color-danger)",
+            ]
             segments = []
             offset = 0.0
             for i, (label, value) in enumerate(zip(labels, values)):
@@ -316,9 +327,7 @@ class DashboardView(AdminRequiredMixin, TemplateView):
                 offset += seg_len
             return segments
 
-        tokens_all_time = (
-            assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
-        )
+        tokens_all_time = assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
         tokens_all_time_target, tokens_all_time_suffix = _compact(tokens_all_time)
         month_tokens_total = month_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
         month_tokens_target, month_tokens_suffix = _compact(month_tokens_total)
@@ -1113,7 +1122,9 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
             Message.objects.filter(role=Message.Role.ASSISTANT, created_at__date__gte=seven_days_ago),
             "conversation__user__department_id",
         )
-        weekly_rows = week_scope.annotate(day=TruncDate("created_at")).values("day").annotate(cost=Sum("estimated_cost"))
+        weekly_rows = (
+            week_scope.annotate(day=TruncDate("created_at")).values("day").annotate(cost=Sum("estimated_cost"))
+        )
         cost_by_day = {row["day"]: float(row["cost"] or 0) for row in weekly_rows}
         week_range = [seven_days_ago + timezone.timedelta(days=i) for i in range(7)]
         weekly_cost = [cost_by_day.get(d, 0.0) for d in week_range]
