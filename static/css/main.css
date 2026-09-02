@@ -1455,34 +1455,16 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    load in some browsers - on an .active row that reads as a harsh solid
    rectangle sitting on top of the row's own fill, when the fill already
    says "selected". A soft ring keyed to the same accent instead of a hard
-   outline keeps a visible focus indicator without the visual clash. */
+   outline keeps a visible focus indicator without the visual clash. A
+   softer ring still read as an unwanted border, so it's gone entirely -
+   the active row's own background fill plus bold text already say
+   "selected" clearly enough without a stroke around it. */
 .conv-item-link.active:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--accent-soft);
+    box-shadow: none;
 }
 .conv-item-link.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); font-weight: 600; }
 .conv-item-link.active .nav-icon { opacity: 1; color: var(--accent); }
-/* Signature detail: a thin, slowly-shifting gradient outline marks the
-   active conversation - the one recurring flourish in an otherwise quiet
-   UI, using the same secondary/accent pair as the brand dot and avatars. */
-.conv-item-link.active::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: var(--radius-sm);
-    padding: 1px;
-    background: linear-gradient(120deg, var(--accent), var(--secondary-text), var(--accent));
-    background-size: 200% 200%;
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: gradient-shift 3s ease infinite;
-    pointer-events: none;
-}
-@keyframes gradient-shift {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-}
 .empty-hint { color: var(--sidebar-text-muted); font-size: var(--text-sm); padding: 0.5rem 0.6rem; list-style: none; }
 
 .sidebar-empty-state {
