@@ -459,6 +459,11 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
    accent-hover) would outrank this on specificity, same bug already fixed
    once for .filter-chip and .provider-tab. */
 .settings-tab-sidebar { background: none; border: none; width: 100%; text-align: left; cursor: pointer; }
+/* The settings tab list has no icon-vs-label visual hierarchy to justify
+   an icon prefix (unlike the admin/chat nav it shares a rule with) - drop
+   its icon so the label text sits flush with the "SETTINGS" group label
+   above it instead of starting ~28px further right. */
+.settings-tab-sidebar .nav-icon { display: none; }
 .app-nav a:hover,
 .app-nav-sub a:hover,
 .settings-tab-sidebar:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); text-decoration: none; }
