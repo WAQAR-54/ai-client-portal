@@ -811,7 +811,9 @@ main { animation: page-fade-in 240ms var(--ease); }
     .profile-dropdown,
     .notif-dropdown,
     .row-menu-panel,
-    .model-select-panel {
+    .model-select-panel,
+    .usage-popover-panel,
+    .export-menu-panel {
         animation: none;
     }
 }
@@ -1665,6 +1667,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     box-shadow: var(--shadow-md);
     padding: var(--space-4);
     z-index: 20;
+    transform-origin: top right;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .usage-popover-panel select { margin: 0 0 0.5rem; }
 .usage-popover-panel textarea { margin: 0 0 0.5rem; }
@@ -1727,6 +1731,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     z-index: 20;
     display: flex;
     flex-direction: column;
+    transform-origin: top right;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .export-menu-panel a {
     display: block;
@@ -1977,8 +1983,10 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     background: transparent;
     color: var(--color-text-faint);
     cursor: pointer;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 100ms ease;
 }
 .msg-action-btn:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.msg-action-btn:active { transform: scale(0.9); }
 .msg-action-btn svg { width: 15px; height: 15px; }
 .msg-action-btn.msg-action-copied { color: var(--color-success); }
 
@@ -2261,8 +2269,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 /* Solid navy, not the cyan gradient every other primary button gets - the
    approved concept's send button is deliberately the "structural" brand
    color (matching the sidebar's active-nav pill), not the accent color. */
-.send-btn { width: 32px; height: 32px; padding: 0; background: var(--brand-navy); border: none; transition: transform 0.16s var(--ease); }
-.send-btn:hover { background: var(--brand-navy); transform: scale(1.06); }
+.send-btn { width: 32px; height: 32px; padding: 0; background: var(--brand-navy); border: none; transition: background-color 0.16s var(--ease), transform 0.16s var(--ease); }
+.send-btn:hover { background: color-mix(in srgb, var(--brand-navy) 100%, white 14%); transform: scale(1.06); }
 .send-btn:active { transform: scale(0.94); }
 .send-btn svg { width: 15px; height: 15px; stroke: #fff; }
 
