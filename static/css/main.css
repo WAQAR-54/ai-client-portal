@@ -1441,6 +1441,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     position: relative;
     display: flex;
     align-items: center;
+    gap: 0.25rem;
     border-radius: var(--radius-sm);
     animation: fade-in-up 180ms ease-out;
     transition: background-color 150ms ease, transform 150ms ease;
@@ -1522,8 +1523,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
