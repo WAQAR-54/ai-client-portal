@@ -1506,7 +1506,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     background: transparent;
     color: var(--sidebar-text-muted);
     cursor: pointer;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 100ms ease;
 }
+.conv-action-btn:active { transform: scale(0.88); }
 .conv-action-btn:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
 .conv-action-btn.conv-action-active { color: var(--accent); }
 .conv-action-btn.conv-action-danger:hover { background: var(--color-danger); color: #fff; }
@@ -1932,7 +1934,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    full column width - user turns stay a right-aligned bubble. This mirrors
    the layout most people already know from Claude/ChatGPT, without
    borrowing their branding/colors. */
-.msg-row { display: flex; gap: 0.75rem; animation: fade-in-up 180ms ease-out; }
+.msg-row { display: flex; gap: 0.75rem; animation: scale-fade-in 220ms var(--ease-spring); }
 .msg-row.msg-user { justify-content: flex-end; align-items: flex-end; }
 .msg-row.msg-assistant { align-items: flex-start; }
 
@@ -2254,6 +2256,10 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     font-family: inherit;
     font-size: 14.5px;
     line-height: 1.5;
+    /* The auto-grow JS (composer-textarea.style.height = ...px on each
+       keystroke) snaps the box to its new size instantly without this -
+       grows/shrinks fluidly as you type multi-line text instead. */
+    transition: height 120ms var(--ease);
 }
 .chat-composer textarea:focus { border: none; box-shadow: none; }
 .chat-disclaimer { text-align: center; font-size: var(--text-xs); color: var(--color-text-faint); margin: 0.6rem 0 0; }
