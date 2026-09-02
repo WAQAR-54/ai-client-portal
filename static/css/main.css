@@ -609,6 +609,8 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     box-shadow: var(--shadow-md);
     padding: 0.5rem;
     z-index: 20;
+    transform-origin: top right;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .profile-dropdown-email {
     padding: 0.5rem 0.6rem 0.7rem;
@@ -728,6 +730,8 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
     z-index: 20;
+    transform-origin: top right;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .notif-dropdown-header {
     display: flex;
@@ -803,7 +807,13 @@ main.main-wide {
 }
 main { animation: page-fade-in 240ms var(--ease); }
 @media (prefers-reduced-motion: reduce) {
-    main { animation: none; }
+    main,
+    .profile-dropdown,
+    .notif-dropdown,
+    .row-menu-panel,
+    .model-select-panel {
+        animation: none;
+    }
 }
 
 /* ---------- Card ---------- */
@@ -1027,6 +1037,8 @@ table.data tbody tr.htmx-swapping {
     box-shadow: var(--shadow-md);
     z-index: 20;
     padding: 0.7rem;
+    transform-origin: top right;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .row-menu-panel select { margin: 0 0 0.6rem; font-size: 0.85rem; }
 .row-menu-panel form:last-of-type select { margin-bottom: 0; }
@@ -1785,6 +1797,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     box-shadow: var(--shadow-md);
     padding: 0.35rem;
     z-index: 20;
+    transform-origin: top left;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
 .model-select-group-label {
     font-size: var(--text-xs);
