@@ -221,7 +221,7 @@
                 </div>
             </header>
             {% endif %}
-            <main class="{% if not user.is_authenticated or request.resolver_match.app_name == "chat" %}main-bleed{% elif request.resolver_match.app_name == "governance" %}main-wide{% endif %}">
+            <main class="{% if not user.is_authenticated or request.resolver_match.app_name == "chat" %}main-bleed{% elif request.resolver_match.app_name == "governance" or request.resolver_match.app_name == "accounts" %}main-wide{% endif %}">
                 {% if messages %}
                     {% for message in messages %}<div class="alert alert-warning">{{ message }}</div>{% endfor %}
                 {% endif %}
