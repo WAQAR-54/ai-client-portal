@@ -1687,7 +1687,14 @@ def add_team(request):
     else:
         department_id = request.POST.get("department_id")
         if not department_id:
-            return HttpResponseBadRequest("Department is required")
+            # The form only shows a department picker when there's more than
+            # one to choose from (see teams.html) - with exactly one, fall
+            # back to it instead of demanding a field the UI never offered.
+            only_department = Department.objects.values_list("id", flat=True)
+            if only_department.count() == 1:
+                department_id = only_department.first()
+            else:
+                return HttpResponseBadRequest("Department is required")
     team, created = Team.objects.get_or_create(name=name, department_id=department_id)
     if created:
         log_action(request.user, "team.add", team, new_value=name)

@@ -788,6 +788,46 @@ class DepartmentManagementTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+class AddTeamTests(TestCase):
+    """teams.html only shows a department picker when there's more than one
+    to choose from - the view must fall back sensibly with exactly one,
+    not demand a field the form never offered (that was a real bug: every
+    "Add a team" submit failed with "Department is required" for any org
+    with just one department, which is presumably most of them)."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+
+    def test_add_team_with_exactly_one_department_needs_no_department_id(self):
+        department = Department.objects.create(name="Only Dept")
+        response = self.client.post(reverse("governance:add_team"), {"name": "Growth"})
+        self.assertEqual(response.status_code, 302)
+        team = Team.objects.get(name="Growth")
+        self.assertEqual(team.department_id, department.id)
+
+    def test_add_team_with_multiple_departments_still_requires_department_id(self):
+        Department.objects.create(name="Dept A")
+        Department.objects.create(name="Dept B")
+        response = self.client.post(reverse("governance:add_team"), {"name": "Growth"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Team.objects.filter(name="Growth").exists())
+
+    def test_add_team_with_explicit_department_id_still_works(self):
+        Department.objects.create(name="Dept A")
+        dept_b = Department.objects.create(name="Dept B")
+        response = self.client.post(reverse("governance:add_team"), {"name": "Growth", "department_id": dept_b.id})
+        self.assertEqual(response.status_code, 302)
+        team = Team.objects.get(name="Growth")
+        self.assertEqual(team.department_id, dept_b.id)
+
+    def test_add_team_with_zero_departments_still_errors(self):
+        response = self.client.post(reverse("governance:add_team"), {"name": "Growth"})
+        self.assertEqual(response.status_code, 400)
+
+
 class AdminListFilteringTests(TestCase):
     """Search/filter query-param handling for the admin list screens, and
     the htmx-partial vs full-page template switch it relies on."""
