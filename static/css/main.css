@@ -381,7 +381,7 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     font-size: 1.05rem;
     color: var(--sidebar-text);
     letter-spacing: -0.01em;
-    padding: 0 var(--space-2);
+    padding: 0 var(--space-3);
     margin-bottom: var(--space-6);
 }
 .app-sidebar .brand:hover { text-decoration: none; color: var(--sidebar-text); }
@@ -473,7 +473,7 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
 .app-nav a.active,
 .app-nav-sub a.active,
 .settings-tab-sidebar.active {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--brand-navy) 100%, white 12%), var(--brand-navy));
+    background: var(--brand-navy);
     color: #fff;
     box-shadow: var(--shadow-card);
 }
