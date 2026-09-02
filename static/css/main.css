@@ -2343,10 +2343,15 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 /* Solid navy, not the cyan gradient every other primary button gets - the
    approved concept's send button is deliberately the "structural" brand
    color (matching the sidebar's active-nav pill), not the accent color. */
-.send-btn { width: 32px; height: 32px; padding: 0; background: var(--brand-navy); border: none; transition: background-color 0.16s var(--ease), transform 0.16s var(--ease); }
+.send-btn { width: 32px; height: 32px; padding: 0; background: var(--brand-navy); border: none; transition: background-color 0.16s var(--ease), transform 0.16s var(--ease), opacity 0.16s var(--ease); }
 .send-btn:hover { background: color-mix(in srgb, var(--brand-navy) 100%, white 14%); transform: scale(1.06); }
 .send-btn:active { transform: scale(0.94); }
 .send-btn svg { width: 15px; height: 15px; stroke: #fff; }
+/* Nothing showed a send was in flight before - the button stayed fully
+   clickable, inviting an accidental double-send on a slow connection.
+   #composer-form gets htmx's own .htmx-request class for free during
+   the request, no JS needed here. */
+#composer-form.htmx-request .send-btn { opacity: 0.55; pointer-events: none; }
 
 /* ---------- Mobile top bar + hamburger (hidden on desktop) ---------- */
 .mobile-topbar { display: none; }
