@@ -100,6 +100,22 @@ override link - real functionality, just relocated instead of hidden behind an i
                         <div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">{{ u.department.name }}</div>
                         {% endif %}
 
+                        {% if u.role != "manager" %}
+                        <div class="row-menu-label">{% trans "Team" %}</div>
+                        <form method="post" action="{% url 'governance:change_user_team' user_id=u.id %}">
+                            {% csrf_token %}
+                            <select name="team_id" onchange="this.form.requestSubmit()">
+                                <option value="">{% trans "— none —" %}</option>
+                                {% for t in teams %}
+                                <option value="{{ t.id }}" {% if u.team_id == t.id %}selected{% endif %}>{{ t.name }} ({{ t.department.name }})</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% elif u.team %}
+                        <div class="row-menu-label">{% trans "Team" %}</div>
+                        <div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">{{ u.team.name }} ({% trans "Manager" %})</div>
+                        {% endif %}
+
                         {% if info.override_count %}
                         <a href="{% url 'governance:user_overrides' user_id=u.id %}" class="text-faint" style="font-size:0.78rem; display:block; margin-bottom:0.6rem;">
                             {% blocktrans count counter=info.override_count %}{{ counter }} custom override beyond Plan defaults — view/clear{% plural %}{{ counter }} custom overrides beyond Plan defaults — view/clear{% endblocktrans %}

@@ -13,6 +13,7 @@ urlpatterns = [
     path("users/<int:user_id>/toggle-active/", views.toggle_user_active, name="toggle_user_active"),
     path("users/<int:user_id>/change-role/", views.change_user_role, name="change_user_role"),
     path("users/<int:user_id>/change-department/", views.change_user_department, name="change_user_department"),
+    path("users/<int:user_id>/change-team/", views.change_user_team, name="change_user_team"),
     path("users/<int:user_id>/change-plan/", views.change_user_plan, name="change_user_plan"),
     path("users/bulk-change-plan/", views.bulk_change_plan, name="bulk_change_plan"),
     path("users/<int:user_id>/overrides/", views.UserOverridesView.as_view(), name="user_overrides"),

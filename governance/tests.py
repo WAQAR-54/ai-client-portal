@@ -1561,6 +1561,62 @@ class RoleHierarchyAccessControlTests(TestCase):
         UserModelPermission.objects.create(user=self.user_a, model_config=model, is_allowed=True)
         self.assertIn(model.id, effective_allowed_model_ids(self.user_a))
 
+    # --- change_user_team: the other half of the Manager feature - an
+    # Admin adding regular users onto a team as MEMBERS (change_user_role
+    # only ever set this for the person becoming that team's Manager). ---
+
+    def test_admin_can_add_own_department_user_to_own_team(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_team", kwargs={"user_id": self.user_a.id}),
+            {"team_id": self.team_a.id},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertEqual(self.user_a.team_id, self.team_a.id)
+        self.assertEqual(Team.objects.get(id=self.team_a.id).members.count(), 2)  # manager_a + user_a
+
+    def test_admin_cannot_add_user_to_another_departments_team(self):
+        team_b = Team.objects.create(name="Team B", department=self.dept_b)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_team", kwargs={"user_id": self.user_a.id}),
+            {"team_id": team_b.id},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.user_a.refresh_from_db()
+        self.assertIsNone(self.user_a.team_id)
+
+    def test_admin_cannot_assign_team_for_another_departments_user(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_team", kwargs={"user_id": self.user_b.id}),
+            {"team_id": self.team_a.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_cannot_set_team_directly_for_a_manager(self):
+        team_b = Team.objects.create(name="Team B", department=self.dept_a)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_team", kwargs={"user_id": self.manager_a.id}),
+            {"team_id": team_b.id},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.manager_a.refresh_from_db()
+        self.assertEqual(self.manager_a.team_id, self.team_a.id)
+
+    def test_removing_a_member_from_their_team(self):
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_team", kwargs={"user_id": self.user_a.id}), {"team_id": ""}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertIsNone(self.user_a.team_id)
+
     # --- A regular User still cannot access any Admin/Manager/SuperAdmin
     # endpoint - re-run to confirm the new roles didn't loosen anything. ---
 

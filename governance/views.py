@@ -600,6 +600,38 @@ def change_user_department(request, user_id):
     return redirect("governance:users")
 
 
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def change_user_team(request, user_id):
+    """Adds/removes a regular User as a team MEMBER - the missing half of
+    the Manager feature. change_user_role already sets a user's own
+    `team` field when THEY become that team's Manager, but nothing let an
+    Admin put OTHER users onto a team, so a team's member list could never
+    grow past its own Manager. A Manager's team is set by their role
+    change instead, not here."""
+    target = _get_scoped_user_or_403(request, user_id)
+    if target.role == User.Role.MANAGER:
+        return HttpResponseBadRequest("A Manager's team is set by their role, not here.")
+
+    team_id = request.POST.get("team_id") or None
+    team = _scope_teams(request, Team.objects.all()).filter(id=team_id).first() if team_id else None
+    if team_id and team is None:
+        raise PermissionDenied("That team is outside your scope.")
+
+    old_value = target.team_id
+    target.team = team
+    # A member's department follows their team, same as a promoted
+    # Manager's does in change_user_role - keeps the two fields from
+    # silently disagreeing about which department someone is actually in.
+    if team is not None:
+        target.department_id = team.department_id
+        target.save(update_fields=["team", "department"])
+    else:
+        target.save(update_fields=["team"])
+    log_action(request.user, "user.team_change", target, old_value=old_value, new_value=team_id)
+    return redirect("governance:users")
+
+
 def _notify_admin_change(user, body):
     from notifications.models import NotificationType
     from notifications.notify import notify
