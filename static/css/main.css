@@ -1790,7 +1790,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     max-width: 220px;
 }
 .model-select-summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px rgba(0, 174, 240, 0.7); flex-shrink: 0; }
+.model-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px 1px var(--accent); flex-shrink: 0; }
 .model-select-summary:hover { background: var(--color-surface); border-color: var(--color-text-faint); }
 .model-select-dropdown[open] .model-select-summary { background: var(--color-surface); border-color: var(--accent-dim); color: var(--color-text); }
 /* The static "your plan doesn't include this" version of the same pill -
@@ -2057,11 +2057,10 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .msg-markdown h1:first-child, .msg-markdown h2:first-child, .msg-markdown h3:first-child { margin-top: 0; }
 .msg-markdown code {
     background: var(--color-surface-muted);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 0.1rem 0.35rem;
-    font-size: 0.85em;
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    border-radius: 5px;
+    padding: 0.15em 0.4em;
+    font-size: 0.9em;
+    font-family: var(--font-display), monospace;
 }
 .msg-markdown pre {
     background: var(--color-surface-muted);
