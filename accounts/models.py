@@ -38,6 +38,14 @@ class Team(models.Model):
         related_name="managed_team",
         help_text="Kept in sync with that user's `team` field whenever their role is set to Manager.",
     )
+    disabled_models = models.ManyToManyField(
+        "chat.ModelConfig",
+        blank=True,
+        related_name="disabled_for_teams",
+        help_text="Models this team's Manager has restricted for their team, on top of whatever "
+        "each member's Plan already allows - this only ever narrows access, never grants beyond "
+        "the Plan (see governance/plans.py:effective_allowed_model_ids).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

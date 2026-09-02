@@ -2649,6 +2649,19 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .toggle-row-group.toggle-row-wrap { flex-direction: row; flex-wrap: wrap; gap: 1.25rem; }
 .toggle-row { font-weight: 500; }
 .toggle-row .toggle { flex-shrink: 0; }
+/* Manager's per-model team-access toggle (my-team page) - a text label and
+   a form-wrapped toggle-switch on one row, unlike .toggle-row's own
+   single-<label> pattern used elsewhere (this one needs a real <form> for
+   the htmx submit, so label+input can't be the same element). */
+.manager-model-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--color-border);
+    font-weight: 500;
+}
+.manager-model-row:last-child { border-bottom: none; }
 
 /* Sliding-indicator chip row (Users plan filter) - positioned/animated via
    portalMoveIndicator() in ui-kit.js. */

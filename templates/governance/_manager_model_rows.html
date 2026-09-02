@@ -1,0 +1,19 @@
+{% load i18n %}
+<div id="manager-model-rows">
+    {% for row in model_rows %}
+    <div class="manager-model-row">
+        <span>{{ row.model.display_label }}</span>
+        <form method="post" action="{% url 'governance:toggle_team_model' model_id=row.model.id %}"
+              hx-post="{% url 'governance:toggle_team_model' model_id=row.model.id %}"
+              hx-target="#manager-model-rows" hx-swap="outerHTML" style="margin:0;">
+            {% csrf_token %}
+            <label class="toggle-switch" title="{% if row.disabled %}{% trans 'Allow for my team' %}{% else %}{% trans 'Restrict for my team' %}{% endif %}">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if not row.disabled %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+    {% empty %}
+    <p class="text-muted">{% trans "No models are enabled org-wide yet." %}</p>
+    {% endfor %}
+</div>

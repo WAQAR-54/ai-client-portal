@@ -11,7 +11,7 @@
 <div class="card">
     <h1>{{ team.name }}</h1>
     <p class="text-muted" style="margin-top:-0.5rem;">
-        {% blocktrans with department=team.department.name %}{{ department }} — read-only oversight of your team's usage. Need something changed? Reach out to your department's Admin.{% endblocktrans %}
+        {% blocktrans with department=team.department.name %}{{ department }} — usage oversight and model access for your team. For anything else (limits, budget, plan changes), reach out to your department's Admin.{% endblocktrans %}
     </p>
     <div class="stat-grid mt-4">
         <div class="stat-tile"><div class="stat-label">{% trans "Team members" %}</div><div class="stat-value mono">{{ members|length }}</div></div>
@@ -20,6 +20,12 @@
         <div class="stat-tile"><div class="stat-label">{% trans "Tokens (this month)" %}</div><div class="stat-value mono">{{ month_tokens }}</div></div>
         <div class="stat-tile"><div class="stat-label">{% trans "Cost (this month)" %}</div><div class="stat-value mono">${{ month_cost|floatformat:2 }}</div></div>
     </div>
+</div>
+
+<div class="card mt-5">
+    <h2>{% trans "Team model access" %}</h2>
+    <p class="text-muted" style="margin-top:-0.5rem;">{% trans "Restrict which of the org's enabled models your team can use. This can only narrow what your team's Plan already allows, never grant more." %}</p>
+    {% include "governance/_manager_model_rows.html" %}
 </div>
 
 <div class="card mt-5" style="overflow-x:auto;">

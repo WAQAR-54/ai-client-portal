@@ -9,8 +9,14 @@ migrating away would be a much larger, riskier rewrite of already-working
 enforcement code for a single feature pass. Precedence (most specific wins):
 
   Limits:        personal UsageLimit > department UsageLimit > user's Plan > system default
-  Model access:  (Plan.allowed_models UNION explicit is_allowed=True) MINUS explicit is_allowed=False
+  Model access:  ((Plan.allowed_models MINUS Team.disabled_models) UNION explicit is_allowed=True)
+                 MINUS explicit is_allowed=False
   Features:      Plan.feature_flags only (no per-user override exists for these)
+
+A Manager's per-team model restriction (Team.disabled_models) sits between
+the Plan and personal overrides: it can only narrow what the Plan already
+grants, never widen it, and an explicit personal is_allowed=True override
+still wins over it (that's an Admin's more-specific call for one person).
 
 A user with no Plan assignment at all is treated as unrestricted (matches
 this app's pre-Plan behavior) rather than silently locked out - Plans only
@@ -134,6 +140,8 @@ def effective_allowed_model_ids(user):
         return None  # caller should treat this as "don't filter"
 
     base_ids = set(plan.allowed_models.values_list("id", flat=True))
+    if user.team_id:
+        base_ids -= set(user.team.disabled_models.values_list("id", flat=True))
     return (base_ids | granted_extra) - denied
 
 

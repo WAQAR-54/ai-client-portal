@@ -1711,17 +1711,20 @@ def delete_team(request, team_id):
 
 class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
     """A Manager's own simplified, dashboard-only view — usage/activity for
-    their team, nothing else. No write actions are exposed here or
-    anywhere else to a Manager (role hierarchy prompt, Section 1): if
-    something needs to change, the flow is "reach out to your department's
-    Admin", never an in-app action button."""
+    their team, plus one write action: which of the org's enabled models
+    their team may use (toggle_team_model below). That's the one exception
+    to the original "no write actions for Manager" design (role hierarchy
+    prompt, Section 1) - everything else still routes to "reach out to your
+    department's Admin". A team's model toggle can only ever narrow what
+    the members' Plan already grants, never widen it - see
+    governance/plans.py:effective_allowed_model_ids."""
 
     template_name = "governance/manager_dashboard.html"
 
     def get_context_data(self, **kwargs):
         team = getattr(self.request.user, "managed_team", None)
         if team is None:
-            return super().get_context_data(**kwargs) | {"team": None, "members": []}
+            return super().get_context_data(**kwargs) | {"team": None, "members": [], "model_rows": []}
 
         members = User.objects.filter(team=team).order_by("email")
         month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -1742,9 +1745,15 @@ class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
                 }
             )
 
+        disabled_ids = set(team.disabled_models.values_list("id", flat=True))
+        model_rows = [
+            {"model": mc, "disabled": mc.id in disabled_ids} for mc in ModelConfig.objects.filter(is_enabled=True)
+        ]
+
         return super().get_context_data(**kwargs) | {
             "team": team,
             "members": member_stats,
+            "model_rows": model_rows,
             "total_tokens_all_time": assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))[
                 "total"
             ]
@@ -1753,6 +1762,39 @@ class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
             "month_tokens": month_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0,
             "month_cost": month_messages.aggregate(total=Sum("estimated_cost"))["total"] or 0,
         }
+
+
+@role_required(User.Role.MANAGER)
+@require_http_methods(["POST"])
+def toggle_team_model(request, model_id):
+    """A Manager's one write action - restrict or restore one of the org's
+    already-enabled models for their own team. Never touches Plan.allowed_
+    models or any other team's scope; effective_allowed_model_ids() is what
+    actually enforces this at request time (see governance/plans.py)."""
+    team = getattr(request.user, "managed_team", None)
+    if team is None:
+        raise PermissionDenied("You don't manage a team.")
+    model_config = get_object_or_404(ModelConfig, id=model_id, is_enabled=True)
+
+    is_disabled = team.disabled_models.filter(id=model_config.id).exists()
+    if is_disabled:
+        team.disabled_models.remove(model_config)
+    else:
+        team.disabled_models.add(model_config)
+    log_action(
+        request.user,
+        "team.model.enable" if is_disabled else "team.model.disable",
+        model_config,
+        old_value=team.name,
+        new_value=model_config.display_label,
+    )
+    if request.headers.get("HX-Request"):
+        disabled_ids = set(team.disabled_models.values_list("id", flat=True))
+        model_rows = [
+            {"model": mc, "disabled": mc.id in disabled_ids} for mc in ModelConfig.objects.filter(is_enabled=True)
+        ]
+        return render(request, "governance/_manager_model_rows.html", {"team": team, "model_rows": model_rows})
+    return redirect("governance:manager_dashboard")
 
 
 class FeatureVisibilityView(SuperAdminRequiredMixin, TemplateView):

@@ -18,7 +18,12 @@ from governance.models import (
     USER_CHAT_FEATURES,
     UsageLimit,
 )
-from governance.plans import assign_plan, check_request_count_limit, validate_context_tokens
+from governance.plans import (
+    assign_plan,
+    check_request_count_limit,
+    effective_allowed_model_ids,
+    validate_context_tokens,
+)
 
 
 class UsageLimitTests(TestCase):
@@ -1455,6 +1460,66 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.client.login(email="usera@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:manager_dashboard"))
         self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_toggle_own_team_model(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True)
+        self.client.login(email="managera@example.com", password="pw12345!")
+
+        response = self.client.post(reverse("governance:toggle_team_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(self.team_a.disabled_models.filter(id=model.id).exists())
+
+        # Toggling again re-allows it.
+        response = self.client.post(reverse("governance:toggle_team_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(self.team_a.disabled_models.filter(id=model.id).exists())
+
+    def test_manager_cannot_toggle_a_disabled_model(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="off", is_enabled=False)
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_team_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_manager_with_no_team_cannot_toggle(self):
+        ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m2", is_enabled=True)
+        model = ModelConfig.objects.get(model_name="m2")
+        User.objects.create_user(
+            email="lonemanager@example.com", password="pw12345!", role=User.Role.MANAGER, department=self.dept_a
+        )
+        self.client.login(email="lonemanager@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_team_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_regular_user_cannot_toggle_team_model(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m3", is_enabled=True)
+        self.client.login(email="usera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_team_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_team_disabled_model_narrows_effective_allowed_ids(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m4", is_enabled=True)
+        plan = Plan.objects.create(name="Team Plan")
+        plan.allowed_models.add(model)
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        assign_plan(self.user_a, plan)
+
+        self.assertIn(model.id, effective_allowed_model_ids(self.user_a))
+
+        self.team_a.disabled_models.add(model)
+        self.assertNotIn(model.id, effective_allowed_model_ids(self.user_a))
+
+    def test_personal_override_wins_over_team_disabled_model(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m5", is_enabled=True)
+        plan = Plan.objects.create(name="Team Plan 2")
+        plan.allowed_models.add(model)
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        assign_plan(self.user_a, plan)
+        self.team_a.disabled_models.add(model)
+
+        UserModelPermission.objects.create(user=self.user_a, model_config=model, is_allowed=True)
+        self.assertIn(model.id, effective_allowed_model_ids(self.user_a))
 
     # --- A regular User still cannot access any Admin/Manager/SuperAdmin
     # endpoint - re-run to confirm the new roles didn't loosen anything. ---
