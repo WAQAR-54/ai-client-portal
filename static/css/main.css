@@ -1417,6 +1417,23 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     transition: background-color 150ms ease, transform 150ms ease;
 }
 .conv-item:hover { background: var(--sidebar-hover-bg); transform: translateY(-1px); }
+/* A soft gradient wash per row, distinct from the active item's animated
+   border below - `background` gradients can't transition smoothly, so this
+   is a separate layer whose opacity fades in instead. Pinned items carry a
+   faint version of it always, echoing the pin-dot's accent color; hovering
+   any row (pinned or not) brings it up further. */
+.conv-item::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, var(--accent-soft), transparent 75%);
+    opacity: 0;
+    transition: opacity 200ms var(--ease);
+    pointer-events: none;
+}
+.conv-item-pinned::before { opacity: 0.55; }
+.conv-item:hover::before { opacity: 1; }
 .conv-item-link {
     position: relative;
     display: flex;
