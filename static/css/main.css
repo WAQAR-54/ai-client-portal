@@ -1451,6 +1451,15 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .conv-item-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-item-link:hover { color: var(--sidebar-text); text-decoration: none; }
 .conv-item-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The just-navigated-to conversation link can pick up :focus-visible on
+   load in some browsers - on an .active row that reads as a harsh solid
+   rectangle sitting on top of the row's own fill, when the fill already
+   says "selected". A soft ring keyed to the same accent instead of a hard
+   outline keeps a visible focus indicator without the visual clash. */
+.conv-item-link.active:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+}
 .conv-item-link.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); font-weight: 600; }
 .conv-item-link.active .nav-icon { opacity: 1; color: var(--accent); }
 /* Signature detail: a thin, slowly-shifting gradient outline marks the
