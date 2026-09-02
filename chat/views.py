@@ -192,7 +192,7 @@ def create_conversation(request):
         messages.warning(request, str(exc))
         return redirect("chat:chat_home")
 
-    conversation = Conversation.objects.create(user=request.user, title=_("New chat"))
+    conversation = Conversation.objects.create(user=request.user, title=_("New conversation"))
     url = reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id})
     starter_text = request.POST.get("starter_text", "").strip()
     if starter_text:
@@ -317,7 +317,7 @@ def post_message(request, conversation_id):
             user_message.attachment_size = uploaded_file.size
             user_message.save(update_fields=["attachment", "attachment_original_name", "attachment_size"])
 
-        if conversation.title == "New chat":
+        if conversation.title == "New conversation":
             conversation.title = (content or uploaded_file.name)[:60]
             conversation.save(update_fields=["title"])
 

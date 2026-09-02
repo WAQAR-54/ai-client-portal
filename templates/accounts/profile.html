@@ -20,7 +20,7 @@
     the DOM these buttons live - it just looks for .settings-tab.
     {% endcomment %}
     <div class="nav-group-label">{% trans "Settings" %}</div>
-    <div class="app-nav-sub" id="settings-tabs">
+    <div class="app-nav-sub" id="settings-tabs" >
         <button type="button" class="settings-tab settings-tab-sidebar" data-tab="profile">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
             {% trans "Profile" %}
@@ -99,7 +99,7 @@
         {% if user|has_feature:"onboarding_tour" %}
         <div class="card mt-5">
             <h2>{% trans "Guided tour" %}</h2>
-            <p class="text-muted" style="margin-top:-0.5rem;">{% trans "Replay the first-login walkthrough of New chat, Usage, model selection, and Admin." %}</p>
+            <p class="text-muted" style="margin-top:-0.5rem;">{% trans "Replay the first-login walkthrough of New conversation, Usage, model selection, and Admin." %}</p>
             <form method="post" action="{% url 'accounts:replay_onboarding' %}">
                 {% csrf_token %}
                 <button type="submit" class="btn-small btn-ghost">{% trans "Replay tour" %}</button>

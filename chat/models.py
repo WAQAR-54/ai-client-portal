@@ -84,7 +84,7 @@ class ActiveConversationManager(models.Manager):
 
 class Conversation(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
-    title = models.CharField(max_length=200, default="New chat")
+    title = models.CharField(max_length=200, default="New conversation")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_pinned = models.BooleanField(default=False)
