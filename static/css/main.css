@@ -717,6 +717,7 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     align-items: center;
     justify-content: center;
     line-height: 1;
+    animation: copy-pop 320ms var(--ease-spring);
 }
 .notif-dropdown {
     position: absolute;
@@ -2017,7 +2018,12 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .msg-action-btn:hover { background: var(--color-surface-muted); color: var(--color-text); }
 .msg-action-btn:active { transform: scale(0.9); }
 .msg-action-btn svg { width: 15px; height: 15px; }
-.msg-action-btn.msg-action-copied { color: var(--color-success); }
+.msg-action-btn.msg-action-copied { color: var(--color-success); animation: copy-pop 280ms var(--ease-spring); }
+@keyframes copy-pop {
+    0% { transform: scale(0.7); }
+    60% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
 
 /* Feedback (thumbs up/down) - always visible under assistant replies,
    unlike the hover-only Copy/Regenerate row above. */
@@ -2326,8 +2332,12 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     border-radius: 50%;
     cursor: pointer;
 }
-.attach-btn { width: 2rem; height: 2rem; border: none; background: transparent; color: var(--color-text-muted); transition: background-color 0.15s ease, transform 100ms ease; }
+.attach-btn { width: 2rem; height: 2rem; border: none; background: transparent; color: var(--color-text-muted); transition: background-color 0.15s ease, color 0.15s ease, transform 100ms ease; }
 .attach-btn svg { width: 16px; height: 16px; }
+/* Selecting a file previously left this button looking identical to
+   before - now it fills with the accent color so a file being attached
+   is actually visible, not just trusted to work silently. */
+.attach-btn.has-file { background: var(--accent-soft); color: var(--accent); animation: copy-pop 280ms var(--ease-spring); }
 .attach-btn:hover { background: var(--color-border); color: var(--color-text); }
 .attach-btn:active { transform: scale(0.92); }
 /* Solid navy, not the cyan gradient every other primary button gets - the

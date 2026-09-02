@@ -468,9 +468,9 @@ function portalCloseUpgradeModal() {
                       oninput="this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,200)+'px';"></textarea>
             <div class="composer-footer">
                 <div class="composer-footer-left">
-                    <label class="attach-btn" title="{% trans 'Attach a PDF, Word, Excel, or text file — its content is read into this message as context' %}">
+                    <label class="attach-btn" id="attach-btn-label" title="{% trans 'Attach a PDF, Word, Excel, or text file — its content is read into this message as context' %}">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                        <input type="file" name="attachment" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
+                        <input type="file" name="attachment" id="attach-input" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
                     </label>
                     {% if can_select_model %}
                     {% comment %}
@@ -659,6 +659,29 @@ function portalCancelEdit() {
     textarea.value = "";
     textarea.style.height = "auto";
 }
+(function() {
+    // Attaching a file previously gave zero visual feedback - the button
+    // stayed identical whether or not something was actually selected.
+    var attachInput = document.getElementById("attach-input");
+    var attachLabel = document.getElementById("attach-btn-label");
+    var form = document.getElementById("composer-form");
+    if (!attachInput || !attachLabel || !form) return;
+    attachInput.addEventListener("change", function() {
+        var file = attachInput.files[0];
+        if (file) {
+            attachLabel.classList.add("has-file");
+            attachLabel.title = file.name;
+        } else {
+            attachLabel.classList.remove("has-file");
+        }
+    });
+    // this.reset() in the form's hx-on::after-request fires a native
+    // "reset" event too, so this catches a successful send the same way
+    // as an explicit cancel.
+    form.addEventListener("reset", function() {
+        attachLabel.classList.remove("has-file");
+    });
+})();
 (function() {
     var exportMenu = document.querySelector(".export-menu");
     if (!exportMenu) return;
