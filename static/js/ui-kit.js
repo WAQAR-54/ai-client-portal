@@ -137,6 +137,73 @@ document.addEventListener("click", function(evt) {
    chat page's header/composer dropdown closer, generalized for reuse here. */
 document.addEventListener("click", function(evt) {
     document.querySelectorAll(".row-menu[open]").forEach(function(d) {
-        if (!d.contains(evt.target)) d.removeAttribute("open");
+        var panel = d._rowMenuPanel;
+        var insideTrigger = d.contains(evt.target);
+        var insidePanel = panel && panel.contains(evt.target);
+        if (!insideTrigger && !insidePanel) d.removeAttribute("open");
+    });
+});
+
+/* .row-menu-panel is CSS position:absolute, but several tables (e.g. Users)
+   wrap their rows in a container with overflow-y:hidden - needed there to
+   clip the table itself to the card's rounded corners, but it also clips
+   any absolutely-positioned popover that opens past that container's own
+   edge, which got worse once this panel grew tall enough (Role+Department+
+   Team+overrides+Suspend) to run past a row near the bottom of the table.
+
+   position:fixed alone doesn't actually escape this: ANY ancestor with an
+   active transform (not just overflow) becomes the containing block for a
+   fixed descendant instead of the viewport - and .card:hover applies a
+   transform the whole time the cursor is anywhere over the table (i.e.
+   whenever this menu is being used at all), plus the stagger-in entrance
+   animation leaves a transform on each <tr> for its first ~500ms. Both
+   defeat position:fixed's usual "always relative to the viewport" promise.
+   The only fix that survives any ancestor's transform is a real portal:
+   physically move the panel to <body> while open, then back into its
+   <details> on close - verified via a getComputedStyle walk up the
+   ancestor chain that .card and <tr> really do carry a live transform
+   here, not just a hypothetical one.
+
+   The "toggle" event on <details> doesn't bubble, so this listens in the
+   capture phase to still catch it via delegation instead of needing a
+   listener attached per row. */
+document.addEventListener("toggle", function(evt) {
+    var details = evt.target;
+    if (!details.classList || !details.classList.contains("row-menu")) return;
+    if (details.open) {
+        var panel = details.querySelector(".row-menu-panel");
+        if (!panel) return;
+        details._rowMenuPanel = panel;
+        document.body.appendChild(panel);
+        var rect = details.getBoundingClientRect();
+        panel.style.position = "fixed";
+        panel.style.top = (rect.bottom + 5) + "px";
+        panel.style.right = (window.innerWidth - rect.right) + "px";
+        panel.style.left = "auto";
+        panel.style.maxHeight = (window.innerHeight - rect.bottom - 16) + "px";
+        panel.style.overflowY = "auto";
+    } else if (details._rowMenuPanel) {
+        var movedPanel = details._rowMenuPanel;
+        details.appendChild(movedPanel);
+        movedPanel.style.position = "";
+        movedPanel.style.top = "";
+        movedPanel.style.right = "";
+        movedPanel.style.left = "";
+        movedPanel.style.maxHeight = "";
+        movedPanel.style.overflowY = "";
+        details._rowMenuPanel = null;
+    }
+}, true);
+
+/* Safety net for the portal above: if a table containing an OPEN row-menu
+   gets htmx-swapped (e.g. a filter/search re-render) while its panel is
+   sitting in <body>, the old <details> is destroyed but the panel it owns
+   isn't a descendant of it any more, so it would otherwise leak in <body>
+   forever. Anything still parented directly to <body> with this class at
+   swap time is by definition orphaned (a panel currently attached to its
+   own <details> is never a direct child of <body>) - discard it. */
+document.body.addEventListener("htmx:beforeSwap", function() {
+    document.querySelectorAll(".row-menu-panel").forEach(function(el) {
+        if (el.parentElement === document.body) el.remove();
     });
 });
