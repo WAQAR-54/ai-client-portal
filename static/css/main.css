@@ -439,11 +439,24 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     min-height: 0;
     overflow-y: auto;
 }
+
+
+
+
+
 .app-nav a,
 .app-nav-sub a,
 .settings-tab-sidebar {
     display: flex;
     align-items: center;
+    /* Without this, the global `button { justify-content: center }` rule
+       (lower specificity but never overridden here) wins for
+       .settings-tab-sidebar - it's a <button>, unlike the <a> nav links,
+       so it's the only one of these three actually affected - and centers
+       the icon+label instead of lining it up with the SETTINGS heading
+       above it. Same bug already hit and fixed once for the logout button
+       (.app-sidebar-footer button.link-btn), missed here. */
+    justify-content: flex-start;
     gap: 11px;
     padding: 9px 12px;
     border-radius: 10px;
@@ -848,6 +861,7 @@ textarea { resize: vertical; font-family: inherit; }
 /* ---------- Buttons ---------- */
 /* Fill = accent (cyan), text = accent-text (navy) - the pairing that
    passes contrast (~5.7:1), not white-on-cyan (~2.5:1, fails). */
+   
 button, .btn {
     display: inline-flex;
     align-items: center;
