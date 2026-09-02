@@ -813,7 +813,8 @@ main { animation: page-fade-in 240ms var(--ease); }
     .row-menu-panel,
     .model-select-panel,
     .usage-popover-panel,
-    .export-menu-panel {
+    .export-menu-panel,
+    .template-picker-panel {
         animation: none;
     }
 }
@@ -2161,7 +2162,29 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     box-shadow: var(--shadow-md);
     padding: 0.35rem;
     z-index: 20;
+    transform-origin: bottom right;
+    animation: scale-fade-in 160ms var(--ease-spring);
 }
+.template-picker-save-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+    transition: background-color 150ms var(--ease);
+}
+.template-picker-save-btn:hover { background: var(--color-surface-muted); }
+.template-picker-save-btn .nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.template-picker-divider { height: 1px; background: var(--color-border); margin: 0.3rem 0; }
 .template-item { display: flex; align-items: center; gap: 0.2rem; }
 .template-item-insert {
     display: flex;
