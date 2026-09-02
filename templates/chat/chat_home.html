@@ -5,10 +5,18 @@
 {% block sidebar %}
 <a class="brand" href="{% url 'accounts:dashboard' %}"><span class="dot"></span>{% trans "AI Client Portal" %}</a>
 {% if user.is_admin %}
-<div class="app-switch" role="group" aria-label="{% trans 'Switch product area' %}" style="margin-bottom: var(--space-4);">
-    <div class="app-switch-pill" id="appSwitchPill"></div>
-    <a href="{% url 'chat:chat_home' %}" id="appSwitchChat" class="active">{% trans "Chat" %}</a>
-    <a href="{% url 'governance:dashboard' %}" id="appSwitchAdmin">{% trans "Admin" %}</a>
+<div class="sidebar-top-row">
+    <div class="app-switch" role="group" aria-label="{% trans 'Switch product area' %}">
+        <div class="app-switch-pill" id="appSwitchPill"></div>
+        <a href="{% url 'chat:chat_home' %}" id="appSwitchChat" class="active">{% trans "Chat" %}</a>
+        <a href="{% url 'governance:dashboard' %}" id="appSwitchAdmin">{% trans "Admin" %}</a>
+    </div>
+    <form method="post" action="{% url 'chat:create_conversation' %}" class="new-chat-form-icon">
+        {% csrf_token %}
+        <button type="submit" class="new-chat-icon-btn" id="tour-new-chat" title="{% trans 'New conversation' %}" aria-label="{% trans 'New conversation' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+    </form>
 </div>
 <script>
     (function() {
@@ -20,7 +28,7 @@
         }
     })();
 </script>
-{% endif %}
+{% else %}
 <form method="post" action="{% url 'chat:create_conversation' %}" class="new-chat-form">
     {% csrf_token %}
     <button type="submit" class="new-chat-btn" id="tour-new-chat">
@@ -28,6 +36,7 @@
         {% trans "New conversation" %}
     </button>
 </form>
+{% endif %}
 {% if user|has_feature:"conversation_pin_search" %}
 <div class="filter-search sidebar-conv-search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>

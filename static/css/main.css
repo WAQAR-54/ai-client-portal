@@ -1351,6 +1351,32 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 }
 .new-chat-btn:hover { background: var(--sidebar-active-bg); border-color: var(--color-border-strong); text-decoration: none; }
 .new-chat-btn:active { transform: scale(0.98); }
+
+/* Admin-only layout: the Chat/Admin switch shares its row with a compact
+   "+" button instead of a full-width "New conversation" row underneath -
+   shrinks the switch to about half the sidebar's width instead of it
+   spanning edge to edge. Non-admins never see the switch, so they keep
+   the plain full-width .new-chat-btn above, unchanged. */
+.sidebar-top-row { display: flex; align-items: stretch; gap: 0.5rem; margin-bottom: var(--space-4); }
+.sidebar-top-row .app-switch { flex: 1; min-width: 0; margin-bottom: 0; }
+.new-chat-form-icon { flex-shrink: 0; margin: 0; }
+.new-chat-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 100%;
+    background: var(--sidebar-hover-bg);
+    color: var(--sidebar-text);
+    border: none;
+    border-radius: 11px;
+    cursor: pointer;
+    transition: background 150ms var(--ease), transform 100ms ease;
+}
+.new-chat-icon-btn:hover { background: var(--sidebar-active-bg); }
+.new-chat-icon-btn:active { transform: scale(0.92); }
+.new-chat-icon-btn svg { display: block; width: 18px; height: 18px; min-width: 18px; min-height: 18px; flex-shrink: 0; }
+
 .sidebar-conv-search {
     /* .filter-search's flex:1 is meant for a horizontal filter row - inside
        the sidebar's column layout it instead stretched this box vertically
@@ -1444,9 +1470,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     gap: 0.55rem;
     flex: 1;
     min-width: 0;
-    padding: 0.75rem 0.6rem;
+    padding: 0.65rem 0.6rem;
     color: var(--sidebar-text-muted);
-    font-size: var(--text-sm);
+    font-size: 13px;
     border-radius: var(--radius-sm);
 }
 .conv-item-link .nav-icon { opacity: 0.6; flex-shrink: 0; }
