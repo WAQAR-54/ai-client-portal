@@ -556,7 +556,7 @@ function portalCloseUpgradeModal() {
         <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span>{% trans "Route any model, one workspace" %}</div>
         <h1 class="hero-title">{% trans "What are we routing" %}<br>{% trans "through today?" %}</h1>
         <p class="hero-sub">{% trans "Chat with any allowed model, compare responses, and keep every conversation inside your team's budget and access rules." %}</p>
-        <div class="quick-grid">
+        <div class="quick-grid" data-stagger data-stagger-items=".quick-card">
             <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
                 {% csrf_token %}
                 <input type="hidden" name="starter_text" value="{% trans 'Compare how two models answer the same question' %}">
