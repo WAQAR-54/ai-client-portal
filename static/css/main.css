@@ -1987,10 +1987,15 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 /* Copy/Edit/Regenerate are always visible now, not hover-only - a user on
    touch (no hover at all) or who hasn't learned to hover here yet should
    still see they exist. */
+/* Copy/Regenerate and the thumbs-up/down feedback used to be two stacked
+   rows under each assistant reply - merged into one row via .msg-toolbar
+   (with .msg-feedback keeping its own id for the htmx swap on rating) so
+   it reads as one control cluster instead of disconnected icon clusters. */
+.msg-toolbar { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; }
+.msg-toolbar-divider { width: 1px; height: 14px; background: var(--color-border); flex-shrink: 0; }
 .msg-actions {
     display: flex;
     gap: 0.25rem;
-    margin-top: 0.3rem;
 }
 .msg-action-btn {
     display: flex;
@@ -2013,7 +2018,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 
 /* Feedback (thumbs up/down) - always visible under assistant replies,
    unlike the hover-only Copy/Regenerate row above. */
-.msg-feedback { display: flex; align-items: center; gap: 0.25rem; margin-top: 0.3rem; }
+.msg-feedback { display: flex; align-items: center; gap: 0.25rem; }
 .msg-feedback-btn {
     display: flex;
     align-items: center;
