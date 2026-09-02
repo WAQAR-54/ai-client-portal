@@ -1509,16 +1509,14 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .sidebar-empty-state .empty-icon-badge { width: 40px; height: 40px; background: var(--sidebar-hover-bg); color: var(--sidebar-text-muted); }
 .sidebar-empty-state .empty-icon-badge svg { width: 18px; height: 18px; }
 
+/* Pin/delete are always visible now, not hover-only - matches the same
+   change made to the message Copy/Edit/Regenerate row, for the same
+   reason (touch users, and anyone who hasn't learned to hover here). */
 .conv-item-actions {
     display: flex;
     gap: 0.1rem;
     padding-right: 0.35rem;
-    opacity: 0;
-    transform: scale(0.9);
-    transition: opacity 150ms ease, transform 150ms ease;
 }
-.conv-item:hover .conv-item-actions,
-.conv-item-pinned .conv-item-actions { opacity: 1; transform: scale(1); }
 .conv-item-actions form { margin: 0; }
 .conv-action-btn {
     display: flex;
