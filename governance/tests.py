@@ -532,6 +532,36 @@ class GovernanceRBACAndAuditTests(TestCase):
         response = self.client.post(reverse("governance:toggle_model_enabled", kwargs={"model_id": model_config.id}))
         self.assertEqual(response.status_code, 403)
 
+    def test_delete_model_removes_an_unused_model(self):
+        # Undoes an accidental/test import from the sync-models flow, which
+        # previously had no way to remove a model once created - only
+        # disable it, forever cluttering the list.
+        model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:delete_model", kwargs={"model_id": model_config.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ModelConfig.objects.filter(id=model_config.id).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="model.delete").exists())
+
+    def test_delete_model_blocked_once_it_has_usage_history(self):
+        model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
+        user = User.objects.create_user(email="chatuser@example.com", password="pw12345!")
+        conversation = Conversation.objects.create(user=user, title="t")
+        Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content="hi", model_used=model_config
+        )
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:delete_model", kwargs={"model_id": model_config.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(ModelConfig.objects.filter(id=model_config.id).exists())
+
+    def test_delete_model_forbidden_for_scoped_admin(self):
+        model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:delete_model", kwargs={"model_id": model_config.id}))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(ModelConfig.objects.filter(id=model_config.id).exists())
+
     def test_system_prompt_new_version_writes_audit_log(self):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.post(

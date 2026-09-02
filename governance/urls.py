@@ -32,6 +32,7 @@ urlpatterns = [
     path("models/sync/import/", views.sync_models_import, name="sync_models_import"),
     path("models/add/", views.add_model, name="add_model"),
     path("models/<int:model_id>/toggle-enabled/", views.toggle_model_enabled, name="toggle_model_enabled"),
+    path("models/<int:model_id>/delete/", views.delete_model, name="delete_model"),
     path("models/<int:model_id>/pricing/", views.update_model_pricing, name="update_model_pricing"),
     path("models/<int:model_id>/permissions/", views.ModelPermissionsView.as_view(), name="model_permissions"),
     path("usage/", views.UsageSummaryView.as_view(), name="usage"),

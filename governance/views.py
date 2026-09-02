@@ -986,6 +986,31 @@ def toggle_model_enabled(request, model_id):
     return redirect("governance:models")
 
 
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def delete_model(request, model_id):
+    """The sync-models flow (Add model -> pick from fetched list -> Import)
+    had no way to undo an accidental/test import - Disable just hides a
+    model from chat, it stays in this list forever. Real deletion, but
+    only when nothing actually depends on it: Message.model_used is
+    on_delete=SET_NULL (so deleting wouldn't crash), but silently nulling
+    out which model a real historical message used is real data loss, not
+    cleanup - blocked here rather than allowed silently."""
+    model_config = get_object_or_404(ModelConfig, id=model_id)
+    if model_config.messages.exists():
+        django_messages.error(
+            request,
+            _("%(model)s has real usage history and can't be deleted - disable it instead.")
+            % {"model": model_config.display_label},
+        )
+    else:
+        log_action(request.user, "model.delete", model_config, old_value=model_config.display_label)
+        model_config.delete()
+    if request.headers.get("HX-Request"):
+        return render(request, "governance/_models_table.html", _models_table_context(request))
+    return redirect("governance:models")
+
+
 def _parse_decimal(raw):
     raw = (raw or "").strip()
     if not raw:
