@@ -1595,16 +1595,48 @@ class RoleHierarchyAccessControlTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_cannot_set_team_directly_for_a_manager(self):
+    def test_reassigning_a_manager_moves_team_manager_link_too(self):
         team_b = Team.objects.create(name="Team B", department=self.dept_a)
         self.client.login(email="admina@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:change_user_team", kwargs={"user_id": self.manager_a.id}),
             {"team_id": team_b.id},
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 302)
         self.manager_a.refresh_from_db()
-        self.assertEqual(self.manager_a.team_id, self.team_a.id)
+        self.team_a.refresh_from_db()
+        team_b.refresh_from_db()
+        self.assertEqual(self.manager_a.team_id, team_b.id)
+        self.assertEqual(team_b.manager_id, self.manager_a.id)
+        self.assertIsNone(self.team_a.manager_id)
+
+    def test_can_fix_a_manager_stuck_teamless(self):
+        # Reproduces a Manager promoted outside change_user_role's own flow
+        # (direct DB/admin-panel edit, a seed script) - role=Manager but no
+        # Team.manager link at all, so managed_team is None and their
+        # dashboard shows nothing. Re-selecting "Manager" from a <select>
+        # that already shows "Manager" can't fire a change event to reach
+        # change_user_role's team-picker, so change_user_team has to be
+        # able to fix this instead.
+        stuck_manager = User.objects.create_user(
+            email="stuckmanager@example.com", password="pw12345!", role=User.Role.MANAGER, department=self.dept_a
+        )
+        self.assertIsNone(getattr(stuck_manager, "managed_team", None))
+
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_team", kwargs={"user_id": stuck_manager.id}),
+            {"team_id": self.team_a.id},
+        )
+        self.assertEqual(response.status_code, 302)
+        stuck_manager.refresh_from_db()
+        self.assertEqual(stuck_manager.managed_team.id, self.team_a.id)
+
+        # team_a already had manager_a as its Manager - displacing them
+        # must release manager_a's own `team`, not leave them stuck the
+        # same way stuck_manager just was.
+        self.manager_a.refresh_from_db()
+        self.assertIsNone(self.manager_a.team_id)
 
     def test_removing_a_member_from_their_team(self):
         self.user_a.team = self.team_a

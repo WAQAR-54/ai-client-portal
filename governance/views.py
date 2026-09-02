@@ -569,6 +569,15 @@ def change_user_role(request, user_id):
         target.role = new_role
         if new_role == User.Role.MANAGER:
             Team.objects.filter(manager=target).exclude(pk=team.pk).update(manager=None)
+            # If the picked team already has a different Manager, release
+            # them too - otherwise they'd keep `team` set while no longer
+            # being that team's actual manager, stuck exactly the way a
+            # Manager promoted outside this flow can end up (see
+            # change_user_team, which fixes that same class of problem).
+            previous_manager = team.manager
+            if previous_manager is not None and previous_manager != target:
+                previous_manager.team = None
+                previous_manager.save(update_fields=["team"])
             target.team = team
             target.department_id = team.department_id
             team.manager = target
@@ -603,15 +612,18 @@ def change_user_department(request, user_id):
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def change_user_team(request, user_id):
-    """Adds/removes a regular User as a team MEMBER - the missing half of
-    the Manager feature. change_user_role already sets a user's own
-    `team` field when THEY become that team's Manager, but nothing let an
-    Admin put OTHER users onto a team, so a team's member list could never
-    grow past its own Manager. A Manager's team is set by their role
-    change instead, not here."""
+    """Adds/removes a User's team, covering both meanings that field can
+    have: a regular User's `team` is which team they're a MEMBER of, a
+    Manager's is which team they MANAGE (Team.manager, kept in sync here
+    the same way change_user_role does it on promotion).
+
+    Also the only way to fix a Manager stuck teamless after being promoted
+    outside this app's own flow (direct DB/admin-panel edit, a seed
+    script, etc.) - re-selecting "Manager" from a <select> already showing
+    "Manager" never fires a change event, so change_user_role's own
+    team-picker can't be re-reached for someone already in that state
+    without this."""
     target = _get_scoped_user_or_403(request, user_id)
-    if target.role == User.Role.MANAGER:
-        return HttpResponseBadRequest("A Manager's team is set by their role, not here.")
 
     team_id = request.POST.get("team_id") or None
     team = _scope_teams(request, Team.objects.all()).filter(id=team_id).first() if team_id else None
@@ -619,15 +631,29 @@ def change_user_team(request, user_id):
         raise PermissionDenied("That team is outside your scope.")
 
     old_value = target.team_id
-    target.team = team
-    # A member's department follows their team, same as a promoted
-    # Manager's does in change_user_role - keeps the two fields from
-    # silently disagreeing about which department someone is actually in.
-    if team is not None:
-        target.department_id = team.department_id
-        target.save(update_fields=["team", "department"])
-    else:
-        target.save(update_fields=["team"])
+    with transaction.atomic():
+        if target.role == User.Role.MANAGER:
+            # Release whatever team they used to manage before taking on a
+            # new (or no) one - a Team can only ever have one Manager.
+            Team.objects.filter(manager=target).exclude(pk=team.pk if team else None).update(manager=None)
+            if team is not None:
+                # If the picked team already has a different Manager,
+                # release them too rather than leaving them stuck with
+                # `team` set but no longer actually managing it.
+                previous_manager = team.manager
+                if previous_manager is not None and previous_manager != target:
+                    previous_manager.team = None
+                    previous_manager.save(update_fields=["team"])
+                team.manager = target
+                team.save(update_fields=["manager"])
+        target.team = team
+        # Department follows the team either way - keeps the two fields
+        # from silently disagreeing about which department someone is in.
+        if team is not None:
+            target.department_id = team.department_id
+            target.save(update_fields=["team", "department"])
+        else:
+            target.save(update_fields=["team"])
     log_action(request.user, "user.team_change", target, old_value=old_value, new_value=team_id)
     return redirect("governance:users")
 

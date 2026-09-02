@@ -100,8 +100,7 @@ override link - real functionality, just relocated instead of hidden behind an i
                         <div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">{{ u.department.name }}</div>
                         {% endif %}
 
-                        {% if u.role != "manager" %}
-                        <div class="row-menu-label">{% trans "Team" %}</div>
+                        <div class="row-menu-label">{% if u.role == "manager" %}{% trans "Manages team" %}{% else %}{% trans "Team" %}{% endif %}</div>
                         <form method="post" action="{% url 'governance:change_user_team' user_id=u.id %}">
                             {% csrf_token %}
                             <select name="team_id" onchange="this.form.requestSubmit()">
@@ -111,10 +110,6 @@ override link - real functionality, just relocated instead of hidden behind an i
                                 {% endfor %}
                             </select>
                         </form>
-                        {% elif u.team %}
-                        <div class="row-menu-label">{% trans "Team" %}</div>
-                        <div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">{{ u.team.name }} ({% trans "Manager" %})</div>
-                        {% endif %}
 
                         {% if info.override_count %}
                         <a href="{% url 'governance:user_overrides' user_id=u.id %}" class="text-faint" style="font-size:0.78rem; display:block; margin-bottom:0.6rem;">
