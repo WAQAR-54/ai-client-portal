@@ -1,6 +1,28 @@
+import os
+
 from django import template
+from django.contrib.staticfiles import finders
 
 register = template.Library()
+
+
+@register.simple_tag
+def static_v(path):
+    """{% static_v 'css/main.css' %} - same as {% static %} but appends the
+    file's own mtime as a ?v= query string, so a browser can never serve a
+    stale cached copy after a CSS/JS change: dev's StaticFilesStorage (and
+    prod's WhiteNoise, pre-manifest-lookup) both otherwise emit the exact
+    same URL for every deploy, with no cache-busting of their own."""
+    from django.templatetags.static import static as static_url
+
+    url = static_url(path)
+    found = finders.find(path)
+    if found:
+        try:
+            url = f"{url}?v={int(os.path.getmtime(found))}"
+        except OSError:
+            pass
+    return url
 
 
 @register.filter
