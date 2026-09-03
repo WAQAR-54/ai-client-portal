@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 from django.db import models
@@ -127,3 +129,14 @@ class ProviderModel(models.Model):
     @property
     def display_label(self):
         return self.display_name or self.model_id
+
+    def estimate_cost(self, input_tokens, output_tokens):
+        """Same shape/behavior as the old chat.models.ModelConfig.
+        estimate_cost - chat/views.py's cache-hit and per-message cost
+        accounting call this on whatever select_model_candidates()
+        returned, which is a ProviderModel now (see chat/router.py)."""
+        if self.input_price_per_mtok is None or self.output_price_per_mtok is None:
+            return None
+        return (
+            Decimal(input_tokens) * self.input_price_per_mtok + Decimal(output_tokens) * self.output_price_per_mtok
+        ) / Decimal(1_000_000)

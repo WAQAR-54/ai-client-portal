@@ -274,30 +274,10 @@ _ADAPTER_TYPE_PROVIDERS = {
 }
 
 
-# TRANSITIONAL: chat/models.py:ModelConfig.provider is still a bare string
-# ("openai"/"anthropic") until the Plan.allowed_models/Message.model_used
-# migration onto providers.ProviderModel lands (in progress) - every real
-# call site still passes that string today, so get_provider must keep
-# handling it or live chat breaks immediately. Remove this branch once
-# that migration is done and every caller passes a real Provider row.
-_LEGACY_STRING_PROVIDERS = {
-    "openai": OpenAIProvider,
-    "anthropic": AnthropicProvider,
-}
-
-
 def get_provider(provider_row) -> AIProvider:
     """`provider_row` is a providers.models.Provider instance (what
     ProviderModel.provider resolves to for any model returned by
-    chat/router.py or governance-selected in chat/views.py) - or, for now,
-    a legacy provider-name string from chat.models.ModelConfig (see note
-    above)."""
-    if isinstance(provider_row, str):
-        try:
-            return _LEGACY_STRING_PROVIDERS[provider_row]()
-        except KeyError:
-            raise ProviderError(f"Unknown provider: {provider_row!r}")
-
+    chat/router.py or governance-selected in chat/views.py)."""
     adapter_type = getattr(provider_row, "adapter_type", None)
     try:
         provider_class = _ADAPTER_TYPE_PROVIDERS[adapter_type]

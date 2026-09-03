@@ -166,6 +166,15 @@ class MessageFeedback(models.Model):
     # later model rename/removal doesn't erase which model this feedback
     # was actually about.
     model_used = models.ForeignKey(ModelConfig, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # Step-3 cutover counterpart of the field above - chat/views.py's
+    # submit_feedback now snapshots message.provider_model_used here
+    # instead (model_used stays for historical feedback rows already
+    # written before this cutover, never populated for a new one going
+    # forward - same "add a parallel field, never delete the old one"
+    # pattern as Message.provider_model_used itself).
+    provider_model_used = models.ForeignKey(
+        "providers.ProviderModel", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -174,6 +183,20 @@ class MessageFeedback(models.Model):
 
     def __str__(self):
         return f"{self.get_rating_display()} on message {self.message_id}"
+
+    @property
+    def model_label(self):
+        """Whichever of the two model-snapshot fields is actually set -
+        provider_model_used for every feedback entry since the
+        ModelConfig -> ProviderModel cutover, model_used for everything
+        before it. Templates should read this instead of model_used
+        directly, or the Model column silently goes blank for every new
+        entry (see governance/_feedback_table.html)."""
+        if self.provider_model_used_id:
+            return self.provider_model_used.display_label
+        if self.model_used_id:
+            return self.model_used.display_label
+        return None
 
 
 class PromptTemplate(models.Model):

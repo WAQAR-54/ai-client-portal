@@ -243,14 +243,34 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         daily_tokens = [by_day[d]["tokens"] or 0 if d in by_day else 0 for d in date_range]
         daily_cost = [float(by_day[d]["cost"] or 0) if d in by_day else 0.0 for d in date_range]
 
-        by_model = (
+        # Merged across both the legacy ModelConfig-based field (pre-step-3-
+        # cutover messages) and the current ProviderModel-based one (every
+        # message since) - see chat/providers.py's module docstring for the
+        # cutover. Two separate aggregates merged in Python since they join
+        # through different FKs; without merging, this chart would show
+        # shrinking model coverage over time as legacy rows age out.
+        legacy_by_model = (
             assistant_messages.exclude(model_used__isnull=True)
             .values("model_used__model_name")
             .annotate(cost=Sum("estimated_cost"))
-            .order_by("-cost")[:8]
         )
-        model_labels = [row["model_used__model_name"] for row in by_model]
-        model_cost = [float(row["cost"] or 0) for row in by_model]
+        current_by_model = (
+            assistant_messages.exclude(provider_model_used__isnull=True)
+            .values("provider_model_used__model_id")
+            .annotate(cost=Sum("estimated_cost"))
+        )
+        cost_by_label = {}
+        for row in legacy_by_model:
+            cost_by_label[row["model_used__model_name"]] = cost_by_label.get(row["model_used__model_name"], 0) + float(
+                row["cost"] or 0
+            )
+        for row in current_by_model:
+            cost_by_label[row["provider_model_used__model_id"]] = cost_by_label.get(
+                row["provider_model_used__model_id"], 0
+            ) + float(row["cost"] or 0)
+        top_models = sorted(cost_by_label.items(), key=lambda item: item[1], reverse=True)[:8]
+        model_labels = [label for label, _cost in top_models]
+        model_cost = [cost for _label, cost in top_models]
 
         role_counts = scoped_users.values("role").annotate(count=Count("id")).order_by("-count")
         role_labels = [dict(User.Role.choices).get(row["role"], row["role"]) for row in role_counts]
@@ -1157,6 +1177,19 @@ class ModelPermissionsView(SuperAdminRequiredMixin, TemplateView):
         return redirect("governance:model_permissions", model_id=model_config.id)
 
 
+def _message_model_label(message):
+    """Which model a message used, reading whichever of the two fields is
+    actually set - provider_model_used for every message since the
+    ModelConfig -> ProviderModel cutover (see chat/providers.py), model_used
+    for everything before it. Used by the CSV/XLSX usage exports so the
+    Model column doesn't just go blank for every message from here on."""
+    if message.provider_model_used_id:
+        return message.provider_model_used.model_id
+    if message.model_used_id:
+        return message.model_used.model_name
+    return ""
+
+
 def _filtered_assistant_messages(request):
     """Shared by the Usage & Cost screen and its CSV/XLSX exports, so
     "export respects whatever filter is active" is true by construction -
@@ -1255,7 +1288,9 @@ def export_usage_csv(request):
     import csv
 
     assistant_messages, _ = _filtered_assistant_messages(request)
-    rows = assistant_messages.select_related("conversation__user__department", "model_used").order_by("created_at")
+    rows = assistant_messages.select_related(
+        "conversation__user__department", "model_used", "provider_model_used"
+    ).order_by("created_at")
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="usage_export.csv"'
@@ -1267,7 +1302,7 @@ def export_usage_csv(request):
                 m.created_at.strftime("%Y-%m-%d %H:%M"),
                 m.conversation.user.email,
                 m.conversation.user.department.name if m.conversation.user.department else "",
-                m.model_used.model_name if m.model_used else "",
+                _message_model_label(m),
                 m.input_tokens or 0,
                 m.output_tokens or 0,
                 f"{m.estimated_cost or 0:.6f}",
@@ -1284,7 +1319,9 @@ def export_usage_xlsx(request):
     from openpyxl.styles import Font
 
     assistant_messages, _ = _filtered_assistant_messages(request)
-    rows = assistant_messages.select_related("conversation__user__department", "model_used").order_by("created_at")
+    rows = assistant_messages.select_related(
+        "conversation__user__department", "model_used", "provider_model_used"
+    ).order_by("created_at")
 
     workbook = Workbook()
     sheet = workbook.active
@@ -1299,7 +1336,7 @@ def export_usage_xlsx(request):
                 m.created_at.strftime("%Y-%m-%d %H:%M"),
                 m.conversation.user.email,
                 m.conversation.user.department.name if m.conversation.user.department else "",
-                m.model_used.model_name if m.model_used else "",
+                _message_model_label(m),
                 m.input_tokens or 0,
                 m.output_tokens or 0,
                 float(m.estimated_cost or 0),
@@ -1434,7 +1471,9 @@ class FeedbackListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
     paginate_by = 50
 
     def get_queryset(self):
-        qs = MessageFeedback.objects.select_related("user", "model_used", "message", "message__conversation")
+        qs = MessageFeedback.objects.select_related(
+            "user", "model_used", "provider_model_used", "message", "message__conversation"
+        )
         qs = _scope_by_user_department(self.request, qs)
         search = self.request.GET.get("search", "").strip()
         if search:

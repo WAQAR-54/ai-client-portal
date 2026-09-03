@@ -13,7 +13,7 @@
                 {% if entry.rating == "up" %}<span class="badge badge-success">{% trans "Up" %}</span>
                 {% else %}<span class="badge badge-danger">{% trans "Down" %}</span>{% endif %}
             </td>
-            <td class="text-muted">{{ entry.model_used.display_label|default:"—" }}</td>
+            <td class="text-muted">{{ entry.model_label|default:"—" }}</td>
             <td class="text-muted" style="max-width:320px;">{{ entry.message.content|truncatechars:140 }}</td>
             <td class="text-muted">{{ entry.comment|default:"—" }}</td>
         </tr>

@@ -9,22 +9,23 @@ from accounts.models import Department, User
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from chat.providers import ProviderError, StreamChunk, get_provider
 from chat.router import NoModelAvailableError, classify_complexity, select_model_for_user
+from providers.models import Provider, ProviderModel
 
 
 def _grant_premium_plan(user, *models):
     """Test helper: several unit tests below need a user to be able to use
     arbitrary fixture models, independent of the Plan/Tier system under test
-    elsewhere. Premium's allowed_models is seeded empty for any ModelConfig
-    created after the seed migration ran (true of every test fixture), so
-    tests that need model access must explicitly grant it - mirroring the
-    real admin action of enabling a model on a plan."""
+    elsewhere. Premium's allowed_provider_models is seeded empty for any
+    ProviderModel created in a test fixture, so tests that need model access
+    must explicitly grant it - mirroring the real admin action of enabling a
+    model on a plan. `models` are providers.models.ProviderModel instances."""
     from governance.models import Plan
     from governance.plans import assign_plan
 
     premium = Plan.objects.get(name="Premium")
     assign_plan(user, premium)
     if models:
-        premium.allowed_models.add(*models)
+        premium.allowed_provider_models.add(*models)
     return premium
 
 
@@ -47,50 +48,57 @@ class ProviderRegistryTests(TestCase):
 class RouterTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
-        self.economy = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="cheap-model",
-            tier=ModelConfig.Tier.ECONOMY,
-            output_cost_per_1m=1,
+        openai = Provider.objects.get(slug="openai")
+        self.economy = ProviderModel.objects.create(
+            provider=openai,
+            model_id="cheap-model",
+            tier=ProviderModel.Tier.ECONOMY,
+            output_price_per_mtok=1,
             is_enabled=True,
         )
-        self.default = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="mid-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            output_cost_per_1m=5,
+        self.default = ProviderModel.objects.create(
+            provider=openai,
+            model_id="mid-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            output_price_per_mtok=5,
             is_enabled=True,
         )
         _grant_premium_plan(self.user, self.economy, self.default)
 
     def test_classify_falls_back_to_default_when_no_economy_model(self):
-        ModelConfig.objects.all().delete()
-        self.assertEqual(classify_complexity("hello"), ModelConfig.Tier.DEFAULT)
+        ProviderModel.objects.all().delete()
+        self.assertEqual(classify_complexity("hello"), ProviderModel.Tier.DEFAULT)
 
     @patch("chat.router.get_provider")
     def test_classify_uses_cheapest_economy_model(self, mock_get_provider):
         mock_provider = mock_get_provider.return_value
         mock_provider.complete.return_value = "premium"
         result = classify_complexity("write a complex legal analysis")
-        self.assertEqual(result, ModelConfig.Tier.PREMIUM)
-        mock_get_provider.assert_called_once_with("openai")
+        self.assertEqual(result, ProviderModel.Tier.PREMIUM)
+        mock_get_provider.assert_called_once_with(self.economy.provider)
         called_model = mock_provider.complete.call_args[0][1]
         self.assertEqual(called_model, "cheap-model")
 
     def test_select_model_respects_denied_permission(self):
-        UserModelPermission.objects.create(user=self.user, model_config=self.economy, is_allowed=False)
-        selected = select_model_for_user(self.user, ModelConfig.Tier.ECONOMY)
+        economy_mc = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="cheap-model",
+            tier=ModelConfig.Tier.ECONOMY,
+            is_enabled=True,
+        )
+        UserModelPermission.objects.create(user=self.user, model_config=economy_mc, is_allowed=False)
+        selected = select_model_for_user(self.user, ProviderModel.Tier.ECONOMY)
         self.assertEqual(selected, self.default)
 
     def test_select_model_raises_when_nothing_available(self):
-        ModelConfig.objects.all().delete()
+        ProviderModel.objects.all().delete()
         with self.assertRaises(NoModelAvailableError):
-            select_model_for_user(self.user, ModelConfig.Tier.DEFAULT)
+            select_model_for_user(self.user, ProviderModel.Tier.DEFAULT)
 
     def test_select_model_falls_back_across_tiers(self):
         self.default.is_enabled = False
         self.default.save()
-        selected = select_model_for_user(self.user, ModelConfig.Tier.DEFAULT)
+        selected = select_model_for_user(self.user, ProviderModel.Tier.DEFAULT)
         self.assertEqual(selected, self.economy)
 
 
@@ -107,12 +115,12 @@ class ChatViewTests(TestCase):
         cache.clear()
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
         self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
-        self.model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="test-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            input_cost_per_1m=1,
-            output_cost_per_1m=2,
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="test-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
             is_enabled=True,
         )
         self.premium = _grant_premium_plan(self.user, self.model)
@@ -155,7 +163,7 @@ class ChatViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    @patch("chat.views.classify_complexity", return_value=ModelConfig.Tier.DEFAULT)
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")
     def test_stream_message_saves_assistant_reply(self, mock_get_provider, mock_classify):
         mock_provider = mock_get_provider.return_value
@@ -184,13 +192,13 @@ class ChatViewTests(TestCase):
 
         pending.refresh_from_db()
         self.assertEqual(pending.content, "Hello!")
-        self.assertEqual(pending.model_used, self.model)
+        self.assertEqual(pending.provider_model_used, self.model)
         self.assertEqual(pending.input_tokens, 10)
         self.assertEqual(pending.output_tokens, 5)
         self.assertEqual(pending.estimated_cost, self.model.estimate_cost(10, 5))
 
     def test_stream_message_escapes_html_in_chunks(self):
-        with patch("chat.views.classify_complexity", return_value=ModelConfig.Tier.DEFAULT), patch(
+        with patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT), patch(
             "chat.views.get_provider"
         ) as mock_get_provider:
             mock_get_provider.return_value.stream_chat.return_value = iter(
@@ -215,19 +223,19 @@ class ChatViewTests(TestCase):
             self.assertNotIn("<script>", body)
             self.assertIn("&lt;script&gt;", body)
 
-    @patch("chat.views.classify_complexity", return_value=ModelConfig.Tier.DEFAULT)
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")
     def test_stream_message_falls_back_to_second_provider_on_failure(self, mock_get_provider, mock_classify):
         # self.model (openai) is cheaper and tried first; anthropic is the fallback.
-        anthropic_model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.ANTHROPIC,
-            model_name="fallback-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            input_cost_per_1m=5,
-            output_cost_per_1m=5,
+        anthropic_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"),
+            model_id="fallback-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            input_price_per_mtok=5,
+            output_price_per_mtok=5,
             is_enabled=True,
         )
-        self.premium.allowed_models.add(anthropic_model)
+        self.premium.allowed_provider_models.add(anthropic_model)
 
         failing_provider = MagicMock()
         failing_provider.stream_chat.side_effect = ProviderError("primary provider is down")
@@ -239,8 +247,8 @@ class ChatViewTests(TestCase):
             ]
         )
 
-        def provider_for(name):
-            return failing_provider if name == ModelConfig.Provider.OPENAI else working_provider
+        def provider_for(provider_row):
+            return failing_provider if provider_row.slug == "openai" else working_provider
 
         mock_get_provider.side_effect = provider_for
 
@@ -262,20 +270,20 @@ class ChatViewTests(TestCase):
         self.assertNotIn("event: error", body)
         pending.refresh_from_db()
         self.assertEqual(pending.content, "fallback reply")
-        self.assertEqual(pending.model_used, anthropic_model)
+        self.assertEqual(pending.provider_model_used, anthropic_model)
 
-    @patch("chat.views.classify_complexity", return_value=ModelConfig.Tier.DEFAULT)
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")
     def test_stream_message_fails_gracefully_when_all_providers_down(self, mock_get_provider, mock_classify):
-        also_down = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.ANTHROPIC,
-            model_name="also-down",
-            tier=ModelConfig.Tier.DEFAULT,
-            input_cost_per_1m=5,
-            output_cost_per_1m=5,
+        also_down = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"),
+            model_id="also-down",
+            tier=ProviderModel.Tier.DEFAULT,
+            input_price_per_mtok=5,
+            output_price_per_mtok=5,
             is_enabled=True,
         )
-        self.premium.allowed_models.add(also_down)
+        self.premium.allowed_provider_models.add(also_down)
         broken_provider = MagicMock()
         broken_provider.stream_chat.side_effect = ProviderError("down")
         mock_get_provider.return_value = broken_provider
@@ -402,21 +410,31 @@ class ModelSelectionTests(TestCase):
         cache.clear()  # see ChatViewTests.setUp for why
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
         self.client.login(email="u@example.com", password="pw12345!")
-        self.allowed_model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="allowed-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            output_cost_per_1m=2,
+        self.allowed_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="allowed-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            output_price_per_mtok=2,
             is_enabled=True,
         )
-        self.denied_model = ModelConfig.objects.create(
+        self.denied_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"),
+            model_id="denied-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            output_price_per_mtok=1,
+            is_enabled=True,
+        )
+        # UserModelPermission still targets chat.models.ModelConfig (not
+        # migrated - see governance/plans.py::effective_allowed_provider_model_ids),
+        # so the deny needs a ModelConfig row that maps onto denied_model via
+        # matching (provider slug, model_name)/(provider, model_id).
+        denied_model_config = ModelConfig.objects.create(
             provider=ModelConfig.Provider.ANTHROPIC,
             model_name="denied-model",
             tier=ModelConfig.Tier.DEFAULT,
-            output_cost_per_1m=1,
             is_enabled=True,
         )
-        UserModelPermission.objects.create(user=self.user, model_config=self.denied_model, is_allowed=False)
+        UserModelPermission.objects.create(user=self.user, model_config=denied_model_config, is_allowed=False)
         _grant_premium_plan(self.user, self.allowed_model, self.denied_model)
         self.conversation = Conversation.objects.create(user=self.user)
 
@@ -444,7 +462,7 @@ class ModelSelectionTests(TestCase):
         response = self.client.get(url)
         b"".join(response.streaming_content)
         pending.refresh_from_db()
-        self.assertEqual(pending.model_used, self.allowed_model)
+        self.assertEqual(pending.provider_model_used, self.allowed_model)
 
     def test_denied_model_id_is_ignored_in_post_message(self):
         response = self.client.post(
@@ -740,11 +758,11 @@ class RegenerateMessageTests(TestCase):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
         self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
         self.client.login(email="u@example.com", password="pw12345!")
-        self.model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="regen-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            output_cost_per_1m=1,
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="regen-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            output_price_per_mtok=1,
             is_enabled=True,
         )
         self.conversation = Conversation.objects.create(user=self.user)
@@ -753,7 +771,7 @@ class RegenerateMessageTests(TestCase):
             conversation=self.conversation,
             role=Message.Role.ASSISTANT,
             content="a finished reply",
-            model_used=self.model,
+            provider_model_used=self.model,
             input_tokens=5,
             output_tokens=5,
         )
@@ -769,7 +787,7 @@ class RegenerateMessageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.reply.refresh_from_db()
         self.assertEqual(self.reply.content, "")
-        self.assertIsNone(self.reply.model_used)
+        self.assertIsNone(self.reply.provider_model_used)
         # Same row reset in place, not deleted+recreated - message count unchanged.
         self.assertEqual(self.conversation.messages.count(), message_count_before)
         self.assertIn(b"typing-dots", response.content)
@@ -801,11 +819,11 @@ class SubmitFeedbackTests(TestCase):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
         self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
         self.client.login(email="u@example.com", password="pw12345!")
-        self.model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="feedback-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            output_cost_per_1m=1,
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="feedback-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            output_price_per_mtok=1,
             is_enabled=True,
         )
         self.conversation = Conversation.objects.create(user=self.user)
@@ -814,7 +832,7 @@ class SubmitFeedbackTests(TestCase):
             conversation=self.conversation,
             role=Message.Role.ASSISTANT,
             content="a reply",
-            model_used=self.model,
+            provider_model_used=self.model,
         )
 
     def _feedback_url(self, message):
@@ -828,7 +846,7 @@ class SubmitFeedbackTests(TestCase):
         feedback = MessageFeedback.objects.get(message=self.reply)
         self.assertEqual(feedback.rating, MessageFeedback.Rating.UP)
         self.assertEqual(feedback.user, self.user)
-        self.assertEqual(feedback.model_used, self.model)
+        self.assertEqual(feedback.provider_model_used, self.model)
 
     def test_thumbs_down_creates_feedback(self):
         self.client.post(self._feedback_url(self.reply), {"rating": "down"})
@@ -887,12 +905,12 @@ class ResponseCacheTests(TestCase):
         self.user = User.objects.create_user(email="cacheuser@example.com", password="pw12345!")
         self.other_user = User.objects.create_user(email="cacheother@example.com", password="pw12345!")
         self.client.login(email="cacheuser@example.com", password="pw12345!")
-        self.model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="cache-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            input_cost_per_1m=1,
-            output_cost_per_1m=1,
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="cache-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            input_price_per_mtok=1,
+            output_price_per_mtok=1,
             is_enabled=True,
         )
         _grant_premium_plan(self.user, self.model)
@@ -902,7 +920,7 @@ class ResponseCacheTests(TestCase):
         Message.objects.create(conversation=conversation, role=Message.Role.USER, content=prompt_text)
         pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
         url = reverse("chat:stream_message", kwargs={"conversation_id": conversation.id, "message_id": pending.id})
-        with patch("chat.views.classify_complexity", return_value=ModelConfig.Tier.DEFAULT), patch(
+        with patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT), patch(
             "chat.views.get_provider"
         ) as mock_get_provider:
             mock_get_provider.return_value.stream_chat.return_value = iter(
@@ -1192,17 +1210,17 @@ class AttachmentContextInPromptTests(TestCase):
 
         cache.clear()
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
-        self.model = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="doc-model",
-            tier=ModelConfig.Tier.DEFAULT,
-            output_cost_per_1m=1,
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="doc-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            output_price_per_mtok=1,
             is_enabled=True,
         )
         _grant_premium_plan(self.user, self.model)
         self.client.login(email="u@example.com", password="pw12345!")
 
-    @patch("chat.views.classify_complexity", return_value=ModelConfig.Tier.DEFAULT)
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")
     def test_pdf_attachment_content_reaches_provider_wrapped(self, mock_get_provider, mock_classify):
         from io import BytesIO

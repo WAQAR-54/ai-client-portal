@@ -4,11 +4,11 @@ enabled model at that tier the requesting user is permitted to use.
 
 from django.db.models import F
 
-from chat.models import ModelConfig
 from chat.prompts import ROUTER_CLASSIFICATION_PROMPT
 from chat.providers import ProviderError, get_provider
+from providers.models import ProviderModel
 
-TIER_ORDER = [ModelConfig.Tier.ECONOMY, ModelConfig.Tier.DEFAULT, ModelConfig.Tier.PREMIUM]
+TIER_ORDER = [ProviderModel.Tier.ECONOMY, ProviderModel.Tier.DEFAULT, ProviderModel.Tier.PREMIUM]
 
 
 class NoModelAvailableError(Exception):
@@ -17,45 +17,46 @@ class NoModelAvailableError(Exception):
 
 def _allowed_models_for_user(user, tier=None):
     """Enabled models, cheapest-output-first, restricted to the user's Plan
-    (plus/minus explicit UserModelPermission overrides - see
-    governance/plans.py for the exact precedence). Pass user=None to skip
-    the permission filter entirely (used for the internal router call)."""
-    qs = ModelConfig.objects.filter(is_enabled=True)
+    (plus/minus explicit UserModelPermission overrides and any Team.
+    disabled_models restriction - see governance/plans.py for the exact
+    precedence). Pass user=None to skip the permission filter entirely
+    (used for the internal router call)."""
+    qs = ProviderModel.objects.filter(is_enabled=True)
     if tier:
         qs = qs.filter(tier=tier)
 
     if user is not None:
-        from governance.plans import effective_allowed_model_ids
+        from governance.plans import effective_allowed_provider_model_ids
 
-        allowed_ids = effective_allowed_model_ids(user)
+        allowed_ids = effective_allowed_provider_model_ids(user)
         if allowed_ids is not None:
             qs = qs.filter(id__in=allowed_ids)
 
-    return qs.order_by(F("output_cost_per_1m").asc(nulls_last=True))
+    return qs.order_by(F("output_price_per_mtok").asc(nulls_last=True))
 
 
 def classify_complexity(user_message: str) -> str:
     """Run the router classification prompt on the cheapest economy model.
     Never routes the classifier itself through a premium model."""
-    router_model = _allowed_models_for_user(None, tier=ModelConfig.Tier.ECONOMY).first()
+    router_model = _allowed_models_for_user(None, tier=ProviderModel.Tier.ECONOMY).first()
     if router_model is None:
-        return ModelConfig.Tier.DEFAULT
+        return ProviderModel.Tier.DEFAULT
 
     provider = get_provider(router_model.provider)
     prompt = ROUTER_CLASSIFICATION_PROMPT.format(user_message=user_message)
     try:
-        raw = provider.complete([{"role": "user", "content": prompt}], router_model.model_name)
+        raw = provider.complete([{"role": "user", "content": prompt}], router_model.model_id)
     except ProviderError:
-        return ModelConfig.Tier.DEFAULT
+        return ProviderModel.Tier.DEFAULT
 
     answer = raw.strip().lower()
     for tier in TIER_ORDER:
         if tier in answer:
             return tier
-    return ModelConfig.Tier.DEFAULT
+    return ProviderModel.Tier.DEFAULT
 
 
-def select_model_candidates(user, tier: str) -> list[ModelConfig]:
+def select_model_candidates(user, tier: str) -> list[ProviderModel]:
     """Ordered list of allowed+enabled models to try: cheapest-first at
     `tier`, then cheapest-first at neighboring tiers as a fallback. Used
     both for the initial pick and for provider failover (spec: "if primary
@@ -71,7 +72,7 @@ def select_model_candidates(user, tier: str) -> list[ModelConfig]:
     return candidates
 
 
-def select_model_for_user(user, tier: str) -> ModelConfig:
+def select_model_for_user(user, tier: str) -> ProviderModel:
     """Pick the single best candidate (see select_model_candidates)."""
     candidates = select_model_candidates(user, tier)
     if not candidates:
@@ -82,10 +83,10 @@ def select_model_for_user(user, tier: str) -> ModelConfig:
 def models_visible_to_user(user):
     """Enabled models this user is allowed to pick from a manual model
     dropdown, cheapest-first within each tier."""
-    from governance.plans import effective_allowed_model_ids
+    from governance.plans import effective_allowed_provider_model_ids
 
-    qs = ModelConfig.objects.filter(is_enabled=True)
-    allowed_ids = effective_allowed_model_ids(user)
+    qs = ProviderModel.objects.filter(is_enabled=True)
+    allowed_ids = effective_allowed_provider_model_ids(user)
     if allowed_ids is not None:
         qs = qs.filter(id__in=allowed_ids)
-    return qs.order_by("tier", F("output_cost_per_1m").asc(nulls_last=True))
+    return qs.order_by("tier", F("output_price_per_mtok").asc(nulls_last=True))

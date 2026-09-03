@@ -145,6 +145,74 @@ def effective_allowed_model_ids(user):
     return (base_ids | granted_extra) - denied
 
 
+def _model_config_ids_to_provider_model_ids(mc_ids):
+    """(provider slug, model name) match - the translation every ModelConfig
+    -> ProviderModel override/restriction goes through in
+    effective_allowed_provider_model_ids below, factored out since three
+    separate ModelConfig-keyed sources (UserModelPermission x2, Team.
+    disabled_models) all need the same translation. An id with no
+    ProviderModel counterpart (shouldn't happen once step 1's migration
+    has run, but not assumed) is simply dropped - the safe direction to
+    fail in for both a grant and a restriction: a dropped grant denies
+    nothing extra, a dropped restriction never widens access either,
+    since the model wasn't going to be in the ProviderModel-side base set
+    unless a Plan/Provider already includes it independently."""
+    from chat.models import ModelConfig
+    from providers.models import ProviderModel
+
+    if not mc_ids:
+        return set()
+    pairs = ModelConfig.objects.filter(id__in=mc_ids).values_list("provider", "model_name")
+    result = set()
+    for provider_slug, model_name in pairs:
+        pm_id = (
+            ProviderModel.objects.filter(provider__slug=provider_slug, model_id=model_name)
+            .values_list("id", flat=True)
+            .first()
+        )
+        if pm_id is not None:
+            result.add(pm_id)
+    return result
+
+
+def effective_allowed_provider_model_ids(user):
+    """Same precedence/meaning as effective_allowed_model_ids, but returns
+    providers.ProviderModel ids - the routing-facing counterpart
+    chat/router.py uses now that it's off chat.models.ModelConfig (step 3
+    of the ModelConfig -> ProviderModel migration; see chat/providers.py
+    and providers/management/commands/migrate_models_to_provider_model.py
+    for steps 1-2).
+
+    Neither UserModelPermission nor Team.disabled_models were migrated
+    (narrower, admin-UI-only scope than Plan.allowed_models/Message.
+    model_used - deliberately out of scope for this step) - both still
+    target ModelConfig, so each is translated to its ProviderModel
+    equivalent via _model_config_ids_to_provider_model_ids rather than
+    requiring a schema change to either."""
+    from chat.models import UserModelPermission
+
+    status = get_plan_status(user)
+    plan = status["plan"]
+
+    denied_mc_ids = set(
+        UserModelPermission.objects.filter(user=user, is_allowed=False).values_list("model_config_id", flat=True)
+    )
+    granted_mc_ids = set(
+        UserModelPermission.objects.filter(user=user, is_allowed=True).values_list("model_config_id", flat=True)
+    )
+    denied = _model_config_ids_to_provider_model_ids(denied_mc_ids)
+    granted_extra = _model_config_ids_to_provider_model_ids(granted_mc_ids)
+
+    if plan is None:
+        return None  # caller should treat this as "don't filter"
+
+    base_ids = set(plan.allowed_provider_models.values_list("id", flat=True))
+    if user.team_id:
+        team_disabled_mc_ids = set(user.team.disabled_models.values_list("id", flat=True))
+        base_ids -= _model_config_ids_to_provider_model_ids(team_disabled_mc_ids)
+    return (base_ids | granted_extra) - denied
+
+
 class _PlanLimitFallback:
     """A minimal UsageLimit-shaped read-only stand-in so _effective_limit()
     can treat "fall back to the user's Plan" the same as any other limit

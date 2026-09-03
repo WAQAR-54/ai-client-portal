@@ -13,7 +13,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 from sentry_sdk import capture_exception
 
-from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate
+from chat.models import Conversation, Message, MessageFeedback, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
 from chat.document_extraction import EXTRACTABLE_EXTENSIONS, extract_text, wrap_for_prompt
@@ -24,6 +24,7 @@ from chat.utils import group_conversations
 from governance.audit import log_action
 from governance.features import require_feature
 from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, get_usage_status, validate_upload
+from providers.models import ProviderModel
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +96,12 @@ def _model_catalog_rows(available_models, upgrade_plan_choices):
     *does* include it, pulled from Plan.allowed_models rather than any
     hardcoded model->plan mapping, so a plan edit in the admin dashboard
     is reflected here automatically."""
-    all_enabled = ModelConfig.objects.filter(is_enabled=True).order_by("tier", "display_name")
+    all_enabled = ProviderModel.objects.filter(is_enabled=True).order_by("tier", "display_name")
     allowed_ids = set(available_models.values_list("id", flat=True))
 
     plans_by_model_id = {}
-    for plan in upgrade_plan_choices.prefetch_related("allowed_models"):
-        for model in plan.allowed_models.all():
+    for plan in upgrade_plan_choices.prefetch_related("allowed_provider_models"):
+        for model in plan.allowed_provider_models.all():
             plans_by_model_id.setdefault(model.id, []).append(plan)
 
     rows = []
@@ -400,11 +401,11 @@ def regenerate_message(request, conversation_id, message_id):
         return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
 
     message.content = ""
-    message.model_used = None
+    message.provider_model_used = None
     message.input_tokens = None
     message.output_tokens = None
     message.estimated_cost = None
-    message.save(update_fields=["content", "model_used", "input_tokens", "output_tokens", "estimated_cost"])
+    message.save(update_fields=["content", "provider_model_used", "input_tokens", "output_tokens", "estimated_cost"])
 
     return render(
         request,
@@ -436,7 +437,11 @@ def submit_feedback(request, conversation_id, message_id):
         else:
             feedback, _ = MessageFeedback.objects.update_or_create(
                 message=message,
-                defaults={"user": request.user, "rating": rating, "model_used": message.model_used},
+                defaults={
+                    "user": request.user,
+                    "rating": rating,
+                    "provider_model_used": message.provider_model_used,
+                },
             )
     else:
         if not existing:
@@ -603,7 +608,7 @@ def stream_message(request, conversation_id, message_id):
         # to get right, not two.
         try:
             if requested_model_id and models_visible_to_user(request.user).filter(id=requested_model_id).exists():
-                candidates = [ModelConfig.objects.get(id=requested_model_id)]
+                candidates = [ProviderModel.objects.get(id=requested_model_id)]
             else:
                 tier = classify_complexity(history[-1]["content"] if history else "")
                 candidates = select_model_candidates(request.user, tier)
@@ -639,7 +644,7 @@ def stream_message(request, conversation_id, message_id):
         if cached is not None:
             yield _sse_event("message", cached["text"])
             message.content = cached["text"]
-            message.model_used = candidates[0]
+            message.provider_model_used = candidates[0]
             message.input_tokens = cached["input_tokens"]
             message.output_tokens = cached["output_tokens"]
             message.estimated_cost = candidates[0].estimate_cost(
@@ -664,7 +669,7 @@ def stream_message(request, conversation_id, message_id):
             is_last_candidate = attempt_index == len(candidates) - 1
 
             try:
-                for chunk in provider.stream_chat(history, model_config.model_name, system_prompt=system_prompt):
+                for chunk in provider.stream_chat(history, model_config.model_id, system_prompt=system_prompt):
                     if chunk.text:
                         full_text += chunk.text
                         yield _sse_event("message", chunk.text)
@@ -680,17 +685,17 @@ def stream_message(request, conversation_id, message_id):
                 logger.exception(
                     "AI provider call failed (provider=%s, model=%s)",
                     model_config.provider,
-                    model_config.model_name,
+                    model_config.model_id,
                 )
                 capture_exception(exc)
                 message.content = full_text or "The assistant hit a problem generating a response. Please try again."
-                message.model_used = model_config
-                message.save(update_fields=["content", "model_used"])
+                message.provider_model_used = model_config
+                message.save(update_fields=["content", "provider_model_used"])
                 yield _sse_event("done", "")
                 return
 
             message.content = full_text
-            message.model_used = model_config
+            message.provider_model_used = model_config
             message.input_tokens = input_tokens
             message.output_tokens = output_tokens
             message.estimated_cost = model_config.estimate_cost(input_tokens or 0, output_tokens or 0)
