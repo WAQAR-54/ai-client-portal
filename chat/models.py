@@ -117,6 +117,20 @@ class Message(models.Model):
         blank=True,
         related_name="messages",
     )
+    # Parallel field for the ModelConfig -> providers.ProviderModel
+    # migration (expand-migrate-contract, step 1 of 3 - see providers/
+    # management/commands/migrate_models_to_provider_model.py). Populated
+    # alongside model_used by that command; chat/router.py and
+    # chat/views.py still read/write model_used exclusively until step 3
+    # cuts them over, so this field is inert (write-only from the
+    # migration command's point of view) until then.
+    provider_model_used = models.ForeignKey(
+        "providers.ProviderModel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages_v2",
+    )
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)
     estimated_cost = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)

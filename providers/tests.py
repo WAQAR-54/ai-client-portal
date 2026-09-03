@@ -1,5 +1,7 @@
+from io import StringIO
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import TestCase
 
 from providers.adapters import get_adapter_class
@@ -152,3 +154,113 @@ class SeedProvidersMigrationTests(TestCase):
         self.assertEqual(slugs, {"anthropic", "openai", "gemini", "grok", "deepseek"})
         self.assertTrue(all(not p.is_connected for p in Provider.objects.all()))
         self.assertTrue(all(not p.api_key_encrypted for p in Provider.objects.all()))
+
+
+class MigrateModelsToProviderModelCommandTests(TestCase):
+    """Step 1 of the ModelConfig -> ProviderModel migration (expand-
+    migrate-contract). Never touches ModelConfig or the old allowed_
+    models/model_used fields - only ever asserts on the new parallel
+    ones (Plan.allowed_provider_models, Message.provider_model_used)."""
+
+    def setUp(self):
+        from accounts.models import User
+        from chat.models import Conversation, Message, ModelConfig
+        from governance.models import Plan
+
+        self.ModelConfig = ModelConfig
+        self.Plan = Plan
+        self.Message = Message
+
+        self.gpt4o = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="gpt-4o",
+            display_name="GPT-4o",
+            tier=ModelConfig.Tier.PREMIUM,
+            input_cost_per_1m=2.5,
+            output_cost_per_1m=10,
+            is_enabled=True,
+        )
+        self.gpt35 = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI,
+            model_name="gpt-3.5-turbo",
+            is_enabled=False,  # deliberately disabled - must stay disabled after migration
+        )
+        self.plan = Plan.objects.create(name="TestPlan")
+        self.plan.allowed_models.add(self.gpt4o, self.gpt35)
+
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user, title="t")
+        self.message = Message.objects.create(
+            conversation=self.conversation, role=Message.Role.ASSISTANT, content="hi", model_used=self.gpt4o
+        )
+
+    def test_dry_run_writes_nothing(self):
+        out = StringIO()
+        call_command("migrate_models_to_provider_model", stdout=out)
+        self.assertEqual(ProviderModel.objects.count(), 0)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.allowed_provider_models.count(), 0)
+        self.message.refresh_from_db()
+        self.assertIsNone(self.message.provider_model_used)
+        self.assertIn("DRY RUN", out.getvalue())
+        self.assertIn("would create", out.getvalue())
+
+    def test_apply_creates_provider_models_carrying_over_state_exactly(self):
+        call_command("migrate_models_to_provider_model", "--apply")
+        pm_4o = ProviderModel.objects.get(provider__slug="openai", model_id="gpt-4o")
+        pm_35 = ProviderModel.objects.get(provider__slug="openai", model_id="gpt-3.5-turbo")
+        # Grandfathering: is_enabled carried over exactly, not reset to
+        # the fresh-discovery default of False - true for BOTH the
+        # enabled and the deliberately-disabled model.
+        self.assertTrue(pm_4o.is_enabled)
+        self.assertFalse(pm_35.is_enabled)
+        self.assertEqual(pm_4o.tier, "premium")
+        self.assertFalse(pm_4o.is_new)
+
+    def test_apply_populates_plan_allowed_provider_models_matching_exactly(self):
+        call_command("migrate_models_to_provider_model", "--apply")
+        self.plan.refresh_from_db()
+        old_names = set(self.plan.allowed_models.values_list("model_name", flat=True))
+        new_names = set(self.plan.allowed_provider_models.values_list("model_id", flat=True))
+        self.assertEqual(old_names, new_names)
+        # The OLD field is completely untouched.
+        self.assertEqual(self.plan.allowed_models.count(), 2)
+
+    def test_apply_populates_message_provider_model_used_with_zero_left_null(self):
+        call_command("migrate_models_to_provider_model", "--apply")
+        self.message.refresh_from_db()
+        self.assertIsNotNone(self.message.provider_model_used)
+        self.assertEqual(self.message.provider_model_used.model_id, "gpt-4o")
+        # The OLD field is completely untouched.
+        self.assertEqual(self.message.model_used_id, self.gpt4o.id)
+        broken = self.Message.objects.filter(model_used__isnull=False, provider_model_used__isnull=True)
+        self.assertEqual(broken.count(), 0)
+
+    def test_apply_is_idempotent_no_duplicate_provider_models(self):
+        call_command("migrate_models_to_provider_model", "--apply")
+        call_command("migrate_models_to_provider_model", "--apply")
+        self.assertEqual(ProviderModel.objects.count(), 2)
+
+    def test_apply_reuses_an_already_existing_provider_model_instead_of_duplicating(self):
+        # Simulates a model already connected/synced through the real
+        # Providers flow before this migration ever runs.
+        provider = Provider.objects.get(slug="openai")
+        pre_existing = ProviderModel.objects.create(provider=provider, model_id="gpt-4o", is_enabled=True)
+        call_command("migrate_models_to_provider_model", "--apply")
+        self.assertEqual(ProviderModel.objects.filter(provider=provider, model_id="gpt-4o").count(), 1)
+        self.message.refresh_from_db()
+        self.assertEqual(self.message.provider_model_used_id, pre_existing.id)
+
+    def test_unmatched_provider_string_is_reported_and_skipped_not_crashed(self):
+        # ModelConfig.provider is a closed TextChoices (openai/anthropic
+        # only) so this can't happen through the admin UI - constructed
+        # directly here to prove the "no Provider match" path is handled
+        # rather than assumed impossible.
+        weird = self.ModelConfig.objects.create(provider="not-a-real-provider", model_name="mystery-model")
+        self.plan.allowed_models.add(weird)
+        out = StringIO()
+        call_command("migrate_models_to_provider_model", "--apply", stdout=out)
+        self.assertIn("NO PROVIDER MATCH", out.getvalue())
+        self.assertFalse(ProviderModel.objects.filter(model_id="mystery-model").exists())
+        # Everything else still gets mapped correctly despite the one bad row.
+        self.assertEqual(ProviderModel.objects.filter(model_id="gpt-4o").count(), 1)

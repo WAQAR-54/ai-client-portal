@@ -242,6 +242,14 @@ class Plan(models.Model):
     )
 
     allowed_models = models.ManyToManyField("chat.ModelConfig", blank=True, related_name="plans")
+    # Parallel field for the ModelConfig -> providers.ProviderModel
+    # migration (expand-migrate-contract, step 1 of 3 - see providers/
+    # management/commands/migrate_models_to_provider_model.py). Populated
+    # alongside allowed_models by that command; chat/router.py and
+    # chat/views.py still read allowed_models exclusively until step 3
+    # cuts them over, so this field is inert (write-only from the
+    # migration command's point of view) until then.
+    allowed_provider_models = models.ManyToManyField("providers.ProviderModel", blank=True, related_name="plans_v2")
     feature_flags = models.JSONField(
         default=dict,
         blank=True,
