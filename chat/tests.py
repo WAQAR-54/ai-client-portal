@@ -29,13 +29,19 @@ def _grant_premium_plan(user, *models):
 
 
 class ProviderRegistryTests(TestCase):
-    def test_unknown_provider_raises(self):
+    def test_unknown_adapter_type_raises(self):
+        from types import SimpleNamespace
+
         with self.assertRaises(ProviderError):
-            get_provider("does-not-exist")
+            get_provider(SimpleNamespace(adapter_type="does-not-exist", slug="x"))
 
     def test_known_providers_resolve(self):
-        self.assertIsNotNone(get_provider("openai"))
-        self.assertIsNotNone(get_provider("anthropic"))
+        from providers.models import Provider
+
+        openai_row = Provider.objects.get(slug="openai")
+        anthropic_row = Provider.objects.get(slug="anthropic")
+        self.assertIsNotNone(get_provider(openai_row))
+        self.assertIsNotNone(get_provider(anthropic_row))
 
 
 class RouterTests(TestCase):

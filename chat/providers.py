@@ -1,13 +1,21 @@
-"""Common streaming interface over the OpenAI and Anthropic chat APIs.
+"""Common streaming interface over every connected AI provider's chat API.
 
-Callers depend only on `get_provider(name).stream_chat(...)` and never touch
-the OpenAI/Anthropic SDKs directly, so the rest of the app is provider-agnostic.
+Callers depend only on `get_provider(provider_row).stream_chat(...)` and
+never touch a provider SDK/API directly, so the rest of the app stays
+provider-agnostic. `provider_row` is a providers.models.Provider instance
+(what ProviderModel.provider resolves to) - each AIProvider subclass reads
+its API key from that row (provider_row.get_decrypted_key()), falling back
+to the legacy settings.OPENAI_API_KEY/ANTHROPIC_API_KEY env vars only for
+whichever of those two isn't yet connected via the new Providers page, so
+an environment mid-migration keeps working either way.
 """
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Iterator
 
+import requests
 from django.conf import settings
 
 
@@ -24,6 +32,9 @@ class ProviderError(Exception):
 
 
 class AIProvider(ABC):
+    def __init__(self, provider_row=None):
+        self.provider_row = provider_row
+
     @abstractmethod
     def stream_chat(self, messages: list[dict], model_name: str, system_prompt: str = "") -> Iterator[StreamChunk]:
         """Yield StreamChunk(text=...) for each token/segment, then one final
@@ -35,6 +46,16 @@ class AIProvider(ABC):
 
 
 class OpenAIProvider(AIProvider):
+    def _api_key(self):
+        # Legacy env-var fallback only applies to OpenAI/Anthropic (the two
+        # that ever had one) - a Provider row connected through the new
+        # Providers page always wins once one exists.
+        if self.provider_row is not None:
+            key = self.provider_row.get_decrypted_key()
+            if key:
+                return key
+        return settings.OPENAI_API_KEY
+
     def _client(self):
         import openai
 
@@ -43,7 +64,7 @@ class OpenAIProvider(AIProvider):
         # failure, then a hard failure) — a real, live example of this is
         # in the incident notes. Bumped so a transient blip doesn't
         # immediately surface as a failed reply to the user.
-        return openai.OpenAI(api_key=settings.OPENAI_API_KEY, max_retries=5, timeout=60.0)
+        return openai.OpenAI(api_key=self._api_key(), max_retries=5, timeout=60.0)
 
     def _format_messages(self, messages, system_prompt):
         formatted = []
@@ -82,11 +103,40 @@ class OpenAIProvider(AIProvider):
             raise ProviderError(str(exc)) from exc
 
 
+class OpenAICompatibleProvider(OpenAIProvider):
+    """xAI Grok / DeepSeek / any future custom OpenAI-compatible provider -
+    identical wire format to OpenAI itself, just a different base_url and
+    no legacy env-var key to fall back to (those two never had one)."""
+
+    def _api_key(self):
+        key = self.provider_row.get_decrypted_key() if self.provider_row is not None else None
+        if not key:
+            raise ProviderError(f"{self.provider_row.name if self.provider_row else 'Provider'} is not connected.")
+        return key
+
+    def _client(self):
+        import openai
+
+        return openai.OpenAI(
+            api_key=self._api_key(),
+            base_url=self.provider_row.base_url or None,
+            max_retries=5,
+            timeout=60.0,
+        )
+
+
 class AnthropicProvider(AIProvider):
+    def _api_key(self):
+        if self.provider_row is not None:
+            key = self.provider_row.get_decrypted_key()
+            if key:
+                return key
+        return settings.ANTHROPIC_API_KEY
+
     def _client(self):
         import anthropic
 
-        return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, max_retries=5, timeout=60.0)
+        return anthropic.Anthropic(api_key=self._api_key(), max_retries=5, timeout=60.0)
 
     def stream_chat(self, messages, model_name, system_prompt=""):
         try:
@@ -122,14 +172,141 @@ class AnthropicProvider(AIProvider):
             raise ProviderError(str(exc)) from exc
 
 
-_PROVIDERS = {
+class GeminiProvider(AIProvider):
+    """Google's Generative Language REST API (the plain-API-key surface,
+    not Vertex AI). Built directly against Google's published
+    streamGenerateContent/generateContent docs via `requests` (no Google
+    SDK is an existing dependency - see providers/adapters/gemini.py for
+    the same reasoning on the model-listing side).
+
+    NOT verified against a real Gemini API key in this environment - the
+    request/response shapes below are Google's documented format, but
+    this has not been exercised against a live call. Treat as unverified
+    until tested with a real key, same caveat as providers/adapters/
+    gemini.py's model-listing adapter.
+    """
+
+    _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+    def _api_key(self):
+        key = self.provider_row.get_decrypted_key() if self.provider_row is not None else None
+        if not key:
+            raise ProviderError(f"{self.provider_row.name if self.provider_row else 'Provider'} is not connected.")
+        return key
+
+    def _to_gemini_contents(self, messages):
+        # {"role": "user"|"assistant", "content": str} -> Gemini's
+        # {"role": "user"|"model", "parts": [{"text": str}]} - "assistant"
+        # is "model" in Gemini's vocabulary, everything else (only "user"
+        # is ever sent by this app) passes through unchanged.
+        contents = []
+        for m in messages:
+            role = "model" if m["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+        return contents
+
+    def _body(self, messages, system_prompt):
+        body = {"contents": self._to_gemini_contents(messages)}
+        if system_prompt:
+            body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        return body
+
+    def stream_chat(self, messages, model_name, system_prompt=""):
+        url = f"{self._BASE_URL}/models/{model_name}:streamGenerateContent"
+        try:
+            resp = requests.post(
+                url,
+                params={"key": self._api_key(), "alt": "sse"},
+                json=self._body(messages, system_prompt),
+                stream=True,
+                timeout=60,
+            )
+            resp.raise_for_status()
+            input_tokens = output_tokens = None
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                chunk = json.loads(line[len("data: ") :])
+                candidates = chunk.get("candidates") or []
+                if candidates:
+                    for part in candidates[0].get("content", {}).get("parts", []):
+                        text = part.get("text", "")
+                        if text:
+                            yield StreamChunk(text=text)
+                usage = chunk.get("usageMetadata")
+                if usage:
+                    input_tokens = usage.get("promptTokenCount")
+                    output_tokens = usage.get("candidatesTokenCount")
+            yield StreamChunk(done=True, input_tokens=input_tokens, output_tokens=output_tokens)
+        except requests.RequestException as exc:
+            raise ProviderError(str(exc)) from exc
+
+    def complete(self, messages, model_name, system_prompt=""):
+        url = f"{self._BASE_URL}/models/{model_name}:generateContent"
+        try:
+            resp = requests.post(
+                url,
+                params={"key": self._api_key()},
+                json=self._body(messages, system_prompt),
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates") or []
+            if not candidates:
+                return ""
+            parts = candidates[0].get("content", {}).get("parts", [])
+            return "".join(p.get("text", "") for p in parts)
+        except requests.RequestException as exc:
+            raise ProviderError(str(exc)) from exc
+
+
+# Keyed by Provider.adapter_type - deliberately the SAME dispatch key the
+# model-listing adapters use (providers/adapters/__init__.py), since
+# "which wire format does this provider speak" is the same question on
+# both sides. openai_compatible covers OpenAI itself, Grok, and DeepSeek -
+# OpenAICompatibleProvider vs. plain OpenAIProvider only differs in key
+# resolution (no legacy env-var fallback for the other two).
+_ADAPTER_TYPE_PROVIDERS = {
+    "anthropic": AnthropicProvider,
+    "openai_compatible": OpenAICompatibleProvider,
+    "gemini": GeminiProvider,
+}
+
+
+# TRANSITIONAL: chat/models.py:ModelConfig.provider is still a bare string
+# ("openai"/"anthropic") until the Plan.allowed_models/Message.model_used
+# migration onto providers.ProviderModel lands (in progress) - every real
+# call site still passes that string today, so get_provider must keep
+# handling it or live chat breaks immediately. Remove this branch once
+# that migration is done and every caller passes a real Provider row.
+_LEGACY_STRING_PROVIDERS = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
 }
 
 
-def get_provider(name: str) -> AIProvider:
+def get_provider(provider_row) -> AIProvider:
+    """`provider_row` is a providers.models.Provider instance (what
+    ProviderModel.provider resolves to for any model returned by
+    chat/router.py or governance-selected in chat/views.py) - or, for now,
+    a legacy provider-name string from chat.models.ModelConfig (see note
+    above)."""
+    if isinstance(provider_row, str):
+        try:
+            return _LEGACY_STRING_PROVIDERS[provider_row]()
+        except KeyError:
+            raise ProviderError(f"Unknown provider: {provider_row!r}")
+
+    adapter_type = getattr(provider_row, "adapter_type", None)
     try:
-        return _PROVIDERS[name]()
+        provider_class = _ADAPTER_TYPE_PROVIDERS[adapter_type]
     except KeyError:
-        raise ProviderError(f"Unknown provider: {name}")
+        raise ProviderError(f"Unknown provider adapter_type: {adapter_type!r}")
+    # OpenAI itself (adapter_type=openai_compatible but the legacy-env-var-
+    # fallback-eligible one) uses the plain OpenAIProvider; Grok/DeepSeek
+    # (no legacy fallback) use OpenAICompatibleProvider - both share the
+    # same adapter_type, distinguished here by slug.
+    if adapter_type == "openai_compatible" and getattr(provider_row, "slug", None) == "openai":
+        provider_class = OpenAIProvider
+    return provider_class(provider_row)

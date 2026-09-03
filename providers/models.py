@@ -84,9 +84,21 @@ class ProviderModel(models.Model):
     discovered model (see providers/services.py:sync_provider) - a
     deliberate cost-control guardrail, never auto-widened by a sync."""
 
+    class Tier(models.TextChoices):
+        ECONOMY = "economy", _("Economy")
+        DEFAULT = "default", _("Default")
+        PREMIUM = "premium", _("Premium")
+
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name="models")
     model_id = models.CharField(max_length=100, help_text="Raw model identifier from the provider's own API.")
     display_name = models.CharField(max_length=100, blank=True)
+    # No provider API reports "tier" - this was always an admin judgment
+    # call on the old ModelConfig too, driving chat/router.py's smart-
+    # routing cheapest-first-within-tier selection. Defaults to DEFAULT for
+    # a freshly-synced model, same as ModelConfig.tier's own default -
+    # left for an admin to actually classify (Economy/Premium) alongside
+    # reviewing/enabling it.
+    tier = models.CharField(max_length=20, choices=Tier.choices, default=Tier.DEFAULT)
     is_enabled = models.BooleanField(default=False)
     # True until an admin has reviewed (i.e. explicitly toggled, in either
     # direction) this model at least once - lets the Providers UI badge
