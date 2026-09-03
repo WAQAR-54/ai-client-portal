@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "chat",
     "governance",
     "notifications",
+    "providers",
 ]
 
 MIDDLEWARE = [
@@ -210,8 +211,26 @@ else:
 
 
 # AI provider credentials — set these in .env, never commit real values.
+# Superseded by the providers app's own DB-stored, per-provider encrypted
+# keys (see providers/models.py) — kept as a fallback only until every
+# environment has been migrated onto a connected Provider row.
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+
+# Symmetric key (Fernet, urlsafe-base64, 32 bytes) encrypting Provider.
+# api_key_encrypted at rest - generate with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Same fail-loudly-in-production pattern as SECRET_KEY above: a throwaway
+# dev-only default is fine locally, but DEBUG=False must never silently run
+# on it - anyone who could read settings.py would be able to decrypt every
+# stored provider API key.
+_INSECURE_DEFAULT_FIELD_ENCRYPTION_KEY = "m-BXX2G5tlXaL4hriTr1BwFRTtI0n1Y3i_k_Q-8yDyc="
+FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default=_INSECURE_DEFAULT_FIELD_ENCRYPTION_KEY)
+if not DEBUG and FIELD_ENCRYPTION_KEY == _INSECURE_DEFAULT_FIELD_ENCRYPTION_KEY and "test" not in sys.argv:
+    raise ImproperlyConfigured(
+        "FIELD_ENCRYPTION_KEY is not set. Generate a real one (see comment above) and set it in the "
+        "environment before running with DEBUG=False."
+    )
 
 
 # Custom user model
