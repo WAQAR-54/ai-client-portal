@@ -67,6 +67,52 @@ class ProviderRegistryTests(TestCase):
         self.assertIsInstance(get_provider(openai_row), OpenAICompatibleProvider)
 
 
+class UserModelPermissionTests(TestCase):
+    """model_config and provider_model are two parallel targets on the same
+    row (the ModelConfig -> ProviderModel migration's per-user-override
+    counterpart) - exactly one is ever set, enforced by a CheckConstraint."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="legacy-m")
+        self.provider_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="new-m"
+        )
+
+    def test_model_config_only_is_valid(self):
+        perm = UserModelPermission.objects.create(user=self.user, model_config=self.model_config, is_allowed=False)
+        self.assertEqual(perm.model_label, self.model_config.display_label)
+
+    def test_provider_model_only_is_valid(self):
+        perm = UserModelPermission.objects.create(user=self.user, provider_model=self.provider_model, is_allowed=True)
+        self.assertIn(self.provider_model.display_label, perm.model_label)
+        self.assertIn(self.provider_model.provider.name, perm.model_label)
+
+    def test_neither_target_set_is_rejected(self):
+        from django.db import IntegrityError, transaction
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                UserModelPermission.objects.create(user=self.user, is_allowed=True)
+
+    def test_both_targets_set_is_rejected(self):
+        from django.db import IntegrityError, transaction
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                UserModelPermission.objects.create(
+                    user=self.user,
+                    model_config=self.model_config,
+                    provider_model=self.provider_model,
+                    is_allowed=True,
+                )
+
+    def test_same_user_can_have_one_row_of_each_kind(self):
+        UserModelPermission.objects.create(user=self.user, model_config=self.model_config, is_allowed=False)
+        UserModelPermission.objects.create(user=self.user, provider_model=self.provider_model, is_allowed=True)
+        self.assertEqual(UserModelPermission.objects.filter(user=self.user).count(), 2)
+
+
 class RouterTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")

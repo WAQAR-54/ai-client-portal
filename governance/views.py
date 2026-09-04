@@ -44,6 +44,7 @@ from governance.plans import (
     get_plan_status,
     get_user_overrides,
 )
+from providers.models import ProviderModel
 
 # ---------- Department-scoping helpers ----------
 # A plain Admin only ever sees/touches their own department; a SuperAdmin is
@@ -128,15 +129,10 @@ def _get_team_member_or_403(request, user_id):
 
 
 def _toggle_user_model_permission(actor, target, model_config):
-    """Shared by the SuperAdmin's org-wide ModelPermissionsView and a
-    Manager's team-scoped equivalent (toggle_member_model_permission below)
-    - same toggle-between-explicit-deny-and-explicit-allow semantics either
-    way, just gated by a different permission check at the call site. A
-    Manager's grant here (is_allowed=True) is deliberately allowed to win
-    over their own Team.disabled_models restriction for this one person -
-    see governance/plans.py's module docstring: "an explicit personal
-    is_allowed=True override still wins over it (that's an Admin's [/here,
-    a Manager's] more-specific call for one person)"."""
+    """The SuperAdmin's org-wide ModelPermissionsView (legacy Models page,
+    "who can use") - toggles between explicit-deny and explicit-allow,
+    starting from "allowed" (every org-enabled ModelConfig is available via
+    Plan by default, so the first click denies it for this one person)."""
     permission, _ = UserModelPermission.objects.get_or_create(
         user=target, model_config=model_config, defaults={"is_allowed": True}
     )
@@ -144,6 +140,32 @@ def _toggle_user_model_permission(actor, target, model_config):
     permission.is_allowed = not permission.is_allowed
     permission.save(update_fields=["is_allowed"])
     log_action(actor, "model.permission_change", permission, old_value=old_value, new_value=permission.is_allowed)
+    return permission
+
+
+def _toggle_manager_assigned_model(actor, target, provider_model):
+    """A Manager's per-team-member assignment from the admin-curated
+    is_manager_assignable pool (governance:toggle_member_model_permission)
+    - the opposite starting point from _toggle_user_model_permission above:
+    there's no implicit org-wide access to toggle away from here (a model
+    only ever ends up in this pool because an admin opted it in, separately
+    from whether it's in anyone's Plan), so this is a pure additive
+    grant/ungrant, not a deny/allow flip. The row's mere existence (always
+    is_allowed=True) means "granted"; toggling off deletes it outright
+    rather than leaving a meaningless explicit deny behind.
+
+    This grant is deliberately allowed to win over the Manager's own
+    Team.disabled_models restriction for this one person - see
+    governance/plans.py's module docstring: "an explicit personal
+    is_allowed=True override still wins over it (that's an Admin's [/here,
+    a Manager's] more-specific call for one person)"."""
+    existing = UserModelPermission.objects.filter(user=target, provider_model=provider_model).first()
+    if existing:
+        existing.delete()
+        log_action(actor, "model.manager_assignment_removed", provider_model, old_value=target.email)
+        return None
+    permission = UserModelPermission.objects.create(user=target, provider_model=provider_model, is_allowed=True)
+    log_action(actor, "model.manager_assignment_granted", permission, new_value=target.email)
     return permission
 
 
@@ -1973,18 +1995,26 @@ def remove_team_member(request, user_id):
 @role_required(User.Role.MANAGER, exact=True)
 @require_GET
 def manager_member_permissions(request, user_id):
-    """Modal body: which of the org's enabled models this one team member
-    has been explicitly denied/restored, on top of whatever the team's own
-    restriction (Team.disabled_models) and the member's Plan already set -
-    see _toggle_user_model_permission for the precedence this feeds into."""
+    """Modal body: the admin-curated pool of manager-assignable models
+    (ProviderModel.is_enabled=True and is_manager_assignable=True - an
+    admin opts a model into this pool independently of any Plan, see
+    providers/models.py), and which of them this one team member has
+    actually been assigned. Grouped by provider so a Manager splitting a
+    10-person team across Claude/GPT/Grok/DeepSeek can see at a glance
+    which is which."""
     target, team = _get_team_member_or_403(request, user_id)
-    denied_model_ids = set(
-        UserModelPermission.objects.filter(user=target, is_allowed=False).values_list("model_config_id", flat=True)
+    assignable_models = ProviderModel.objects.filter(is_enabled=True, is_manager_assignable=True).select_related(
+        "provider"
+    )
+    granted_ids = set(
+        UserModelPermission.objects.filter(user=target, provider_model__isnull=False).values_list(
+            "provider_model_id", flat=True
+        )
     )
     context = {
         "target": target,
-        "models": ModelConfig.objects.filter(is_enabled=True),
-        "denied_model_ids": denied_model_ids,
+        "models": assignable_models,
+        "granted_ids": granted_ids,
     }
     return render(request, "governance/_manager_member_permissions.html", context)
 
@@ -1993,8 +2023,8 @@ def manager_member_permissions(request, user_id):
 @require_http_methods(["POST"])
 def toggle_member_model_permission(request, user_id, model_id):
     target, team = _get_team_member_or_403(request, user_id)
-    model_config = get_object_or_404(ModelConfig, id=model_id, is_enabled=True)
-    _toggle_user_model_permission(request.user, target, model_config)
+    provider_model = get_object_or_404(ProviderModel, id=model_id, is_enabled=True, is_manager_assignable=True)
+    _toggle_manager_assigned_model(request.user, target, provider_model)
     if request.headers.get("HX-Request"):
         return manager_member_permissions(request, user_id)
     return redirect("governance:manager_dashboard")

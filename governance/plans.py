@@ -130,10 +130,14 @@ def effective_allowed_model_ids(user):
     plan = status["plan"]
 
     denied = set(
-        UserModelPermission.objects.filter(user=user, is_allowed=False).values_list("model_config_id", flat=True)
+        UserModelPermission.objects.filter(user=user, is_allowed=False, model_config__isnull=False).values_list(
+            "model_config_id", flat=True
+        )
     )
     granted_extra = set(
-        UserModelPermission.objects.filter(user=user, is_allowed=True).values_list("model_config_id", flat=True)
+        UserModelPermission.objects.filter(user=user, is_allowed=True, model_config__isnull=False).values_list(
+            "model_config_id", flat=True
+        )
     )
 
     if plan is None:
@@ -183,25 +187,41 @@ def effective_allowed_provider_model_ids(user):
     and providers/management/commands/migrate_models_to_provider_model.py
     for steps 1-2).
 
-    Neither UserModelPermission nor Team.disabled_models were migrated
-    (narrower, admin-UI-only scope than Plan.allowed_models/Message.
-    model_used - deliberately out of scope for this step) - both still
-    target ModelConfig, so each is translated to its ProviderModel
-    equivalent via _model_config_ids_to_provider_model_ids rather than
-    requiring a schema change to either."""
+    Team.disabled_models still targets ModelConfig (translated via
+    _model_config_ids_to_provider_model_ids, deliberately out of scope for
+    the original migration). UserModelPermission now covers BOTH: legacy
+    rows (model_config set) translated the same way, and native rows
+    (provider_model set) written directly by a Manager's per-team-member
+    assignment (governance:toggle_member_model_permission) - see
+    chat.models.UserModelPermission's "exactly one of" constraint."""
     from chat.models import UserModelPermission
 
     status = get_plan_status(user)
     plan = status["plan"]
 
     denied_mc_ids = set(
-        UserModelPermission.objects.filter(user=user, is_allowed=False).values_list("model_config_id", flat=True)
+        UserModelPermission.objects.filter(user=user, is_allowed=False, model_config__isnull=False).values_list(
+            "model_config_id", flat=True
+        )
     )
     granted_mc_ids = set(
-        UserModelPermission.objects.filter(user=user, is_allowed=True).values_list("model_config_id", flat=True)
+        UserModelPermission.objects.filter(user=user, is_allowed=True, model_config__isnull=False).values_list(
+            "model_config_id", flat=True
+        )
     )
     denied = _model_config_ids_to_provider_model_ids(denied_mc_ids)
     granted_extra = _model_config_ids_to_provider_model_ids(granted_mc_ids)
+
+    denied |= set(
+        UserModelPermission.objects.filter(user=user, is_allowed=False, provider_model__isnull=False).values_list(
+            "provider_model_id", flat=True
+        )
+    )
+    granted_extra |= set(
+        UserModelPermission.objects.filter(user=user, is_allowed=True, provider_model__isnull=False).values_list(
+            "provider_model_id", flat=True
+        )
+    )
 
     if plan is None:
         return None  # caller should treat this as "don't filter"
@@ -245,8 +265,8 @@ def get_user_overrides(user):
     usage_limit = UsageLimit.objects.filter(user=user).first()
     model_permissions = list(
         UserModelPermission.objects.filter(user=user)
-        .select_related("model_config")
-        .order_by("model_config__display_name")
+        .select_related("model_config", "provider_model", "provider_model__provider")
+        .order_by("id")
     )
     return {"usage_limit": usage_limit, "model_permissions": model_permissions}
 

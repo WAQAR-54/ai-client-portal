@@ -45,7 +45,7 @@
         <tbody>
             {% for perm in overrides.model_permissions %}
             <tr>
-                <td>{{ perm.model_config.display_label }}</td>
+                <td>{{ perm.model_label }}</td>
                 <td>
                     {% if perm.is_allowed %}<span class="badge badge-success">{% trans "Allowed" %}</span>
                     {% else %}<span class="badge badge-danger">{% trans "Denied" %}</span>{% endif %}

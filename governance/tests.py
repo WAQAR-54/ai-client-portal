@@ -22,8 +22,10 @@ from governance.plans import (
     assign_plan,
     check_request_count_limit,
     effective_allowed_model_ids,
+    effective_allowed_provider_model_ids,
     validate_context_tokens,
 )
+from providers.models import Provider, ProviderModel
 
 
 class UsageLimitTests(TestCase):
@@ -1517,7 +1519,10 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_manager_can_view_and_toggle_own_member_model_permission(self):
-        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m6", is_enabled=True)
+        provider = Provider.objects.get(slug="openai")
+        model = ProviderModel.objects.create(
+            provider=provider, model_id="m6", is_enabled=True, is_manager_assignable=True
+        )
         self.user_a.team = self.team_a
         self.user_a.save(update_fields=["team"])
         self.client.login(email="managera@example.com", password="pw12345!")
@@ -1534,31 +1539,57 @@ class RoleHierarchyAccessControlTests(TestCase):
             )
         )
         self.assertEqual(post_response.status_code, 302)
-        permission = UserModelPermission.objects.get(user=self.user_a, model_config=model)
-        self.assertFalse(permission.is_allowed)
+        permission = UserModelPermission.objects.get(user=self.user_a, provider_model=model)
+        self.assertTrue(permission.is_allowed)
         self.assertTrue(
-            AuditLog.objects.filter(action_type="model.permission_change", target_id=str(permission.id)).exists()
+            AuditLog.objects.filter(
+                action_type="model.manager_assignment_granted", target_id=str(permission.id)
+            ).exists()
         )
 
-        # Toggling again restores it.
+        # Toggling again removes the assignment entirely (create/delete, not deny/allow).
         self.client.post(
             reverse(
                 "governance:toggle_member_model_permission",
                 kwargs={"user_id": self.user_a.id, "model_id": model.id},
             )
         )
-        permission.refresh_from_db()
-        self.assertTrue(permission.is_allowed)
+        self.assertFalse(UserModelPermission.objects.filter(user=self.user_a, provider_model=model).exists())
+
+    def test_manager_cannot_assign_a_model_not_in_the_assignable_pool(self):
+        provider = Provider.objects.get(slug="openai")
+        model = ProviderModel.objects.create(
+            provider=provider, model_id="not-assignable", is_enabled=True, is_manager_assignable=False
+        )
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_a.id, "model_id": model.id},
+            )
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(UserModelPermission.objects.filter(user=self.user_a, provider_model=model).exists())
 
     def test_manager_permission_grant_wins_over_own_teams_disabled_model(self):
-        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m7", is_enabled=True)
+        provider = Provider.objects.get(slug="openai")
+        model = ProviderModel.objects.create(
+            provider=provider, model_id="m7", is_enabled=True, is_manager_assignable=True
+        )
+        legacy_model = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.OPENAI, model_name="m7", is_enabled=True
+        )
         plan = Plan.objects.create(name="Team Plan 3")
-        plan.allowed_models.add(model)
+        plan.allowed_provider_models.add(model)
         self.user_a.team = self.team_a
         self.user_a.save(update_fields=["team"])
         assign_plan(self.user_a, plan)
-        self.team_a.disabled_models.add(model)
-        self.assertNotIn(model.id, effective_allowed_model_ids(self.user_a))
+        # Team-wide restriction (still ModelConfig-based - matches it by
+        # provider+model_id, same translation effective_allowed_provider_model_ids uses).
+        self.team_a.disabled_models.add(legacy_model)
+        self.assertNotIn(model.id, effective_allowed_provider_model_ids(self.user_a))
 
         self.client.login(email="managera@example.com", password="pw12345!")
         self.client.post(
@@ -1567,18 +1598,13 @@ class RoleHierarchyAccessControlTests(TestCase):
                 kwargs={"user_id": self.user_a.id, "model_id": model.id},
             )
         )
-        # First toggle denies explicitly (still excluded); second restores -
-        # matches _toggle_user_model_permission's explicit-deny/explicit-allow cycle.
-        self.client.post(
-            reverse(
-                "governance:toggle_member_model_permission",
-                kwargs={"user_id": self.user_a.id, "model_id": model.id},
-            )
-        )
-        self.assertIn(model.id, effective_allowed_model_ids(self.user_a))
+        self.assertIn(model.id, effective_allowed_provider_model_ids(self.user_a))
 
     def test_manager_cannot_view_or_toggle_permissions_for_a_user_outside_their_team(self):
-        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m8", is_enabled=True)
+        provider = Provider.objects.get(slug="openai")
+        model = ProviderModel.objects.create(
+            provider=provider, model_id="m8", is_enabled=True, is_manager_assignable=True
+        )
         self.client.login(email="managera@example.com", password="pw12345!")
 
         get_response = self.client.get(
@@ -1593,10 +1619,13 @@ class RoleHierarchyAccessControlTests(TestCase):
             )
         )
         self.assertEqual(post_response.status_code, 403)
-        self.assertFalse(UserModelPermission.objects.filter(user=self.user_b, model_config=model).exists())
+        self.assertFalse(UserModelPermission.objects.filter(user=self.user_b, provider_model=model).exists())
 
     def test_regular_user_cannot_toggle_a_team_members_model_permission(self):
-        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m9", is_enabled=True)
+        provider = Provider.objects.get(slug="openai")
+        model = ProviderModel.objects.create(
+            provider=provider, model_id="m9", is_enabled=True, is_manager_assignable=True
+        )
         self.user_a.team = self.team_a
         self.user_a.save(update_fields=["team"])
         self.client.login(email="usera@example.com", password="pw12345!")

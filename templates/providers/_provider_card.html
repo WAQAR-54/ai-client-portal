@@ -49,7 +49,7 @@
         <summary style="cursor:pointer; font-size:var(--text-xs); color:var(--color-text-muted);">{% trans "Manage models" %}</summary>
         <div style="overflow-x:auto; margin-top:0.6rem;">
         <table class="data">
-            <thead><tr><th>{% trans "Model" %}</th><th>{% trans "Tier" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
+            <thead><tr><th>{% trans "Model" %}</th><th>{% trans "Tier" %}</th><th>{% trans "Status" %}</th><th></th><th>{% trans "Manager-assignable" %}</th></tr></thead>
             <tbody>
             {% for m in models %}
             <tr>
@@ -70,6 +70,21 @@
                             <span class="toggle"><span class="toggle-knob"></span></span>
                         </label>
                     </form>
+                </td>
+                <td>
+                    {% if m.is_enabled %}
+                    <form method="post" action="{% url 'providers:toggle_model_manager_assignable' model_id=m.id %}"
+                          hx-post="{% url 'providers:toggle_model_manager_assignable' model_id=m.id %}"
+                          hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <label class="toggle-switch" title="{% if m.is_manager_assignable %}{% trans 'Remove from the Manager-assignable pool' %}{% else %}{% trans 'Let Managers assign this to their own team members' %}{% endif %}">
+                            <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_manager_assignable %}checked{% endif %}>
+                            <span class="toggle"><span class="toggle-knob"></span></span>
+                        </label>
+                    </form>
+                    {% else %}
+                    <span class="text-faint" style="font-size:0.75rem;">{% trans "Enable first" %}</span>
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}

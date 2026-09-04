@@ -473,6 +473,63 @@ class ToggleProviderModelViewTests(TestCase):
         self.assertFalse(self.model.is_enabled)
 
 
+class ToggleProviderModelManagerAssignableViewTests(TestCase):
+    """The pool a Manager's per-team-member model assignment draws from
+    (governance:manager_member_permissions) - independent of is_enabled,
+    off by default, SuperAdmin-only."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="openai")
+        self.model = ProviderModel.objects.create(provider=self.provider, model_id="gpt-y", is_enabled=True)
+
+    def test_toggle_marks_assignable(self):
+        from governance.models import AuditLog
+
+        response = self.client.post(
+            reverse("providers:toggle_model_manager_assignable", kwargs={"model_id": self.model.id})
+        )
+        self.assertRedirects(response, reverse("providers:list"))
+        self.model.refresh_from_db()
+        self.assertTrue(self.model.is_manager_assignable)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action_type="providermodel.manager_assignable_enable", target_id=str(self.model.id)
+            ).exists()
+        )
+
+    def test_toggling_again_removes_it(self):
+        self.model.is_manager_assignable = True
+        self.model.save()
+        self.client.post(reverse("providers:toggle_model_manager_assignable", kwargs={"model_id": self.model.id}))
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_manager_assignable)
+
+    def test_cannot_mark_a_disabled_model_assignable(self):
+        self.model.is_enabled = False
+        self.model.save()
+        response = self.client.post(
+            reverse("providers:toggle_model_manager_assignable", kwargs={"model_id": self.model.id})
+        )
+        self.assertEqual(response.status_code, 404)
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_manager_assignable)
+
+    def test_non_superadmin_cannot_toggle(self):
+        self.client.logout()
+        admin = User.objects.create_user(email="admin2@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.force_login(admin)
+        response = self.client.post(
+            reverse("providers:toggle_model_manager_assignable", kwargs={"model_id": self.model.id})
+        )
+        self.assertEqual(response.status_code, 403)
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_manager_assignable)
+
+
 class SyncAllConnectedProvidersTaskTests(TestCase):
     """The daily sync_all_connected_providers Celery task (providers/
     tasks.py) - drives real ProviderModel discovery via sync_provider()

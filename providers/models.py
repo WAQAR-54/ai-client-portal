@@ -102,6 +102,13 @@ class ProviderModel(models.Model):
     # reviewing/enabling it.
     tier = models.CharField(max_length=20, choices=Tier.choices, default=Tier.DEFAULT)
     is_enabled = models.BooleanField(default=False)
+    # A second, independent gate on top of is_enabled: whether a Manager is
+    # allowed to hand this model out to individual members of their own
+    # team (see governance:manager_member_permissions). Off by default for
+    # every model, even one that's already enabled org-wide - same
+    # deliberate opt-in philosophy as is_enabled itself, just one more
+    # explicit admin decision before a Manager ever sees it as an option.
+    is_manager_assignable = models.BooleanField(default=False)
     # True until an admin has reviewed (i.e. explicitly toggled, in either
     # direction) this model at least once - lets the Providers UI badge
     # "3 new models pending review" after a background resync finds

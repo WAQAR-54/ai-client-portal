@@ -176,3 +176,34 @@ def toggle_provider_model(request, model_id):
     if request.headers.get("HX-Request"):
         return render(request, "providers/_provider_card.html", _provider_row(provider_model.provider))
     return redirect("providers:list")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def toggle_provider_model_manager_assignable(request, model_id):
+    """Flips is_manager_assignable - the pool a Manager's per-team-member
+    model assignment (governance:manager_member_permissions) draws from.
+    Independent of is_enabled: a model can be enabled org-wide without
+    ever being handed to Managers to redistribute, and vice versa this
+    can't be turned on for a model that isn't enabled (require_http_methods
+    below still 404s on a disabled/nonexistent id, matching
+    toggle_provider_model's own boundary)."""
+    provider_model = get_object_or_404(ProviderModel, id=model_id, is_enabled=True)
+    old_value = provider_model.is_manager_assignable
+    provider_model.is_manager_assignable = not provider_model.is_manager_assignable
+    provider_model.save(update_fields=["is_manager_assignable"])
+    log_action(
+        request.user,
+        (
+            "providermodel.manager_assignable_enable"
+            if provider_model.is_manager_assignable
+            else "providermodel.manager_assignable_disable"
+        ),
+        provider_model,
+        old_value=old_value,
+        new_value=provider_model.is_manager_assignable,
+    )
+
+    if request.headers.get("HX-Request"):
+        return render(request, "providers/_provider_card.html", _provider_row(provider_model.provider))
+    return redirect("providers:list")

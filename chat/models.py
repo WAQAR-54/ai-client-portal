@@ -67,14 +67,51 @@ class ModelConfig(models.Model):
 
 class UserModelPermission(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="model_permissions")
-    model_config = models.ForeignKey(ModelConfig, on_delete=models.CASCADE, related_name="user_permissions")
+    # Legacy ModelConfig-based grant/deny (SuperAdmin's org-wide "who can
+    # use" screen on the Models (legacy) page). Nullable so a row can
+    # instead target provider_model below - exactly one of the two is ever
+    # set, enforced by the constraint below (same "exactly one of" pattern
+    # as PromptTemplate's owner/department).
+    model_config = models.ForeignKey(
+        ModelConfig, on_delete=models.CASCADE, null=True, blank=True, related_name="user_permissions"
+    )
+    # New Provider-system grant/deny - what a Manager's per-team-member
+    # model assignment (governance:toggle_member_model_permission) writes.
+    # Only ever targets a ProviderModel the admin has explicitly marked
+    # is_manager_assignable=True (see providers/models.py) - a Manager can
+    # never grant a model the admin hasn't opted into that pool.
+    provider_model = models.ForeignKey(
+        "providers.ProviderModel", on_delete=models.CASCADE, null=True, blank=True, related_name="user_permissions"
+    )
     is_allowed = models.BooleanField(default=True)
 
     class Meta:
-        unique_together = [["user", "model_config"]]
+        unique_together = [["user", "model_config"], ["user", "provider_model"]]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(model_config__isnull=False, provider_model__isnull=True)
+                    | models.Q(model_config__isnull=True, provider_model__isnull=False)
+                ),
+                name="user_model_permission_exactly_one_of_model_config_or_provider_model",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.user} -> {self.model_config} ({'allowed' if self.is_allowed else 'denied'})"
+        target = self.model_config or self.provider_model
+        return f"{self.user} -> {target} ({'allowed' if self.is_allowed else 'denied'})"
+
+    @property
+    def model_label(self):
+        """Whichever of the two target fields is actually set - templates
+        should read this instead of model_config.display_label directly, or
+        the Model column silently goes blank for every provider_model-based
+        row (see governance/_user_overrides.html)."""
+        if self.provider_model_id:
+            return f"{self.provider_model.display_label} ({self.provider_model.provider.name})"
+        if self.model_config_id:
+            return self.model_config.display_label
+        return None
 
 
 class ActiveConversationManager(models.Manager):
