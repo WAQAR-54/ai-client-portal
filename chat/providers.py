@@ -4,10 +4,11 @@ Callers depend only on `get_provider(provider_row).stream_chat(...)` and
 never touch a provider SDK/API directly, so the rest of the app stays
 provider-agnostic. `provider_row` is a providers.models.Provider instance
 (what ProviderModel.provider resolves to) - each AIProvider subclass reads
-its API key from that row (provider_row.get_decrypted_key()), falling back
-to the legacy settings.OPENAI_API_KEY/ANTHROPIC_API_KEY env vars only for
-whichever of those two isn't yet connected via the new Providers page, so
-an environment mid-migration keeps working either way.
+its API key exclusively from that row (provider_row.get_decrypted_key()).
+There is no settings.py/env-var fallback for any provider (including
+OpenAI/Anthropic, which briefly had one during the ModelConfig -> Provider
+migration) - every provider must be connected through the Providers admin
+page before it can be used, full stop.
 """
 
 import json
@@ -16,7 +17,6 @@ from dataclasses import dataclass
 from typing import Iterator
 
 import requests
-from django.conf import settings
 
 
 @dataclass
@@ -45,16 +45,17 @@ class AIProvider(ABC):
         """Non-streaming single-shot completion, used by the smart router classifier."""
 
 
-class OpenAIProvider(AIProvider):
+class OpenAICompatibleProvider(AIProvider):
+    """OpenAI itself, xAI Grok, DeepSeek, or any future custom OpenAI-
+    compatible provider - identical wire format, just a different
+    base_url per Provider row (OpenAI's own seeded row already carries
+    "https://api.openai.com/v1")."""
+
     def _api_key(self):
-        # Legacy env-var fallback only applies to OpenAI/Anthropic (the two
-        # that ever had one) - a Provider row connected through the new
-        # Providers page always wins once one exists.
-        if self.provider_row is not None:
-            key = self.provider_row.get_decrypted_key()
-            if key:
-                return key
-        return settings.OPENAI_API_KEY
+        key = self.provider_row.get_decrypted_key() if self.provider_row is not None else None
+        if not key:
+            raise ProviderError(f"{self.provider_row.name if self.provider_row else 'Provider'} is not connected.")
+        return key
 
     def _client(self):
         import openai
@@ -64,7 +65,12 @@ class OpenAIProvider(AIProvider):
         # failure, then a hard failure) — a real, live example of this is
         # in the incident notes. Bumped so a transient blip doesn't
         # immediately surface as a failed reply to the user.
-        return openai.OpenAI(api_key=self._api_key(), max_retries=5, timeout=60.0)
+        return openai.OpenAI(
+            api_key=self._api_key(),
+            base_url=self.provider_row.base_url or None,
+            max_retries=5,
+            timeout=60.0,
+        )
 
     def _format_messages(self, messages, system_prompt):
         formatted = []
@@ -103,35 +109,12 @@ class OpenAIProvider(AIProvider):
             raise ProviderError(str(exc)) from exc
 
 
-class OpenAICompatibleProvider(OpenAIProvider):
-    """xAI Grok / DeepSeek / any future custom OpenAI-compatible provider -
-    identical wire format to OpenAI itself, just a different base_url and
-    no legacy env-var key to fall back to (those two never had one)."""
-
+class AnthropicProvider(AIProvider):
     def _api_key(self):
         key = self.provider_row.get_decrypted_key() if self.provider_row is not None else None
         if not key:
             raise ProviderError(f"{self.provider_row.name if self.provider_row else 'Provider'} is not connected.")
         return key
-
-    def _client(self):
-        import openai
-
-        return openai.OpenAI(
-            api_key=self._api_key(),
-            base_url=self.provider_row.base_url or None,
-            max_retries=5,
-            timeout=60.0,
-        )
-
-
-class AnthropicProvider(AIProvider):
-    def _api_key(self):
-        if self.provider_row is not None:
-            key = self.provider_row.get_decrypted_key()
-            if key:
-                return key
-        return settings.ANTHROPIC_API_KEY
 
     def _client(self):
         import anthropic
@@ -265,8 +248,8 @@ class GeminiProvider(AIProvider):
 # model-listing adapters use (providers/adapters/__init__.py), since
 # "which wire format does this provider speak" is the same question on
 # both sides. openai_compatible covers OpenAI itself, Grok, and DeepSeek -
-# OpenAICompatibleProvider vs. plain OpenAIProvider only differs in key
-# resolution (no legacy env-var fallback for the other two).
+# one class, since none of the three has any special-cased key resolution
+# left to distinguish them by.
 _ADAPTER_TYPE_PROVIDERS = {
     "anthropic": AnthropicProvider,
     "openai_compatible": OpenAICompatibleProvider,
@@ -283,10 +266,4 @@ def get_provider(provider_row) -> AIProvider:
         provider_class = _ADAPTER_TYPE_PROVIDERS[adapter_type]
     except KeyError:
         raise ProviderError(f"Unknown provider adapter_type: {adapter_type!r}")
-    # OpenAI itself (adapter_type=openai_compatible but the legacy-env-var-
-    # fallback-eligible one) uses the plain OpenAIProvider; Grok/DeepSeek
-    # (no legacy fallback) use OpenAICompatibleProvider - both share the
-    # same adapter_type, distinguished here by slug.
-    if adapter_type == "openai_compatible" and getattr(provider_row, "slug", None) == "openai":
-        provider_class = OpenAIProvider
     return provider_class(provider_row)

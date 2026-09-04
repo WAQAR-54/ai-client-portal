@@ -8,14 +8,13 @@ worker, and Celery beat (for the scheduled notification sweep).
 ### Prerequisites
 
 - Docker + Docker Compose v2 (`docker compose version`)
-- A `.env` file in the project root — copy `.env.example` to `.env` and fill
-  in at least `OPENAI_API_KEY` (chat won't work without it). Everything else
-  has a safe local default.
+- A `.env` file in the project root — copy `.env.example` to `.env`. Every
+  value has a safe local default.
 
 ### First run (clean checkout)
 
 ```sh
-cp .env.example .env          # then edit .env: add your OPENAI_API_KEY
+cp .env.example .env
 docker compose up -d --build
 docker compose exec web python manage.py createsuperuser
 ```
@@ -23,6 +22,10 @@ docker compose exec web python manage.py createsuperuser
 That's it — migrations and `collectstatic` run automatically every time the
 `web` container starts (see `docker-entrypoint.sh`), so there's no separate
 migrate step to remember. The app is at http://localhost:8000/.
+
+Chat won't actually work until you connect at least one AI provider: log in
+as the superuser, go to Admin → Providers, and paste in a real API key —
+keys are stored encrypted in the database, not in `.env`.
 
 Optional: seed demo accounts (admin/manager/user) instead of a lone
 superuser:
@@ -65,9 +68,11 @@ startup command differs, selected via `docker-entrypoint.sh web|worker|beat`.
 ### Secrets and configuration
 
 - Nothing secret is baked into the image. `web`/`worker`/`beat` read
-  `OPENAI_API_KEY`, `SECRET_KEY`, `SENTRY_DSN`, etc. from `.env` at container
-  **start** time via `env_file:` in `docker-compose.yml` — `.env` itself is
-  gitignored and is never copied into the image (see `.dockerignore`).
+  `SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, `SENTRY_DSN`, etc. from `.env` at
+  container **start** time via `env_file:` in `docker-compose.yml` — `.env`
+  itself is gitignored and is never copied into the image (see
+  `.dockerignore`). AI provider API keys are not part of this at all — they
+  live encrypted in the database, connected from Admin → Providers.
 - `DATABASE_URL` and `REDIS_URL` are overridden in `docker-compose.yml` to
   point at the bundled `db`/`redis` containers, regardless of what `.env` has
   for native (non-Docker) local dev.

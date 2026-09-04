@@ -44,6 +44,28 @@ class ProviderRegistryTests(TestCase):
         self.assertIsNotNone(get_provider(openai_row))
         self.assertIsNotNone(get_provider(anthropic_row))
 
+    def test_openai_and_anthropic_have_no_env_var_fallback(self):
+        """No provider - including OpenAI/Anthropic, which briefly had one
+        during the ModelConfig -> Provider migration - falls back to a
+        settings.py/env-var key any more. An unconnected Provider row must
+        raise, not silently work off whatever's in the environment."""
+        from providers.models import Provider
+
+        openai_row = Provider.objects.get(slug="openai")
+        anthropic_row = Provider.objects.get(slug="anthropic")
+        with self.assertRaises(ProviderError):
+            get_provider(openai_row)._api_key()
+        with self.assertRaises(ProviderError):
+            get_provider(anthropic_row)._api_key()
+
+    def test_openai_uses_the_shared_openai_compatible_provider(self):
+        from providers.models import Provider
+
+        from chat.providers import OpenAICompatibleProvider
+
+        openai_row = Provider.objects.get(slug="openai")
+        self.assertIsInstance(get_provider(openai_row), OpenAICompatibleProvider)
+
 
 class RouterTests(TestCase):
     def setUp(self):

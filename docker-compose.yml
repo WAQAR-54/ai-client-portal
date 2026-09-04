@@ -1,10 +1,12 @@
 # Full local stack: Django (Gunicorn), PostgreSQL, Redis, Celery worker, Celery beat.
 #
 # All four app services (web/worker/beat) build from the same image and read
-# secrets (SECRET_KEY, OPENAI_API_KEY, SENTRY_DSN, etc.) from the project's
-# own .env file via env_file: - the same file used for native (non-Docker)
-# local dev. DATABASE_URL/REDIS_URL are overridden below to point at the
-# bundled db/redis containers instead of whatever .env has for native dev.
+# secrets (SECRET_KEY, FIELD_ENCRYPTION_KEY, SENTRY_DSN, etc.) from the
+# project's own .env file via env_file: - the same file used for native
+# (non-Docker) local dev. DATABASE_URL/REDIS_URL are overridden below to
+# point at the bundled db/redis containers instead of whatever .env has for
+# native dev. AI provider API keys are NOT here - they're connected from
+# Admin -> Providers and stored encrypted in the database.
 #
 # Quick start from a clean checkout:
 #   docker-compose up -d --build

@@ -210,13 +210,6 @@ else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 
-# AI provider credentials — set these in .env, never commit real values.
-# Superseded by the providers app's own DB-stored, per-provider encrypted
-# keys (see providers/models.py) — kept as a fallback only until every
-# environment has been migrated onto a connected Provider row.
-OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
-ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
-
 # Symmetric key (Fernet, urlsafe-base64, 32 bytes) encrypting Provider.
 # api_key_encrypted at rest - generate with:
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

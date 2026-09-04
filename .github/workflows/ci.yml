@@ -55,8 +55,6 @@ jobs:
       DEBUG: "True"
       ALLOWED_HOSTS: localhost,127.0.0.1
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/ai_client_portal_test
-      OPENAI_API_KEY: ""
-      ANTHROPIC_API_KEY: ""
 
     steps:
       - uses: actions/checkout@v4
