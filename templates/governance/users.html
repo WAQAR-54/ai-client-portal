@@ -6,6 +6,7 @@
 <div class="admin-eyebrow">{{ total_count|default:"" }} {% trans "total users" %}</div>
 <div class="page-head-row" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.25rem;">
     <h1 style="margin-bottom:0;">{% trans "Users" %}</h1>
+    <button type="button" class="btn" onclick="portalOpenModal('addUserModal')">+ {% trans "Add user" %}</button>
 </div>
 <p class="text-muted">{% trans "Change a user's role, department, or access — everything here takes effect immediately." %}</p>
 
@@ -64,6 +65,67 @@ overflow-y:hidden still clips the table to the card's rounded corners on this on
         <div class="modal-body" id="editUserModalBody">
             <!-- Populated by htmx from governance:user_edit_form -->
         </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="addUserModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title">{% trans "Add user" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('addUserModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <form method="post" action="{% url 'governance:add_user' %}">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="addUserEmail">{% trans "Email" %}</label>
+                    <input class="input" style="margin:0;" type="email" name="email" id="addUserEmail" required>
+                </div>
+                <div class="form-group">
+                    <label for="addUserPassword1">{% trans "Password" %}</label>
+                    <input class="input" style="margin:0;" type="password" name="new_password1" id="addUserPassword1" autocomplete="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label for="addUserPassword2">{% trans "Confirm password" %}</label>
+                    <input class="input" style="margin:0;" type="password" name="new_password2" id="addUserPassword2" autocomplete="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label for="addUserRole">{% trans "Role" %}</label>
+                    <select class="input" style="margin:0;" name="role" id="addUserRole">
+                        {% for value, label in assignable_roles %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if request.user.is_superadmin %}
+                <div class="form-group">
+                    <label for="addUserDepartment">{% trans "Department" %}</label>
+                    <select class="input" style="margin:0;" name="department_id" id="addUserDepartment">
+                        <option value="">{% trans "— none —" %}</option>
+                        {% for d in departments %}
+                        <option value="{{ d.id }}">{{ d.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="form-group">
+                    <label for="addUserTeam">{% trans "Team" %}</label>
+                    <select class="input" style="margin:0;" name="team_id" id="addUserTeam">
+                        <option value="">{% trans "— none —" %}</option>
+                        {% for t in teams %}
+                        <option value="{{ t.id }}">{{ t.name }} ({{ t.department.name }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <p class="form-hint">{% trans "The account is active immediately — there's no invite email. Share the password with them directly." %}</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-ghost" onclick="portalCloseModal('addUserModal')">{% trans "Cancel" %}</button>
+                <button type="submit" class="btn">{% trans "Add user" %}</button>
+            </div>
+        </form>
     </div>
 </div>
 <script>

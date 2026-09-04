@@ -1119,6 +1119,126 @@ class RoleHierarchyAccessControlTests(TestCase):
         response = self.client.get(reverse("governance:user_edit_form", kwargs={"user_id": self.user_a.id}))
         self.assertEqual(response.status_code, 403)
 
+    def test_scoped_admin_can_add_a_user_in_their_own_department(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "newuser@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.USER,
+                "team_id": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        new_user = User.objects.get(email="newuser@example.com")
+        self.assertEqual(new_user.department_id, self.dept_a.id)
+        self.assertTrue(new_user.check_password("a-brand-new-strong-pw9"))
+        self.assertTrue(new_user.is_active)
+        self.assertTrue(AuditLog.objects.filter(action_type="user.create", target_id=str(new_user.id)).exists())
+
+    def test_scoped_admin_cannot_choose_a_different_department(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "newuser2@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.USER,
+                "department_id": self.dept_b.id,
+            },
+        )
+        new_user = User.objects.get(email="newuser2@example.com")
+        # department_id from POST is ignored for a scoped Admin - forced to their own.
+        self.assertEqual(new_user.department_id, self.dept_a.id)
+
+    def test_scoped_admin_cannot_create_an_admin(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "sneakyadmin@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.ADMIN,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(email="sneakyadmin@example.com").exists())
+
+    def test_superadmin_can_add_a_user_in_any_department_with_any_role(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "newadmin@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.ADMIN,
+                "department_id": self.dept_b.id,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        new_user = User.objects.get(email="newadmin@example.com")
+        self.assertEqual(new_user.role, User.Role.ADMIN)
+        self.assertEqual(new_user.department_id, self.dept_b.id)
+
+    def test_add_user_rejects_a_duplicate_email(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": self.user_a.email,
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.USER,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(User.objects.filter(email__iexact=self.user_a.email).count(), 1)
+
+    def test_add_user_rejects_mismatched_passwords(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "mismatched@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "does-not-match",
+                "role": User.Role.USER,
+            },
+        )
+        self.assertFalse(User.objects.filter(email="mismatched@example.com").exists())
+
+    def test_add_user_rejects_a_weak_password(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "weak@example.com",
+                "new_password1": "12345678",
+                "new_password2": "12345678",
+                "role": User.Role.USER,
+            },
+        )
+        self.assertFalse(User.objects.filter(email="weak@example.com").exists())
+
+    def test_add_user_requires_admin(self):
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "nope@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.USER,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(email="nope@example.com").exists())
+
     def test_admin_can_change_own_departments_user_email(self):
         self.client.login(email="admina@example.com", password="pw12345!")
         response = self.client.post(

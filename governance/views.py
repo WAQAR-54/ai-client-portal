@@ -556,6 +556,59 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
 
 
 @role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def add_user(request):
+    """Admin-created account - no email-invite flow exists in this app, so
+    (same approach as reset_user_password) the admin sets the initial
+    password directly, validated by the same AUTH_PASSWORD_VALIDATORS as
+    everywhere else via SetPasswordForm. A scoped Admin can only create
+    User/Manager accounts in their own department - never Admin/
+    SuperAdmin, never another department - same boundary
+    _assignable_roles_and_scope already enforces for editing an existing
+    user's role/department/team."""
+    email = request.POST.get("email", "").strip().lower()
+    if not email:
+        return HttpResponseBadRequest("Email is required")
+    try:
+        validate_email(email)
+    except ValidationError:
+        django_messages.error(request, _("%(email)s isn't a valid email address.") % {"email": email})
+        return redirect("governance:users")
+    if User.objects.filter(email__iexact=email).exists():
+        django_messages.error(request, _("%(email)s is already in use.") % {"email": email})
+        return redirect("governance:users")
+
+    assignable_roles, teams_qs, departments_qs = _assignable_roles_and_scope(request)
+    role = request.POST.get("role", User.Role.USER)
+    if role not in [v for v, _l in assignable_roles]:
+        return HttpResponseBadRequest("Invalid role")
+
+    if _is_scoped_admin(request.user):
+        department_id = request.user.department_id
+    else:
+        department_id = request.POST.get("department_id") or None
+        if department_id and not departments_qs.filter(id=department_id).exists():
+            return HttpResponseBadRequest("Invalid department")
+
+    team_id = request.POST.get("team_id") or None
+    if team_id and not teams_qs.filter(id=team_id).exists():
+        return HttpResponseBadRequest("Invalid team")
+
+    new_user = User(email=email, role=role, department_id=department_id, team_id=team_id)
+    form = SetPasswordForm(user=new_user, data=request.POST)
+    if not form.is_valid():
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                django_messages.error(request, error)
+        return redirect("governance:users")
+
+    form.save()  # sets the password and, since new_user has no pk yet, creates the row
+    log_action(request.user, "user.create", new_user, new_value=new_user.email)
+    django_messages.success(request, _("%(email)s was created.") % {"email": new_user.email})
+    return redirect("governance:users")
+
+
+@role_required(User.Role.ADMIN)
 @require_GET
 def user_edit_form(request, user_id):
     """Modal body for the Users list's "Edit" button - every write action

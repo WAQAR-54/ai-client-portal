@@ -21,6 +21,7 @@ urlpatterns = [
         name="toggle_member_model_permission",
     ),
     path("users/", views.UserListView.as_view(), name="users"),
+    path("users/add/", views.add_user, name="add_user"),
     path("users/<int:user_id>/edit/", views.user_edit_form, name="user_edit_form"),
     path("users/<int:user_id>/toggle-active/", views.toggle_user_active, name="toggle_user_active"),
     path("users/<int:user_id>/change-email/", views.change_user_email, name="change_user_email"),
