@@ -22,6 +22,8 @@ urlpatterns = [
     ),
     path("users/", views.UserListView.as_view(), name="users"),
     path("users/<int:user_id>/toggle-active/", views.toggle_user_active, name="toggle_user_active"),
+    path("users/<int:user_id>/change-email/", views.change_user_email, name="change_user_email"),
+    path("users/<int:user_id>/reset-password/", views.reset_user_password, name="reset_user_password"),
     path("users/<int:user_id>/change-role/", views.change_user_role, name="change_user_role"),
     path("users/<int:user_id>/change-department/", views.change_user_department, name="change_user_department"),
     path("users/<int:user_id>/change-team/", views.change_user_team, name="change_user_team"),

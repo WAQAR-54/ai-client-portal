@@ -1124,6 +1124,109 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.user_b.refresh_from_db()
         self.assertTrue(self.user_b.is_active)
 
+    def test_admin_can_change_own_departments_user_email(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_email", kwargs={"user_id": self.user_a.id}),
+            {"email": "newemail@example.com"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertEqual(self.user_a.email, "newemail@example.com")
+        self.assertTrue(
+            AuditLog.objects.filter(action_type="user.email_change", target_id=str(self.user_a.id)).exists()
+        )
+
+    def test_admin_cannot_change_another_departments_user_email(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_email", kwargs={"user_id": self.user_b.id}),
+            {"email": "sneaky@example.com"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.user_b.refresh_from_db()
+        self.assertEqual(self.user_b.email, "userb@example.com")
+
+    def test_change_user_email_rejects_invalid_address(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_email", kwargs={"user_id": self.user_a.id}),
+            {"email": "not-an-email"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertEqual(self.user_a.email, "usera@example.com")
+
+    def test_change_user_email_rejects_duplicate(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_email", kwargs={"user_id": self.user_a.id}),
+            {"email": self.admin_a.email},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertEqual(self.user_a.email, "usera@example.com")
+
+    def test_change_user_email_requires_admin(self):
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:change_user_email", kwargs={"user_id": self.user_a.id}),
+            {"email": "sneaky2@example.com"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_can_reset_own_departments_user_password(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:reset_user_password", kwargs={"user_id": self.user_a.id}),
+            {"new_password1": "a-brand-new-strong-pw9", "new_password2": "a-brand-new-strong-pw9"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertTrue(self.user_a.check_password("a-brand-new-strong-pw9"))
+        log = AuditLog.objects.get(action_type="user.password_reset", target_id=str(self.user_a.id))
+        # The raw password never ends up in the audit trail.
+        self.assertNotIn("a-brand-new-strong-pw9", log.old_value)
+        self.assertNotIn("a-brand-new-strong-pw9", log.new_value)
+
+    def test_admin_cannot_reset_another_departments_user_password(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:reset_user_password", kwargs={"user_id": self.user_b.id}),
+            {"new_password1": "a-brand-new-strong-pw9", "new_password2": "a-brand-new-strong-pw9"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.user_b.refresh_from_db()
+        self.assertFalse(self.user_b.check_password("a-brand-new-strong-pw9"))
+
+    def test_reset_password_rejects_mismatched_confirmation(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:reset_user_password", kwargs={"user_id": self.user_a.id}),
+            {"new_password1": "a-brand-new-strong-pw9", "new_password2": "does-not-match"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertFalse(self.user_a.check_password("a-brand-new-strong-pw9"))
+
+    def test_reset_password_rejects_a_weak_password(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:reset_user_password", kwargs={"user_id": self.user_a.id}),
+            {"new_password1": "12345678", "new_password2": "12345678"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertFalse(self.user_a.check_password("12345678"))
+
+    def test_reset_password_requires_admin(self):
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:reset_user_password", kwargs={"user_id": self.user_a.id}),
+            {"new_password1": "a-brand-new-strong-pw9", "new_password2": "a-brand-new-strong-pw9"},
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_admin_cannot_change_another_departments_user_role(self):
         self.client.login(email="admina@example.com", password="pw12345!")
         response = self.client.post(

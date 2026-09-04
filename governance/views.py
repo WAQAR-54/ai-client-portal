@@ -2,7 +2,9 @@ import math
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages as django_messages
-from django.core.exceptions import PermissionDenied
+from django.contrib.auth.forms import SetPasswordForm
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import TruncDate
@@ -537,6 +539,52 @@ def toggle_user_active(request, user_id):
         old_value=old_value,
         new_value=target.is_active,
     )
+    return redirect("governance:users")
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def change_user_email(request, user_id):
+    target = _get_scoped_user_or_403(request, user_id)
+    new_email = request.POST.get("email", "").strip().lower()
+    if not new_email:
+        return HttpResponseBadRequest("Email is required")
+    try:
+        validate_email(new_email)
+    except ValidationError:
+        django_messages.error(request, _("%(email)s isn't a valid email address.") % {"email": new_email})
+        return redirect("governance:users")
+    if User.objects.exclude(id=target.id).filter(email__iexact=new_email).exists():
+        django_messages.error(request, _("%(email)s is already in use by another account.") % {"email": new_email})
+        return redirect("governance:users")
+
+    old_value = target.email
+    target.email = new_email
+    target.save(update_fields=["email"])
+    log_action(request.user, "user.email_change", target, old_value=old_value, new_value=new_email)
+    django_messages.success(request, _("Email for %(old)s updated to %(new)s.") % {"old": old_value, "new": new_email})
+    return redirect("governance:users")
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def reset_user_password(request, user_id):
+    """Admin sets a new password directly - no email/reset-link
+    infrastructure needed. Uses Django's own SetPasswordForm so the same
+    AUTH_PASSWORD_VALIDATORS rules apply as everywhere else in the app; the
+    raw password itself is never written to the audit log, only the fact
+    that a reset happened."""
+    target = _get_scoped_user_or_403(request, user_id)
+    form = SetPasswordForm(user=target, data=request.POST)
+    if not form.is_valid():
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                django_messages.error(request, error)
+        return redirect("governance:users")
+
+    form.save()
+    log_action(request.user, "user.password_reset", target)
+    django_messages.success(request, _("Password reset for %(email)s.") % {"email": target.email})
     return redirect("governance:users")
 
 
