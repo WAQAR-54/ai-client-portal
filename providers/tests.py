@@ -471,3 +471,122 @@ class ToggleProviderModelViewTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.model.refresh_from_db()
         self.assertFalse(self.model.is_enabled)
+
+
+class SyncAllConnectedProvidersTaskTests(TestCase):
+    """The daily sync_all_connected_providers Celery task (providers/
+    tasks.py) - mirrors chat.tasks.check_for_new_models' notify pattern,
+    but drives real ProviderModel discovery via sync_provider() (still
+    bound by its own never-auto-enable guardrail) instead of only
+    checking."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.connected = Provider.objects.get(slug="openai")
+        self.connected.set_api_key("sk-key")
+        self.connected.is_connected = True
+        self.connected.save()
+        self.disconnected = Provider.objects.get(slug="anthropic")
+
+    def test_only_connected_providers_are_synced(self):
+        from providers.tasks import sync_all_connected_providers
+
+        with patch("providers.services.sync_provider") as mock_sync:
+            mock_sync.return_value = {
+                "success": True,
+                "new_count": 0,
+                "updated_count": 0,
+                "retired_count": 0,
+                "error": None,
+            }
+            sync_all_connected_providers()
+        mock_sync.assert_called_once_with(self.connected)
+
+    def test_notifies_admins_when_new_models_found(self):
+        from notifications.models import Notification, NotificationType
+        from providers.tasks import sync_all_connected_providers
+
+        with patch("providers.services.sync_provider") as mock_sync:
+            mock_sync.return_value = {
+                "success": True,
+                "new_count": 3,
+                "updated_count": 0,
+                "retired_count": 0,
+                "error": None,
+            }
+            sync_all_connected_providers()
+        self.assertTrue(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).exists()
+        )
+
+    def test_does_not_notify_when_nothing_new(self):
+        from notifications.models import Notification, NotificationType
+        from providers.tasks import sync_all_connected_providers
+
+        with patch("providers.services.sync_provider") as mock_sync:
+            mock_sync.return_value = {
+                "success": True,
+                "new_count": 0,
+                "updated_count": 1,
+                "retired_count": 0,
+                "error": None,
+            }
+            sync_all_connected_providers()
+        self.assertFalse(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).exists()
+        )
+
+    def test_does_not_notify_when_sync_failed(self):
+        from notifications.models import Notification, NotificationType
+        from providers.tasks import sync_all_connected_providers
+
+        with patch("providers.services.sync_provider") as mock_sync:
+            mock_sync.return_value = {
+                "success": False,
+                "new_count": 0,
+                "updated_count": 0,
+                "retired_count": 0,
+                "error": "boom",
+            }
+            sync_all_connected_providers()
+        self.assertFalse(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).exists()
+        )
+
+    def test_dedup_prevents_repeat_notification_within_a_day(self):
+        from notifications.models import Notification, NotificationType
+        from providers.tasks import sync_all_connected_providers
+
+        with patch("providers.services.sync_provider") as mock_sync:
+            mock_sync.return_value = {
+                "success": True,
+                "new_count": 1,
+                "updated_count": 0,
+                "retired_count": 0,
+                "error": None,
+            }
+            sync_all_connected_providers()
+            sync_all_connected_providers()
+        self.assertEqual(
+            Notification.objects.filter(
+                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
+            ).count(),
+            1,
+        )
+
+
+class SeedProviderResyncScheduleMigrationTests(TestCase):
+    def test_periodic_task_is_registered(self):
+        from django_celery_beat.models import PeriodicTask
+
+        task = PeriodicTask.objects.get(name="Daily connected-provider model resync")
+        self.assertEqual(task.task, "providers.tasks.sync_all_connected_providers")
+        self.assertTrue(task.enabled)
