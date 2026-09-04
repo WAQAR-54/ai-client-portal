@@ -35,10 +35,8 @@ class AnthropicAdapter(BaseProviderAdapter):
                 "model_id": m.id,
                 "display_name": getattr(m, "display_name", "") or m.id,
                 # Anthropic's models.list response carries no pricing data -
-                # same as the existing chat/model_sync.py's OpenAI/Anthropic
-                # fetch, and matching the deliberate "never auto-fill
-                # pricing" decision already in this codebase (see
-                # model_sync.html) - an admin sets it after import.
+                # matches this codebase's deliberate "never auto-fill
+                # pricing" decision - an admin sets it after import.
                 "input_price": None,
                 "output_price": None,
             }

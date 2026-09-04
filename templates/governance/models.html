@@ -4,12 +4,9 @@
 {% block content %}
 
 <div class="card mt-4" style="margin-bottom:1.5rem;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2 style="margin-bottom:0;">{% trans "Add a model" %}</h2>
-        <button type="button" class="btn-small" onclick="portalOpenModal('addModelModal')">{% trans "Sync from provider" %}</button>
-    </div>
+    <h2 style="margin-bottom:0;">{% trans "Add a model" %}</h2>
     <p class="text-faint" style="font-size:0.82rem; margin-top:0.3rem;">
-        {% trans "Sync fetches the real, current model list from each provider's API — no more hand-typed IDs. Manual entry below still works as a fallback." %}
+        {% trans "Manual entry only — to discover a provider's current model list automatically, connect it from the Providers page instead." %}
     </p>
     <form method="post" action="{% url 'governance:add_model' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
         {% csrf_token %}
@@ -55,55 +52,4 @@
         {% include "governance/_models_table.html" %}
     </div>
 </div>
-
-<div class="modal-overlay" id="addModelModal">
-    <div class="modal-box" style="width:min(560px, 100%);">
-        <div class="modal-head">
-            <h3 class="modal-title">{% trans "Add model" %}</h3>
-            <button type="button" class="modal-close" onclick="portalCloseModal('addModelModal')" aria-label="{% trans 'Close' %}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-        </div>
-        <div class="modal-body">
-            <div class="provider-tabs" id="addModelProviderTabs">
-                <button type="button" class="provider-tab active" data-provider="openai" onclick="portalSetAddModelProvider('openai', this)">{% trans "OpenAI" %}</button>
-                <button type="button" class="provider-tab" data-provider="anthropic" onclick="portalSetAddModelProvider('anthropic', this)">{% trans "Anthropic" %}</button>
-            </div>
-            <button type="button" class="btn-ghost" style="text-align:center;"
-                    hx-get="{% url 'governance:sync_models_preview' %}"
-                    hx-target="#fetchedList" hx-swap="innerHTML"
-                    hx-indicator="#fetchSpinner"
-                    onclick="document.getElementById('fetchedList').innerHTML=''">{% trans "Fetch available models" %}</button>
-            <div class="fetch-spinner" id="fetchSpinner"><div class="spin-icon"></div>{% trans "Checking provider API for new models…" %}</div>
-            <form method="post" action="{% url 'governance:sync_models_import' %}" id="addModelForm">
-                {% csrf_token %}
-                <div class="fetched-list" id="fetchedList"></div>
-                <p class="form-hint">
-                    {% trans "Checking a model creates a disabled entry with the exact provider ID — nothing is enabled automatically. Set pricing and enable it from the Models page afterward." %}
-                </p>
-                <div class="modal-footer" style="padding:0; border-top:none; margin-top:var(--space-2);">
-                    <button type="button" class="btn-ghost" onclick="portalCloseModal('addModelModal')">{% trans "Cancel" %}</button>
-                    <button type="submit" class="btn">{% trans "Add selected" %}</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-<script>
-function portalSetAddModelProvider(provider, tabEl) {
-    document.querySelectorAll("#addModelProviderTabs .provider-tab").forEach(function(t) { t.classList.remove("active"); });
-    tabEl.classList.add("active");
-    document.querySelectorAll("#fetchedList .fetched-provider-group").forEach(function(group) {
-        group.style.display = group.getAttribute("data-provider") === provider ? "" : "none";
-    });
-}
-// After htmx swaps the fetch results in, re-apply whichever provider tab is
-// currently active (the response contains both providers' groups at once).
-document.body.addEventListener("htmx:afterSwap", function(evt) {
-    if (evt.detail.target && evt.detail.target.id === "fetchedList") {
-        var activeTab = document.querySelector("#addModelProviderTabs .provider-tab.active");
-        if (activeTab) portalSetAddModelProvider(activeTab.getAttribute("data-provider"), activeTab);
-    }
-});
-</script>
 {% endblock %}

@@ -1082,61 +1082,6 @@ def _int_or_none(raw):
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)
-@require_GET
-def sync_models_preview(request):
-    from chat.model_sync import fetch_all_available_models, known_model_keys
-
-    fetched = fetch_all_available_models()
-    existing = known_model_keys()
-    for provider, entry in fetched.items():
-        entry["new_models"] = [m for m in entry["models"] if (provider, m) not in existing]
-        entry["already_tracked"] = [m for m in entry["models"] if (provider, m) in existing]
-    context = {"fetched": fetched, "tiers": ModelConfig.Tier.choices}
-    if request.headers.get("HX-Request"):
-        return render(request, "governance/_model_sync_fetch_results.html", context)
-    return render(request, "governance/model_sync.html", context)
-
-
-@role_required(User.Role.SUPERADMIN, exact=True)
-@require_http_methods(["POST"])
-def sync_models_import(request):
-    created_count = 0
-    for encoded in request.POST.getlist("model"):
-        if "::" not in encoded:
-            continue
-        provider, model_name = encoded.split("::", 1)
-        if provider not in ModelConfig.Provider.values:
-            continue
-        tier = request.POST.get(f"tier__{encoded}", ModelConfig.Tier.DEFAULT)
-        if tier not in ModelConfig.Tier.values:
-            tier = ModelConfig.Tier.DEFAULT
-        model_config, was_created = ModelConfig.objects.get_or_create(
-            provider=provider,
-            model_name=model_name,
-            defaults={"tier": tier},
-        )
-        if was_created:
-            created_count += 1
-            log_action(request.user, "model.sync_import", model_config, new_value=model_name)
-
-    if created_count:
-        django_messages.success(
-            request,
-            ngettext(
-                "Imported %(count)s new model, disabled by default. "
-                "Set pricing and enable it below before it's usable.",
-                "Imported %(count)s new models, disabled by default. "
-                "Set pricing and enable them below before they're usable.",
-                created_count,
-            )
-            % {"count": created_count},
-        )
-    else:
-        django_messages.info(request, _("No models were selected to import."))
-    return redirect("governance:models")
-
-
-@role_required(User.Role.SUPERADMIN, exact=True)
 @require_http_methods(["POST"])
 def add_model(request):
     provider = request.POST.get("provider", "")

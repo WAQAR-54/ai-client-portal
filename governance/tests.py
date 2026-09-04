@@ -968,133 +968,21 @@ class AdminListFilteringTests(TestCase):
             self.assertEqual(response.status_code, 403, url_name)
 
 
-class ModelSyncTests(TestCase):
-    """Sync Models: fetch real provider model IDs instead of hand-typing
-    them (see chat/model_sync.py) - the picker/import views live in
-    governance, the fetch logic lives in chat since it's provider-specific.
-    Provider calls are always mocked here - never hit a real API in tests."""
+class ModelPricingUpdateTests(TestCase):
+    """update_model_pricing is the one legacy Models-page write action left
+    after removing Sync Models (see chat/providers.py / providers/tasks.py
+    for its replacement) - manual add/enable/disable/pricing stays here
+    since Team.disabled_models and per-user model permissions still key off
+    chat.models.ModelConfig."""
 
     def setUp(self):
-        # Model sync/enable/pricing is SuperAdmin-only per the role
-        # hierarchy prompt, Section 1 ("enable/disable individual models
-        # system-wide").
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
             role=User.Role.SUPERADMIN,
             is_staff=True,
         )
-        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
         self.client.login(email="admin@example.com", password="pw12345!")
-
-    def test_preview_forbidden_for_non_admin(self):
-        self.client.logout()
-        self.client.login(email="u@example.com", password="pw12345!")
-        response = self.client.get(reverse("governance:sync_models_preview"))
-        self.assertEqual(response.status_code, 403)
-
-    def test_preview_shows_no_api_key_state(self):
-        from unittest.mock import patch
-
-        with patch("chat.model_sync.settings.OPENAI_API_KEY", ""), patch(
-            "chat.model_sync.settings.ANTHROPIC_API_KEY", ""
-        ):
-            response = self.client.get(reverse("governance:sync_models_preview"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "No API key configured")
-
-    def test_preview_separates_new_from_already_tracked_models(self):
-        from unittest.mock import patch
-
-        ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="gpt-4o-mini",
-            tier=ModelConfig.Tier.ECONOMY,
-        )
-        # Patching the individual fetch_openai_models/fetch_anthropic_models
-        # names here would NOT work: chat/model_sync.py's _FETCHERS dict
-        # captures those function objects at module-import time, so a
-        # later patch of the module-level name doesn't reach callers that
-        # go through _FETCHERS. fetch_all_available_models is the one
-        # entry point sync_models_preview actually calls (and re-imports
-        # locally on every request), so that's the correct patch target.
-        with patch(
-            "chat.model_sync.fetch_all_available_models",
-            return_value={
-                ModelConfig.Provider.OPENAI: {
-                    "configured": True,
-                    "models": ["gpt-4o-mini", "gpt-4o"],
-                    "error": None,
-                },
-                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
-            },
-        ):
-            response = self.client.get(reverse("governance:sync_models_preview"))
-        fetched = response.context["fetched"]
-        self.assertEqual(fetched[ModelConfig.Provider.OPENAI]["new_models"], ["gpt-4o"])
-        self.assertEqual(fetched[ModelConfig.Provider.OPENAI]["already_tracked"], ["gpt-4o-mini"])
-
-    def test_preview_surfaces_fetch_error_without_crashing(self):
-        from unittest.mock import patch
-
-        with patch(
-            "chat.model_sync.fetch_all_available_models",
-            return_value={
-                ModelConfig.Provider.OPENAI: {"configured": True, "models": [], "error": "network down"},
-                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
-            },
-        ):
-            response = self.client.get(reverse("governance:sync_models_preview"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "network down")
-
-    def test_import_creates_disabled_model_with_exact_id(self):
-        response = self.client.post(
-            reverse("governance:sync_models_import"),
-            {
-                "model": [f"{ModelConfig.Provider.OPENAI}::gpt-4o"],
-                f"tier__{ModelConfig.Provider.OPENAI}::gpt-4o": "premium",
-            },
-        )
-        self.assertRedirects(response, reverse("governance:models"))
-        model_config = ModelConfig.objects.get(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
-        self.assertFalse(model_config.is_enabled)
-        self.assertEqual(model_config.tier, ModelConfig.Tier.PREMIUM)
-        self.assertTrue(AuditLog.objects.filter(action_type="model.sync_import").exists())
-
-    def test_import_is_idempotent_for_already_tracked_models(self):
-        existing = ModelConfig.objects.create(
-            provider=ModelConfig.Provider.OPENAI,
-            model_name="gpt-4o-mini",
-            tier=ModelConfig.Tier.ECONOMY,
-        )
-        self.client.post(
-            reverse("governance:sync_models_import"),
-            {"model": [f"{ModelConfig.Provider.OPENAI}::gpt-4o-mini"]},
-        )
-        self.assertEqual(
-            ModelConfig.objects.filter(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o-mini").count(), 1
-        )
-        existing.refresh_from_db()
-        self.assertEqual(existing.tier, ModelConfig.Tier.ECONOMY)  # untouched, not overwritten
-
-    def test_import_ignores_malformed_or_unknown_provider_entries(self):
-        response = self.client.post(
-            reverse("governance:sync_models_import"),
-            {"model": ["not-encoded-properly", "made-up-provider::some-model"]},
-        )
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(ModelConfig.objects.count(), 0)
-
-    def test_import_forbidden_for_non_admin(self):
-        self.client.logout()
-        self.client.login(email="u@example.com", password="pw12345!")
-        response = self.client.post(
-            reverse("governance:sync_models_import"),
-            {"model": [f"{ModelConfig.Provider.OPENAI}::gpt-4o"]},
-        )
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(ModelConfig.objects.count(), 0)
 
     def test_display_name_editable_via_pricing_update(self):
         model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
@@ -1106,120 +994,6 @@ class ModelSyncTests(TestCase):
         model_config.refresh_from_db()
         self.assertEqual(model_config.display_name, "GPT-4o (flagship)")
         self.assertEqual(model_config.display_label, "GPT-4o (flagship)")
-
-
-class ModelSyncFetchHelperTests(TestCase):
-    """Unit tests for chat/model_sync.py's own filtering/aggregation logic,
-    independent of the admin views above."""
-
-    def test_openai_chat_filter_excludes_known_non_chat_families(self):
-        from chat.model_sync import _is_openai_chat_model
-
-        self.assertTrue(_is_openai_chat_model("gpt-4o"))
-        self.assertTrue(_is_openai_chat_model("gpt-4o-mini"))
-        self.assertFalse(_is_openai_chat_model("text-embedding-3-large"))
-        self.assertFalse(_is_openai_chat_model("whisper-1"))
-        self.assertFalse(_is_openai_chat_model("tts-1"))
-        self.assertFalse(_is_openai_chat_model("dall-e-3"))
-        self.assertFalse(_is_openai_chat_model("text-moderation-latest"))
-
-    def test_fetch_all_available_models_reports_unconfigured_provider(self):
-        from unittest.mock import patch
-
-        from chat.model_sync import fetch_all_available_models
-
-        with patch("chat.model_sync.settings.OPENAI_API_KEY", ""), patch(
-            "chat.model_sync.settings.ANTHROPIC_API_KEY", ""
-        ):
-            result = fetch_all_available_models()
-        self.assertFalse(result[ModelConfig.Provider.OPENAI]["configured"])
-        self.assertFalse(result[ModelConfig.Provider.ANTHROPIC]["configured"])
-
-    def test_known_model_keys_reflects_existing_modelconfigs(self):
-        from chat.model_sync import known_model_keys
-
-        ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
-        self.assertIn((ModelConfig.Provider.OPENAI, "gpt-4o"), known_model_keys())
-        self.assertNotIn((ModelConfig.Provider.OPENAI, "gpt-4o-mini"), known_model_keys())
-
-
-class ModelSyncNotificationTaskTests(TestCase):
-    """The daily check_for_new_models Celery task (see chat/tasks.py) only
-    notifies admins about undiscovered models - it never creates/enables
-    anything itself, mirroring what the manual Sync Models button does."""
-
-    def setUp(self):
-        # chat/tasks.py now notifies SuperAdmins (model sync/enable is
-        # SuperAdmin-only, see ModelSyncTests above).
-        self.admin = User.objects.create_user(
-            email="admin@example.com",
-            password="pw12345!",
-            role=User.Role.SUPERADMIN,
-            is_staff=True,
-        )
-
-    def test_notifies_admins_when_new_models_found(self):
-        from unittest.mock import patch
-
-        from chat.tasks import check_for_new_models
-        from notifications.models import Notification, NotificationType
-
-        with patch(
-            "chat.model_sync.fetch_all_available_models",
-            return_value={
-                ModelConfig.Provider.OPENAI: {"configured": True, "models": ["gpt-4o"], "error": None},
-                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
-            },
-        ):
-            check_for_new_models()
-        self.assertTrue(
-            Notification.objects.filter(
-                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
-            ).exists()
-        )
-
-    def test_does_not_notify_when_nothing_new(self):
-        from unittest.mock import patch
-
-        from chat.tasks import check_for_new_models
-        from notifications.models import Notification, NotificationType
-
-        ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="gpt-4o")
-        with patch(
-            "chat.model_sync.fetch_all_available_models",
-            return_value={
-                ModelConfig.Provider.OPENAI: {"configured": True, "models": ["gpt-4o"], "error": None},
-                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
-            },
-        ):
-            check_for_new_models()
-        self.assertFalse(
-            Notification.objects.filter(
-                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
-            ).exists()
-        )
-
-    def test_dedup_prevents_repeat_notification_within_a_day(self):
-        from unittest.mock import patch
-
-        from chat.tasks import check_for_new_models
-        from notifications.models import Notification, NotificationType
-
-        with patch(
-            "chat.model_sync.fetch_all_available_models",
-            return_value={
-                ModelConfig.Provider.OPENAI: {"configured": True, "models": ["gpt-4o"], "error": None},
-                ModelConfig.Provider.ANTHROPIC: {"configured": True, "models": [], "error": None},
-            },
-        ):
-            check_for_new_models()
-            check_for_new_models()
-        self.assertEqual(
-            Notification.objects.filter(
-                user=self.admin, notification_type=NotificationType.MODEL_SYNC_AVAILABLE
-            ).count(),
-            1,
-        )
 
 
 class DepartmentTemplatesAdminTests(TestCase):

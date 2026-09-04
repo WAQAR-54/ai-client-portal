@@ -475,10 +475,9 @@ class ToggleProviderModelViewTests(TestCase):
 
 class SyncAllConnectedProvidersTaskTests(TestCase):
     """The daily sync_all_connected_providers Celery task (providers/
-    tasks.py) - mirrors chat.tasks.check_for_new_models' notify pattern,
-    but drives real ProviderModel discovery via sync_provider() (still
-    bound by its own never-auto-enable guardrail) instead of only
-    checking."""
+    tasks.py) - drives real ProviderModel discovery via sync_provider()
+    (still bound by its own never-auto-enable guardrail) across every
+    connected provider, notifying SuperAdmins when anything new turns up."""
 
     def setUp(self):
         self.admin = User.objects.create_user(

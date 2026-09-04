@@ -10,10 +10,9 @@ def sync_all_connected_providers():
     via sync_provider() (still bound by its own never-auto-enable
     guardrail - this only discovers/retires ProviderModel rows, exactly
     what a manual Resync click does) and notifies SuperAdmins if any new
-    models were found. Mirrors chat.tasks.check_for_new_models' notify
-    pattern - a SuperAdmin still has to visit the Providers page and
-    explicitly enable anything found; this only saves them from having to
-    remember to click Resync themselves."""
+    models were found - a SuperAdmin still has to visit the Providers page
+    and explicitly enable anything found; this only saves them from having
+    to remember to click Resync themselves."""
     from accounts.models import User
     from notifications.models import NotificationType
     from notifications.notify import notify, recently_notified
