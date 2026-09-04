@@ -108,6 +108,25 @@
     --warn-soft: #fcf0dc;
     --warn-dim: #3d2f18;
 
+    /* Provider brand colors - decorative grouping only (chat model badges,
+       "switched to X" dividers, the Usage & Cost per-provider bars/table).
+       Independent of --secondary/--accent's role assignments above and of
+       the semantic --color-success/--warn/--color-danger status colors -
+       these exist purely so five different providers are visually
+       distinguishable at a glance, not to signal state. Anthropic reuses
+       --secondary (navy) rather than a new token since it's already the
+       dominant brand color; the other four are new hues chosen to stay
+       clearly apart from --color-success/--warn/--color-danger. */
+    --provider-anthropic: var(--secondary);
+    --provider-openai: #1f9254;
+    --provider-openai-soft: #dff5e7;
+    --provider-gemini: #6d5bd0;
+    --provider-gemini-soft: #eae7fb;
+    --provider-grok: #b4790c;
+    --provider-grok-soft: #fbeed9;
+    --provider-deepseek: #0e7c86;
+    --provider-deepseek-soft: #dcf1f2;
+
     --radius-sm: 6px;
     --radius-md: 10px;
     --radius-lg: 16px;
@@ -208,6 +227,16 @@
         --warn: #e3ac5c;
         --warn-soft: #3a2a10;
 
+        --provider-anthropic: var(--secondary);
+        --provider-openai: #4cd699;
+        --provider-openai-soft: #163826;
+        --provider-gemini: #9b8bf0;
+        --provider-gemini-soft: #241f47;
+        --provider-grok: #d99a3e;
+        --provider-grok-soft: #3d2f18;
+        --provider-deepseek: #35b8c2;
+        --provider-deepseek-soft: #123338;
+
         /* The sidebar is no longer a distinct navy-filled surface in dark
            mode - it uses the same neutral dark surface as the rest of the
            app, with the now-dominant cyan accent for the active item's
@@ -259,6 +288,16 @@
 
     --warn: #e3ac5c;
     --warn-soft: #3a2a10;
+
+    --provider-anthropic: var(--secondary);
+    --provider-openai: #4cd699;
+    --provider-openai-soft: #163826;
+    --provider-gemini: #9b8bf0;
+    --provider-gemini-soft: #241f47;
+    --provider-grok: #d99a3e;
+    --provider-grok-soft: #3d2f18;
+    --provider-deepseek: #35b8c2;
+    --provider-deepseek-soft: #123338;
 
     --sidebar-bg: var(--color-surface);
     --sidebar-text: var(--color-text);
@@ -1987,6 +2026,49 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .msg-content-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .msg-content-col-user { align-items: flex-end; }
 
+/* Which model actually answered - shown above each assistant reply so a
+   conversation that routes across providers stays legible about who said
+   what. Colored per-provider via the .model-badge-{slug} modifiers below
+   (main.css :root - "Provider brand colors"), falling back to a neutral
+   badge for a message that predates provider_model_used (see
+   Message.provider_slug). */
+.model-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    width: fit-content;
+}
+.msg-model-badge { margin-bottom: 0.35rem; }
+.model-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.model-badge-anthropic { background: var(--secondary-soft); color: var(--secondary); }
+.model-badge-openai { background: var(--provider-openai-soft); color: var(--provider-openai); }
+.model-badge-gemini { background: var(--provider-gemini-soft); color: var(--provider-gemini); }
+.model-badge-grok { background: var(--provider-grok-soft); color: var(--provider-grok); }
+.model-badge-deepseek { background: var(--provider-deepseek-soft); color: var(--provider-deepseek); }
+.model-badge-default { background: var(--color-surface-muted); color: var(--color-text-muted); }
+
+/* Sits between two assistant replies that used different models, so a
+   routed/manually-switched conversation reads clearly instead of looking
+   like one model just changed its voice mid-thread. */
+.switch-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.72rem;
+    color: var(--color-text-faint);
+    margin: 0.4rem 0 0.9rem;
+}
+.switch-divider::before, .switch-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--color-border);
+}
+
 /* Copy/Edit/Regenerate are always visible now, not hover-only - a user on
    touch (no hover at all) or who hasn't learned to hover here yet should
    still see they exist. */
@@ -2783,6 +2865,20 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    sparklines - it's the one live figure in an otherwise-past 7-day trend. */
 .bar-col:last-child .bar-fill { background: var(--accent); }
 .bar-label { font-size: 0.65rem; color: var(--color-text-faint); }
+
+/* Spend-by-provider breakdown (admin Usage & Cost) - one horizontal bar per
+   provider, colored via the same .model-badge-{slug} palette used for chat
+   model badges so a provider reads as the same color everywhere it shows up. */
+.provider-spend-total { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: var(--space-4); }
+.provider-spend-total-value { font-family: var(--font-display); font-size: 1.9rem; font-weight: 600; }
+.provider-spend-total-label { font-size: 0.85rem; color: var(--color-text-muted); }
+.provider-bars { display: flex; flex-direction: column; gap: 0.7rem; }
+.pbar-row { display: flex; align-items: center; gap: 0.85rem; }
+.pbar-label { width: 130px; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; }
+.pbar-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
+.pbar-track { flex: 1; height: 8px; border-radius: 999px; background: var(--color-surface-muted); overflow: hidden; }
+.pbar-fill { height: 100%; border-radius: 999px; background: currentColor; transition: width 0.6s var(--ease); }
+.pbar-value { width: 130px; flex-shrink: 0; text-align: right; font-size: 0.82rem; color: var(--color-text-muted); }
 
 /* Audit log severity dot */
 .log-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }

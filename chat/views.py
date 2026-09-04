@@ -75,7 +75,7 @@ def chat_home(request, conversation_id=None):
     context = {
         **_conversation_list_context(request, conversation),
         "conversation": conversation,
-        "messages_list": conversation.messages.all() if conversation else [],
+        "messages_list": _messages_with_switch_dividers(conversation),
         "has_models_available": available_models.exists(),
         "available_models": available_models,
         "model_rows": _model_catalog_rows(available_models, upgrade_plan_choices),
@@ -87,6 +87,30 @@ def chat_home(request, conversation_id=None):
         "upgrade_plan_choices": upgrade_plan_choices,
     }
     return render(request, "chat/chat_home.html", context)
+
+
+def _messages_with_switch_dividers(conversation):
+    """A conversation's messages as a plain list, each assistant message
+    annotated with .show_switch_divider - True when it answered with a
+    different model than the assistant message before it, False for the
+    conversation's first assistant reply (nothing to have "switched" from
+    yet) and for every user message. Computed once here, in a real list
+    (not the lazy queryset), so the loop in chat_home.html can just check
+    the attribute instead of re-deriving it - and so a single-message htmx
+    response (post_message/regenerate/edit, which renders _message_bubble.html
+    standalone) safely has no such attribute and the template's
+    {% if message.show_switch_divider %} just resolves falsy for it."""
+    if not conversation:
+        return []
+    messages = list(conversation.messages.all())
+    previous_label = None
+    for message in messages:
+        if message.role != Message.Role.ASSISTANT:
+            continue
+        label = message.model_label
+        message.show_switch_divider = previous_label is not None and label != previous_label
+        previous_label = label
+    return messages
 
 
 def _model_catalog_rows(available_models, upgrade_plan_choices):

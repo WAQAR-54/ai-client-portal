@@ -24,6 +24,25 @@
         </form>
     </div>
 
+    {% if provider_bars %}
+    <div class="card mt-4" style="margin-bottom:var(--space-4);">
+        <h2 style="margin-bottom:0.25rem;">{% trans "Spend by provider" %}</h2>
+        <div class="provider-spend-total">
+            <span class="provider-spend-total-value">${{ total_provider_cost|floatformat:2 }}</span>
+            <span class="provider-spend-total-label">{% trans "total across all providers, matching the filters below" %}</span>
+        </div>
+        <div class="provider-bars">
+            {% for row in provider_bars %}
+            <div class="pbar-row">
+                <span class="pbar-label"><span class="pbar-dot" style="background:var(--provider-{{ row.slug }}, var(--color-text-faint));"></span>{{ row.name }}</span>
+                <span class="pbar-track"><span class="pbar-fill" style="width:{{ row.pct }}%; background:var(--provider-{{ row.slug }}, var(--color-text-faint));"></span></span>
+                <span class="pbar-value">${{ row.cost|floatformat:2 }} · {{ row.pct }}%</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card mt-4" style="margin-bottom:var(--space-4);">
         <h2 style="margin-bottom:0.25rem;">{% trans "Cost by day, last 7 days" %}</h2>
         {% if has_weekly_data %}

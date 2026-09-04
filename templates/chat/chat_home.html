@@ -402,6 +402,9 @@ function portalCloseUpgradeModal() {
     <div id="messages" class="chat-messages">
         <div class="chat-column">
             {% for m in messages_list %}
+                {% if m.show_switch_divider %}
+                <div class="switch-divider">{% blocktrans with model=m.model_label %}Switched to {{ model }}{% endblocktrans %}</div>
+                {% endif %}
                 {% include "chat/_message_bubble.html" with message=m is_last=forloop.last %}
             {% endfor %}
         </div>

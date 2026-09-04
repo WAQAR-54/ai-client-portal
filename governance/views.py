@@ -7,7 +7,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
-from django.db.models.functions import TruncDate
+from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -1341,6 +1341,15 @@ def _filtered_assistant_messages(request):
     return assistant_messages, {"search": search, "model_id": model_id, "date_from": date_from, "date_to": date_to}
 
 
+_PROVIDER_DISPLAY_NAMES = {
+    "anthropic": "Anthropic",
+    "openai": "OpenAI",
+    "gemini": "Google Gemini",
+    "grok": "Grok",
+    "deepseek": "DeepSeek",
+}
+
+
 class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, TemplateView):
     feature_key = "usage_cost"
     template_name = "governance/usage.html"
@@ -1389,8 +1398,38 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
         )
         cache_hit_rate = round((cache_stats["cache_hits"] / cache_stats["total"]) * 100) if cache_stats["total"] else 0
 
+        # Spend broken out by provider (Anthropic/OpenAI/...), same filter
+        # scope as per_user above. provider_key coalesces the current
+        # provider_model_used's slug with the legacy model_used.provider
+        # CharField (already a matching slug - "openai"/"anthropic" - for
+        # every message from before the ProviderModel cutover), so old and
+        # new messages for the same provider land in one bucket instead of
+        # two differently-keyed ones.
+        provider_rows = (
+            assistant_messages.annotate(
+                provider_key=Coalesce("provider_model_used__provider__slug", "model_used__provider")
+            )
+            .exclude(provider_key__isnull=True)
+            .values("provider_key")
+            .annotate(cost=Sum("estimated_cost"), requests=Count("id"))
+            .order_by("-cost")
+        )
+        total_provider_cost = sum(float(row["cost"] or 0) for row in provider_rows)
+        provider_bars = [
+            {
+                "slug": row["provider_key"],
+                "name": _PROVIDER_DISPLAY_NAMES.get(row["provider_key"], row["provider_key"].title()),
+                "cost": float(row["cost"] or 0),
+                "requests": row["requests"],
+                "pct": round(float(row["cost"] or 0) / total_provider_cost * 100) if total_provider_cost else 0,
+            }
+            for row in provider_rows
+        ]
+
         return super().get_context_data(**kwargs) | {
             "per_user": per_user,
+            "provider_bars": provider_bars,
+            "total_provider_cost": total_provider_cost,
             "models": ModelConfig.objects.order_by("provider", "model_name"),
             "search": filters["search"],
             "model_filter": filters["model_id"],

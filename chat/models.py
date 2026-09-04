@@ -189,6 +189,33 @@ class Message(models.Model):
     def __str__(self):
         return f"{self.role}: {self.content[:40]}"
 
+    @property
+    def model_label(self):
+        """Same "whichever of the two model-snapshot fields is actually
+        set" pattern as MessageFeedback.model_label below - provider_model_used
+        for every message since the ModelConfig -> ProviderModel cutover,
+        model_used for everything before it. Used for the chat model badge
+        and the "switched to X" divider."""
+        if self.provider_model_used_id:
+            return self.provider_model_used.display_label
+        if self.model_used_id:
+            return self.model_used.display_label
+        return None
+
+    @property
+    def provider_slug(self):
+        """CSS-token-friendly provider identifier for the model badge
+        (.model-badge-{slug} in main.css) - providers.Provider.slug for a
+        provider_model_used message, or the legacy ModelConfig.provider
+        CharField value for an old one (already "openai"/"anthropic",
+        identical to those two providers' real slugs, so no mapping is
+        needed)."""
+        if self.provider_model_used_id:
+            return self.provider_model_used.provider.slug
+        if self.model_used_id:
+            return self.model_used.provider
+        return ""
+
 
 class MessageFeedback(models.Model):
     class Rating(models.TextChoices):
