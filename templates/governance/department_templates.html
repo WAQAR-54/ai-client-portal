@@ -30,7 +30,7 @@
                 <td class="text-muted">{{ t.content|truncatechars:80 }}</td>
                 <td>
                     <form method="post" action="{% url 'governance:delete_department_template' department_id=department.id template_id=t.id %}"
-                          onsubmit="return confirm('{% blocktrans with name=department.name %}Delete this team template? Everyone in {{ name }} will lose access to it.{% endblocktrans %}');">
+                          onsubmit="return portalConfirmSubmit(event, '{% blocktrans with name=department.name %}Delete this team template? Everyone in {{ name }} will lose access to it.{% endblocktrans %}');">
                         {% csrf_token %}
                         <button type="submit" class="btn-small btn-danger">{% trans "Delete" %}</button>
                     </form>

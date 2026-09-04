@@ -16,7 +16,7 @@
                 <button type="submit" form="dept-form-{{ d.id }}" class="btn-small btn-ghost" style="margin-right:0.3rem;">{% trans "Save" %}</button>
                 <a href="{% url 'governance:system_prompt' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">{% trans "Prompt" %}</a>
                 <a href="{% url 'governance:department_templates' department_id=d.id %}" class="btn-small btn-ghost" style="text-decoration:none; display:inline-block; margin-right:0.3rem;">{% trans "Templates" %}</a>
-                <form method="post" action="{% url 'governance:delete_department' department_id=d.id %}" style="display:inline;" onsubmit="return confirm('{% blocktrans with name=d.name %}Delete {{ name }}? This also removes its system prompt history.{% endblocktrans %}');">
+                <form method="post" action="{% url 'governance:delete_department' department_id=d.id %}" style="display:inline;" onsubmit="return portalConfirmSubmit(event, '{% blocktrans with name=d.name %}Delete {{ name }}? This also removes its system prompt history.{% endblocktrans %}');">
                     {% csrf_token %}
                     <button type="submit" class="btn-small btn-danger">{% trans "Delete" %}</button>
                 </form>

@@ -50,7 +50,7 @@
 
 <div class="row-menu-label">{% trans "Reset password" %}</div>
 <form method="post" action="{% url 'governance:reset_user_password' user_id=u.id %}" style="display:flex; flex-direction:column; gap:0.4rem; margin-bottom:0.6rem;"
-      onsubmit="return confirm('{% blocktrans with email=u.email %}Reset the password for {{ email }}? They will need the new password to log in next time.{% endblocktrans %}');">
+      onsubmit="return portalConfirmSubmit(event, '{% blocktrans with email=u.email %}Reset the password for {{ email }}? They will need the new password to log in next time.{% endblocktrans %}');">
     {% csrf_token %}
     <input class="input" style="margin:0;" type="password" name="new_password1" placeholder="{% trans 'New password' %}" autocomplete="new-password" required>
     <input class="input" style="margin:0;" type="password" name="new_password2" placeholder="{% trans 'Confirm password' %}" autocomplete="new-password" required>

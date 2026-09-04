@@ -233,6 +233,31 @@
             </main>
         </div>
     </div>
+
+    {% comment %}
+    Shared site-wide confirmation modal - replaces the browser's native
+    confirm() popup everywhere (see portalConfirm/portalConfirmSubmit and
+    the htmx:confirm listener in ui-kit.js). One instance, reused by every
+    hx-confirm/onsubmit-confirm form on any page.
+    {% endcomment %}
+    <div class="modal-overlay" id="portalConfirmModal">
+        <div class="modal-box" style="width:min(420px, 100%);">
+            <div class="modal-head">
+                <h3 class="modal-title">{% trans "Please confirm" %}</h3>
+                <button type="button" class="modal-close" onclick="portalCloseModal('portalConfirmModal')" aria-label="{% trans 'Close' %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="portalConfirmMessage" style="margin:0;"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-ghost" onclick="portalCloseModal('portalConfirmModal')">{% trans "Cancel" %}</button>
+                <button type="button" class="btn-danger" id="portalConfirmButton">{% trans "Confirm" %}</button>
+            </div>
+        </div>
+    </div>
+
     {% if user.is_authenticated %}
     <script>
         document.addEventListener("keydown", function(evt) {

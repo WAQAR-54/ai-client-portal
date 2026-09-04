@@ -10,7 +10,7 @@
             <td>{% if t.manager %}{{ t.manager.email }}{% else %}<span class="text-faint">{% trans "— unassigned —" %}</span>{% endif %}</td>
             <td class="mono">{{ t.member_count }}</td>
             <td style="white-space:nowrap;">
-                <form method="post" action="{% url 'governance:delete_team' team_id=t.id %}" style="display:inline;" onsubmit="return confirm('{% blocktrans with name=t.name %}Delete {{ name }}? Members and its manager keep their role but lose this team.{% endblocktrans %}');">
+                <form method="post" action="{% url 'governance:delete_team' team_id=t.id %}" style="display:inline;" onsubmit="return portalConfirmSubmit(event, '{% blocktrans with name=t.name %}Delete {{ name }}? Members and its manager keep their role but lose this team.{% endblocktrans %}');">
                     {% csrf_token %}
                     <button type="submit" class="btn-small btn-danger">{% trans "Delete" %}</button>
                 </form>

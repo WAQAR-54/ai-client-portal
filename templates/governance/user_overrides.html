@@ -60,7 +60,7 @@
 
     {% if overrides.usage_limit or overrides.model_permissions %}
     <form method="post" action="{% url 'governance:clear_user_overrides' user_id=target.id %}" class="mt-5"
-          onsubmit="return confirm('{% blocktrans with email=target.email %}Clear all overrides for {{ email }}? They will revert to pure Plan defaults.{% endblocktrans %}');">
+          onsubmit="return portalConfirmSubmit(event, '{% blocktrans with email=target.email %}Clear all overrides for {{ email }}? They will revert to pure Plan defaults.{% endblocktrans %}');">
         {% csrf_token %}
         <button type="submit" class="btn-danger">{% trans "Clear all overrides" %}</button>
     </form>
