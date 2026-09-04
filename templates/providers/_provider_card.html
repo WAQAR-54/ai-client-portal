@@ -1,0 +1,81 @@
+{% load i18n %}
+<div class="plan-card" id="provider-card-{{ provider.id }}">
+    <div class="plan-card-head">
+        <div class="plan-card-title">{{ provider.name }}</div>
+        {% if provider.is_connected %}<span class="badge badge-success">{% trans "Connected" %}</span>
+        {% else %}<span class="badge badge-muted">{% trans "Not connected" %}</span>{% endif %}
+    </div>
+
+    {% if provider.is_connected %}
+    <div class="plan-row"><span>{% trans "API key" %}</span><span class="mono">•••• {{ provider.api_key_last4 }}</span></div>
+    {% endif %}
+    <div class="plan-row">
+        <span>{% trans "Last synced" %}</span>
+        <span>{% if provider.last_synced_at %}{{ provider.last_synced_at|timesince }} {% trans "ago" %}{% else %}{% trans "Never" %}{% endif %}</span>
+    </div>
+    {% if provider.last_sync_status == "failed" %}
+    <div class="plan-row"><span>{% trans "Last sync" %}</span><span style="color:var(--color-danger);">{{ provider.last_sync_error|default:_("Failed") }}</span></div>
+    {% endif %}
+    <div class="plan-row">
+        <span>{% trans "Models" %}</span>
+        <span>{% blocktrans count counter=models|length %}{{ counter }} total{% plural %}{{ counter }} total{% endblocktrans %} · {{ enabled_count }} {% trans "enabled" %}{% if new_count %} · <strong>{{ new_count }} {% trans "new" %}</strong>{% endif %}</span>
+    </div>
+
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.9rem;">
+        {% if provider.is_connected %}
+        <form method="post" action="{% url 'providers:resync' provider_id=provider.id %}"
+              hx-post="{% url 'providers:resync' provider_id=provider.id %}"
+              hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
+            {% csrf_token %}
+            <button type="submit" class="btn-small btn-ghost">{% trans "Resync" %}</button>
+        </form>
+        <form method="post" action="{% url 'providers:disconnect' provider_id=provider.id %}"
+              hx-post="{% url 'providers:disconnect' provider_id=provider.id %}"
+              hx-confirm="{% trans 'Disconnect this provider? Any of its currently-enabled models will be disabled too.' %}"
+              hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
+            {% csrf_token %}
+            <button type="submit" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Disconnect" %}</button>
+        </form>
+        {% else %}
+        <button type="button" class="btn-small"
+                onclick="document.getElementById('connectApiKey').value=''; document.getElementById('connectProviderForm').action='{% url 'providers:connect' provider_id=provider.id %}'; document.getElementById('connectModalTitle').textContent='{% trans "Connect" %} {{ provider.name|escapejs }}'; portalOpenModal('connectProviderModal');">
+            {% trans "Connect" %}
+        </button>
+        {% endif %}
+    </div>
+
+    {% if models %}
+    <details style="margin-top:0.9rem;">
+        <summary style="cursor:pointer; font-size:var(--text-xs); color:var(--color-text-muted);">{% trans "Manage models" %}</summary>
+        <div style="overflow-x:auto; margin-top:0.6rem;">
+        <table class="data">
+            <thead><tr><th>{% trans "Model" %}</th><th>{% trans "Tier" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
+            <tbody>
+            {% for m in models %}
+            <tr>
+                <td class="mono" style="font-size:0.8rem;">
+                    {{ m.display_label }}
+                    {% if m.is_new and not m.is_retired %}<span class="badge badge-muted">{% trans "New" %}</span>{% endif %}
+                    {% if m.is_retired %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
+                </td>
+                <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
+                <td>{% if m.is_enabled %}<span class="badge badge-success">{% trans "Enabled" %}</span>{% else %}<span class="badge badge-danger">{% trans "Disabled" %}</span>{% endif %}</td>
+                <td>
+                    <form method="post" action="{% url 'providers:toggle_model' model_id=m.id %}"
+                          hx-post="{% url 'providers:toggle_model' model_id=m.id %}"
+                          hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <label class="toggle-switch" title="{% if m.is_enabled %}{% trans 'Disable' %}{% else %}{% trans 'Enable' %}{% endif %}">
+                            <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_enabled %}checked{% endif %}>
+                            <span class="toggle"><span class="toggle-knob"></span></span>
+                        </label>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </details>
+    {% endif %}
+</div>

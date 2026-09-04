@@ -3,7 +3,9 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.test import TestCase
+from django.urls import reverse
 
+from accounts.models import User
 from providers.adapters import get_adapter_class
 from providers.adapters.anthropic import AnthropicAdapter
 from providers.adapters.gemini import GeminiAdapter
@@ -264,3 +266,208 @@ class MigrateModelsToProviderModelCommandTests(TestCase):
         self.assertFalse(ProviderModel.objects.filter(model_id="mystery-model").exists())
         # Everything else still gets mapped correctly despite the one bad row.
         self.assertEqual(ProviderModel.objects.filter(model_id="gpt-4o").count(), 1)
+
+
+class ProviderListViewTests(TestCase):
+    def test_requires_login(self):
+        response = self.client.get(reverse("providers:list"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_non_superadmin_roles_are_forbidden(self):
+        for role in [User.Role.USER, User.Role.MANAGER, User.Role.ADMIN]:
+            user = User.objects.create_user(email=f"{role}@example.com", password="pw12345!", role=role)
+            self.client.force_login(user)
+            response = self.client.get(reverse("providers:list"))
+            self.assertEqual(response.status_code, 403, role)
+            self.client.logout()
+
+    def test_superadmin_sees_all_seeded_providers(self):
+        superadmin = User.objects.create_user(email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN)
+        self.client.force_login(superadmin)
+        response = self.client.get(reverse("providers:list"))
+        self.assertEqual(response.status_code, 200)
+        for name in ["Anthropic", "OpenAI", "Google Gemini", "xAI Grok", "DeepSeek"]:
+            self.assertContains(response, name)
+
+
+class ConnectProviderViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="anthropic")
+
+    def test_empty_key_is_rejected(self):
+        response = self.client.post(
+            reverse("providers:connect", kwargs={"provider_id": self.provider.id}), {"api_key": ""}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.provider.refresh_from_db()
+        self.assertFalse(self.provider.is_connected)
+
+    @patch("providers.adapters.anthropic.AnthropicAdapter.test_connection", return_value=False)
+    def test_a_key_that_fails_verification_is_never_saved(self, mock_test):
+        response = self.client.post(
+            reverse("providers:connect", kwargs={"provider_id": self.provider.id}), {"api_key": "sk-bad-key"}
+        )
+        self.assertRedirects(response, reverse("providers:list"))
+        self.provider.refresh_from_db()
+        self.assertFalse(self.provider.is_connected)
+        self.assertIsNone(self.provider.get_decrypted_key())
+
+    @patch("providers.views.sync_provider")
+    @patch("providers.adapters.anthropic.AnthropicAdapter.test_connection", return_value=True)
+    def test_a_verified_key_connects_and_triggers_an_immediate_sync(self, mock_test, mock_sync):
+        mock_sync.return_value = {
+            "success": True,
+            "new_count": 2,
+            "updated_count": 0,
+            "retired_count": 0,
+            "error": None,
+        }
+        response = self.client.post(
+            reverse("providers:connect", kwargs={"provider_id": self.provider.id}), {"api_key": "sk-realvalue1234"}
+        )
+        self.assertRedirects(response, reverse("providers:list"))
+        self.provider.refresh_from_db()
+        self.assertTrue(self.provider.is_connected)
+        self.assertEqual(self.provider.get_decrypted_key(), "sk-realvalue1234")
+        self.assertEqual(self.provider.api_key_last4, "1234")
+        mock_sync.assert_called_once_with(self.provider)
+
+    @patch("providers.views.sync_provider")
+    @patch("providers.adapters.anthropic.AnthropicAdapter.test_connection", return_value=True)
+    def test_raw_key_never_appears_in_the_audit_log(self, mock_test, mock_sync):
+        from governance.models import AuditLog
+
+        mock_sync.return_value = {
+            "success": True,
+            "new_count": 0,
+            "updated_count": 0,
+            "retired_count": 0,
+            "error": None,
+        }
+        raw_key = "sk-averyuniquesecretvalue7777"
+        self.client.post(reverse("providers:connect", kwargs={"provider_id": self.provider.id}), {"api_key": raw_key})
+        self.assertTrue(AuditLog.objects.filter(action_type="provider.connect").exists())
+        for log in AuditLog.objects.all():
+            self.assertNotIn(raw_key, log.old_value)
+            self.assertNotIn(raw_key, log.new_value)
+
+    def test_non_superadmin_cannot_connect(self):
+        self.client.logout()
+        admin = User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.force_login(admin)
+        response = self.client.post(
+            reverse("providers:connect", kwargs={"provider_id": self.provider.id}), {"api_key": "sk-x"}
+        )
+        self.assertEqual(response.status_code, 403)
+        self.provider.refresh_from_db()
+        self.assertFalse(self.provider.is_connected)
+
+
+class ResyncProviderViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="anthropic")
+
+    def test_resync_without_a_connected_key_is_a_clean_no_op(self):
+        response = self.client.post(reverse("providers:resync", kwargs={"provider_id": self.provider.id}))
+        self.assertRedirects(response, reverse("providers:list"))
+        self.provider.refresh_from_db()
+        self.assertEqual(self.provider.last_sync_status, Provider.SyncStatus.NEVER)
+
+    @patch("providers.views.sync_provider")
+    def test_resync_when_connected_calls_sync_provider_and_returns_the_card_partial(self, mock_sync):
+        self.provider.set_api_key("sk-key")
+        self.provider.is_connected = True
+        self.provider.save()
+        mock_sync.return_value = {
+            "success": True,
+            "new_count": 1,
+            "updated_count": 0,
+            "retired_count": 0,
+            "error": None,
+        }
+        response = self.client.post(
+            reverse("providers:resync", kwargs={"provider_id": self.provider.id}),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_sync.assert_called_once_with(self.provider)
+        self.assertIn(f'id="provider-card-{self.provider.id}"'.encode(), response.content)
+        # A full-page (non-htmx) request never renders a bare partial - no <html> chrome either way here.
+        self.assertNotIn(b"<html", response.content)
+
+
+class DisconnectProviderViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="anthropic")
+        self.provider.set_api_key("sk-key")
+        self.provider.is_connected = True
+        self.provider.save()
+        self.enabled_model = ProviderModel.objects.create(
+            provider=self.provider, model_id="claude-x", is_enabled=True, is_new=False
+        )
+        self.disabled_model = ProviderModel.objects.create(
+            provider=self.provider, model_id="claude-y", is_enabled=False, is_new=False
+        )
+
+    def test_disconnect_clears_the_key_and_disables_every_enabled_model(self):
+        response = self.client.post(reverse("providers:disconnect", kwargs={"provider_id": self.provider.id}))
+        self.assertRedirects(response, reverse("providers:list"))
+        self.provider.refresh_from_db()
+        self.assertFalse(self.provider.is_connected)
+        self.assertIsNone(self.provider.get_decrypted_key())
+        self.enabled_model.refresh_from_db()
+        self.assertFalse(self.enabled_model.is_enabled)
+        # Never deleted - historical Message/Plan references must keep resolving.
+        self.assertTrue(ProviderModel.objects.filter(id=self.enabled_model.id).exists())
+
+    def test_disconnect_does_not_touch_an_already_disabled_model(self):
+        self.client.post(reverse("providers:disconnect", kwargs={"provider_id": self.provider.id}))
+        self.disabled_model.refresh_from_db()
+        self.assertFalse(self.disabled_model.is_enabled)
+
+
+class ToggleProviderModelViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="openai")
+        self.model = ProviderModel.objects.create(
+            provider=self.provider, model_id="gpt-x", is_enabled=False, is_new=True
+        )
+
+    def test_toggle_enables_and_marks_reviewed(self):
+        response = self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
+        self.assertRedirects(response, reverse("providers:list"))
+        self.model.refresh_from_db()
+        self.assertTrue(self.model.is_enabled)
+        self.assertFalse(self.model.is_new)
+
+    def test_toggling_again_disables_it(self):
+        self.model.is_enabled = True
+        self.model.save()
+        self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_enabled)
+
+    def test_non_superadmin_cannot_toggle(self):
+        self.client.logout()
+        admin = User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.force_login(admin)
+        response = self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
+        self.assertEqual(response.status_code, 403)
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_enabled)

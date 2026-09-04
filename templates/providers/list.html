@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Providers" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Providers" %}</h1>
+    <p>{% trans "Connect a provider with its own API key, then enable the specific models you want available in chat. A newly discovered model is always disabled by default — enabling it is always an explicit choice here." %}</p>
+
+    <div class="plan-grid mt-4" data-stagger data-stagger-items=".plan-card">
+        {% for row in provider_rows %}
+        {% include "providers/_provider_card.html" with provider=row.provider models=row.models new_count=row.new_count enabled_count=row.enabled_count %}
+        {% empty %}
+        <p class="text-faint">{% trans "No providers configured." %}</p>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="modal-overlay" id="connectProviderModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="connectModalTitle">{% trans "Connect provider" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('connectProviderModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <form method="post" id="connectProviderForm">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="connectApiKey">{% trans "API key" %}</label>
+                    <input class="input" style="margin:0;" type="password" name="api_key" id="connectApiKey" autocomplete="off" required>
+                    <p class="form-hint">{% trans "Verified against the provider's own API before anything is saved. Stored encrypted — never shown back in full, and never logged." %}</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-ghost" onclick="portalCloseModal('connectProviderModal')">{% trans "Cancel" %}</button>
+                <button type="submit" class="btn">{% trans "Connect" %}</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
