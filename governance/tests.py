@@ -581,29 +581,6 @@ class GovernanceRBACAndAuditTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_add_model_creates_disabled_unpriced_entry(self):
-        self.client.login(email="superadmin@example.com", password="pw12345!")
-        response = self.client.post(
-            reverse("governance:add_model"),
-            {
-                "provider": ModelConfig.Provider.OPENAI,
-                "model_name": "gpt-new",
-                "tier": ModelConfig.Tier.DEFAULT,
-            },
-        )
-        self.assertEqual(response.status_code, 302)
-        model_config = ModelConfig.objects.get(model_name="gpt-new")
-        self.assertFalse(model_config.is_enabled)
-        self.assertIsNone(model_config.input_cost_per_1m)
-
-    def test_add_model_forbidden_for_scoped_admin(self):
-        self.client.login(email="admin@example.com", password="pw12345!")
-        response = self.client.post(
-            reverse("governance:add_model"),
-            {"provider": ModelConfig.Provider.OPENAI, "model_name": "gpt-new", "tier": ModelConfig.Tier.DEFAULT},
-        )
-        self.assertEqual(response.status_code, 403)
-
     def test_update_model_pricing(self):
         model_config = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m")
         self.client.login(email="superadmin@example.com", password="pw12345!")
@@ -713,13 +690,13 @@ class UserOverridesTests(TestCase):
             provider="openai", model_name="gpt-5.6-sol", display_name="Sol", is_enabled=True
         )
 
-    def test_users_table_shows_override_count(self):
+    def test_edit_form_shows_override_count(self):
         UsageLimit.objects.create(user=self.target, daily_token_cap=1000)
-        response = self.client.get(reverse("governance:users"))
+        response = self.client.get(reverse("governance:user_edit_form", kwargs={"user_id": self.target.id}))
         self.assertContains(response, "1 custom override beyond Plan defaults")
 
-    def test_users_table_hides_override_link_when_none(self):
-        response = self.client.get(reverse("governance:users"))
+    def test_edit_form_hides_override_link_when_none(self):
+        response = self.client.get(reverse("governance:user_edit_form", kwargs={"user_id": self.target.id}))
         self.assertNotContains(response, "custom override")
 
     def test_overrides_page_lists_usage_limit_and_model_permissions(self):
@@ -1123,6 +1100,22 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.user_b.refresh_from_db()
         self.assertTrue(self.user_b.is_active)
+
+    def test_admin_can_view_own_departments_user_edit_form(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:user_edit_form", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.user_a.email)
+
+    def test_admin_cannot_view_another_departments_user_edit_form(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:user_edit_form", kwargs={"user_id": self.user_b.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_regular_user_cannot_view_any_edit_form(self):
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:user_edit_form", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 403)
 
     def test_admin_can_change_own_departments_user_email(self):
         self.client.login(email="admina@example.com", password="pw12345!")
@@ -1728,9 +1721,7 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.client.login(email="plain@example.com", password="pw12345!")
         response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user_a.id}))
         self.assertEqual(response.status_code, 403)
-        response = self.client.post(
-            reverse("governance:add_model"), {"provider": "openai", "model_name": "x", "tier": "default"}
-        )
+        response = self.client.post(reverse("governance:toggle_model_enabled", kwargs={"model_id": 99999}))
         self.assertEqual(response.status_code, 403)
         response = self.client.post(reverse("governance:add_department"), {"name": "Nope"})
         self.assertEqual(response.status_code, 403)

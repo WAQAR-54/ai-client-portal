@@ -3,36 +3,9 @@
 {% block title %}{% trans "Models" %} — {% trans "AI Client Portal" %}{% endblock %}
 {% block content %}
 
-<div class="card mt-4" style="margin-bottom:1.5rem;">
-    <h2 style="margin-bottom:0;">{% trans "Add a model" %}</h2>
-    <p class="text-faint" style="font-size:0.82rem; margin-top:0.3rem;">
-        {% trans "Manual entry only — to discover a provider's current model list automatically, connect it from the Providers page instead." %}
-    </p>
-    <form method="post" action="{% url 'governance:add_model' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
-        {% csrf_token %}
-        <div style="flex:1; min-width:160px;">
-            <label for="provider">{% trans "Provider" %}</label>
-            <select class="input" name="provider" id="provider" style="margin:0;">
-                {% for value, label in providers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-            </select>
-        </div>
-        <div style="flex:2; min-width:220px;">
-            <label for="model_name">{% trans "Model identifier" %}</label>
-            <input class="input" type="text" name="model_name" id="model_name" placeholder="e.g. gpt-4o-mini" style="margin:0;" required>
-        </div>
-        <div style="flex:1; min-width:140px;">
-            <label for="tier">{% trans "Tier" %}</label>
-            <select class="input" name="tier" id="tier" style="margin:0;">
-                {% for value, label in tiers %}<option value="{{ value }}" {% if value == "default" %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select>
-        </div>
-        <button type="submit">{% trans "Add model" %}</button>
-    </form>
-</div>
-
 <div class="card" style="overflow-x:auto;">
     <h1>{% trans "AI Models" %}</h1>
-    <p>{% trans "Verify pricing against current provider docs before enabling a model — pricing is never auto-filled." %}</p>
+    <p>{% trans "Verify pricing against current provider docs before enabling a model — pricing is never auto-filled. To add a new model, connect its provider and enable it from the Providers page." %}</p>
 
     {% url 'governance:models' as filter_url %}
     <form class="filter-toolbar">

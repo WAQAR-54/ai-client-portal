@@ -75,6 +75,26 @@ def _scope_by_user_department(request, qs, path="user__department_id"):
     return qs
 
 
+def _assignable_roles_and_scope(request):
+    """(assignable_roles, teams_qs, departments_qs) for the Users edit UI -
+    shared by UserListView (the whole table) and user_edit_form (one user's
+    edit modal) so the two can never drift on what a scoped Admin is
+    allowed to see/assign. A scoped Admin can only ever promote/demote
+    between User and Manager, within their own department — never create
+    another Admin or a SuperAdmin (that would let an Admin escalate their
+    own department's access beyond what was granted to them). A SuperAdmin
+    can set anyone to any role."""
+    if _is_scoped_admin(request.user):
+        assignable_roles = [(v, l) for v, l in User.Role.choices if v in (User.Role.USER, User.Role.MANAGER)]
+        teams_qs = Team.objects.filter(department_id=request.user.department_id)
+        departments_qs = Department.objects.filter(id=request.user.department_id)
+    else:
+        assignable_roles = list(User.Role.choices)
+        teams_qs = Team.objects.select_related("department").order_by("department__name", "name")
+        departments_qs = Department.objects.order_by("name")
+    return assignable_roles, teams_qs, departments_qs
+
+
 def _get_scoped_user_or_403(request, user_id):
     """Fetch a target user for a write action, enforcing that a scoped
     Admin can only ever touch users in their own department — raises
@@ -494,19 +514,7 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
             users.sort(key=lambda u: plan_info[u.id]["engagement"] or -1, reverse=True)
             ctx[self.context_object_name] = users
 
-        # A scoped Admin can only ever promote/demote between User and
-        # Manager, within their own department — never create another Admin
-        # or a SuperAdmin (that would let an Admin escalate their own
-        # department's access beyond what was granted to them). A
-        # SuperAdmin can set anyone to any role.
-        if _is_scoped_admin(self.request.user):
-            assignable_roles = [(v, l) for v, l in User.Role.choices if v in (User.Role.USER, User.Role.MANAGER)]
-            teams_qs = Team.objects.filter(department_id=self.request.user.department_id)
-            departments_qs = Department.objects.filter(id=self.request.user.department_id)
-        else:
-            assignable_roles = list(User.Role.choices)
-            teams_qs = Team.objects.select_related("department").order_by("department__name", "name")
-            departments_qs = Department.objects.order_by("name")
+        assignable_roles, teams_qs, departments_qs = _assignable_roles_and_scope(self.request)
 
         return ctx | {
             "roles": User.Role.choices,
@@ -523,6 +531,26 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
             "sort": self.request.GET.get("sort", ""),
             "total_count": _scope_users(self.request, User.objects.all()).count(),
         }
+
+
+@role_required(User.Role.ADMIN)
+@require_GET
+def user_edit_form(request, user_id):
+    """Modal body for the Users list's "Edit" button - every write action
+    for one user (role, department, team, email, password reset, suspend/
+    activate) in one place, instead of the per-row popover this replaced.
+    Each field still POSTs to its own existing endpoint, unchanged."""
+    target = _get_scoped_user_or_403(request, user_id)
+    assignable_roles, teams_qs, departments_qs = _assignable_roles_and_scope(request)
+    context = {
+        "u": target,
+        "assignable_roles": assignable_roles,
+        "assignable_roles_values": [v for v, _l in assignable_roles],
+        "departments": departments_qs,
+        "teams": teams_qs,
+        "override_count": count_user_overrides(target),
+    }
+    return render(request, "governance/_user_edit_form.html", context)
 
 
 @role_required(User.Role.ADMIN)
@@ -1045,8 +1073,6 @@ class ModelListView(FilterableListMixin, SuperAdminRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         return super().get_context_data(**kwargs) | {
-            "providers": ModelConfig.Provider.choices,
-            "tiers": ModelConfig.Tier.choices,
             "search": self.request.GET.get("search", ""),
             "status_filter": self.request.GET.get("status", ""),
             "total_count": ModelConfig.objects.count(),
@@ -1127,26 +1153,6 @@ def _parse_decimal(raw):
 def _int_or_none(raw):
     raw = (raw or "").strip()
     return int(raw) if raw.isdigit() else None
-
-
-@role_required(User.Role.SUPERADMIN, exact=True)
-@require_http_methods(["POST"])
-def add_model(request):
-    provider = request.POST.get("provider", "")
-    model_name = request.POST.get("model_name", "").strip()
-    tier = request.POST.get("tier", ModelConfig.Tier.DEFAULT)
-
-    if provider not in ModelConfig.Provider.values or not model_name or tier not in ModelConfig.Tier.values:
-        return HttpResponseBadRequest("Invalid model")
-
-    model_config, created = ModelConfig.objects.get_or_create(
-        provider=provider,
-        model_name=model_name,
-        defaults={"tier": tier},
-    )
-    if created:
-        log_action(request.user, "model.add", model_config, new_value=model_name)
-    return redirect("governance:models")
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)

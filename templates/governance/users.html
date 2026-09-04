@@ -52,6 +52,20 @@ overflow-y:hidden still clips the table to the card's rounded corners on this on
 <div class="card mt-4" style="padding:0; overflow-x:auto; overflow-y:hidden;" id="users-table">
     {% include "governance/_users_table.html" %}
 </div>
+
+<div class="modal-overlay" id="editUserModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="editUserModalTitle">{% trans "Edit user" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('editUserModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="editUserModalBody">
+            <!-- Populated by htmx from governance:user_edit_form -->
+        </div>
+    </div>
+</div>
 <script>
 // The chip row itself is never htmx-swapped (only #users-table is), so the
 // active/indicator state has to be updated client-side immediately rather

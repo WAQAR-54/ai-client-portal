@@ -811,7 +811,6 @@ main { animation: page-fade-in 240ms var(--ease); }
     main,
     .profile-dropdown,
     .notif-dropdown,
-    .row-menu-panel,
     .model-select-panel,
     .usage-popover-panel,
     .export-menu-panel,
@@ -1010,42 +1009,13 @@ table.data tbody tr.htmx-swapping {
     font-size: 0.85rem;
 }
 
-/* "..." row-actions menu (Users table) - a native <details> popover, same
-   pattern as the notification bell / profile menu. Holds real functionality
-   (role, department, suspend) that doesn't fit the approved design's fixed
-   column set, so it moved here instead of living inline or behind hover. */
-.row-menu { position: relative; display: inline-block; }
-.row-menu summary {
-    list-style: none;
-    cursor: pointer;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-text-faint);
-    transition: background 150ms var(--ease), color 150ms var(--ease);
-}
-.row-menu summary::-webkit-details-marker { display: none; }
-.row-menu summary::marker { content: ""; }
-.row-menu summary:hover { background: var(--color-surface-muted); color: var(--color-text); }
-.row-menu-panel {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 0.3rem);
-    min-width: 220px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
-    z-index: 20;
-    padding: 0.7rem;
-    transform-origin: top right;
-    animation: scale-fade-in 160ms var(--ease-spring);
-}
-.row-menu-panel select { margin: 0 0 0.6rem; font-size: 0.85rem; }
-.row-menu-panel form:last-of-type select { margin-bottom: 0; }
+/* Section labels inside the Users "Edit" modal (_user_edit_form.html) -
+   Role/Department/Team/Email/Reset password. Used to live inside a
+   per-row <details> popover (.row-menu/.row-menu-panel, now removed - its
+   position:absolute popover could render off in the wrong place once an
+   ancestor .card:hover picked up a transform, same class of bug as the
+   chat page's row-menu popover fixed earlier) - a centered modal has no
+   such positioning trap. */
 .row-menu-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-faint); margin-bottom: 0.3rem; }
 
 /* Bulk-select checkbox (Users table) - present and fully functional, but

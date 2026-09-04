@@ -14,10 +14,10 @@
 
 {% comment %}
 Matches the approved design's exact column set - User, Plan, Status, Requests (30d), Change
-plan - all visible directly in the row, nothing tucked behind hover. Role and Department
-don't fit that structure (the design never needed them), so they've moved out of the row
-entirely into the "⋯" actions menu at the end, alongside Suspend/Activate and the plan-
-override link - real functionality, just relocated instead of hidden behind an interaction.
+plan - all visible directly in the row, nothing tucked behind hover. Role, Department, Team,
+Email, Reset password, Suspend/Activate, and the plan-override link all live in one place -
+the Edit button's centered modal (see users.html/_user_edit_form.html) - rather than a
+per-row popover.
 {% endcomment %}
 <table class="data">
     <thead>
@@ -64,83 +64,12 @@ override link - real functionality, just relocated instead of hidden behind an i
                 </form>
             </td>
             <td>
-                <details class="row-menu">
-                    <summary aria-label="{% trans 'More actions' %}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-                    </summary>
-                    <div class="row-menu-panel">
-                        <div class="row-menu-label">{% trans "Role" %}</div>
-                        {% if u.role in assignable_roles_values %}
-                        <form method="post" action="{% url 'governance:change_user_role' user_id=u.id %}">
-                            {% csrf_token %}
-                            <select name="role" onchange="this.form.requestSubmit()">
-                                {% for value, label in assignable_roles %}
-                                <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </form>
-                        {% else %}
-                        {# A scoped Admin can only toggle User<->Manager - someone already at Admin/SuperAdmin isn't editable from here at all, not just grayed out. #}
-                        <span class="badge badge-muted">{{ u.get_role_display }}</span>
-                        {% endif %}
-
-                        {% if request.user.is_superadmin %}
-                        <div class="row-menu-label">{% trans "Department" %}</div>
-                        <form method="post" action="{% url 'governance:change_user_department' user_id=u.id %}">
-                            {% csrf_token %}
-                            <select name="department_id" onchange="this.form.requestSubmit()">
-                                <option value="">{% trans "— none —" %}</option>
-                                {% for d in departments %}
-                                <option value="{{ d.id }}" {% if u.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </form>
-                        {% elif u.department %}
-                        <div class="row-menu-label">{% trans "Department" %}</div>
-                        <div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">{{ u.department.name }}</div>
-                        {% endif %}
-
-                        <div class="row-menu-label">{% if u.role == "manager" %}{% trans "Manages team" %}{% else %}{% trans "Team" %}{% endif %}</div>
-                        <form method="post" action="{% url 'governance:change_user_team' user_id=u.id %}">
-                            {% csrf_token %}
-                            <select name="team_id" onchange="this.form.requestSubmit()">
-                                <option value="">{% trans "— none —" %}</option>
-                                {% for t in teams %}
-                                <option value="{{ t.id }}" {% if u.team_id == t.id %}selected{% endif %}>{{ t.name }} ({{ t.department.name }})</option>
-                                {% endfor %}
-                            </select>
-                        </form>
-
-                        <div class="row-menu-label">{% trans "Email" %}</div>
-                        <form method="post" action="{% url 'governance:change_user_email' user_id=u.id %}" style="display:flex; gap:0.4rem; margin-bottom:0.6rem;">
-                            {% csrf_token %}
-                            <input class="input" style="margin:0; flex:1; font-size:0.82rem;" type="email" name="email" value="{{ u.email }}" required>
-                            <button type="submit" class="btn-small btn-ghost">{% trans "Save" %}</button>
-                        </form>
-
-                        <div class="row-menu-label">{% trans "Reset password" %}</div>
-                        <form method="post" action="{% url 'governance:reset_user_password' user_id=u.id %}" style="display:flex; flex-direction:column; gap:0.4rem; margin-bottom:0.6rem;"
-                              onsubmit="return confirm('{% blocktrans with email=u.email %}Reset the password for {{ email }}? They will need the new password to log in next time.{% endblocktrans %}');">
-                            {% csrf_token %}
-                            <input class="input" style="margin:0; font-size:0.82rem;" type="password" name="new_password1" placeholder="{% trans 'New password' %}" autocomplete="new-password" required>
-                            <input class="input" style="margin:0; font-size:0.82rem;" type="password" name="new_password2" placeholder="{% trans 'Confirm password' %}" autocomplete="new-password" required>
-                            <button type="submit" class="btn-small btn-ghost" style="width:100%;">{% trans "Reset password" %}</button>
-                        </form>
-
-                        {% if info.override_count %}
-                        <a href="{% url 'governance:user_overrides' user_id=u.id %}" class="text-faint" style="font-size:0.78rem; display:block; margin-bottom:0.6rem;">
-                            {% blocktrans count counter=info.override_count %}{{ counter }} custom override beyond Plan defaults — view/clear{% plural %}{{ counter }} custom overrides beyond Plan defaults — view/clear{% endblocktrans %}
-                        </a>
-                        {% endif %}
-
-                        <form method="post" action="{% url 'governance:toggle_user_active' user_id=u.id %}">
-                            {% csrf_token %}
-                            <button type="submit" class="btn-small {% if u.is_active %}btn-danger{% else %}btn-ghost{% endif %}" style="width:100%;">
-                                {% if u.is_active %}{% trans "Suspend user" %}{% else %}{% trans "Activate user" %}{% endif %}
-                            </button>
-                        </form>
-                    </div>
-                </details>
+                <button type="button" class="btn-small btn-ghost"
+                        hx-get="{% url 'governance:user_edit_form' user_id=u.id %}"
+                        hx-target="#editUserModalBody" hx-swap="innerHTML"
+                        onclick="document.getElementById('editUserModalTitle').textContent = '{{ u.email|escapejs }}'; portalOpenModal('editUserModal');">
+                    {% trans "Edit" %}
+                </button>
             </td>
         </tr>
         {% endwith %}
