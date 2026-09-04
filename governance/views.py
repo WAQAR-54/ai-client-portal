@@ -591,8 +591,17 @@ def add_user(request):
             return HttpResponseBadRequest("Invalid department")
 
     team_id = request.POST.get("team_id") or None
-    if team_id and not teams_qs.filter(id=team_id).exists():
+    team = teams_qs.filter(id=team_id).first() if team_id else None
+    if team_id and not team:
         return HttpResponseBadRequest("Invalid team")
+    if role == User.Role.MANAGER and not team:
+        # A Manager without an assigned team has nothing to see (My Team
+        # checks Team.manager, not just User.team) - same hard requirement
+        # change_user_role's promote-to-Manager flow already enforces.
+        django_messages.error(
+            request, _("A Manager needs a team — pick one (create it first on the Teams page if needed).")
+        )
+        return redirect("governance:users")
 
     new_user = User(email=email, role=role, department_id=department_id, team_id=team_id)
     form = SetPasswordForm(user=new_user, data=request.POST)
@@ -602,7 +611,21 @@ def add_user(request):
                 django_messages.error(request, error)
         return redirect("governance:users")
 
-    form.save()  # sets the password and, since new_user has no pk yet, creates the row
+    with transaction.atomic():
+        form.save()  # sets the password and, since new_user has no pk yet, creates the row
+        if role == User.Role.MANAGER:
+            # Make the new account this team's actual manager, not just a
+            # member with role=Manager - without this they'd see "no team
+            # assigned" (My Team resolves via Team.manager's managed_team
+            # reverse accessor). Displaces whoever managed this team before,
+            # same as change_user_role's own promote-to-Manager flow.
+            previous_manager = team.manager
+            if previous_manager is not None:
+                previous_manager.team = None
+                previous_manager.save(update_fields=["team"])
+            team.manager = new_user
+            team.save(update_fields=["manager"])
+
     log_action(request.user, "user.create", new_user, new_value=new_user.email)
     django_messages.success(request, _("%(email)s was created.") % {"email": new_user.email})
     return redirect("governance:users")

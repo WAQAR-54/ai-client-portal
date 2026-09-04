@@ -1215,6 +1215,60 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.assertTrue(new_user.is_active)
         self.assertTrue(AuditLog.objects.filter(action_type="user.create", target_id=str(new_user.id)).exists())
 
+    def test_adding_a_manager_with_a_team_makes_them_the_real_manager(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "newmanager@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.MANAGER,
+                "team_id": self.team_a.id,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        new_manager = User.objects.get(email="newmanager@example.com")
+        self.assertEqual(new_manager.team_id, self.team_a.id)
+        self.team_a.refresh_from_db()
+        # The real thing My Team's ManagerDashboardView checks - not just User.team.
+        self.assertEqual(self.team_a.manager_id, new_manager.id)
+        self.assertEqual(new_manager.managed_team, self.team_a)
+
+    def test_adding_a_manager_without_a_team_is_rejected(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "orphanmanager@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.MANAGER,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(User.objects.filter(email="orphanmanager@example.com").exists())
+
+    def test_adding_a_manager_displaces_the_teams_previous_manager(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.assertEqual(self.team_a.manager_id, self.manager_a.id)
+        response = self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "replacementmanager@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.MANAGER,
+                "team_id": self.team_a.id,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.team_a.refresh_from_db()
+        new_manager = User.objects.get(email="replacementmanager@example.com")
+        self.assertEqual(self.team_a.manager_id, new_manager.id)
+        self.manager_a.refresh_from_db()
+        self.assertIsNone(self.manager_a.team_id)
+
     def test_scoped_admin_cannot_choose_a_different_department(self):
         self.client.login(email="admina@example.com", password="pw12345!")
         self.client.post(
