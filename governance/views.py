@@ -90,6 +90,41 @@ def _scope_teams(request, qs):
     return qs
 
 
+def _get_team_member_or_403(request, user_id):
+    """Fetch a target user for a Manager write action, enforcing that a
+    Manager can only ever touch members of their OWN team — raises
+    PermissionDenied (403), not a silent 404, same reasoning as
+    _get_scoped_user_or_403 above for a department-scoped Admin. Returns
+    (target, team)."""
+    team = getattr(request.user, "managed_team", None)
+    if team is None:
+        raise PermissionDenied("You don't manage a team.")
+    target = get_object_or_404(User, id=user_id)
+    if target.team_id != team.id:
+        raise PermissionDenied("That user isn't on your team.")
+    return target, team
+
+
+def _toggle_user_model_permission(actor, target, model_config):
+    """Shared by the SuperAdmin's org-wide ModelPermissionsView and a
+    Manager's team-scoped equivalent (toggle_member_model_permission below)
+    - same toggle-between-explicit-deny-and-explicit-allow semantics either
+    way, just gated by a different permission check at the call site. A
+    Manager's grant here (is_allowed=True) is deliberately allowed to win
+    over their own Team.disabled_models restriction for this one person -
+    see governance/plans.py's module docstring: "an explicit personal
+    is_allowed=True override still wins over it (that's an Admin's [/here,
+    a Manager's] more-specific call for one person)"."""
+    permission, _ = UserModelPermission.objects.get_or_create(
+        user=target, model_config=model_config, defaults={"is_allowed": True}
+    )
+    old_value = permission.is_allowed
+    permission.is_allowed = not permission.is_allowed
+    permission.save(update_fields=["is_allowed"])
+    log_action(actor, "model.permission_change", permission, old_value=old_value, new_value=permission.is_allowed)
+    return permission
+
+
 def _scope_limits(request, qs):
     """A UsageLimit targets either a user or a department (never both, per
     its own CheckConstraint) — scope on whichever is set."""
@@ -1159,21 +1194,7 @@ class ModelPermissionsView(SuperAdminRequiredMixin, TemplateView):
     def post(self, request, model_id):
         model_config = get_object_or_404(ModelConfig, id=model_id)
         target = get_object_or_404(User, id=request.POST.get("user_id"))
-        permission, _ = UserModelPermission.objects.get_or_create(
-            user=target,
-            model_config=model_config,
-            defaults={"is_allowed": True},
-        )
-        old_value = permission.is_allowed
-        permission.is_allowed = not permission.is_allowed
-        permission.save(update_fields=["is_allowed"])
-        log_action(
-            request.user,
-            "model.permission_change",
-            permission,
-            old_value=old_value,
-            new_value=permission.is_allowed,
-        )
+        _toggle_user_model_permission(request.user, target, model_config)
         return redirect("governance:model_permissions", model_id=model_config.id)
 
 
@@ -1923,6 +1944,60 @@ def toggle_team_model(request, model_id):
             {"model": mc, "disabled": mc.id in disabled_ids} for mc in ModelConfig.objects.filter(is_enabled=True)
         ]
         return render(request, "governance/_manager_model_rows.html", {"team": team, "model_rows": model_rows})
+    return redirect("governance:manager_dashboard")
+
+
+@role_required(User.Role.MANAGER, exact=True)
+@require_http_methods(["POST"])
+def remove_team_member(request, user_id):
+    """A Manager's second write action: remove a member from their own
+    team WITHOUT touching the account itself - login, Plan, personal
+    UserModelPermission overrides, and history are all untouched, only
+    team membership (and therefore this team's disabled_models scoping,
+    and manager_member_permissions access below) is cleared. Everything
+    else about "managing" a user's account (suspend, role, department,
+    plan) stays exclusively an Admin/SuperAdmin action - unchanged by
+    this addition."""
+    target, team = _get_team_member_or_403(request, user_id)
+    if target.id == request.user.id:
+        return HttpResponseBadRequest("You can't remove yourself from your own team.")
+
+    target.team = None
+    target.save(update_fields=["team"])
+    log_action(request.user, "team.member_removed", target, old_value=team.name, new_value="")
+    django_messages.success(
+        request, _("%(email)s was removed from %(team)s.") % {"email": target.email, "team": team.name}
+    )
+    return redirect("governance:manager_dashboard")
+
+
+@role_required(User.Role.MANAGER, exact=True)
+@require_GET
+def manager_member_permissions(request, user_id):
+    """Modal body: which of the org's enabled models this one team member
+    has been explicitly denied/restored, on top of whatever the team's own
+    restriction (Team.disabled_models) and the member's Plan already set -
+    see _toggle_user_model_permission for the precedence this feeds into."""
+    target, team = _get_team_member_or_403(request, user_id)
+    denied_model_ids = set(
+        UserModelPermission.objects.filter(user=target, is_allowed=False).values_list("model_config_id", flat=True)
+    )
+    context = {
+        "target": target,
+        "models": ModelConfig.objects.filter(is_enabled=True),
+        "denied_model_ids": denied_model_ids,
+    }
+    return render(request, "governance/_manager_member_permissions.html", context)
+
+
+@role_required(User.Role.MANAGER, exact=True)
+@require_http_methods(["POST"])
+def toggle_member_model_permission(request, user_id, model_id):
+    target, team = _get_team_member_or_403(request, user_id)
+    model_config = get_object_or_404(ModelConfig, id=model_id, is_enabled=True)
+    _toggle_user_model_permission(request.user, target, model_config)
+    if request.headers.get("HX-Request"):
+        return manager_member_permissions(request, user_id)
     return redirect("governance:manager_dashboard")
 
 

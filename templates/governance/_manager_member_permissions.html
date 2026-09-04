@@ -1,0 +1,22 @@
+{% load i18n %}
+<p class="text-muted" style="margin-top:0; font-size:var(--text-xs);">
+    {% blocktrans with email=target.email %}Deny or restore specific models for {{ email }}, on top of your team's own restriction above. A restore here wins even over your team's restriction, for this person only.{% endblocktrans %}
+</p>
+<div style="display:flex; flex-direction:column; gap:0.5rem;">
+    {% for m in models %}
+    <div class="toggle-row" style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem;">
+        <span>{{ m.display_label }}</span>
+        <form method="post" action="{% url 'governance:toggle_member_model_permission' user_id=target.id model_id=m.id %}"
+              hx-post="{% url 'governance:toggle_member_model_permission' user_id=target.id model_id=m.id %}"
+              hx-target="#managerMemberPermissionsModalBody" hx-swap="innerHTML">
+            {% csrf_token %}
+            <label class="toggle-switch" title="{% if m.id in denied_model_ids %}{% trans 'Restore access' %}{% else %}{% trans 'Deny access' %}{% endif %}">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.id not in denied_model_ids %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+    {% empty %}
+    <p class="text-faint">{% trans "No enabled models to manage." %}</p>
+    {% endfor %}
+</div>

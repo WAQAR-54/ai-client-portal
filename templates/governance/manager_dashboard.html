@@ -31,7 +31,7 @@
 <div class="card mt-5" style="overflow-x:auto;">
     <h2>{% trans "Team activity" %}</h2>
     <table class="data">
-        <thead><tr><th>{% trans "Member" %}</th><th>{% trans "Tokens" %}</th><th>{% trans "Cost" %}</th><th>{% trans "Engagement" %}</th></tr></thead>
+        <thead><tr><th>{% trans "Member" %}</th><th>{% trans "Tokens" %}</th><th>{% trans "Cost" %}</th><th>{% trans "Engagement" %}</th><th></th></tr></thead>
         <tbody>
             {% for row in members %}
             <tr>
@@ -39,12 +39,39 @@
                 <td class="mono">{{ row.tokens }}</td>
                 <td class="mono">${{ row.cost|floatformat:2 }}</td>
                 <td class="mono">{% if row.engagement %}{{ row.engagement }}x{% else %}—{% endif %}</td>
+                <td style="white-space:nowrap;">
+                    <button type="button" class="btn-small btn-ghost"
+                            hx-get="{% url 'governance:manager_member_permissions' user_id=row.user.id %}"
+                            hx-target="#managerMemberPermissionsModalBody" hx-swap="innerHTML"
+                            onclick="document.getElementById('managerMemberPermissionsModalTitle').textContent = '{% trans "Model access" %} — {{ row.user.email|escapejs }}'; portalOpenModal('managerMemberPermissionsModal');">
+                        {% trans "Model access" %}
+                    </button>
+                    <form method="post" action="{% url 'governance:remove_team_member' user_id=row.user.id %}" style="display:inline;"
+                          onsubmit="return confirm('{% blocktrans with email=row.user.email %}Remove {{ email }} from this team? Their account, Plan, and history are untouched — they just stop being scoped to this team.{% endblocktrans %}');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Remove from team" %}</button>
+                    </form>
+                </td>
             </tr>
             {% empty %}
-            <tr class="empty-state-row"><td colspan="4">{% trans "No members on this team yet." %}</td></tr>
+            <tr class="empty-state-row"><td colspan="5">{% trans "No members on this team yet." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
+</div>
+
+<div class="modal-overlay" id="managerMemberPermissionsModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="managerMemberPermissionsModalTitle">{% trans "Model access" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('managerMemberPermissionsModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="managerMemberPermissionsModalBody">
+            <!-- Populated by htmx from governance:manager_member_permissions -->
+        </div>
+    </div>
 </div>
 {% endif %}
 {% endblock %}

@@ -9,6 +9,17 @@ urlpatterns = [
     path("search/", views.global_search, name="global_search"),
     path("my-team/", views.ManagerDashboardView.as_view(), name="manager_dashboard"),
     path("my-team/models/<int:model_id>/toggle/", views.toggle_team_model, name="toggle_team_model"),
+    path("my-team/members/<int:user_id>/remove/", views.remove_team_member, name="remove_team_member"),
+    path(
+        "my-team/members/<int:user_id>/permissions/",
+        views.manager_member_permissions,
+        name="manager_member_permissions",
+    ),
+    path(
+        "my-team/members/<int:user_id>/permissions/<int:model_id>/toggle/",
+        views.toggle_member_model_permission,
+        name="toggle_member_model_permission",
+    ),
     path("users/", views.UserListView.as_view(), name="users"),
     path("users/<int:user_id>/toggle-active/", views.toggle_user_active, name="toggle_user_active"),
     path("users/<int:user_id>/change-role/", views.change_user_role, name="change_user_role"),

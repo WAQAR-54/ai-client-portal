@@ -1591,6 +1591,153 @@ class RoleHierarchyAccessControlTests(TestCase):
         UserModelPermission.objects.create(user=self.user_a, model_config=model, is_allowed=True)
         self.assertIn(model.id, effective_allowed_model_ids(self.user_a))
 
+    # --- remove_team_member / manager_member_permissions: a Manager's other
+    # two write actions - remove a member from their own team (without
+    # deleting the account), and grant/revoke a specific model for one
+    # member of their own team. Both are strictly server-side scoped to the
+    # Manager's own team, same enforcement style as everything else in this
+    # class. ---
+
+    def test_manager_can_remove_own_team_member(self):
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:remove_team_member", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 302)
+        self.user_a.refresh_from_db()
+        self.assertIsNone(self.user_a.team_id)
+        # The account itself is untouched.
+        self.assertTrue(self.user_a.is_active)
+        self.assertEqual(self.user_a.department_id, self.dept_a.id)
+        self.assertTrue(
+            AuditLog.objects.filter(action_type="team.member_removed", target_id=str(self.user_a.id)).exists()
+        )
+
+    def test_manager_cannot_remove_a_user_outside_their_team(self):
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:remove_team_member", kwargs={"user_id": self.user_b.id}))
+        self.assertEqual(response.status_code, 403)
+        self.user_b.refresh_from_db()
+        self.assertEqual(self.user_b.department_id, self.dept_b.id)
+
+    def test_manager_cannot_remove_themselves(self):
+        # manager_a.team is already team_a (set in setUp), so they're
+        # technically a "member" of the team they manage too.
+        self.client.login(email="managera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:remove_team_member", kwargs={"user_id": self.manager_a.id}))
+        self.assertEqual(response.status_code, 400)
+        self.manager_a.refresh_from_db()
+        self.assertEqual(self.manager_a.team_id, self.team_a.id)
+
+    def test_manager_with_no_team_cannot_remove_anyone(self):
+        User.objects.create_user(
+            email="lonemanager2@example.com", password="pw12345!", role=User.Role.MANAGER, department=self.dept_a
+        )
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="lonemanager2@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:remove_team_member", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_regular_user_cannot_remove_a_team_member(self):
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="usera@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:remove_team_member", kwargs={"user_id": self.user_a.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_view_and_toggle_own_member_model_permission(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m6", is_enabled=True)
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="managera@example.com", password="pw12345!")
+
+        get_response = self.client.get(
+            reverse("governance:manager_member_permissions", kwargs={"user_id": self.user_a.id})
+        )
+        self.assertEqual(get_response.status_code, 200)
+
+        post_response = self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_a.id, "model_id": model.id},
+            )
+        )
+        self.assertEqual(post_response.status_code, 302)
+        permission = UserModelPermission.objects.get(user=self.user_a, model_config=model)
+        self.assertFalse(permission.is_allowed)
+        self.assertTrue(
+            AuditLog.objects.filter(action_type="model.permission_change", target_id=str(permission.id)).exists()
+        )
+
+        # Toggling again restores it.
+        self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_a.id, "model_id": model.id},
+            )
+        )
+        permission.refresh_from_db()
+        self.assertTrue(permission.is_allowed)
+
+    def test_manager_permission_grant_wins_over_own_teams_disabled_model(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m7", is_enabled=True)
+        plan = Plan.objects.create(name="Team Plan 3")
+        plan.allowed_models.add(model)
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        assign_plan(self.user_a, plan)
+        self.team_a.disabled_models.add(model)
+        self.assertNotIn(model.id, effective_allowed_model_ids(self.user_a))
+
+        self.client.login(email="managera@example.com", password="pw12345!")
+        self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_a.id, "model_id": model.id},
+            )
+        )
+        # First toggle denies explicitly (still excluded); second restores -
+        # matches _toggle_user_model_permission's explicit-deny/explicit-allow cycle.
+        self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_a.id, "model_id": model.id},
+            )
+        )
+        self.assertIn(model.id, effective_allowed_model_ids(self.user_a))
+
+    def test_manager_cannot_view_or_toggle_permissions_for_a_user_outside_their_team(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m8", is_enabled=True)
+        self.client.login(email="managera@example.com", password="pw12345!")
+
+        get_response = self.client.get(
+            reverse("governance:manager_member_permissions", kwargs={"user_id": self.user_b.id})
+        )
+        self.assertEqual(get_response.status_code, 403)
+
+        post_response = self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_b.id, "model_id": model.id},
+            )
+        )
+        self.assertEqual(post_response.status_code, 403)
+        self.assertFalse(UserModelPermission.objects.filter(user=self.user_b, model_config=model).exists())
+
+    def test_regular_user_cannot_toggle_a_team_members_model_permission(self):
+        model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m9", is_enabled=True)
+        self.user_a.team = self.team_a
+        self.user_a.save(update_fields=["team"])
+        self.client.login(email="usera@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse(
+                "governance:toggle_member_model_permission",
+                kwargs={"user_id": self.user_a.id, "model_id": model.id},
+            )
+        )
+        self.assertEqual(response.status_code, 403)
+
     # --- change_user_team: the other half of the Manager feature - an
     # Admin adding regular users onto a team as MEMBERS (change_user_role
     # only ever set this for the person becoming that team's Manager). ---
