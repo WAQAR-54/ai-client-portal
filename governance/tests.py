@@ -797,6 +797,83 @@ class DepartmentManagementTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+class PlanFormViewTests(TestCase):
+    """chat/router.py reads Plan.allowed_provider_models exclusively now
+    (see governance/plans.py::effective_allowed_provider_model_ids) - the
+    New/Edit Plan form has to actually write that field, not just the
+    legacy Plan.allowed_models one, or a plan created here would grant
+    zero real model access."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.provider_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="gpt-plan-test", is_enabled=True
+        )
+
+    def test_new_plan_sets_allowed_provider_models(self):
+        response = self.client.post(
+            reverse("governance:plan_new"),
+            {"name": "Test Plan", "provider_model_ids": [str(self.provider_model.id)]},
+        )
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Test Plan")
+        self.assertIn(self.provider_model, plan.allowed_provider_models.all())
+
+    def test_edit_plan_updates_allowed_provider_models(self):
+        plan = Plan.objects.create(name="Existing Plan")
+        response = self.client.post(
+            reverse("governance:plan_edit", kwargs={"plan_id": plan.id}),
+            {"name": "Existing Plan", "provider_model_ids": [str(self.provider_model.id)]},
+        )
+        self.assertEqual(response.status_code, 302)
+        plan.refresh_from_db()
+        self.assertIn(self.provider_model, plan.allowed_provider_models.all())
+
+    def test_removing_all_provider_models_clears_them(self):
+        plan = Plan.objects.create(name="Existing Plan 2")
+        plan.allowed_provider_models.add(self.provider_model)
+        response = self.client.post(
+            reverse("governance:plan_edit", kwargs={"plan_id": plan.id}), {"name": "Existing Plan 2"}
+        )
+        self.assertEqual(response.status_code, 302)
+        plan.refresh_from_db()
+        self.assertEqual(plan.allowed_provider_models.count(), 0)
+
+    def test_legacy_model_ids_still_work_alongside(self):
+        legacy_model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="legacy-plan-m")
+        response = self.client.post(
+            reverse("governance:plan_new"),
+            {
+                "name": "Mixed Plan",
+                "model_ids": [str(legacy_model.id)],
+                "provider_model_ids": [str(self.provider_model.id)],
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Mixed Plan")
+        self.assertIn(legacy_model, plan.allowed_models.all())
+        self.assertIn(self.provider_model, plan.allowed_provider_models.all())
+
+    def test_plan_form_shows_only_enabled_provider_models(self):
+        disabled = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="disabled-one", is_enabled=False
+        )
+        response = self.client.get(reverse("governance:plan_new"))
+        provider_models = list(response.context["provider_models"])
+        self.assertIn(self.provider_model, provider_models)
+        self.assertNotIn(disabled, provider_models)
+
+    def test_non_superadmin_cannot_access_plan_form(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:plan_new"))
+        self.assertEqual(response.status_code, 403)
+
+
 class AddTeamTests(TestCase):
     """teams.html only shows a department picker when there's more than one
     to choose from - the view must fall back sensibly with exactly one,

@@ -28,7 +28,7 @@
             <div class="plan-row"><span>{% trans "Daily tokens" %}</span><span class="mono">{{ p.daily_token_limit|default:"—" }}</span></div>
             <div class="plan-row"><span>{% trans "Per-request" %}</span><span class="mono">{% if p.max_requests_per_period %}{{ p.max_requests_per_period }}/{{ p.get_period_display }}{% else %}—{% endif %}</span></div>
             <div class="plan-row"><span>{% trans "Monthly budget" %}</span><span class="mono">{% if p.monthly_budget_cap %}${{ p.monthly_budget_cap }}{% else %}—{% endif %}</span></div>
-            <div class="plan-row"><span>{% trans "Models" %}</span><span>{% blocktrans count counter=p.allowed_models.count %}{{ counter }} model{% plural %}{{ counter }} models{% endblocktrans %}</span></div>
+            <div class="plan-row"><span>{% trans "Models" %}</span><span>{% blocktrans count counter=p.allowed_provider_models.count|add:p.allowed_models.count %}{{ counter }} model{% plural %}{{ counter }} models{% endblocktrans %}</span></div>
             <div class="feat-list">
                 {% for key, label in p.feature_flags.items %}
                 <span class="feat-tag {% if label %}on{% else %}off{% endif %}">{{ key }}</span>

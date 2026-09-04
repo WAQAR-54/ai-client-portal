@@ -97,17 +97,42 @@
     </div>
 
     <div class="form-section-label">{% trans "Allowed models" %}</div>
-    <div class="toggle-row-group" style="max-height:220px; overflow-y:auto; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:0.75rem;">
-        {% for m in models %}
+    <p class="text-faint" style="font-size:0.82rem; margin:-0.5rem 0 0.75rem;">
+        {% trans "This is what chat actually enforces. Only models enabled on the Providers page appear here." %}
+    </p>
+    {% regroup provider_models by provider.name as provider_model_groups %}
+    <div class="toggle-row-group" style="max-height:260px; overflow-y:auto; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:0.75rem;">
+        {% for group in provider_model_groups %}
+        <div class="row-menu-label" style="margin-top:0.4rem;">{{ group.grouper }}</div>
+        {% for m in group.list %}
         <label class="toggle-switch toggle-row">
-            <input type="checkbox" name="model_ids" value="{{ m.id }}" {% if m.id in selected_model_ids %}checked{% endif %}>
+            <input type="checkbox" name="provider_model_ids" value="{{ m.id }}" {% if m.id in selected_provider_model_ids %}checked{% endif %}>
             <span class="toggle"><span class="toggle-knob"></span></span>
-            <span>{{ m.display_label }} <span class="text-faint" style="font-size:0.8rem;">({{ m.get_provider_display }} · {{ m.get_tier_display }})</span></span>
+            <span>{{ m.display_label }} <span class="text-faint" style="font-size:0.8rem;">({{ m.get_tier_display }})</span></span>
         </label>
+        {% endfor %}
         {% empty %}
-        <span class="text-faint">{% trans "No models configured yet." %}</span>
+        <span class="text-faint">{% trans "No models enabled yet — connect a provider and enable some from the Providers page." %}</span>
         {% endfor %}
     </div>
+
+    {% if models %}
+    <details style="margin-top:0.75rem;">
+        <summary style="cursor:pointer; font-size:var(--text-xs); color:var(--color-text-muted);">{% trans "Allowed models (legacy)" %}</summary>
+        <p class="text-faint" style="font-size:0.8rem; margin:0.4rem 0;">
+            {% trans "The old model registry — chat no longer reads this for new plans. Only kept for plans that predate the Providers page." %}
+        </p>
+        <div class="toggle-row-group" style="max-height:220px; overflow-y:auto; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:0.75rem;">
+            {% for m in models %}
+            <label class="toggle-switch toggle-row">
+                <input type="checkbox" name="model_ids" value="{{ m.id }}" {% if m.id in selected_model_ids %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+                <span>{{ m.display_label }} <span class="text-faint" style="font-size:0.8rem;">({{ m.get_provider_display }} · {{ m.get_tier_display }})</span></span>
+            </label>
+            {% endfor %}
+        </div>
+    </details>
+    {% endif %}
 
     <button type="submit">{% if plan %}{% trans "Save changes" %}{% else %}{% trans "Create plan" %}{% endif %}</button>
     <a href="{% url 'governance:plans' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">{% trans "Cancel" %}</a>

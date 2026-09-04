@@ -1031,6 +1031,10 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
             "plan": plan,
             "models": ModelConfig.objects.order_by("provider", "model_name"),
             "selected_model_ids": set(plan.allowed_models.values_list("id", flat=True)) if plan else set(),
+            "provider_models": ProviderModel.objects.filter(is_enabled=True).select_related("provider"),
+            "selected_provider_model_ids": (
+                set(plan.allowed_provider_models.values_list("id", flat=True)) if plan else set()
+            ),
             "known_flags": [(key, label, bool(existing_flags.get(key))) for key, label in KNOWN_FEATURE_FLAGS],
             "period_choices": Plan.Period.choices,
         }
@@ -1064,6 +1068,7 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
         with transaction.atomic():
             plan.save()
             plan.allowed_models.set(request.POST.getlist("model_ids"))
+            plan.allowed_provider_models.set(request.POST.getlist("provider_model_ids"))
             if make_default:
                 Plan.objects.exclude(pk=plan.pk).update(is_default=False)
                 plan.is_default = True
