@@ -2824,8 +2824,11 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    screens, triggered by the hamburger in .mobile-topbar, instead of
    squeezing itself into a horizontal strip above the content (the old
    approach made both the chat conversation list and the admin sub-nav
-   effectively unreachable - scrolled out of view with no visual cue). ---------- */
-@media (max-width: 720px) {
+   effectively unreachable - scrolled out of view with no visual cue).
+   900px (not 720px) so a tablet in portrait orientation (768px is the
+   most common) also gets the touch-friendly drawer instead of a
+   persistent ~260px desktop sidebar eating a third of the screen. ---------- */
+@media (max-width: 900px) {
     .mobile-topbar {
         display: flex;
         align-items: center;
@@ -3240,7 +3243,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    tier names were sized for - at 3 columns the head wrapped into an ugly
    2-line title fighting a 2-line badge. auto-fit/minmax keeps cards a
    comfortable width and drops to fewer per row instead of squeezing. */
-.provider-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.provider-grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
 .provider-grid .plan-card-head { flex-wrap: wrap; gap: 0.4rem; row-gap: 0.15rem; }
 .provider-grid .plan-card-title { min-width: 0; }
 .provider-grid .plan-card-head .badge { flex-shrink: 0; white-space: nowrap; }
