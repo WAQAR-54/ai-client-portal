@@ -110,6 +110,10 @@
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
                         {% trans "Feature Visibility" %}
                     </a>
+                    <a href="{% url 'governance:budget_automation' %}" class="{% if request.resolver_match.url_name == "budget_automation" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        {% trans "Budget Automation" %}
+                    </a>
                     {% endif %}
                     {% if user|has_feature:"upgrade_requests" %}
                     <a href="{% url 'governance:upgrade_requests' %}" class="{% if request.resolver_match.url_name == "upgrade_requests" %}active{% endif %}">
@@ -126,6 +130,26 @@
                     {% endif %}
 
                     {% if user.is_superadmin %}
+                    <div class="nav-group-label">{% trans "Automation" %}</div>
+                    <a href="{% url 'governance:routing_rules' %}" class="{% if request.resolver_match.url_name == "routing_rules" or request.resolver_match.url_name == "routing_rule_new" or request.resolver_match.url_name == "routing_rule_edit" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></svg>
+                        {% trans "Smart Routing" %}
+                    </a>
+                    <a href="{% url 'governance:compliance_routing' %}" class="{% if request.resolver_match.url_name == "compliance_routing" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        {% trans "Compliance Routing" %}
+                    </a>
+                    <a href="{% url 'governance:retention_provider_approval' %}" class="{% if request.resolver_match.url_name == "retention_provider_approval" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        {% trans "Retention & Approval" %}
+                    </a>
+                    <a href="{% url 'governance:data_handling' %}" class="{% if request.resolver_match.url_name == "data_handling" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                        {% trans "Data Handling" %}
+                    </a>
+                    {% endif %}
+
+                    {% if user.is_superadmin %}
                     <div class="nav-group-label">{% trans "Models" %}</div>
                     <a href="{% url 'providers:list' %}" class="{% if request.resolver_match.app_name == "providers" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V7a2 2 0 0 1 2-2h6l2 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M12 11v4"/><path d="M10 13h4"/></svg>
@@ -137,7 +161,7 @@
                     </a>
                     {% endif %}
 
-                    {% if user|has_feature:"usage_cost" or user|has_feature:"audit_logs" or user|has_feature:"feedback" %}
+                    {% if user|has_feature:"usage_cost" or user|has_feature:"audit_logs" or user|has_feature:"feedback" or user.is_superadmin %}
                     <div class="nav-group-label">{% trans "System" %}</div>
                     {% if user|has_feature:"usage_cost" %}
                     <a href="{% url 'governance:usage' %}" class="{% if request.resolver_match.url_name == "usage" %}active{% endif %}">
@@ -155,6 +179,12 @@
                     <a href="{% url 'governance:feedback' %}" class="{% if request.resolver_match.url_name == "feedback" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
                         {% trans "Feedback" %}
+                    </a>
+                    {% endif %}
+                    {% if user.is_superadmin %}
+                    <a href="{% url 'governance:email_logs' %}" class="{% if request.resolver_match.url_name == "email_logs" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><polyline points="22 6 12 13 2 6"/></svg>
+                        {% trans "Email Logs" %}
                     </a>
                     {% endif %}
                     {% endif %}
@@ -267,6 +297,18 @@
             // to a modal, so Esc closing them is the expected behavior.
             document.querySelectorAll("details[open]").forEach(function(d) { d.open = false; });
         });
+        // The admin nav has grown past one screenful for a SuperAdmin (five
+        // groups deep by the time Automation/Models/System are all visible)
+        // - .app-nav scrolls internally rather than pushing the sidebar past
+        // 100vh, but with no auto-scroll a page whose own nav link sits below
+        // the fold opened looking like that link was missing entirely
+        // (confirmed: Data Handling's link was invisible on load until
+        // manually scrolled to). block:"nearest" only moves the nav's own
+        // scrollbar, never the outer page.
+        var activeNavLink = document.querySelector(".app-nav a.active, .app-nav-sub a.active");
+        if (activeNavLink) {
+            activeNavLink.scrollIntoView({block: "nearest"});
+        }
     </script>
     {% endif %}
 </body>
