@@ -20,6 +20,19 @@
         <span>{% trans "Models" %}</span>
         <span>{% blocktrans count counter=models|length %}{{ counter }} total{% plural %}{{ counter }} total{% endblocktrans %} · {{ enabled_count }} {% trans "enabled" %}{% if new_count %} · <strong>{{ new_count }} {% trans "new" %}</strong>{% endif %}</span>
     </div>
+    <div class="plan-row">
+        <span title="{% trans 'Where this provider actually hosts/processes requests — feeds Compliance Routing' %}">{% trans "Region" %}</span>
+        <form method="post" action="{% url 'providers:update_region' provider_id=provider.id %}"
+              hx-post="{% url 'providers:update_region' provider_id=provider.id %}"
+              hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
+            {% csrf_token %}
+            <select name="region" class="input" style="margin:0; padding:0.2rem 0.5rem; font-size:0.8rem;" onchange="this.closest('form').requestSubmit()">
+                {% for value, label in provider.Region.choices %}
+                <option value="{{ value }}" {% if provider.region == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
 
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.9rem;">
         {% if provider.is_connected %}

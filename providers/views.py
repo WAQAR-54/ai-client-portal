@@ -89,12 +89,58 @@ def connect_provider(request, provider_id):
 
     provider.set_api_key(raw_key)
     provider.is_connected = True
-    provider.save(update_fields=["api_key_encrypted", "api_key_last4", "is_connected"])
+    # A fresh connect always resets the compliance gate to pending - see
+    # governance/views.py::ComplianceRoutingView and toggle_provider_model
+    # below, which refuses to enable any model on a pending provider.
+    provider.approval_status = Provider.ApprovalStatus.PENDING
+    provider.connected_by = request.user
+    provider.save(
+        update_fields=["api_key_encrypted", "api_key_last4", "is_connected", "approval_status", "connected_by"]
+    )
     log_action(request.user, "provider.connect", provider, new_value=f"key ending {provider.api_key_last4}")
 
     result = sync_provider(provider)
     _sync_result_message(request, provider, result)
     return redirect("providers:list")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def approve_provider(request, provider_id):
+    provider = get_object_or_404(Provider, id=provider_id, approval_status=Provider.ApprovalStatus.PENDING)
+    provider.approval_status = Provider.ApprovalStatus.APPROVED
+    provider.save(update_fields=["approval_status"])
+    log_action(request.user, "provider.approve", provider)
+    if request.headers.get("HX-Request"):
+        pending = Provider.objects.filter(approval_status=Provider.ApprovalStatus.PENDING).select_related(
+            "connected_by"
+        )
+        return render(request, "governance/_pending_providers_list.html", {"pending_providers": pending})
+    return redirect("governance:compliance_routing")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def reject_provider(request, provider_id):
+    """Rejecting a pending provider disconnects it (same effect as
+    providers:disconnect - clears the key, force-disables its models) but
+    renders back into the Retention & Provider Approval page's pending
+    list rather than a provider card, since that's where this button
+    lives (see governance/_pending_providers_list.html)."""
+    provider = get_object_or_404(Provider, id=provider_id, approval_status=Provider.ApprovalStatus.PENDING)
+    disabled_count = provider.models.filter(is_enabled=True).update(is_enabled=False)
+    provider.api_key_encrypted = b""
+    provider.api_key_last4 = ""
+    provider.is_connected = False
+    provider.save(update_fields=["api_key_encrypted", "api_key_last4", "is_connected"])
+    log_action(request.user, "provider.reject", provider, old_value=f"{disabled_count} model(s) disabled")
+
+    if request.headers.get("HX-Request"):
+        pending = Provider.objects.filter(approval_status=Provider.ApprovalStatus.PENDING).select_related(
+            "connected_by"
+        )
+        return render(request, "governance/_pending_providers_list.html", {"pending_providers": pending})
+    return redirect("governance:retention_provider_approval")
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)
@@ -113,6 +159,26 @@ def resync_provider(request, provider_id):
         )
         _sync_result_message(request, provider, result)
 
+    if request.headers.get("HX-Request"):
+        return render(request, "providers/_provider_card.html", _provider_row(provider))
+    return redirect("providers:list")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def update_provider_region(request, provider_id):
+    """Feeds governance's Compliance Routing (governance/plans.py::
+    region_allowed_provider_model_ids) - an admin's own factual call about
+    where this provider actually hosts/processes requests, not a guess
+    based on the provider's name."""
+    provider = get_object_or_404(Provider, id=provider_id)
+    region = request.POST.get("region", "")
+    if region not in Provider.Region.values:
+        return HttpResponseBadRequest("Invalid region")
+    old_value = provider.region
+    provider.region = region
+    provider.save(update_fields=["region"])
+    log_action(request.user, "provider.region_update", provider, old_value=old_value, new_value=region)
     if request.headers.get("HX-Request"):
         return render(request, "providers/_provider_card.html", _provider_row(provider))
     return redirect("providers:list")
@@ -162,7 +228,21 @@ def toggle_provider_model(request, model_id):
     viewing the page."""
     provider_model = get_object_or_404(ProviderModel, id=model_id)
     old_value = provider_model.is_enabled
-    provider_model.is_enabled = not provider_model.is_enabled
+    turning_on = not provider_model.is_enabled
+    if turning_on and provider_model.provider.approval_status == Provider.ApprovalStatus.PENDING:
+        django_messages.error(
+            request,
+            _(
+                "%(provider)s is still awaiting compliance sign-off — approve it first under "
+                "Retention & Provider Approval."
+            )
+            % {"provider": provider_model.provider.name},
+        )
+        if request.headers.get("HX-Request"):
+            return render(request, "providers/_provider_card.html", _provider_row(provider_model.provider))
+        return redirect("providers:list")
+
+    provider_model.is_enabled = turning_on
     provider_model.is_new = False
     provider_model.save(update_fields=["is_enabled", "is_new"])
     log_action(

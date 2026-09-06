@@ -38,4 +38,5 @@ def sync_all_connected_providers():
             NotificationType.MODEL_SYNC_AVAILABLE,
             title="New AI models available to sync",
             body=f"{total_new} new model(s) found: {preview}. Visit Admin, Providers to review.",
+            metadata={"total_new": total_new, "preview": preview},
         )

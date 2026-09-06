@@ -6,7 +6,7 @@
     <h1>{% trans "Providers" %}</h1>
     <p>{% trans "Connect a provider with its own API key, then enable the specific models you want available in chat. A newly discovered model is always disabled by default — enabling it is always an explicit choice here." %}</p>
 
-    <div class="plan-grid mt-4" data-stagger data-stagger-items=".plan-card">
+    <div class="plan-grid provider-grid mt-4" data-stagger data-stagger-items=".plan-card">
         {% for row in provider_rows %}
         {% include "providers/_provider_card.html" with provider=row.provider models=row.models new_count=row.new_count enabled_count=row.enabled_count %}
         {% empty %}

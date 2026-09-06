@@ -29,9 +29,21 @@ class Provider(models.Model):
         SUCCESS = "success", _("Success")
         FAILED = "failed", _("Failed")
 
+    class Region(models.TextChoices):
+        US = "us", _("United States")
+        EU = "eu", _("European Union")
+        GLOBAL = "global", _("Global / other")
+
     name = models.CharField(max_length=50)
     slug = models.SlugField(unique=True)
     adapter_type = models.CharField(max_length=50, choices=AdapterType.choices)
+    # Where this provider actually hosts/processes requests - an admin's
+    # own factual call, not inferred from the provider's name. Drives
+    # governance's Compliance Routing (a Department restricted to "EU-only"
+    # can only reach ProviderModels whose Provider.region is EU) - see
+    # governance/plans.py::region_allowed_provider_model_ids. Defaults to
+    # GLOBAL (unrestricted) rather than guessing a real provider's hosting.
+    region = models.CharField(max_length=10, choices=Region.choices, default=Region.GLOBAL)
     # Only meaningful for OPENAI_COMPATIBLE providers that aren't one of the
     # built-in ones (Grok, DeepSeek) - those default their base_url in the
     # adapter itself (see providers/adapters/openai_compatible.py) so a
@@ -42,6 +54,29 @@ class Provider(models.Model):
     api_key_encrypted = models.BinaryField(blank=True, default=b"")
     api_key_last4 = models.CharField(max_length=4, blank=True)
     is_connected = models.BooleanField(default=False)
+
+    class ApprovalStatus(models.TextChoices):
+        APPROVED = "approved", _("Approved")
+        PENDING = "pending", _("Pending compliance review")
+
+    # Defaults to APPROVED so a provider connected before this field existed
+    # (or seeded by a migration) doesn't retroactively lose access - only a
+    # NEW connect_provider() call sets this to PENDING going forward (see
+    # providers/views.py). Governs whether any of this provider's models
+    # can be enabled at all (providers/views.py::toggle_provider_model).
+    approval_status = models.CharField(max_length=10, choices=ApprovalStatus.choices, default=ApprovalStatus.APPROVED)
+    connected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    # Whether this provider's API terms let them train on request data -
+    # an admin's own factual read of that provider's actual contract/API
+    # terms, not inferred from its name. Feeds governance's Data Handling
+    # "only allow zero-retention models" toggle (governance/router
+    # enforcement in chat/router.py). Defaults to False (assumed
+    # zero-retention) only as a neutral "not yet reviewed" starting point -
+    # an admin should confirm the real answer per provider, not trust the
+    # default.
+    trains_on_data = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=20, choices=SyncStatus.choices, default=SyncStatus.NEVER)
     last_sync_error = models.TextField(blank=True)
@@ -109,6 +144,20 @@ class ProviderModel(models.Model):
     # deliberate opt-in philosophy as is_enabled itself, just one more
     # explicit admin decision before a Manager ever sees it as an option.
     is_manager_assignable = models.BooleanField(default=False)
+    # A third, independent gate: whether this model shows up in the
+    # standalone Code Playground's model dropdown - deliberately NOT tied
+    # to any Plan's allowed_provider_models, since Playground is reached by
+    # direct link, not through Chat (see governance's Code Playground
+    # dashboard panel, which is where a SuperAdmin flips this). Off by
+    # default, same opt-in philosophy as is_enabled/is_manager_assignable.
+    is_playground_enabled = models.BooleanField(default=False)
+    # A fourth, independent gate: whether this model can be picked in the
+    # standalone Domain Generator's model dropdown (see domaingen.views.
+    # DomainGeneratorView) - same standalone-tool, off-by-default pattern
+    # as is_playground_enabled, its own separate admin decision since a
+    # model fit for chat/code isn't necessarily one an admin wants spending
+    # real tokens on domain-name brainstorming.
+    is_domain_generator_enabled = models.BooleanField(default=False)
     # True until an admin has reviewed (i.e. explicitly toggled, in either
     # direction) this model at least once - lets the Providers UI badge
     # "3 new models pending review" after a background resync finds

@@ -366,6 +366,25 @@ class ConnectProviderViewTests(TestCase):
         self.provider.refresh_from_db()
         self.assertFalse(self.provider.is_connected)
 
+    @patch("providers.views.sync_provider")
+    @patch("providers.adapters.anthropic.AnthropicAdapter.test_connection", return_value=True)
+    def test_connecting_resets_approval_to_pending(self, mock_test, mock_sync):
+        mock_sync.return_value = {
+            "success": True,
+            "new_count": 0,
+            "updated_count": 0,
+            "retired_count": 0,
+            "error": None,
+        }
+        self.provider.approval_status = Provider.ApprovalStatus.APPROVED
+        self.provider.save()
+        self.client.post(
+            reverse("providers:connect", kwargs={"provider_id": self.provider.id}), {"api_key": "sk-real1234"}
+        )
+        self.provider.refresh_from_db()
+        self.assertEqual(self.provider.approval_status, Provider.ApprovalStatus.PENDING)
+        self.assertEqual(self.provider.connected_by, self.superadmin)
+
 
 class ResyncProviderViewTests(TestCase):
     def setUp(self):
@@ -438,6 +457,56 @@ class DisconnectProviderViewTests(TestCase):
         self.assertFalse(self.disabled_model.is_enabled)
 
 
+class ApproveRejectProviderViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="anthropic")
+        self.provider.set_api_key("sk-key")
+        self.provider.is_connected = True
+        self.provider.approval_status = Provider.ApprovalStatus.PENDING
+        self.provider.save()
+        self.enabled_model = ProviderModel.objects.create(
+            provider=self.provider, model_id="claude-x", is_enabled=True, is_new=False
+        )
+
+    def test_approve_sets_approved(self):
+        response = self.client.post(reverse("providers:approve", kwargs={"provider_id": self.provider.id}))
+        self.assertRedirects(response, reverse("governance:compliance_routing"))
+        self.provider.refresh_from_db()
+        self.assertEqual(self.provider.approval_status, Provider.ApprovalStatus.APPROVED)
+
+    def test_approve_is_a_no_op_on_an_already_approved_provider(self):
+        self.provider.approval_status = Provider.ApprovalStatus.APPROVED
+        self.provider.save()
+        response = self.client.post(reverse("providers:approve", kwargs={"provider_id": self.provider.id}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_reject_disconnects_and_disables_models(self):
+        response = self.client.post(reverse("providers:reject", kwargs={"provider_id": self.provider.id}))
+        self.assertRedirects(response, reverse("governance:retention_provider_approval"))
+        self.provider.refresh_from_db()
+        self.assertFalse(self.provider.is_connected)
+        self.assertIsNone(self.provider.get_decrypted_key())
+        self.enabled_model.refresh_from_db()
+        self.assertFalse(self.enabled_model.is_enabled)
+
+    def test_non_superadmin_cannot_approve_or_reject(self):
+        self.client.logout()
+        admin = User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.force_login(admin)
+        self.assertEqual(
+            self.client.post(reverse("providers:approve", kwargs={"provider_id": self.provider.id})).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(reverse("providers:reject", kwargs={"provider_id": self.provider.id})).status_code,
+            403,
+        )
+
+
 class ToggleProviderModelViewTests(TestCase):
     def setUp(self):
         self.superadmin = User.objects.create_user(
@@ -462,6 +531,32 @@ class ToggleProviderModelViewTests(TestCase):
         self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
         self.model.refresh_from_db()
         self.assertFalse(self.model.is_enabled)
+
+    def test_cannot_enable_a_model_on_a_pending_provider(self):
+        self.provider.approval_status = Provider.ApprovalStatus.PENDING
+        self.provider.save()
+        self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_enabled)
+
+    def test_can_disable_a_model_on_a_pending_provider(self):
+        # Turning OFF an already-enabled model must never be blocked by the
+        # approval gate - only turning one ON is.
+        self.provider.approval_status = Provider.ApprovalStatus.PENDING
+        self.provider.save()
+        self.model.is_enabled = True
+        self.model.save()
+        self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
+        self.model.refresh_from_db()
+        self.assertFalse(self.model.is_enabled)
+
+    def test_can_enable_once_approved(self):
+        self.provider.approval_status = Provider.ApprovalStatus.PENDING
+        self.provider.save()
+        self.client.post(reverse("providers:approve", kwargs={"provider_id": self.provider.id}))
+        self.client.post(reverse("providers:toggle_model", kwargs={"model_id": self.model.id}))
+        self.model.refresh_from_db()
+        self.assertTrue(self.model.is_enabled)
 
     def test_non_superadmin_cannot_toggle(self):
         self.client.logout()
