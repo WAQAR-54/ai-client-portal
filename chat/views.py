@@ -339,6 +339,14 @@ def post_message(request, conversation_id):
                 status=400,
             )
 
+        from governance.limits import UsageLimitExceeded
+        from governance.plans import check_message_length_limit
+
+        try:
+            check_message_length_limit(request.user, content)
+        except UsageLimitExceeded as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=400)
+
     if uploaded_file:
         from governance.plans import has_feature
 
@@ -451,6 +459,15 @@ def post_arena_message(request, conversation_id):
             {"message": _("Comparing models isn't included in your current plan.")},
             status=403,
         )
+
+    from governance.limits import UsageLimitExceeded
+    from governance.plans import check_compare_use_limit, check_message_length_limit
+
+    try:
+        check_message_length_limit(request.user, content)
+        check_compare_use_limit(request.user)
+    except UsageLimitExceeded as exc:
+        return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=400)
 
     visible_ids = set(models_visible_to_user(request.user).values_list("id", flat=True))
     model_a_id = request.POST.get("model_a_id", "").strip()

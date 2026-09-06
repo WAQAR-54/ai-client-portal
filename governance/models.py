@@ -283,6 +283,36 @@ class Plan(models.Model):
         ),
     )
 
+    # Capability Limits: numeric caps distinct from the request/token-volume
+    # caps above - these bound specific actions rather than overall usage.
+    # Null means "no cap" for the first two; for the standalone tools' caps
+    # null means "use that tool's own global default" (playground.views.
+    # DAILY_RUN_LIMIT / domaingen.views.DAILY_SEARCH_LIMIT), since those
+    # already have a sensible baseline that shouldn't silently become
+    # unlimited just because a plan doesn't override it.
+    max_message_length = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max characters allowed in a single message. Null = no limit.",
+    )
+    max_compare_uses_per_day = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max Compare-mode (2-model) messages per day. Null = no limit.",
+    )
+    max_playground_runs_per_day = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Overrides Code Playground's global daily run limit for this plan. Null = use the global default.",
+    )
+    max_domain_searches_per_day = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Overrides Domain Generator's global daily search limit for this plan. Null = use the global default."
+        ),
+    )
+
     is_active = models.BooleanField(
         default=True,
         help_text="Inactive plans can't be newly assigned, but existing history is kept.",

@@ -81,6 +81,12 @@ urlpatterns = [
         name="toggle_provider_trains_on_data",
     ),
     path("data-handling/pii-rules/<int:rule_id>/update/", views.update_pii_rule, name="update_pii_rule"),
+    path("capability-limits/", views.CapabilityLimitsView.as_view(), name="capability_limits"),
+    path(
+        "capability-limits/<int:plan_id>/update/",
+        views.update_capability_limits,
+        name="update_capability_limits",
+    ),
     path("email-logs/", views.EmailLogListView.as_view(), name="email_logs"),
     path("email-logs/settings/update/", views.update_email_settings, name="update_email_settings"),
     path("email-logs/settings/test/", views.send_test_email, name="send_test_email"),

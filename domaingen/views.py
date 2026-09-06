@@ -145,10 +145,12 @@ class DomainGeneratorView(LoginRequiredMixin, RequireStandaloneToolAccessMixin, 
 @require_POST
 def generate_domains(request):
     from chat.providers import ProviderError, get_provider
+    from governance.plans import effective_domain_search_daily_limit
     from providers.models import ProviderModel
 
+    daily_limit = effective_domain_search_daily_limit(request.user)
     searches_used = _today_search_count(request.user)
-    if searches_used >= DAILY_SEARCH_LIMIT:
+    if searches_used >= daily_limit:
         return JsonResponse({"error": "Daily search limit reached. Try again tomorrow."}, status=429)
 
     query = request.POST.get("query", "").strip()
@@ -221,7 +223,7 @@ def generate_domains(request):
     return JsonResponse(
         {
             "results": results,
-            "remaining": max(0, DAILY_SEARCH_LIMIT - (searches_used + 1)),
+            "remaining": max(0, daily_limit - (searches_used + 1)),
             "cost_display": f"${estimated_cost:.4f}" if estimated_cost is not None else None,
             "search_id": search.id,
         }

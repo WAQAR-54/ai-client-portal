@@ -22,9 +22,13 @@ from governance.models import (
 )
 from governance.plans import (
     assign_plan,
+    check_compare_use_limit,
+    check_message_length_limit,
     check_request_count_limit,
     effective_allowed_model_ids,
     effective_allowed_provider_model_ids,
+    effective_domain_search_daily_limit,
+    effective_playground_daily_limit,
     region_allowed_provider_model_ids,
     get_budget_automation_status,
     validate_context_tokens,
@@ -2778,3 +2782,144 @@ class FeatureVisibilityTests(TestCase):
         admin_rows = {row["key"]: row["enabled"] for row in response.context["admin_rows"]}
         self.assertFalse(admin_rows["limits"])
         self.assertTrue(admin_rows["teams"])
+
+
+class CapabilityLimitsHelperTests(TestCase):
+    """governance/plans.py's numeric per-action caps - distinct from the
+    existing token-volume/request-count caps already covered elsewhere in
+    this file."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.plan = Plan.objects.create(name="Capped")
+
+    def test_message_length_limit_passes_with_no_plan(self):
+        check_message_length_limit(self.user, "x" * 10000)
+
+    def test_message_length_limit_passes_when_plan_has_no_cap(self):
+        assign_plan(self.user, self.plan)
+        check_message_length_limit(self.user, "x" * 10000)
+
+    def test_message_length_limit_raises_when_over_cap(self):
+        self.plan.max_message_length = 10
+        self.plan.save(update_fields=["max_message_length"])
+        assign_plan(self.user, self.plan)
+        with self.assertRaises(UsageLimitExceeded):
+            check_message_length_limit(self.user, "x" * 11)
+
+    def test_message_length_limit_passes_at_exactly_the_cap(self):
+        self.plan.max_message_length = 10
+        self.plan.save(update_fields=["max_message_length"])
+        assign_plan(self.user, self.plan)
+        check_message_length_limit(self.user, "x" * 10)
+
+    def test_compare_use_limit_passes_with_no_plan(self):
+        check_compare_use_limit(self.user)
+
+    def test_compare_use_limit_raises_after_daily_cap_reached(self):
+        from chat.models import ArenaComparison, Conversation, Message
+
+        self.plan.max_compare_uses_per_day = 1
+        self.plan.save(update_fields=["max_compare_uses_per_day"])
+        assign_plan(self.user, self.plan)
+
+        conversation = Conversation.objects.create(user=self.user, title="c")
+        user_message = Message.objects.create(conversation=conversation, role=Message.Role.USER, content="hi")
+        response_a = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        response_b = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        provider = Provider.objects.get(slug="openai")
+        model_a = ProviderModel.objects.create(provider=provider, model_id="a")
+        model_b = ProviderModel.objects.create(provider=provider, model_id="b")
+        ArenaComparison.objects.create(
+            conversation=conversation,
+            user_message=user_message,
+            response_a=response_a,
+            response_b=response_b,
+            model_a=model_a,
+            model_b=model_b,
+        )
+
+        with self.assertRaises(UsageLimitExceeded):
+            check_compare_use_limit(self.user)
+
+    def test_effective_playground_daily_limit_falls_back_to_global_default(self):
+        from playground.views import DAILY_RUN_LIMIT
+
+        self.assertEqual(effective_playground_daily_limit(self.user), DAILY_RUN_LIMIT)
+
+    def test_effective_playground_daily_limit_uses_plan_override(self):
+        self.plan.max_playground_runs_per_day = 3
+        self.plan.save(update_fields=["max_playground_runs_per_day"])
+        assign_plan(self.user, self.plan)
+        self.assertEqual(effective_playground_daily_limit(self.user), 3)
+
+    def test_effective_domain_search_daily_limit_falls_back_to_global_default(self):
+        from domaingen.views import DAILY_SEARCH_LIMIT
+
+        self.assertEqual(effective_domain_search_daily_limit(self.user), DAILY_SEARCH_LIMIT)
+
+    def test_effective_domain_search_daily_limit_uses_plan_override(self):
+        self.plan.max_domain_searches_per_day = 7
+        self.plan.save(update_fields=["max_domain_searches_per_day"])
+        assign_plan(self.user, self.plan)
+        self.assertEqual(effective_domain_search_daily_limit(self.user), 7)
+
+
+class CapabilityLimitsAdminTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+        self.plan = Plan.objects.create(name="Custom Limits Plan")
+
+    def test_page_is_superadmin_only(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:capability_limits")).status_code, 403)
+        self.client.logout()
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:capability_limits")).status_code, 200)
+
+    def test_superadmin_can_set_all_four_limits(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
+            {
+                "max_message_length": "4000",
+                "max_compare_uses_per_day": "5",
+                "max_playground_runs_per_day": "10",
+                "max_domain_searches_per_day": "15",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.max_message_length, 4000)
+        self.assertEqual(self.plan.max_compare_uses_per_day, 5)
+        self.assertEqual(self.plan.max_playground_runs_per_day, 10)
+        self.assertEqual(self.plan.max_domain_searches_per_day, 15)
+
+    def test_blank_field_clears_the_limit_to_no_cap(self):
+        self.plan.max_message_length = 500
+        self.plan.save(update_fields=["max_message_length"])
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
+            {
+                "max_message_length": "",
+                "max_compare_uses_per_day": "",
+                "max_playground_runs_per_day": "",
+                "max_domain_searches_per_day": "",
+            },
+        )
+        self.plan.refresh_from_db()
+        self.assertIsNone(self.plan.max_message_length)
+
+    def test_admin_cannot_update_capability_limits(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
+            {"max_message_length": "100"},
+        )
+        self.assertEqual(response.status_code, 403)

@@ -393,6 +393,66 @@ def check_session_creation_limit(user):
         )
 
 
+def check_message_length_limit(user, content):
+    """Raise UsageLimitExceeded if `content` is longer than this user's
+    Plan's max_message_length - a per-MESSAGE character cap, distinct from
+    max_context_tokens (which caps the whole assembled prompt including
+    history) and the daily/monthly token-volume caps (which cap cumulative
+    usage over time, not any one message's own size)."""
+    from governance.limits import UsageLimitExceeded
+
+    plan = get_plan_status(user)["plan"]
+    if plan is None or plan.max_message_length is None:
+        return
+    if len(content) > plan.max_message_length:
+        raise UsageLimitExceeded(
+            f"Your message is too long — your plan allows up to {plan.max_message_length} characters per message."
+        )
+
+
+def check_compare_use_limit(user):
+    """Raise UsageLimitExceeded if the user has already used Compare mode
+    as many times today as their plan allows. Counts ArenaComparison rows
+    (one per Compare-mode message sent), not individual model replies."""
+    from governance.limits import UsageLimitExceeded
+
+    plan = get_plan_status(user)["plan"]
+    if plan is None or plan.max_compare_uses_per_day is None:
+        return
+
+    from chat.models import ArenaComparison
+
+    today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    used_today = ArenaComparison.objects.filter(conversation__user=user, created_at__gte=today_start).count()
+    if used_today >= plan.max_compare_uses_per_day:
+        raise UsageLimitExceeded(
+            f"You've reached your plan's limit of {plan.max_compare_uses_per_day} Compare-mode use(s) per day."
+        )
+
+
+def effective_playground_daily_limit(user):
+    """This user's real Code Playground daily run cap: their Plan's
+    max_playground_runs_per_day if set, else playground.views.
+    DAILY_RUN_LIMIT (the tool's own global default) - a user with no Plan
+    at all also gets the global default, unaffected by this feature."""
+    from playground.views import DAILY_RUN_LIMIT
+
+    plan = get_plan_status(user)["plan"]
+    if plan is not None and plan.max_playground_runs_per_day is not None:
+        return plan.max_playground_runs_per_day
+    return DAILY_RUN_LIMIT
+
+
+def effective_domain_search_daily_limit(user):
+    """Same as effective_playground_daily_limit, for Domain Generator."""
+    from domaingen.views import DAILY_SEARCH_LIMIT
+
+    plan = get_plan_status(user)["plan"]
+    if plan is not None and plan.max_domain_searches_per_day is not None:
+        return plan.max_domain_searches_per_day
+    return DAILY_SEARCH_LIMIT
+
+
 def _request_count_window(user, plan, conversation):
     """(sent_count, window_label) for plan.max_requests_per_period's window -
     shared by the real enforcement check below and the read-only status

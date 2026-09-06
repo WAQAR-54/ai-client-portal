@@ -133,3 +133,17 @@ class LogRunTests(TestCase):
         self.assertEqual(response.status_code, 200)
         run = PlaygroundRun.objects.get(user=self.user)
         self.assertEqual(run.language, PlaygroundRun.Language.PYTHON)
+
+    def test_plans_max_playground_runs_per_day_overrides_the_global_default(self):
+        from governance.models import Plan
+        from governance.plans import assign_plan
+
+        plan = Plan.objects.create(name="Playground Capped Plan", max_playground_runs_per_day=1)
+        assign_plan(self.user, plan)
+
+        first = self.client.post(reverse("playground:log_run"), {"language": "python"})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["remaining"], 0)
+
+        second = self.client.post(reverse("playground:log_run"), {"language": "python"})
+        self.assertEqual(second.status_code, 429)

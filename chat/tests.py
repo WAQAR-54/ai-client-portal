@@ -330,6 +330,27 @@ class ChatViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_post_message_rejects_content_over_plans_max_message_length(self):
+        self.premium.max_message_length = 10
+        self.premium.save(update_fields=["max_message_length"])
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "x" * 11},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(conversation.messages.exists())
+
+    def test_post_message_allows_content_at_the_length_cap(self):
+        self.premium.max_message_length = 10
+        self.premium.save(update_fields=["max_message_length"])
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "x" * 10},
+        )
+        self.assertEqual(response.status_code, 200)
+
     @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")
     def test_stream_message_saves_assistant_reply(self, mock_get_provider, mock_classify):
@@ -594,7 +615,7 @@ class ArenaCompareModeTests(TestCase):
         self.model_b = ProviderModel.objects.create(
             provider=Provider.objects.get(slug="anthropic"), model_id="model-b", is_enabled=True
         )
-        _grant_premium_plan(self.user, self.model_a, self.model_b)
+        self.premium = _grant_premium_plan(self.user, self.model_a, self.model_b)
         self.client.login(email="u@example.com", password="pw12345!")
         self.conversation = Conversation.objects.create(user=self.user)
 
@@ -628,6 +649,19 @@ class ArenaCompareModeTests(TestCase):
         response = self.client.post(
             reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
             {"content": "compare these", "model_a_id": self.model_a.id, "model_b_id": other_model.id},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_arena_message_rejects_over_compare_daily_limit(self):
+        self.premium.max_compare_uses_per_day = 1
+        self.premium.save(update_fields=["max_compare_uses_per_day"])
+        self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "first", "model_a_id": self.model_a.id, "model_b_id": self.model_b.id},
+        )
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "second", "model_a_id": self.model_a.id, "model_b_id": self.model_b.id},
         )
         self.assertEqual(response.status_code, 400)
 

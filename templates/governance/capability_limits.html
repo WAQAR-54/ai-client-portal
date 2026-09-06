@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Capability Limits" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Per-plan capability limits" %}</h1>
+    <p>{% trans "Numeric caps on specific actions, separate from each plan's overall token/request caps (see Plan Management). Leave a field blank for no limit — the two standalone-tool columns fall back to that tool's own default when left blank." %}</p>
+    <div style="overflow-x:auto; margin-top:var(--space-4);">
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>{% trans "Plan" %}</th>
+                    <th>{% trans "Max message length (chars)" %}</th>
+                    <th>{% trans "Compare-mode uses / day" %}</th>
+                    <th>{% trans "Code Playground runs / day" %}</th>
+                    <th>{% trans "Domain Generator searches / day" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for plan in plans %}
+                <tr>
+                    <td class="name">{{ plan.name }}</td>
+                    <td><input class="input mono" type="number" min="0" name="max_message_length" form="capability-form-{{ plan.id }}" value="{{ plan.max_message_length|default_if_none:'' }}" placeholder="{% trans 'no limit' %}" style="width:7rem; margin:0;"></td>
+                    <td><input class="input mono" type="number" min="0" name="max_compare_uses_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_compare_uses_per_day|default_if_none:'' }}" placeholder="{% trans 'no limit' %}" style="width:6rem; margin:0;"></td>
+                    <td><input class="input mono" type="number" min="0" name="max_playground_runs_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_playground_runs_per_day|default_if_none:'' }}" placeholder="{% trans 'default' %}" style="width:6rem; margin:0;"></td>
+                    <td><input class="input mono" type="number" min="0" name="max_domain_searches_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_domain_searches_per_day|default_if_none:'' }}" placeholder="{% trans 'default' %}" style="width:6rem; margin:0;"></td>
+                    <td><button type="submit" form="capability-form-{{ plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
+                </tr>
+                {% empty %}
+                <tr class="empty-state-row"><td colspan="6">{% trans "No plans yet." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% for plan in plans %}
+<form id="capability-form-{{ plan.id }}" method="post" action="{% url 'governance:update_capability_limits' plan_id=plan.id %}">{% csrf_token %}</form>
+{% endfor %}
+{% endblock %}

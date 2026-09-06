@@ -74,12 +74,15 @@ class PlaygroundView(LoginRequiredMixin, RequireStandaloneToolAccessMixin, Templ
             for provider_name, models in groupby(models_qs, key=lambda m: m.provider.name)
         ]
 
+        from governance.plans import effective_playground_daily_limit
+
+        daily_limit = effective_playground_daily_limit(self.request.user)
         runs_used = _runs_today_count(self.request.user)
         return super().get_context_data(**kwargs) | {
             "provider_groups": provider_groups,
-            "daily_limit": DAILY_RUN_LIMIT,
+            "daily_limit": daily_limit,
             "runs_used_today": runs_used,
-            "runs_remaining": max(0, DAILY_RUN_LIMIT - runs_used),
+            "runs_remaining": max(0, daily_limit - runs_used),
         }
 
 
@@ -91,8 +94,11 @@ def log_run(request):
     quota pill and the admin Dashboard's stats) even though the code
     execution shown afterward is simulated client-side, not a real
     sandbox."""
+    from governance.plans import effective_playground_daily_limit
+
+    daily_limit = effective_playground_daily_limit(request.user)
     runs_used = _runs_today_count(request.user)
-    if runs_used >= DAILY_RUN_LIMIT:
+    if runs_used >= daily_limit:
         return JsonResponse({"allowed": False, "remaining": 0}, status=429)
 
     language = request.POST.get("language", PlaygroundRun.Language.PYTHON)
@@ -100,5 +106,5 @@ def log_run(request):
         language = PlaygroundRun.Language.PYTHON
     PlaygroundRun.objects.create(user=request.user, language=language)
 
-    remaining = max(0, DAILY_RUN_LIMIT - (runs_used + 1))
+    remaining = max(0, daily_limit - (runs_used + 1))
     return JsonResponse({"allowed": True, "remaining": remaining})

@@ -310,6 +310,16 @@ class GenerateDomainsViewTests(TestCase):
         self.assertEqual(response.status_code, 429)
         mock_get_provider.assert_not_called()
 
+    def test_plans_max_domain_searches_per_day_overrides_the_global_default(self):
+        from governance.models import Plan
+        from governance.plans import assign_plan
+
+        plan = Plan.objects.create(name="Domain Search Capped Plan", max_domain_searches_per_day=0)
+        assign_plan(self.user, plan)
+
+        response = self._post()
+        self.assertEqual(response.status_code, 429)
+
     def test_requires_login(self):
         self.client.logout()
         response = self._post()

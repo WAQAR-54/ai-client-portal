@@ -1319,6 +1319,46 @@ def update_department_retention(request, department_id):
     return redirect("governance:retention_provider_approval")
 
 
+class CapabilityLimitsView(SuperAdminRequiredMixin, TemplateView):
+    """Per-Plan numeric caps on specific actions (message length, Compare-
+    mode uses/day, and per-plan overrides of the two standalone tools'
+    daily quotas) - distinct from Plan Management's existing token-volume/
+    request-count caps (those bound overall usage; these bound one
+    action each). See governance/plans.py's check_message_length_limit /
+    check_compare_use_limit / effective_playground_daily_limit /
+    effective_domain_search_daily_limit for the actual enforcement."""
+
+    template_name = "governance/capability_limits.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | {"plans": Plan.objects.order_by("-is_default", "name")}
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["POST"])
+def update_capability_limits(request, plan_id):
+    plan = get_object_or_404(Plan, id=plan_id)
+
+    fields = [
+        "max_message_length",
+        "max_compare_uses_per_day",
+        "max_playground_runs_per_day",
+        "max_domain_searches_per_day",
+    ]
+    old_values = {field: getattr(plan, field) for field in fields}
+    for field in fields:
+        setattr(plan, field, _int_or_none(request.POST.get(field)))
+    plan.save(update_fields=fields)
+    log_action(
+        request.user,
+        "plan.capability_limits_update",
+        plan,
+        old_value=str(old_values),
+        new_value=str({field: getattr(plan, field) for field in fields}),
+    )
+    return redirect("governance:capability_limits")
+
+
 _PII_RULE_ORDER = ["national_id", "credit_card", "phone_number"]
 
 
