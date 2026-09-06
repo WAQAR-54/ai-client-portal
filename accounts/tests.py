@@ -56,6 +56,38 @@ class AuthAndRBACTests(TestCase):
         self.assertRedirects(response, reverse("accounts:dashboard"))
         self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
 
+    def test_login_honors_next_redirect(self):
+        """A login-required deep link (e.g. Code Playground's shared URL)
+        must send the user back where they were headed, not dump them on
+        the generic dashboard - PortalLoginView.get_success_url() used to
+        ignore ?next= entirely."""
+        response = self.client.post(
+            reverse("accounts:login") + "?next=/chat/",
+            {"username": "user@example.com", "password": "pw12345!"},
+        )
+        self.assertRedirects(response, "/chat/")
+
+    def test_login_form_carries_next_through_the_post(self):
+        """The GET page must echo ?next= back as a hidden field so it
+        survives the POST - without it, get_success_url() has nothing to
+        read even after the view-level fix above."""
+        response = self.client.get(reverse("accounts:login") + "?next=/chat/")
+        self.assertContains(response, 'name="next" value="/chat/"')
+
+    def test_login_falls_back_to_dashboard_with_no_next(self):
+        response = self.client.post(
+            reverse("accounts:login"),
+            {"username": "user@example.com", "password": "pw12345!"},
+        )
+        self.assertRedirects(response, reverse("accounts:dashboard"))
+
+    def test_login_ignores_an_unsafe_next_to_another_host(self):
+        response = self.client.post(
+            reverse("accounts:login") + "?next=https://evil.example.com/",
+            {"username": "user@example.com", "password": "pw12345!"},
+        )
+        self.assertRedirects(response, reverse("accounts:dashboard"))
+
     def test_dashboard_requires_login(self):
         response = self.client.get(reverse("accounts:dashboard"))
         self.assertEqual(response.status_code, 302)
@@ -128,6 +160,84 @@ class SignupTests(TestCase):
         User.objects.create_user(email="existing@example.com", password="pw12345!")
         self.client.login(email="existing@example.com", password="pw12345!")
         response = self.client.get(reverse("accounts:signup"))
+        self.assertRedirects(response, reverse("accounts:dashboard"))
+
+
+class PasswordResetFlowTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="reset@example.com", password="old-password-123")
+
+    def _extract_reset_url(self, html_body):
+        import re
+
+        match = re.search(r'href="(http[^"]*/password-reset/confirm/[^"]+)"', html_body)
+        self.assertIsNotNone(match, "reset link not found in email body")
+        return match.group(1)
+
+    def test_request_sends_email_for_existing_user(self):
+        from django.core import mail
+
+        mail.outbox = []
+        response = self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        self.assertRedirects(response, reverse("accounts:login"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.user.email])
+
+    def test_request_does_not_reveal_whether_email_exists(self):
+        from django.core import mail
+
+        mail.outbox = []
+        response = self.client.post(reverse("accounts:password_reset_request"), {"email": "nobody@example.com"})
+        # Same redirect/message either way - no mail sent, but no error shown.
+        self.assertRedirects(response, reverse("accounts:login"))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_full_reset_flow_changes_password(self):
+        from django.core import mail
+
+        mail.outbox = []
+        self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        html_body = mail.outbox[0].alternatives[0][0]
+        reset_path = self._extract_reset_url(html_body).split("password-reset/confirm/", 1)[1]
+        uidb64, token = reset_path.strip("/").split("/")
+
+        confirm_url = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
+        get_response = self.client.get(confirm_url)
+        self.assertContains(get_response, "Set a new password")
+
+        post_response = self.client.post(
+            confirm_url,
+            {"new_password1": "brand-new-password-456", "new_password2": "brand-new-password-456"},
+        )
+        self.assertRedirects(post_response, reverse("accounts:login"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("brand-new-password-456"))
+
+    def test_confirm_with_invalid_token_shows_invalid_link(self):
+        confirm_url = reverse("accounts:password_reset_confirm", kwargs={"uidb64": "invalid", "token": "bad-token"})
+        response = self.client.get(confirm_url)
+        self.assertContains(response, "invalid or has expired")
+
+    def test_reset_link_cannot_be_reused(self):
+        from django.core import mail
+
+        mail.outbox = []
+        self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        html_body = mail.outbox[0].alternatives[0][0]
+        reset_path = self._extract_reset_url(html_body).split("password-reset/confirm/", 1)[1]
+        uidb64, token = reset_path.strip("/").split("/")
+        confirm_url = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
+
+        self.client.post(
+            confirm_url, {"new_password1": "brand-new-password-456", "new_password2": "brand-new-password-456"}
+        )
+        # Token was single-use (bound to the password hash) - reusing it now fails.
+        second_response = self.client.get(confirm_url)
+        self.assertContains(second_response, "invalid or has expired")
+
+    def test_already_logged_in_user_redirected_away_from_reset_pages(self):
+        self.client.login(email="reset@example.com", password="old-password-123")
+        response = self.client.get(reverse("accounts:password_reset_request"))
         self.assertRedirects(response, reverse("accounts:dashboard"))
 
 
@@ -313,3 +423,15 @@ class ArabicLanguagePreferenceTests(TestCase):
             self.assertEqual(translation.gettext("Save changes"), "حفظ التغييرات")
         finally:
             translation.deactivate()
+
+
+class DepartmentRetentionDaysTests(TestCase):
+    def test_forever_returns_none(self):
+        department = Department.objects.create(name="D1", retention_period=Department.RetentionPeriod.FOREVER)
+        self.assertIsNone(department.retention_days)
+
+    def test_numeric_periods_return_int(self):
+        department = Department.objects.create(name="D2", retention_period=Department.RetentionPeriod.DAYS_30)
+        self.assertEqual(department.retention_days, 30)
+        department.retention_period = Department.RetentionPeriod.YEARS_7
+        self.assertEqual(department.retention_days, 2555)

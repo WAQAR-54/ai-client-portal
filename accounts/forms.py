@@ -1,4 +1,4 @@
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm, SetPasswordForm, UserCreationForm
 from django import forms
 
 from accounts.models import User
@@ -25,6 +25,17 @@ class SignupForm(UserCreationForm):
         super().__init__(*args, **kwargs)
         self.fields["password1"].widget.attrs["class"] = "input"
         self.fields["password2"].widget.attrs["class"] = "input"
+
+
+class PortalPasswordResetForm(PasswordResetForm):
+    email = forms.EmailField(widget=forms.EmailInput(attrs={"autofocus": True, "class": "input"}))
+
+
+class PortalSetPasswordForm(SetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["new_password1"].widget.attrs["class"] = "input"
+        self.fields["new_password2"].widget.attrs["class"] = "input"
 
 
 class ProfileForm(forms.ModelForm):

@@ -8,6 +8,12 @@ urlpatterns = [
     path("login/", views.PortalLoginView.as_view(), name="login"),
     path("logout/", views.logout_view, name="logout"),
     path("signup/", views.signup_view, name="signup"),
+    path("password-reset/", views.password_reset_request_view, name="password_reset_request"),
+    path(
+        "password-reset/confirm/<uidb64>/<token>/",
+        views.password_reset_confirm_view,
+        name="password_reset_confirm",
+    ),
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
     path("admin-panel/", views.AdminPanelView.as_view(), name="admin_panel"),
     path("profile/", views.ProfileView.as_view(), name="profile"),

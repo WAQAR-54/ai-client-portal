@@ -4,15 +4,27 @@ from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import translation
+from django.utils.encoding import force_bytes
+from django.utils.html import strip_tags
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 from django.views.generic import RedirectView, TemplateView
 
-from accounts.forms import EmailAuthenticationForm, ProfileForm, SignupForm
+from accounts.forms import (
+    EmailAuthenticationForm,
+    PortalPasswordResetForm,
+    PortalSetPasswordForm,
+    ProfileForm,
+    SignupForm,
+)
+from accounts.models import User
 from accounts.permissions import AdminRequiredMixin
 from governance.features import require_feature
 
@@ -75,7 +87,13 @@ class PortalLoginView(LoginView):
     redirect_authenticated_user = True
 
     def get_success_url(self):
-        return reverse_lazy("accounts:dashboard")
+        # get_redirect_url() is LoginView's own safe "?next=" handling
+        # (validates the URL against ALLOWED_HOSTS before ever using it, so
+        # this can't be turned into an open redirect) - must be checked
+        # first or every login-required deep link (Code Playground's
+        # shared URL included) silently dumps the user on the generic
+        # dashboard instead of back where they were headed.
+        return self.get_redirect_url() or reverse_lazy("accounts:dashboard")
 
 
 def logout_view(request):
@@ -105,6 +123,76 @@ def signup_view(request):
         form = SignupForm()
 
     return render(request, "accounts/signup.html", {"form": form})
+
+
+def _send_password_reset_email(request, user):
+    """Sends the "reset your password" email for one user, through the same
+    send_tracked_email() path (and EmailLog audit trail) every other real
+    email in the app goes through - not Django's own PasswordResetForm.
+    save(), which would bypass EmailLog and the admin-configurable
+    EmailSettings entirely."""
+    from notifications.emailing import send_tracked_email
+
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    reset_url = request.build_absolute_uri(
+        reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
+    )
+    with translation.override(user.preferred_language):
+        html_body = render_to_string("accounts/email_password_reset.html", {"user": user, "reset_url": reset_url})
+    send_tracked_email(
+        to_email=user.email,
+        subject="[AI Client Portal] Reset your password",
+        text_body=strip_tags(html_body),
+        html_body=html_body,
+    )
+
+
+def password_reset_request_view(request):
+    if request.user.is_authenticated:
+        return redirect("accounts:dashboard")
+
+    if request.method == "POST":
+        form = PortalPasswordResetForm(request.POST)
+        if form.is_valid():
+            for user in form.get_users(form.cleaned_data["email"]):
+                _send_password_reset_email(request, user)
+            # Same message regardless of whether an account exists, so this
+            # can't be used to check whether an email is registered.
+            messages.success(
+                request,
+                translation.gettext("If an account exists for that email, we've sent a link to reset your password."),
+            )
+            return redirect("accounts:login")
+    else:
+        form = PortalPasswordResetForm()
+
+    return render(request, "accounts/password_reset_request.html", {"form": form})
+
+
+def password_reset_confirm_view(request, uidb64, token):
+    if request.user.is_authenticated:
+        return redirect("accounts:dashboard")
+
+    try:
+        user = User.objects.get(pk=urlsafe_base64_decode(uidb64).decode())
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    valid_link = user is not None and default_token_generator.check_token(user, token)
+    if not valid_link:
+        return render(request, "accounts/password_reset_confirm.html", {"valid_link": False})
+
+    if request.method == "POST":
+        form = PortalSetPasswordForm(user=user, data=request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, translation.gettext("Your password has been reset. You can log in now."))
+            return redirect("accounts:login")
+    else:
+        form = PortalSetPasswordForm(user=user)
+
+    return render(request, "accounts/password_reset_confirm.html", {"form": form, "valid_link": True})
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):

@@ -5,6 +5,10 @@ from django.utils.translation import gettext_lazy as _
 
 
 class Department(models.Model):
+    class RegionRestriction(models.TextChoices):
+        NONE = "none", _("No restrictions")
+        EU_ONLY = "eu_only", _("Only EU-hosted models allowed")
+
     name = models.CharField(max_length=150, unique=True)
     monthly_budget_cap = models.DecimalField(
         max_digits=10,
@@ -13,6 +17,29 @@ class Department(models.Model):
         blank=True,
         help_text="Monthly AI spending cap for this department, in USD.",
     )
+    # Compliance Routing (governance/plans.py::region_allowed_provider_model_ids)
+    # - a hard ceiling on which providers this department's requests can
+    # ever reach, checked on top of whatever a user's Plan/team already
+    # allows, never widening it. EU_ONLY is the only restricted state for
+    # now (matches the one real requirement this shipped for); more region
+    # choices land as Provider.Region grows real providers outside US/EU.
+    region_restriction = models.CharField(
+        max_length=10, choices=RegionRestriction.choices, default=RegionRestriction.NONE
+    )
+
+    class RetentionPeriod(models.TextChoices):
+        DAYS_30 = "30", _("30 days")
+        DAYS_90 = "90", _("90 days")
+        YEARS_7 = "2555", _("7 years")
+        FOREVER = "forever", _("Forever")
+
+    # How long a conversation from a user in this department is kept
+    # before governance/tasks.py::sweep_conversation_retention deletes it
+    # (whole Conversation, cascading to its Messages) - measured from the
+    # conversation's own last activity (Conversation.updated_at), not its
+    # creation date, so an old conversation someone keeps returning to
+    # never gets swept out from under them.
+    retention_period = models.CharField(max_length=10, choices=RetentionPeriod.choices, default=RetentionPeriod.FOREVER)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -20,6 +47,15 @@ class Department(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def retention_days(self):
+        """None means "forever" (never swept) - the field's own FOREVER
+        value isn't a valid int, so callers should always go through this
+        rather than int()'ing retention_period directly."""
+        if self.retention_period == self.RetentionPeriod.FOREVER:
+            return None
+        return int(self.retention_period)
 
 
 class Team(models.Model):
