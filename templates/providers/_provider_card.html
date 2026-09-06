@@ -60,20 +60,17 @@
     {% if models %}
     <details style="margin-top:0.9rem;">
         <summary style="cursor:pointer; font-size:var(--text-xs); color:var(--color-text-muted);">{% trans "Manage models" %}</summary>
-        <div style="overflow-x:auto; margin-top:0.6rem;">
-        <table class="data">
-            <thead><tr><th>{% trans "Model" %}</th><th>{% trans "Tier" %}</th><th>{% trans "Status" %}</th><th></th><th>{% trans "Manager-assignable" %}</th></tr></thead>
-            <tbody>
+        <div style="margin-top:0.6rem;">
             {% for m in models %}
-            <tr>
-                <td class="mono" style="font-size:0.8rem;">
-                    {{ m.display_label }}
+            <div class="provider-model-row">
+                <div class="provider-model-name">
+                    <span class="mono">{{ m.display_label }}</span>
+                    <span class="badge badge-muted">{{ m.get_tier_display }}</span>
                     {% if m.is_new and not m.is_retired %}<span class="badge badge-muted">{% trans "New" %}</span>{% endif %}
                     {% if m.is_retired %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
-                </td>
-                <td><span class="badge badge-muted">{{ m.get_tier_display }}</span></td>
-                <td>{% if m.is_enabled %}<span class="badge badge-success">{% trans "Enabled" %}</span>{% else %}<span class="badge badge-danger">{% trans "Disabled" %}</span>{% endif %}</td>
-                <td>
+                    {% if m.is_enabled %}<span class="badge badge-success">{% trans "Enabled" %}</span>{% else %}<span class="badge badge-danger">{% trans "Disabled" %}</span>{% endif %}
+                </div>
+                <div class="provider-model-controls">
                     <form method="post" action="{% url 'providers:toggle_model' model_id=m.id %}"
                           hx-post="{% url 'providers:toggle_model' model_id=m.id %}"
                           hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
@@ -82,9 +79,8 @@
                             <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_enabled %}checked{% endif %}>
                             <span class="toggle"><span class="toggle-knob"></span></span>
                         </label>
+                        <span class="provider-model-toggle-label">{% trans "Enabled" %}</span>
                     </form>
-                </td>
-                <td>
                     {% if m.is_enabled %}
                     <form method="post" action="{% url 'providers:toggle_model_manager_assignable' model_id=m.id %}"
                           hx-post="{% url 'providers:toggle_model_manager_assignable' model_id=m.id %}"
@@ -94,15 +90,14 @@
                             <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_manager_assignable %}checked{% endif %}>
                             <span class="toggle"><span class="toggle-knob"></span></span>
                         </label>
+                        <span class="provider-model-toggle-label">{% trans "Manager-assignable" %}</span>
                     </form>
                     {% else %}
-                    <span class="text-faint" style="font-size:0.75rem;">{% trans "Enable first" %}</span>
+                    <span class="text-faint" style="font-size:0.75rem;">{% trans "Enable first for manager-assignable" %}</span>
                     {% endif %}
-                </td>
-            </tr>
+                </div>
+            </div>
             {% endfor %}
-            </tbody>
-        </table>
         </div>
     </details>
     {% endif %}

@@ -3247,6 +3247,19 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .provider-grid .plan-row { flex-wrap: wrap; row-gap: 0.3rem; }
 .provider-grid .plan-row form { display: flex; }
 
+/* Per-model row inside a Provider card's "Manage models" details panel -
+   replaces an earlier <table> layout whose fixed columns clipped the last
+   1-2 columns (Status badge, Manager-assignable toggle) inside the narrow
+   ~280-400px provider-grid card, forcing an unreadable inner horizontal
+   scroll. A stacked row (name+badges on top, toggles below, both flex-wrap)
+   has no fixed column widths to overflow - it just wraps at any card size. */
+.provider-model-row { padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); }
+.provider-model-row:last-child { border-bottom: none; }
+.provider-model-name { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.8rem; margin-bottom: 0.5rem; }
+.provider-model-controls { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+.provider-model-controls form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
+.provider-model-toggle-label { font-size: 0.75rem; color: var(--color-text-muted); }
+
 .feat-list { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .feat-tag { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-sm); }
 .feat-tag.on { background: var(--color-success-soft); color: var(--color-success); }
