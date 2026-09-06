@@ -37,6 +37,18 @@
     </button>
 </form>
 {% endif %}
+{% if can_select_model %}
+<div class="mode-list">
+    <a href="#" class="mode-item active" id="modeChatBtn" onclick="portalSidebarChatClick(); return false;">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        {% trans "Chat" %}
+    </a>
+    <a href="#" class="mode-item" id="modeCompareBtn" onclick="portalSidebarCompareClick(); return false;">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/></svg>
+        {% trans "Compare" %}
+    </a>
+</div>
+{% endif %}
 {% if user|has_feature:"conversation_pin_search" %}
 <div class="filter-search sidebar-conv-search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -282,8 +294,8 @@ function portalCloseUpgradeModal() {
             </summary>
             <div class="model-select-panel">
                 <button type="button" class="model-select-option is-selected" data-value="" data-label="{{ auto_routing_label }}">{{ auto_routing_label }}</button>
-                {% regroup model_rows by model.get_tier_display as tier_groups %}
-                {% for group in tier_groups %}
+                {% regroup model_rows by model.provider.name as provider_groups %}
+                {% for group in provider_groups %}
                 <div class="model-select-group-label">{{ group.grouper }}</div>
                 {% for row in group.list %}
                 {% if row.locked %}
@@ -298,7 +310,9 @@ function portalCloseUpgradeModal() {
                     {% if row.required_plan %}<span class="model-select-locked-tier">{{ row.required_plan.name }}</span>{% endif %}
                 </button>
                 {% else %}
-                <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">{{ row.model.display_label }}</button>
+                <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">
+                    <span class="provider-dot provider-dot-{{ row.model.provider.slug }}"></span>{{ row.model.display_label }}
+                </button>
                 {% endif %}
                 {% endfor %}
                 {% endfor %}
@@ -397,15 +411,46 @@ function portalCloseUpgradeModal() {
         {% trans "No AI models are enabled yet. An admin needs to enable a verified model in the admin dashboard before chat will work." %}
     </div>
     {% endif %}
+    {% if budget_automation.active %}
+    <div class="budget-banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86l-8.18 14.14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.89-2.99L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        {% blocktrans with pct=budget_automation.pct model=budget_automation.fallback_model.display_label %}Budget-saving mode is active — you've used {{ pct }}% of this month's budget, so replies are using {{ model }} until it resets.{% endblocktrans %}
+    </div>
+    {% endif %}
 
     {% if conversation %}
+    {% if can_select_model %}
+    <div class="compare-setup" id="compareSetupScreen" style="display:none;">
+        <div class="compare-setup-title">{% trans "Pick 2 models to compare" %}</div>
+        <p class="compare-setup-sub">{% trans "Your next message will be sent to both — responses appear side by side so you can pick the better one." %}</p>
+        <div class="compare-setup-list" id="compareSetupList">
+            {% for row in model_rows %}
+            {% if not row.locked %}
+            <div class="compare-setup-row" data-model-id="{{ row.model.id }}" data-model-label="{{ row.model.display_label }}" onclick="portalToggleCompareSetupOption(this)">
+                <span class="compare-setup-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <span class="provider-dot provider-dot-{{ row.model.provider.slug }}"></span>
+                <span class="compare-setup-name">{{ row.model.display_label }}</span>
+                <span class="compare-setup-provider">{{ row.model.provider.name }}</span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <button type="button" class="compare-setup-start" id="compareSetupStartBtn" disabled onclick="portalStartCompareFromSetup()">{% trans "Select 2 models to continue" %}</button>
+    </div>
+    {% endif %}
     <div id="messages" class="chat-messages">
         <div class="chat-column">
             {% for m in messages_list %}
+                {% if m.arena_skip %}
+                {# already rendered as part of its pair below #}
+                {% elif m.arena_comparison %}
+                {% include "chat/_arena_pair.html" with comparison=m.arena_comparison conversation=conversation %}
+                {% else %}
                 {% if m.show_switch_divider %}
                 <div class="switch-divider">{% blocktrans with model=m.model_label %}Switched to {{ model }}{% endblocktrans %}</div>
                 {% endif %}
                 {% include "chat/_message_bubble.html" with message=m is_last=forloop.last %}
+                {% endif %}
             {% endfor %}
         </div>
     </div>
@@ -463,6 +508,7 @@ function portalCloseUpgradeModal() {
               hx-target="#messages .chat-column" hx-swap="beforeend"
               hx-encoding="multipart/form-data"
               hx-include="#model-select"
+              data-arena-post="{% url 'chat:post_arena_message' conversation_id=conversation.id %}"
               hx-on::after-request="this.reset(); document.getElementById('composer-textarea').style.height='auto'; portalResetComposerAttrs();">
             {% csrf_token %}
             <textarea id="composer-textarea" class="input" name="content" placeholder="{% trans 'Message the assistant...' %}"
@@ -486,10 +532,19 @@ function portalCloseUpgradeModal() {
                         <button type="button" class="composer-chip is-selected" data-value="" data-label="{{ auto_routing_label }}" onclick="portalSelectModel('', '{{ auto_routing_label|escapejs }}')">{{ auto_routing_label }}</button>
                         {% for row in model_rows %}
                         {% if not row.locked %}
-                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')">{{ row.model.display_label }}</button>
+                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')"><span class="provider-dot provider-dot-{{ row.model.provider.slug }}"></span>{{ row.model.display_label }}</button>
                         {% endif %}
                         {% endfor %}
                     </div>
+                    <div class="compare-active-pill" id="compareActivePill" style="display:none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/></svg>
+                        <span id="compareActivePillLabel"></span>
+                        <button type="button" class="compare-active-pill-clear" onclick="portalSetCompareMode(false)" title="{% trans 'Cancel compare' %}" aria-label="{% trans 'Cancel compare' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                    <input type="hidden" id="compareModelA" name="model_a_id" value="">
+                    <input type="hidden" id="compareModelB" name="model_b_id" value="">
                     {% endif %}
                 </div>
                 <button type="submit" class="send-btn" title="{% trans 'Send' %}">
@@ -630,13 +685,126 @@ function portalCloseUpgradeModal() {
 <script>
 function portalResetComposerAttrs() {
     var form = document.getElementById("composer-form");
-    if (!form || !form.dataset.defaultPost) return;
-    form.setAttribute("hx-post", form.dataset.defaultPost);
-    form.setAttribute("hx-target", form.dataset.defaultTarget);
-    form.setAttribute("hx-swap", form.dataset.defaultSwap);
-    htmx.process(form);
+    if (form && form.dataset.defaultPost) {
+        form.setAttribute("hx-post", form.dataset.defaultPost);
+        form.setAttribute("hx-target", form.dataset.defaultTarget);
+        form.setAttribute("hx-swap", form.dataset.defaultSwap);
+        htmx.process(form);
+    }
     var banner = document.getElementById("edit-banner");
     if (banner) banner.style.display = "none";
+    // Compare mode is per-turn, not sticky - every send (successful or not)
+    // drops back to normal chat, same as the edit-banner above, so a user
+    // has to deliberately re-pick 2 models for the next comparison instead
+    // of silently double-costing AI calls on a message they forgot it was
+    // still on for.
+    portalSetCompareMode(false);
+}
+
+// --- Compare mode: sidebar Chat/Compare switch -> "pick 2 models" setup
+// screen -> composer sends to chat:post_arena_message instead of
+// chat:post_message, using the two hidden model_a_id/model_b_id inputs the
+// setup screen fills in (see portalStartCompareFromSetup below). ---
+var portalCompareModeOn = false;
+var portalCompareSetupSelected = [];
+
+function portalSidebarChatClick() {
+    portalSetCompareMode(false);
+}
+function portalSidebarCompareClick() {
+    var setupScreen = document.getElementById("compareSetupScreen");
+    if (!setupScreen) return; // no open conversation to compare within yet
+    document.getElementById("modeChatBtn").classList.remove("active");
+    document.getElementById("modeCompareBtn").classList.add("active");
+    document.getElementById("messages").style.display = "none";
+    document.querySelector(".chat-composer-wrap").style.display = "none";
+    setupScreen.style.display = "block";
+}
+function portalToggleCompareSetupOption(row) {
+    var modelId = row.getAttribute("data-model-id");
+    var isChecked = row.classList.contains("checked");
+    if (!isChecked && portalCompareSetupSelected.length >= 2) return;
+
+    row.classList.toggle("checked");
+    portalCompareSetupSelected = isChecked
+        ? portalCompareSetupSelected.filter(function(id) { return id !== modelId; })
+        : portalCompareSetupSelected.concat([modelId]);
+
+    document.querySelectorAll(".compare-setup-row").forEach(function(r) {
+        var already = r.classList.contains("checked");
+        r.classList.toggle("disabled", portalCompareSetupSelected.length >= 2 && !already);
+    });
+
+    var startBtn = document.getElementById("compareSetupStartBtn");
+    if (portalCompareSetupSelected.length === 2) {
+        var labels = portalCompareSetupSelected.map(function(id) {
+            return document.querySelector('.compare-setup-row[data-model-id="' + id + '"]').getAttribute("data-model-label");
+        });
+        startBtn.disabled = false;
+        startBtn.classList.add("enabled");
+        startBtn.textContent = "{% trans 'Start comparing' %} " + labels.join(" {% trans 'vs' %} ");
+    } else {
+        startBtn.disabled = true;
+        startBtn.classList.remove("enabled");
+        startBtn.textContent = "{% trans 'Select 2 models to continue' %}";
+    }
+}
+function portalStartCompareFromSetup() {
+    if (portalCompareSetupSelected.length !== 2) return;
+    var labels = portalCompareSetupSelected.map(function(id) {
+        return document.querySelector('.compare-setup-row[data-model-id="' + id + '"]').getAttribute("data-model-label");
+    });
+    portalSetCompareMode(true, portalCompareSetupSelected[0], portalCompareSetupSelected[1], labels.join(" {% trans 'vs' %} "));
+    document.getElementById("compareSetupScreen").style.display = "none";
+    document.getElementById("messages").style.display = "";
+    document.querySelector(".chat-composer-wrap").style.display = "";
+    document.getElementById("composer-textarea").focus();
+}
+function portalSetCompareMode(on, modelAId, modelBId, label) {
+    portalCompareModeOn = on;
+    var form = document.getElementById("composer-form");
+    if (!form) return;
+    var chips = document.querySelector(".composer-chips");
+    var pill = document.getElementById("compareActivePill");
+    var pillLabel = document.getElementById("compareActivePillLabel");
+    var modelAInput = document.getElementById("compareModelA");
+    var modelBInput = document.getElementById("compareModelB");
+    var attachLabel = document.getElementById("attach-btn-label");
+    var textarea = document.getElementById("composer-textarea");
+    var modeChatBtn = document.getElementById("modeChatBtn");
+    var modeCompareBtn = document.getElementById("modeCompareBtn");
+    var setupScreen = document.getElementById("compareSetupScreen");
+
+    if (chips) chips.style.display = on ? "none" : "flex";
+    if (pill) pill.style.display = on ? "flex" : "none";
+    if (pillLabel) pillLabel.textContent = label || "";
+    if (modelAInput) modelAInput.value = on ? modelAId : "";
+    if (modelBInput) modelBInput.value = on ? modelBId : "";
+    if (attachLabel) attachLabel.style.display = on ? "none" : "";
+    if (textarea) textarea.placeholder = on ? "{% trans 'Ask both models...' %}" : "{% trans 'Message the assistant...' %}";
+    if (modeChatBtn) modeChatBtn.classList.toggle("active", !on);
+    if (modeCompareBtn) modeCompareBtn.classList.toggle("active", on);
+    if (!on && setupScreen) {
+        setupScreen.style.display = "none";
+        document.getElementById("messages").style.display = "";
+        document.querySelector(".chat-composer-wrap").style.display = "";
+        portalCompareSetupSelected = [];
+        document.querySelectorAll(".compare-setup-row").forEach(function(r) { r.classList.remove("checked", "disabled"); });
+        var startBtn = document.getElementById("compareSetupStartBtn");
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.classList.remove("enabled");
+            startBtn.textContent = "{% trans 'Select 2 models to continue' %}";
+        }
+    }
+
+    if (on && !form.dataset.defaultPost) {
+        form.dataset.defaultPost = form.getAttribute("hx-post");
+        form.dataset.defaultTarget = form.getAttribute("hx-target");
+        form.dataset.defaultSwap = form.getAttribute("hx-swap");
+    }
+    form.setAttribute("hx-post", on ? form.dataset.arenaPost : (form.dataset.defaultPost || form.getAttribute("hx-post")));
+    htmx.process(form);
 }
 function portalStartEdit(btn) {
     var form = document.getElementById("composer-form");

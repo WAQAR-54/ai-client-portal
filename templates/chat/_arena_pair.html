@@ -1,0 +1,44 @@
+{% load i18n %}
+<div id="arena-{{ comparison.id }}">
+    <div class="arena-label">{% blocktrans with a=comparison.model_a.display_label b=comparison.model_b.display_label %}Compared {{ a }} + {{ b }}{% endblocktrans %}</div>
+    <div class="arena-grid">
+        <div class="arena-pane {% if comparison.picked_id == comparison.response_a_id %}picked{% endif %}">
+            <div class="arena-head">
+                <span class="provider-dot provider-dot-{{ comparison.model_a.provider.slug }}"></span>
+                <span class="arena-model-name">{{ comparison.model_a.display_label }}</span>
+            </div>
+            <div class="arena-body">
+                {% include "chat/_message_bubble.html" with message=comparison.response_a is_last=False %}
+            </div>
+            <div class="arena-foot">
+                <form hx-post="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
+                      hx-target="#arena-{{ comparison.id }}" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <input type="hidden" name="picked_message_id" value="{{ comparison.response_a_id }}">
+                    <button type="submit" class="pick-btn {% if comparison.picked_id == comparison.response_a_id %}picked{% endif %}">
+                        {% if comparison.picked_id == comparison.response_a_id %}{% trans "Picked" %}{% else %}{% trans "Better" %}{% endif %}
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div class="arena-pane {% if comparison.picked_id == comparison.response_b_id %}picked{% endif %}">
+            <div class="arena-head">
+                <span class="provider-dot provider-dot-{{ comparison.model_b.provider.slug }}"></span>
+                <span class="arena-model-name">{{ comparison.model_b.display_label }}</span>
+            </div>
+            <div class="arena-body">
+                {% include "chat/_message_bubble.html" with message=comparison.response_b is_last=False %}
+            </div>
+            <div class="arena-foot">
+                <form hx-post="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
+                      hx-target="#arena-{{ comparison.id }}" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <input type="hidden" name="picked_message_id" value="{{ comparison.response_b_id }}">
+                    <button type="submit" class="pick-btn {% if comparison.picked_id == comparison.response_b_id %}picked{% endif %}">
+                        {% if comparison.picked_id == comparison.response_b_id %}{% trans "Picked" %}{% else %}{% trans "Better" %}{% endif %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

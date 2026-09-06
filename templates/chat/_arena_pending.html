@@ -1,0 +1,43 @@
+{% load i18n %}
+{% include "chat/_message_bubble.html" with message=user_message %}
+<div id="arena-{{ comparison.id }}">
+    <div class="arena-label">{% blocktrans with a=comparison.model_a.display_label b=comparison.model_b.display_label %}Comparing {{ a }} + {{ b }}{% endblocktrans %}</div>
+    <div class="arena-grid">
+        <div class="arena-pane" id="arena-pane-a-{{ comparison.id }}">
+            <div class="arena-head">
+                <span class="provider-dot provider-dot-{{ comparison.model_a.provider.slug }}"></span>
+                <span class="arena-model-name">{{ comparison.model_a.display_label }}</span>
+            </div>
+            <div class="arena-body">
+                {% include "chat/_pending_assistant_row.html" with conversation=conversation pending_message=comparison.response_a model_id=comparison.model_a_id %}
+            </div>
+            <div class="arena-foot">
+                <form method="post" action="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
+                      hx-post="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
+                      hx-target="#arena-{{ comparison.id }}" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <input type="hidden" name="picked_message_id" value="{{ comparison.response_a_id }}">
+                    <button type="submit" class="pick-btn">{% trans "Better" %}</button>
+                </form>
+            </div>
+        </div>
+        <div class="arena-pane" id="arena-pane-b-{{ comparison.id }}">
+            <div class="arena-head">
+                <span class="provider-dot provider-dot-{{ comparison.model_b.provider.slug }}"></span>
+                <span class="arena-model-name">{{ comparison.model_b.display_label }}</span>
+            </div>
+            <div class="arena-body">
+                {% include "chat/_pending_assistant_row.html" with conversation=conversation pending_message=comparison.response_b model_id=comparison.model_b_id %}
+            </div>
+            <div class="arena-foot">
+                <form method="post" action="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
+                      hx-post="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
+                      hx-target="#arena-{{ comparison.id }}" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <input type="hidden" name="picked_message_id" value="{{ comparison.response_b_id }}">
+                    <button type="submit" class="pick-btn">{% trans "Better" %}</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
