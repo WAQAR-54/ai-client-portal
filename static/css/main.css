@@ -2114,7 +2114,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 
 /* Admin Compliance Routing (accounts/models.py::Department.region_restriction) */
 .dept-row-list { display: flex; flex-direction: column; }
-.dept-row { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--color-border); }
+.dept-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; row-gap: 0.5rem; padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--color-border); }
 .dept-row:last-child { border-bottom: none; }
 .dept-name { font-size: 0.85rem; font-weight: 600; }
 .dept-restriction { font-size: 0.78rem; color: var(--color-text-muted); }
@@ -3262,6 +3262,18 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .provider-model-controls { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
 .provider-model-controls form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
 .provider-model-toggle-label { font-size: 0.75rem; color: var(--color-text-muted); }
+
+/* Feature Visibility's per-role feature matrix - was a 4-column <table>
+   (Feature/User/Manager/Admin) that silently clipped the Admin column at
+   narrow widths with no visible scroll affordance (overflow-x:auto on the
+   card doesn't help if nothing hints there's more to the right). Same
+   fix as the provider-model-row above: stack instead of column-clip. */
+.feature-role-row { padding: 0.7rem 0; border-bottom: 1px solid var(--color-border); }
+.feature-role-row:last-child { border-bottom: none; }
+.feature-role-label { font-weight: 500; margin-bottom: 0.5rem; }
+.feature-role-toggles { display: flex; gap: 1.2rem; flex-wrap: wrap; }
+.feature-role-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text-muted); font-weight: 500; margin: 0; }
+.feature-role-toggle input { width: auto; margin: 0; }
 
 .feat-list { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .feat-tag { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-sm); }
