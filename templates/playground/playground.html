@@ -100,7 +100,7 @@
   .source-tag svg{width:9px;height:9px;}
 
   .workspace{flex:1;display:grid;grid-template-columns:1fr 1fr;overflow:hidden;}
-  .editor-pane{display:flex;flex-direction:column;border-right:1px solid var(--border);}
+  .editor-pane{display:flex;flex-direction:column;border-right:1px solid var(--border);min-height:0;}
   .pane-head{
     height:42px;display:flex;align-items:center;gap:12px;padding:0 16px;
     border-bottom:1px solid var(--border);flex-shrink:0;
@@ -152,6 +152,22 @@
   .status-bar-left{display:flex;align-items:center;gap:14px;}
   .status-item{display:flex;align-items:center;gap:5px;}
   .status-item svg{width:11px;height:11px;}
+
+  /* Below this, editor+output side-by-side has no room to breathe - the
+     reference mockup never accounted for anything narrower than a laptop.
+     Stack the two panes instead, and let the page scroll for real (the
+     desktop layout's body{overflow:hidden} works there because both panes
+     fit within one screen - on a phone they can't, so clipping instead of
+     scrolling made the output pane completely unreachable). */
+  @media (max-width: 860px) {
+    body{height:auto;min-height:100vh;overflow:visible;}
+    .workspace{grid-template-columns:1fr;overflow:visible;}
+    .editor-pane{border-right:none;border-bottom:1px solid var(--border);}
+    .editor-body{min-height:220px;}
+    .output-body{min-height:180px;}
+    .pipeline-bar{flex-wrap:wrap;row-gap:8px;}
+    .pipeline-sub{flex-basis:100%;text-align:center;margin-left:0;}
+  }
 </style>
 </head>
 <body>
