@@ -9,5 +9,7 @@ urlpatterns = [
     path("governance/", include("governance.urls")),
     path("providers/", include("providers.urls")),
     path("notifications/", include("notifications.urls")),
+    path("playground/", include("playground.urls")),
+    path("domains/", include("domaingen.urls")),
     path("", RedirectView.as_view(pattern_name="accounts:dashboard", permanent=False)),
 ]

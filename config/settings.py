@@ -62,8 +62,10 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "accounts",
     "chat",
+    "domaingen",
     "governance",
     "notifications",
+    "playground",
     "providers",
 ]
 
@@ -379,7 +381,15 @@ if EMAIL_HOST:
     EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
     EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
     DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
-else:
+# Base URL used to build absolute links inside emails sent from a
+# background task (Celery), where there's no request to call
+# request.build_absolute_uri() on - notifications/emailing.py's
+# open-tracking pixel is the current use. Set to the real deployed domain
+# in production; the localhost default only matters for local dev, where
+# nothing external will ever fetch the pixel anyway.
+SITE_URL = env("SITE_URL", default="http://localhost:8000")
+
+if not EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
     DEFAULT_FROM_EMAIL = "noreply@example.com"
     # The console backend writes straight to sys.stdout using whatever
