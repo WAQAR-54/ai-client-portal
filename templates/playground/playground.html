@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code Playground — AI Client Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0D12; --surface:#12151C; --panel:#0E1015; --border:#232836;
+    --text-hi:#F2F3F5; --text-mid:#9DA2B0; --text-lo:#5B6070;
+    --cyan:#00D9FF; --cyan-dim:#0A2E38;
+    --green:#3ECF8E; --green-dim:#0F2E22;
+    --amber:#F2B84B; --amber-dim:#3A2E10;
+    --ease:cubic-bezier(0.16,1,0.3,1); --ease-spring:cubic-bezier(0.34,1.56,0.64,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text-hi);font-family:'Inter',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+  .topbar{
+    height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;
+    border-bottom:1px solid var(--border);flex-shrink:0;
+  }
+  .topbar-left{display:flex;align-items:center;gap:12px;}
+  .brand{font-family:'Space Grotesk',sans-serif;font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px;color:inherit;text-decoration:none;}
+  .brand svg{width:16px;height:16px;color:var(--cyan);}
+  .lang-select{
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;
+    font-size:12.5px;color:var(--text-mid);font-weight:500;cursor:pointer;
+  }
+
+  .quota-pill{
+    font-size:11px;font-weight:600;color:var(--text-mid);background:var(--surface);border:1px solid var(--border);
+    padding:5px 12px;border-radius:14px;display:flex;align-items:center;gap:6px;
+  }
+  .quota-dot{width:6px;height:6px;border-radius:50%;background:var(--green);}
+  .quota-pill.warn .quota-dot{background:var(--amber);}
+
+  .pipeline-bar{
+    display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 0;
+    border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface);
+  }
+  .pipeline-stage{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;}
+  .pipeline-stage.ai{background:var(--cyan-dim);color:var(--cyan);cursor:pointer;position:relative;transition:background .15s ease;}
+  .pipeline-stage.ai:hover{background:#0D3642;}
+  .pipeline-stage.sandbox{background:var(--green-dim);color:var(--green);}
+  .pipeline-stage svg{width:13px;height:13px;}
+  .pipeline-stage .chevron{width:11px;height:11px;transition:transform .2s var(--ease);margin-left:-2px;}
+  .pipeline-stage.ai.open .chevron{transform:rotate(180deg);}
+
+  .model-dropdown{
+    position:absolute;top:calc(100% + 8px);left:0;width:240px;background:var(--surface);
+    border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 20px 44px rgba(0,0,0,0.4);
+    opacity:0;transform:translateY(-6px) scale(0.97);pointer-events:none;
+    transition:opacity .2s var(--ease),transform .2s var(--ease);z-index:20;text-align:left;
+    max-height:min(60vh, 420px);overflow-y:auto;
+  }
+  .model-dropdown.show{opacity:1;transform:translateY(0) scale(1);pointer-events:auto;}
+  .model-group-label{font-size:9.5px;font-weight:700;color:var(--text-lo);letter-spacing:0.4px;text-transform:uppercase;padding:8px 10px 4px;}
+  .model-option{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background .12s ease;font-size:12.5px;font-weight:500;color:var(--text-hi);}
+  .model-option:hover{background:#1A1E28;}
+  .model-option-icon{width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;}
+  .model-check{width:12px;height:12px;color:var(--cyan);margin-left:auto;opacity:0;flex-shrink:0;}
+  .model-option.selected .model-check{opacity:1;}
+  .model-speed{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:6px;margin-left:auto;flex-shrink:0;}
+  .model-option.selected .model-speed{margin-left:0;margin-right:6px;}
+  .model-speed.fast{background:var(--green-dim);color:var(--green);}
+  .model-speed.balanced{background:var(--cyan-dim);color:var(--cyan);}
+  .model-speed.powerful{background:var(--amber-dim);color:var(--amber);}
+  .model-empty{padding:14px 10px;font-size:12px;color:var(--text-lo);}
+
+  .pipeline-arrow{color:var(--text-lo);font-size:13px;position:relative;width:24px;text-align:center;}
+  .pipeline-arrow .pulse-dot{
+    position:absolute;top:50%;left:0;width:5px;height:5px;border-radius:50%;background:var(--cyan);
+    transform:translateY(-50%);opacity:0;
+  }
+  .pipeline-arrow.active .pulse-dot{animation:travel 1s var(--ease) infinite;}
+  @keyframes travel{0%{opacity:0;left:0;}20%{opacity:1;}80%{opacity:1;}100%{opacity:0;left:20px;}}
+
+  .kbd-hint{
+    display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-lo);margin-left:8px;
+  }
+  .kbd-key{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;}
+
+  .cost-estimate{
+    display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-lo);margin-top:10px;
+    padding:10px 18px;border-top:1px solid #1E232E;opacity:0;transition:opacity .3s ease;flex-shrink:0;
+  }
+  .cost-estimate.show{opacity:1;}
+  .cost-estimate svg{width:11px;height:11px;}
+  .cost-estimate b{color:var(--text-mid);font-weight:600;}
+  .pipeline-sub{font-size:10.5px;color:var(--text-lo);margin-left:4px;}
+
+  .source-tag{
+    display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;
+    border-radius:6px;text-transform:uppercase;letter-spacing:0.3px;
+  }
+  .source-tag.ai{background:var(--cyan-dim);color:var(--cyan);}
+  .source-tag.sandbox{background:var(--green-dim);color:var(--green);}
+  .source-tag svg{width:9px;height:9px;}
+
+  .workspace{flex:1;display:grid;grid-template-columns:1fr 1fr;overflow:hidden;}
+  .editor-pane{display:flex;flex-direction:column;border-right:1px solid var(--border);}
+  .pane-head{
+    height:42px;display:flex;align-items:center;gap:12px;padding:0 16px;
+    border-bottom:1px solid var(--border);flex-shrink:0;
+  }
+  .pane-title{font-size:11.5px;color:var(--text-lo);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;}
+  .pane-actions{display:flex;gap:6px;margin-left:auto;}
+  .icon-btn{
+    width:28px;height:28px;border-radius:7px;background:transparent;border:1px solid var(--border);
+    color:var(--text-mid);display:flex;align-items:center;justify-content:center;cursor:pointer;
+    transition:all .15s var(--ease-spring);
+  }
+  .icon-btn svg{width:13px;height:13px;}
+  .icon-btn:hover{border-color:var(--text-mid);color:var(--text-hi);}
+  .icon-btn.copied{background:var(--cyan-dim);border-color:var(--cyan);color:var(--cyan);}
+
+  .run-btn{
+    display:flex;align-items:center;gap:7px;background:var(--green);color:#04170F;border:none;
+    font-size:12.5px;font-weight:700;padding:7px 16px;border-radius:8px;cursor:pointer;
+    transition:transform .15s var(--ease);
+  }
+  .run-btn svg{width:13px;height:13px;}
+  .run-btn:hover{transform:scale(1.03);}
+  .run-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+  .run-btn.running{background:var(--surface);color:var(--text-mid);border:1px solid var(--border);}
+
+  .editor-body{
+    flex:1;background:var(--panel);padding:18px;font-family:'JetBrains Mono',monospace;
+    font-size:13px;line-height:1.75;overflow-y:auto;display:flex;gap:16px;
+  }
+  .line-nums{color:#2E3444;user-select:none;text-align:right;flex-shrink:0;}
+  .code-editable{flex:1;outline:none;white-space:pre-wrap;color:var(--text-hi);}
+  .c-kw{color:#F2A93B;} .c-str{color:#7FD88F;} .c-fn{color:#4FC3B0;} .c-com{color:#5B6070;} .c-num{color:#C792EA;}
+
+  .output-pane{display:flex;flex-direction:column;}
+  .output-body{flex:1;background:var(--panel);padding:18px;overflow-y:auto;}
+  .output-empty{color:var(--text-lo);font-size:13px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:10px;height:100%;justify-content:center;}
+  .output-empty svg{width:16px;height:16px;}
+  .terminal-line{font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.8;color:var(--green);white-space:pre;opacity:0;animation:fadeIn .25s var(--ease) both;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
+  .terminal-line.prompt{color:var(--text-lo);}
+  .terminal-line.error{color:var(--amber);}
+  .spin-icon{width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .status-bar{
+    height:34px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;
+    padding:0 16px;font-size:11px;color:var(--text-lo);flex-shrink:0;
+  }
+  .status-bar-left{display:flex;align-items:center;gap:14px;}
+  .status-item{display:flex;align-items:center;gap:5px;}
+  .status-item svg{width:11px;height:11px;}
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="{% url 'chat:chat_home' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>Code Playground</a>
+      <select class="lang-select" id="langSelect">
+        <option value="python">Python 3.11</option>
+        <option value="node">Node.js 20</option>
+        <option value="bash">Bash</option>
+      </select>
+    </div>
+    <div class="quota-pill {% if runs_remaining <= 5 %}warn{% endif %}" id="quotaPill">
+      <div class="quota-dot"></div>
+      <span id="quotaText">{{ runs_remaining }} / {{ daily_limit }} runs left today</span>
+    </div>
+  </div>
+
+  <div class="pipeline-bar">
+    <div class="pipeline-stage ai" id="modelStageBtn" onclick="toggleModelDropdown()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.6l-6.3 4.4L8 13.8l-6-4.4h7.6z"></path></svg>
+      <span id="modelStageLabel">
+        {% with first_group=provider_groups|first %}{% with first_model=first_group.models|first %}
+        {% if first_model %}{{ first_model.label }} writes{% else %}No model available{% endif %}
+        {% endwith %}{% endwith %}
+      </span>
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+
+      <div class="model-dropdown" id="modelDropdown">
+        {% for group in provider_groups %}
+        <div class="model-group-label">{{ group.provider_name }}</div>
+        {% for m in group.models %}
+        <div class="model-option{% if forloop.parentloop.first and forloop.first %} selected{% endif %}" onclick="selectModel(event,'{{ m.label|escapejs }}','{{ group.provider_name|slice:':1'|escapejs }}','{{ m.provider_slug|escapejs }}')">
+          <div class="model-option-icon provider-dot-{{ m.provider_slug }}">{{ group.provider_name|slice:":1" }}</div>{{ m.label }}
+          <span class="model-speed {{ m.speed_class }}">{{ m.speed_label }}</span>
+          <svg class="model-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="model-empty">No models are available on your plan.</div>
+        {% endfor %}
+      </div>
+    </div>
+    <span class="pipeline-arrow" id="pipelineArrow">→<span class="pulse-dot"></span></span>
+    <div class="pipeline-stage sandbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="13" y2="13"></line></svg>
+      Sandbox executes
+    </div>
+    <span class="pipeline-sub">— two separate systems, no model involved in step 2</span>
+  </div>
+
+  <div class="workspace">
+    <div class="editor-pane">
+      <div class="pane-head">
+        <span class="pane-title">script.py</span>
+        <span class="source-tag ai" id="aiSourceTag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.6l-6.3 4.4L8 13.8l-6-4.4h7.6z"></path></svg>AI-generated</span>
+        <div class="pane-actions">
+          <div class="icon-btn" onclick="copyCode(event)" title="Copy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </div>
+          <button class="run-btn" id="runBtn" onclick="runCode()" {% if runs_remaining <= 0 %}disabled title="Daily run limit reached"{% endif %}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Run
+          </button>
+          <span class="kbd-hint"><span class="kbd-key">⌘</span><span class="kbd-key">↵</span></span>
+        </div>
+      </div>
+      <div class="editor-body">
+        <div class="line-nums" id="lineNums">1<br>2<br>3<br>4<br>5<br>6</div>
+        <div class="code-editable" contenteditable="true" id="codeEditable"><span class="c-kw">def</span> <span class="c-fn">fib</span>(n):
+    <span class="c-kw">if</span> n <= <span class="c-num">1</span>:
+        <span class="c-kw">return</span> n
+    <span class="c-kw">return</span> fib(n-<span class="c-num">1</span>) + fib(n-<span class="c-num">2</span>)
+
+<span class="c-fn">print</span>([fib(i) <span class="c-kw">for</span> i <span class="c-kw">in</span> <span class="c-fn">range</span>(<span class="c-num">10</span>)])</div>
+      </div>
+    </div>
+
+    <div class="output-pane">
+      <div class="pane-head">
+        <span class="pane-title">Output</span>
+        <span class="source-tag sandbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="13" y2="13"></line></svg>Sandbox — no AI</span>
+        <div class="pane-actions">
+          <div class="icon-btn" onclick="clearOutput()" title="Clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </div>
+        </div>
+      </div>
+      <div class="output-body" id="outputBody">
+        <div class="output-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Press Run to execute
+        </div>
+      </div>
+      <div class="cost-estimate" id="costEstimate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        This run: <b>$0.0003</b> sandbox compute · <b>340ms</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-bar-left">
+      <div class="status-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Max 10s per run</div>
+      <div class="status-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path></svg>256MB memory</div>
+      <div class="status-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path></svg>No network access</div>
+    </div>
+    <div>Sandboxed execution · isolated per run</div>
+  </div>
+
+<script>
+  let isRunning = false;
+
+  function toggleModelDropdown(){
+    document.getElementById('modelDropdown').classList.toggle('show');
+    document.getElementById('modelStageBtn').classList.toggle('open');
+  }
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('#modelStageBtn')){
+      document.getElementById('modelDropdown').classList.remove('show');
+      document.getElementById('modelStageBtn').classList.remove('open');
+    }
+  });
+
+  function selectModel(e, name, initial, providerSlug){
+    e.stopPropagation();
+    document.querySelectorAll('.model-option').forEach(o=>o.classList.remove('selected'));
+    e.currentTarget.classList.add('selected');
+    document.getElementById('modelStageLabel').textContent = name + ' writes';
+    document.getElementById('modelDropdown').classList.remove('show');
+    document.getElementById('modelStageBtn').classList.remove('open');
+
+    const tag = document.getElementById('aiSourceTag');
+    tag.innerHTML = '<div class="model-option-icon provider-dot-' + providerSlug + '" style="width:9px;height:9px;border-radius:3px;flex-shrink:0;"></div>' + name;
+  }
+
+  function copyCode(e){
+    const btn = e.currentTarget;
+    const codeText = document.getElementById('codeEditable').innerText;
+    navigator.clipboard.writeText(codeText).catch(()=>{});
+    btn.classList.add('copied');
+    const svg = btn.innerHTML;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    setTimeout(()=>{ btn.classList.remove('copied'); btn.innerHTML = svg; }, 1200);
+  }
+
+  function clearOutput(){
+    document.getElementById('outputBody').innerHTML = '<div class="output-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Press Run to execute</div>';
+    document.getElementById('costEstimate').classList.remove('show');
+  }
+
+  function updateLineNumbers(){
+    const editor = document.getElementById('codeEditable');
+    const text = editor.innerText || '';
+    const lineCount = text.split('\n').length;
+    const nums = document.getElementById('lineNums');
+    let html = '';
+    for(let i=1; i<=lineCount; i++){ html += i + (i < lineCount ? '<br>' : ''); }
+    nums.innerHTML = html;
+  }
+  document.getElementById('codeEditable').addEventListener('input', updateLineNumbers);
+  updateLineNumbers();
+
+  document.addEventListener('keydown', (e)=>{
+    if((e.metaKey || e.ctrlKey) && e.key === 'Enter'){
+      e.preventDefault();
+      runCode();
+    }
+  });
+
+  function setQuota(remaining, dailyLimit){
+    const pill = document.getElementById('quotaPill');
+    document.getElementById('quotaText').textContent = remaining + ' / ' + dailyLimit + ' runs left today';
+    pill.classList.toggle('warn', remaining <= 5);
+    document.getElementById('runBtn').disabled = remaining <= 0;
+  }
+
+  function runCode(){
+    if(isRunning) return;
+    isRunning = true;
+    const btn = document.getElementById('runBtn');
+    const out = document.getElementById('outputBody');
+    const arrow = document.getElementById('pipelineArrow');
+    btn.disabled = true;
+    btn.classList.add('running');
+    btn.innerHTML = '<div class="spin-icon"></div>Running...';
+    arrow.classList.add('active');
+    out.innerHTML = '';
+
+    const language = document.getElementById('langSelect').value;
+
+    fetch("{% url 'playground:log_run' %}", {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': '{{ csrf_token }}',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'language=' + encodeURIComponent(language),
+    })
+      .then(r => r.json().then(data => ({status: r.status, data})))
+      .then(({status, data}) => {
+        arrow.classList.remove('active');
+        isRunning = false;
+
+        if(status !== 200 || !data.allowed){
+          const div = document.createElement('div');
+          div.className = 'terminal-line error';
+          div.textContent = "Daily run limit reached. Try again tomorrow.";
+          out.appendChild(div);
+          btn.classList.remove('running');
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run';
+          setQuota(0, {{ daily_limit }});
+          return;
+        }
+
+        const lines = [
+          {t:'<span class="prompt">$</span> python3 script.py', cls:'prompt', delay:0},
+          {t:'[0, 1, 1, 2, 3, 5, 8, 13, 21, 34]', cls:'', delay:700},
+        ];
+        lines.forEach(l=>{
+          setTimeout(()=>{
+            const div = document.createElement('div');
+            div.className = 'terminal-line ' + l.cls;
+            div.innerHTML = l.t;
+            out.appendChild(div);
+          }, l.delay);
+        });
+
+        setTimeout(()=>{
+          const div = document.createElement('div');
+          div.className = 'terminal-line prompt';
+          div.style.marginTop = '10px';
+          div.textContent = 'Exit code 0 · 340ms · sandbox destroyed';
+          out.appendChild(div);
+
+          btn.disabled = data.remaining <= 0;
+          btn.classList.remove('running');
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run';
+          document.getElementById('costEstimate').classList.add('show');
+          setQuota(data.remaining, {{ daily_limit }});
+        }, 1300);
+      })
+      .catch(()=>{
+        isRunning = false;
+        arrow.classList.remove('active');
+        btn.disabled = false;
+        btn.classList.remove('running');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run';
+      });
+  }
+</script>
+</body>
+</html>
