@@ -28,6 +28,61 @@ class WhoisQueryTargetTests(TestCase):
         self.assertEqual(queried_domain, "example.com")
 
 
+class WhoisRegistryFormatTests(TestCase):
+    """PKNIC (.pk) doesn't use a "Domain Name:" field at all, unlike every
+    other supported registry - these lock in the real response shapes
+    observed from each live registry (see domaingen/whois.py's indicator
+    comments) so a future indicator-list edit can't silently break one of
+    them without a test noticing."""
+
+    @patch("domaingen.whois._raw_whois_query")
+    def test_pknic_taken_format(self, mock_query):
+        from domaingen.whois import check_domain_available
+
+        mock_query.return_value = (
+            "# WHOIS .PK Domains (PKNIC)\n\n    Domain: google.com.pk\n    Status: Domain is Registered"
+        )
+        self.assertFalse(check_domain_available("google.com", "pk"))
+
+    @patch("domaingen.whois._raw_whois_query")
+    def test_pknic_available_format(self, mock_query):
+        from domaingen.whois import check_domain_available
+
+        mock_query.return_value = (
+            "# WHOIS .PK Domains (PKNIC)\n\n    Domain: something.pk\n"
+            "    Status: Not Registered, and may be available if valid\n    Available: Yes."
+        )
+        self.assertTrue(check_domain_available("something", "pk"))
+
+    @patch("domaingen.whois._raw_whois_query")
+    def test_nominet_uk_taken_format(self, mock_query):
+        from domaingen.whois import check_domain_available
+
+        mock_query.return_value = "    Domain name:\n        google.co.uk\n\n    Registered on: 14-Feb-1999"
+        self.assertFalse(check_domain_available("google.co", "uk"))
+
+    @patch("domaingen.whois._raw_whois_query")
+    def test_nominet_uk_available_format(self, mock_query):
+        from domaingen.whois import check_domain_available
+
+        mock_query.return_value = '    No match for "something.uk".\n\n    This domain name has not been registered.'
+        self.assertTrue(check_domain_available("something", "uk"))
+
+    @patch("domaingen.whois._raw_whois_query")
+    def test_dotco_taken_format(self, mock_query):
+        from domaingen.whois import check_domain_available
+
+        mock_query.return_value = "Domain Name: GOOGLE.CO\nRegistry Domain ID: D157997-CNIC"
+        self.assertFalse(check_domain_available("google", "co"))
+
+    @patch("domaingen.whois._raw_whois_query")
+    def test_dotco_available_format(self, mock_query):
+        from domaingen.whois import check_domain_available
+
+        mock_query.return_value = "The queried object does not exist: DOMAIN NOT FOUND"
+        self.assertTrue(check_domain_available("something", "co"))
+
+
 class DomainGeneratorAccessTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="dev@example.com", password="pw12345!")
@@ -84,13 +139,13 @@ class DomainGeneratorAccessTests(TestCase):
 
 class ParseSuggestionsTests(TestCase):
     def test_parses_valid_json_array(self):
-        raw = '[{"name": "legaldesk", "tld": "com"}, {"name": "lawcopilot", "tld": "ai"}]'
+        raw = '[{"name": "legaldesk", "tld": "com"}, {"name": "lawcopilot", "tld": "co"}]'
         result = _parse_suggestions(raw, "all")
         self.assertEqual(
             result,
             [
                 {"name": "legaldesk", "tld": "com", "domain": "legaldesk.com"},
-                {"name": "lawcopilot", "tld": "ai", "domain": "lawcopilot.ai"},
+                {"name": "lawcopilot", "tld": "co", "domain": "lawcopilot.co"},
             ],
         )
 
@@ -106,7 +161,7 @@ class ParseSuggestionsTests(TestCase):
         self.assertEqual(_parse_suggestions('{"name": "legaldesk"}', "all"), [])
 
     def test_filters_out_tld_not_matching_the_requested_filter(self):
-        raw = '[{"name": "legaldesk", "tld": "com"}, {"name": "lawcopilot", "tld": "ai"}]'
+        raw = '[{"name": "legaldesk", "tld": "com"}, {"name": "lawcopilot", "tld": "co"}]'
         result = _parse_suggestions(raw, "com")
         self.assertEqual(result, [{"name": "legaldesk", "tld": "com", "domain": "legaldesk.com"}])
 

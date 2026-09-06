@@ -1,23 +1,28 @@
 """Real, credential-free domain availability checks via raw WHOIS (port 43)
 - no registrar API key needed, but slower (~1-3s/domain) and occasionally
 inconclusive since response formats aren't standardized across registries.
-Only the three TLDs the Domain Generator UI actually offers (.com/.io/.ai)
+Only the TLDs the Domain Generator UI actually offers (.com/.co/.pk/.uk)
 are supported; anything else returns None (unknown) rather than guessing."""
 
 import socket
 
 WHOIS_SERVERS = {
     "com": "whois.verisign-grs.com",
-    "io": "whois.nic.io",
-    "ai": "whois.nic.ai",
+    "co": "whois.registry.co",
+    "pk": "whois.pknic.net.pk",
+    "uk": "whois.nic.uk",
 }
 
-# Checked in this order: a "Domain Name:" field is the strongest possible
-# signal the domain is actually registered, so it's tested first and wins
-# over any coincidental match below (registered-domain WHOIS records
-# sometimes carry unrelated boilerplate that happens to contain a phrase
-# like "not found" elsewhere in the terms-of-use text).
-_TAKEN_INDICATOR = "domain name:"
+# Checked in this order: a strong "this is a real registration record"
+# signal is tested first and wins over any coincidental match below
+# (registered-domain WHOIS records sometimes carry unrelated boilerplate
+# that happens to contain a phrase like "not found" elsewhere in the
+# terms-of-use text). "status: domain is registered" is PKNIC's (.pk)
+# own phrasing - it doesn't use a "Domain Name:" field at all.
+_TAKEN_INDICATORS = (
+    "domain name:",
+    "status: domain is registered",
+)
 _AVAILABLE_INDICATORS = (
     "no match for",
     "domain not found",
@@ -25,6 +30,7 @@ _AVAILABLE_INDICATORS = (
     "no data found",
     "no entries found",
     "status: free",
+    "not registered",
 )
 
 
@@ -56,7 +62,7 @@ def check_domain_available(name, tld, timeout=3):
         return None
 
     lower = raw.lower()
-    if _TAKEN_INDICATOR in lower:
+    if any(indicator in lower for indicator in _TAKEN_INDICATORS):
         return False
     if any(indicator in lower for indicator in _AVAILABLE_INDICATORS):
         return True

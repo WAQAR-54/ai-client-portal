@@ -27,14 +27,14 @@ logger = logging.getLogger(__name__)
 DAILY_SEARCH_LIMIT = getattr(settings, "DOMAIN_GENERATOR_DAILY_LIMIT", 20)
 
 # The only TLDs domaingen.whois.check_domain_available can actually verify -
-# matches the reference UI's own TLD chip row (All/.com/.ai/.io) exactly,
-# so nothing is offered that the backend can't really check.
-ALLOWED_TLDS = ["com", "ai", "io"]
+# matches the reference UI's own TLD chip row (All/.com/.co/.pk/.uk)
+# exactly, so nothing is offered that the backend can't really check.
+ALLOWED_TLDS = ["com", "co", "pk", "uk"]
 
 # Typical street price for a first-year registration - not webhostera.pk's
 # actual live pricing (no reseller API/credentials for that), so this is
 # labeled "around" in the UI rather than presented as an exact quote.
-_TLD_PRICE_ESTIMATE = {"com": Decimal("12"), "io": Decimal("35"), "ai": Decimal("70")}
+_TLD_PRICE_ESTIMATE = {"com": Decimal("12"), "co": Decimal("25"), "pk": Decimal("10"), "uk": Decimal("12")}
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,22}[a-z0-9]$")
 
