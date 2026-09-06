@@ -278,7 +278,7 @@
     let statusHtml = statusBadgeHtml(result.available);
     if(result.available === true){
       statusHtml += '<span class="price-tag">' + (result.price_estimate || '') + '</span>' +
-        '<div class="reg-wrap"><button class="reg-btn" onclick="registerDomain(\'' + result.domain + '\')">Register</button><span class="reg-note">via webhoster.pk</span></div>';
+        '<div class="reg-wrap"><button class="reg-btn" onclick="registerDomain(\'' + result.domain + '\')">Register</button><span class="reg-note">via webhostera.pk</span></div>';
     }
 
     row.innerHTML = '<div class="fav-btn" onclick="toggleFav(this)">' + FAV_ICON + '</div>' +
@@ -288,7 +288,7 @@
   }
 
   function registerDomain(domainName){
-    window.open('https://webhoster.pk/client/cart.php?a=add&domain=register&query=' + encodeURIComponent(domainName), '_blank');
+    window.open('https://webhostera.pk/client/cart.php?a=add&domain=register&query=' + encodeURIComponent(domainName), '_blank');
   }
 
   function showEmpty(title, sub, isError){

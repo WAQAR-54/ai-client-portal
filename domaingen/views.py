@@ -31,7 +31,7 @@ DAILY_SEARCH_LIMIT = getattr(settings, "DOMAIN_GENERATOR_DAILY_LIMIT", 20)
 # so nothing is offered that the backend can't really check.
 ALLOWED_TLDS = ["com", "ai", "io"]
 
-# Typical street price for a first-year registration - not webhoster.pk's
+# Typical street price for a first-year registration - not webhostera.pk's
 # actual live pricing (no reseller API/credentials for that), so this is
 # labeled "around" in the UI rather than presented as an exact quote.
 _TLD_PRICE_ESTIMATE = {"com": Decimal("12"), "io": Decimal("35"), "ai": Decimal("70")}
