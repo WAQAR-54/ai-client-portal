@@ -1,0 +1,32 @@
+{% load i18n %}
+<div id="pending-providers-list">
+    {% for provider in pending_providers %}
+    <div class="pending-row">
+        <div class="pending-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div>
+            <div class="pending-name">{{ provider.name }}</div>
+            <div class="pending-sub">
+                {% if provider.connected_by %}{% blocktrans with who=provider.connected_by.email %}Connected by {{ who }}{% endblocktrans %} — {% endif %}{% trans "awaiting compliance review" %}
+            </div>
+        </div>
+        <div class="rule-row-spacer"></div>
+        <form method="post" action="{% url 'providers:reject' provider_id=provider.id %}"
+              hx-post="{% url 'providers:reject' provider_id=provider.id %}"
+              hx-confirm="{% trans 'Reject this provider? It will be disconnected.' %}"
+              hx-target="#pending-providers-list" hx-swap="outerHTML" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="pending-reject">{% trans "Reject" %}</button>
+        </form>
+        <form method="post" action="{% url 'providers:approve' provider_id=provider.id %}"
+              hx-post="{% url 'providers:approve' provider_id=provider.id %}"
+              hx-target="#pending-providers-list" hx-swap="outerHTML" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="pending-approve">{% trans "Approve" %}</button>
+        </form>
+    </div>
+    {% empty %}
+    <p class="text-faint">{% trans "No providers awaiting compliance sign-off." %}</p>
+    {% endfor %}
+</div>

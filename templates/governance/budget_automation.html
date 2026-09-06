@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Budget Automation" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Budget Automation" %}</h1>
+    <p>{% trans "When a user's spend on their plan crosses a threshold, automatically switch their replies to a cheaper model instead of blocking them outright. Only plans with a monthly budget have anything to measure against, so a plan without one stays fixed off below." %}</p>
+
+    <table class="data mt-4">
+        <thead>
+            <tr>
+                <th>{% trans "Plan" %}</th>
+                <th>{% trans "Monthly budget" %}</th>
+                <th>{% trans "Auto-downgrade" %}</th>
+                <th>{% trans "Trigger at" %}</th>
+                <th>{% trans "Fallback model" %}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for plan in plans %}
+            <tr>
+                <td>{{ plan.name }}</td>
+                <td class="mono">{% if plan.monthly_budget_cap %}${{ plan.monthly_budget_cap }}{% else %}—{% endif %}</td>
+                {% if plan.monthly_budget_cap %}
+                <td>
+                    <label class="toggle-switch" title="{% trans 'Auto-downgrade on high spend' %}">
+                        <input type="checkbox" name="auto_downgrade_enabled" form="budget-form-{{ plan.id }}" {% if plan.auto_downgrade_enabled %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
+                </td>
+                <td>
+                    <input type="number" class="input" name="auto_downgrade_threshold_pct" form="budget-form-{{ plan.id }}"
+                           min="1" max="99" style="width:70px; margin:0; display:inline-block;"
+                           value="{{ plan.auto_downgrade_threshold_pct }}">%
+                </td>
+                <td>
+                    <select class="input" name="auto_downgrade_fallback_model_id" form="budget-form-{{ plan.id }}" style="margin:0;">
+                        <option value="">{% trans "— choose a model —" %}</option>
+                        {% regroup fallback_models by provider.name as provider_groups %}
+                        {% for group in provider_groups %}
+                        <optgroup label="{{ group.grouper }}">
+                            {% for m in group.list %}
+                            <option value="{{ m.id }}" {% if plan.auto_downgrade_fallback_model_id == m.id %}selected{% endif %}>{{ m.display_label }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td>
+                    <button type="submit" form="budget-form-{{ plan.id }}" class="btn-small">{% trans "Save" %}</button>
+                </td>
+                {% else %}
+                <td><span class="badge badge-muted" title="{% trans 'Set a monthly budget on this plan first' %}">{% trans "Not applicable" %}</span></td>
+                <td>—</td>
+                <td>—</td>
+                <td></td>
+                {% endif %}
+            </tr>
+            {% empty %}
+            <tr class="empty-state-row"><td colspan="6">{% trans "No plans yet." %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% for plan in plans %}
+{% if plan.monthly_budget_cap %}
+<form id="budget-form-{{ plan.id }}" method="post" action="{% url 'governance:update_budget_automation' plan_id=plan.id %}">{% csrf_token %}</form>
+{% endif %}
+{% endfor %}
+{% endblock %}

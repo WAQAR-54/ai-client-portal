@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Smart Routing" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+        <h1 style="margin-bottom:0;">{% trans "Smart Routing Rules" %}</h1>
+        <button type="button" class="btn"
+                hx-get="{% url 'governance:routing_rule_new' %}"
+                hx-target="#routingRuleModalBody" hx-swap="innerHTML"
+                onclick="document.getElementById('routingRuleModalTitle').textContent = '{% trans "New routing rule" %}'; portalOpenModal('routingRuleModal');">+ {% trans "Add rule" %}</button>
+    </div>
+    <p>{% trans "Requests are routed automatically based on these rules — users don't have to pick a model themselves unless they override it. The first active rule (by priority) whose condition matches wins; if none match, requests fall back to the existing tier-based smart routing." %}</p>
+
+    {% include "governance/_routing_rules_list.html" %}
+</div>
+
+<div class="modal-overlay" id="routingRuleModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="routingRuleModalTitle">{% trans "New routing rule" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('routingRuleModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="routingRuleModalBody">
+            <!-- Populated by htmx from governance:routing_rule_new / routing_rule_edit -->
+        </div>
+    </div>
+</div>
+{% endblock %}

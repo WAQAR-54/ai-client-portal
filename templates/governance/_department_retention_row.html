@@ -1,0 +1,14 @@
+{% load i18n %}
+<div class="dept-mfa-row" id="retention-dept-{{ department.id }}">
+    <span class="dept-name">{{ department.name }}</span>
+    <form method="post" action="{% url 'governance:update_department_retention' department_id=department.id %}"
+          hx-post="{% url 'governance:update_department_retention' department_id=department.id %}"
+          hx-target="#retention-dept-{{ department.id }}" hx-swap="outerHTML">
+        {% csrf_token %}
+        <select name="retention_period" class="input" style="margin:0; padding:0.25rem 0.55rem; font-size:0.8rem;" onchange="this.closest('form').requestSubmit()">
+            {% for value, label in department.RetentionPeriod.choices %}
+            <option value="{{ value }}" {% if department.retention_period == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>

@@ -61,6 +61,8 @@ USER_CHAT_FEATURES = [
     ("notifications", "Notifications (bell + email preferences)"),
     ("upgrade_request", '"Request upgrade" button/flow'),
     ("onboarding_tour", "Guided onboarding tour"),
+    ("code_playground", "Code Playground (standalone, off by default - see its own migration)"),
+    ("domain_generator", "Domain Generator (standalone, off by default - see its own migration)"),
 ]
 
 ROLE_FEATURE_ROLES = ["user", "manager", "admin"]
@@ -250,6 +252,29 @@ class Plan(models.Model):
     # cuts them over, so this field is inert (write-only from the
     # migration command's point of view) until then.
     allowed_provider_models = models.ManyToManyField("providers.ProviderModel", blank=True, related_name="plans_v2")
+
+    # Budget automation: once a user's month-to-date spend against
+    # monthly_budget_cap crosses auto_downgrade_threshold_pct, new replies
+    # are forced onto auto_downgrade_fallback_model instead of blocking the
+    # user outright - see governance/plans.py::get_budget_automation_status
+    # and chat/views.py::stream_message. Meaningless without
+    # monthly_budget_cap set (nothing to measure against), so the admin UI
+    # (governance/views.py::BudgetAutomationView) disables the toggle for
+    # any plan missing a budget cap rather than letting it be turned on.
+    auto_downgrade_enabled = models.BooleanField(default=False)
+    auto_downgrade_threshold_pct = models.PositiveSmallIntegerField(
+        default=80,
+        help_text="Percent of monthly_budget_cap spent before auto-downgrade kicks in.",
+    )
+    auto_downgrade_fallback_model = models.ForeignKey(
+        "providers.ProviderModel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Model to force new replies onto once the threshold is crossed.",
+    )
+
     feature_flags = models.JSONField(
         default=dict,
         blank=True,
@@ -392,3 +417,78 @@ class RoleFeatureToggle(models.Model):
 
     def __str__(self):
         return f"{self.role}:{self.feature_key} = {self.is_enabled}"
+
+
+class RoutingRule(models.Model):
+    """Admin-defined "if condition then model" override, checked before the
+    tier-classification smart-routing already in chat/router.py (see
+    chat/router.py::match_routing_rule) - runs only when the user didn't
+    manually pick a model, same as tier classification. First active rule
+    (by priority) whose condition matches AND whose target_model is one the
+    requesting user can actually use wins; otherwise routing falls through
+    unchanged to the existing tier-classification behavior."""
+
+    class Condition(models.TextChoices):
+        CODE_LIKE = "code_like", "Task looks like code"
+        CASUAL_SHORT = "casual_short", "Casual / short question"
+        IMAGE_ATTACHED = "image_attached", "Image attached"
+        LONG_DOCUMENT_ATTACHED = "long_document_attached", "Long document attached"
+
+    condition = models.CharField(max_length=30, choices=Condition.choices)
+    target_model = models.ForeignKey("providers.ProviderModel", on_delete=models.CASCADE, related_name="routing_rules")
+    priority = models.PositiveIntegerField(default=0, help_text="Lower runs first when more than one rule matches.")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["priority", "id"]
+
+    def __str__(self):
+        return f"{self.get_condition_display()} -> {self.target_model}"
+
+
+class ComplianceSettings(models.Model):
+    """Singleton (always pk=1, via .load()) holding org-wide Data Handling
+    toggles that don't belong to any one Provider/Department - see
+    chat/router.py's zero-retention filter and governance/pii.py's PII
+    scanning gate."""
+
+    only_zero_retention_models = models.BooleanField(default=False)
+    pii_scanning_enabled = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Compliance settings"
+        verbose_name_plural = "Compliance settings"
+
+    def __str__(self):
+        return "Compliance settings"
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class PIIRule(models.Model):
+    """One fixed, pre-seeded data type governance/pii.py scans outgoing
+    messages for when ComplianceSettings.pii_scanning_enabled is on - see
+    the seed migration. Not admin-addable/removable (a short fixed
+    checklist, not an open rule set), just toggled and given an action."""
+
+    class Kind(models.TextChoices):
+        NATIONAL_ID = "national_id", "CNIC / National ID numbers"
+        CREDIT_CARD = "credit_card", "Credit card numbers"
+        PHONE_NUMBER = "phone_number", "Phone numbers"
+
+    class Action(models.TextChoices):
+        BLOCK = "block", "Block"
+        REDACT = "redact", "Redact"
+        WARN = "warn", "Warn only"
+
+    kind = models.CharField(max_length=20, choices=Kind.choices, unique=True)
+    action = models.CharField(max_length=10, choices=Action.choices, default=Action.WARN)
+    is_enabled = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.get_kind_display()} ({self.get_action_display()})"

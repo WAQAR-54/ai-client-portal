@@ -1,0 +1,28 @@
+{% load i18n %}
+<div class="routing-rule-list" id="routing-rules-list">
+    {% for rule in rules %}
+    <div class="routing-rule-row">
+        <span class="rule-if-label">{% trans "If" %}</span>
+        <span class="badge badge-muted">{{ rule.get_condition_display }}</span>
+        <span class="rule-arrow">→</span>
+        <span class="model-badge model-badge-{{ rule.target_model.provider.slug }}">
+            <span class="model-badge-dot"></span>{{ rule.target_model.display_label }}
+        </span>
+        {% if not rule.is_active %}<span class="badge badge-muted">{% trans "Inactive" %}</span>{% endif %}
+        <div class="rule-row-spacer"></div>
+        <button type="button" class="btn-small btn-ghost"
+                hx-get="{% url 'governance:routing_rule_edit' rule_id=rule.id %}"
+                hx-target="#routingRuleModalBody" hx-swap="innerHTML"
+                onclick="document.getElementById('routingRuleModalTitle').textContent = '{% trans "Edit routing rule" %}'; portalOpenModal('routingRuleModal');">{% trans "Edit" %}</button>
+        <form method="post" action="{% url 'governance:delete_routing_rule' rule_id=rule.id %}"
+              hx-post="{% url 'governance:delete_routing_rule' rule_id=rule.id %}"
+              hx-confirm="{% trans 'Delete this routing rule?' %}"
+              hx-target="#routing-rules-list" hx-swap="outerHTML" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Delete" %}</button>
+        </form>
+    </div>
+    {% empty %}
+    <p class="text-faint">{% trans "No routing rules yet — Smart Routing falls back to automatic tier-based selection." %}</p>
+    {% endfor %}
+</div>

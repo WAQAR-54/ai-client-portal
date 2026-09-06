@@ -121,6 +121,49 @@ def get_plan_status(user):
     return {"plan": plan, "assignment": assignment, "state": "expired", "days_remaining": 0, "grace_days_remaining": 0}
 
 
+def get_budget_automation_status(user):
+    """Whether this user's replies should currently be forced onto a
+    cheaper fallback model because their Plan's auto-downgrade is on and
+    their month-to-date spend has crossed its threshold. Read by both the
+    in-chat banner (chat/views.py::chat_home) and the actual model-swap in
+    chat/views.py::stream_message, so the two can never disagree about
+    whether automation is "active" right now. Spend is computed the same
+    way governance/views.py::_usage_exceeds_plan computes it (per-user,
+    month-to-date estimated_cost) - this app's monthly_budget_cap has
+    always been a per-user cap, not a pooled team one, so this follows
+    that same existing precedent rather than introducing a second notion
+    of "budget" the rest of the app doesn't have."""
+    from django.db.models import Sum
+
+    from chat.models import Message
+
+    inactive = {"active": False, "pct": 0, "threshold": None, "fallback_model": None}
+
+    plan = get_plan_status(user)["plan"]
+    if not plan or not plan.auto_downgrade_enabled:
+        return inactive
+    if not plan.monthly_budget_cap or not plan.auto_downgrade_fallback_model_id:
+        return inactive
+
+    month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    spent = (
+        Message.objects.filter(
+            conversation__user=user, role=Message.Role.ASSISTANT, created_at__gte=month_start
+        ).aggregate(total=Sum("estimated_cost"))["total"]
+        or 0
+    )
+    pct = round(float(spent) / float(plan.monthly_budget_cap) * 100) if plan.monthly_budget_cap else 0
+    if pct < plan.auto_downgrade_threshold_pct:
+        return inactive
+
+    return {
+        "active": True,
+        "pct": pct,
+        "threshold": plan.auto_downgrade_threshold_pct,
+        "fallback_model": plan.auto_downgrade_fallback_model,
+    }
+
+
 def effective_allowed_model_ids(user):
     """Plan grant set, adjusted by explicit per-user overrides. Returns
     None to mean "unrestricted" (no plan assigned at all)."""
@@ -231,6 +274,26 @@ def effective_allowed_provider_model_ids(user):
         team_disabled_mc_ids = set(user.team.disabled_models.values_list("id", flat=True))
         base_ids -= _model_config_ids_to_provider_model_ids(team_disabled_mc_ids)
     return (base_ids | granted_extra) - denied
+
+
+def region_allowed_provider_model_ids(user):
+    """Compliance Routing: None means "no region restriction" (the common
+    case); otherwise a set of ProviderModel ids whose Provider.region
+    satisfies the user's Department.region_restriction. This is a hard
+    ceiling applied ON TOP OF effective_allowed_provider_model_ids by every
+    caller in chat/router.py - it only ever narrows what a Plan/team
+    already allows, the same "can restrict, never widen" rule
+    Team.disabled_models already follows above."""
+    from accounts.models import Department
+
+    if not user.department_id or user.department.region_restriction == Department.RegionRestriction.NONE:
+        return None
+
+    from providers.models import Provider, ProviderModel
+
+    if user.department.region_restriction == Department.RegionRestriction.EU_ONLY:
+        return set(ProviderModel.objects.filter(provider__region=Provider.Region.EU).values_list("id", flat=True))
+    return None
 
 
 class _PlanLimitFallback:

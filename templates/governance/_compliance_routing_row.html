@@ -1,0 +1,24 @@
+{% load i18n %}
+<div class="dept-row" id="compliance-dept-{{ department.id }}">
+    <div>
+        <div class="dept-name">{{ department.name }}</div>
+        <div class="dept-restriction">
+            {% if department.region_restriction == "eu_only" %}{% trans "Only EU-hosted models allowed" %}{% else %}{% trans "No restrictions" %}{% endif %}
+        </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.6rem;">
+        <span class="restriction-badge {% if department.region_restriction == 'eu_only' %}strict{% else %}none{% endif %}">
+            {% if department.region_restriction == "eu_only" %}{% trans "Restricted" %}{% else %}{% trans "Unrestricted" %}{% endif %}
+        </span>
+        <form method="post" action="{% url 'governance:update_department_region_restriction' department_id=department.id %}"
+              hx-post="{% url 'governance:update_department_region_restriction' department_id=department.id %}"
+              hx-target="#compliance-dept-{{ department.id }}" hx-swap="outerHTML">
+            {% csrf_token %}
+            <select name="region_restriction" class="input" style="margin:0; padding:0.25rem 0.55rem; font-size:0.8rem;" onchange="this.closest('form').requestSubmit()">
+                {% for value, label in department.RegionRestriction.choices %}
+                <option value="{{ value }}" {% if department.region_restriction == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+</div>

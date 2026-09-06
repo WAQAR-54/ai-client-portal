@@ -58,3 +58,53 @@ class RequireFeatureMixin:
         if self.feature_key and not user_has_feature(request.user, self.feature_key):
             raise PermissionDenied("This feature isn't available for your role.")
         return super().dispatch(request, *args, **kwargs)
+
+
+def user_can_access_standalone_tool(user, feature_key):
+    """Access rule shared by every standalone tool reached by direct link
+    only (Code Playground, Domain Generator, ...) - never linked from the
+    main sidebar nav. Just user_has_feature(), named separately so call
+    sites read as "does this role have this standalone tool" rather than
+    a generic feature check - SuperAdmin always has it (role_has_feature's
+    own unconditional rule); Admin/Manager/User default to having it too,
+    since these tools' seeding migrations only seed an explicit
+    is_enabled=False row for "user"/"manager", not "admin" (see e.g.
+    governance's 0019_admin_keeps_default_standalone_tool_access) - "no
+    row" reads as visible, same default as every other feature. A
+    SuperAdmin can still explicitly turn any of these off for any role,
+    Admin included, from Feature Visibility - that's a real access
+    decision (this function is what both the page and the admin
+    Dashboard's link/stats consult), not just a hidden nav item."""
+    return user_has_feature(user, feature_key)
+
+
+def require_standalone_tool_access(feature_key):
+    """Function-view decorator version of user_can_access_standalone_tool.
+    Assumes @login_required already ran (stack this one under it) so
+    request.user is a real authenticated User, never AnonymousUser (which
+    has no .is_admin)."""
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(request, *args, **kwargs):
+            if not user_can_access_standalone_tool(request.user, feature_key):
+                raise PermissionDenied("This tool isn't available for your role.")
+            return view_func(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+class RequireStandaloneToolAccessMixin:
+    """CBV equivalent of require_standalone_tool_access() - must come after
+    LoginRequiredMixin in the base class list so its dispatch (the auth
+    check/login redirect) runs first; only once request.user is a real
+    authenticated User does this mixin's dispatch check the role."""
+
+    feature_key = None
+
+    def dispatch(self, request, *args, **kwargs):
+        if not user_can_access_standalone_tool(request.user, self.feature_key):
+            raise PermissionDenied("This tool isn't available for your role.")
+        return super().dispatch(request, *args, **kwargs)

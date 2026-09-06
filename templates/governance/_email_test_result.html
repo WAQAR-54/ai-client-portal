@@ -1,0 +1,11 @@
+{% load i18n %}
+<div class="test-result-box {% if success %}success{% else %}error{% endif %}" id="emailTestResult">
+    {% if success %}
+    <div class="test-result-title">{% trans "Test email sent successfully" %}</div>
+    <div>{% blocktrans %}Delivered to {{ to_email }}.{% endblocktrans %}</div>
+    {% else %}
+    <div class="test-result-title">{% trans "Failed to send" %}</div>
+    <div>{{ error }}</div>
+    {% endif %}
+</div>
+{% include "governance/_email_config_status.html" %}

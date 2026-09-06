@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% if rule %}{% trans "Edit Rule" %}{% else %}{% trans "New Rule" %}{% endif %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px;">
+    <h1>{% if rule %}{% trans "Edit routing rule" %}{% else %}{% trans "New routing rule" %}{% endif %}</h1>
+    {% include "governance/_routing_rule_form_fields.html" %}
+</div>
+{% endblock %}

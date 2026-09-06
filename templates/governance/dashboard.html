@@ -73,6 +73,60 @@
 </div>
 {% endif %}
 
+{% if user|has_feature:"code_playground" %}
+<div class="panel mt-5">
+    <div class="panel-head">
+        <div>
+            <div class="panel-head-title">{% trans "Code Playground" %}</div>
+            <p class="text-faint" style="font-size:var(--text-xs); margin:0.2rem 0 0;">{% trans "Standalone tool, reached by direct link only — not shown in the sidebar." %}</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:var(--space-4); flex-shrink:0;">
+            <a href="{% url 'playground:home' %}" class="row-btn">{% trans "Open Code Playground" %}</a>
+            {% if user.is_superadmin %}<a href="{% url 'governance:feature_visibility' %}" class="text-faint" style="font-size:var(--text-xs);">{% trans "Manage role access" %}</a>{% endif %}
+        </div>
+    </div>
+    <div style="padding:var(--space-4) var(--space-5); display:flex; gap:var(--space-6); align-items:flex-start; flex-wrap:wrap;">
+        <div class="kpi-card" style="min-height:auto; flex:0 0 160px;">
+            <div class="kpi-label">{% trans "Runs today" %}</div>
+            <div class="kpi-value mono" data-target="{{ playground_runs_today }}">{{ playground_runs_today }}</div>
+        </div>
+        {% if user.is_superadmin %}
+        <div style="flex:1; min-width:260px;">
+            <div class="panel-head-title" style="font-size:var(--text-sm); margin-bottom:0.4rem;">{% trans "Models enabled in Code Playground" %}</div>
+            {% include "governance/_playground_model_rows.html" %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if user|has_feature:"domain_generator" %}
+<div class="panel mt-5">
+    <div class="panel-head">
+        <div>
+            <div class="panel-head-title">{% trans "Domain Generator" %}</div>
+            <p class="text-faint" style="font-size:var(--text-xs); margin:0.2rem 0 0;">{% trans "Standalone tool, reached by direct link only — not shown in the sidebar." %}</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:var(--space-4); flex-shrink:0;">
+            <a href="{% url 'domaingen:home' %}" class="row-btn">{% trans "Open Domain Generator" %}</a>
+            {% if user.is_superadmin %}<a href="{% url 'governance:feature_visibility' %}" class="text-faint" style="font-size:var(--text-xs);">{% trans "Manage role access" %}</a>{% endif %}
+        </div>
+    </div>
+    <div style="padding:var(--space-4) var(--space-5); display:flex; gap:var(--space-6); align-items:flex-start; flex-wrap:wrap;">
+        <div class="kpi-card" style="min-height:auto; flex:0 0 160px;">
+            <div class="kpi-label">{% trans "Searches today" %}</div>
+            <div class="kpi-value mono" data-target="{{ domain_searches_today }}">{{ domain_searches_today }}</div>
+        </div>
+        {% if user.is_superadmin %}
+        <div style="flex:1; min-width:260px;">
+            <div class="panel-head-title" style="font-size:var(--text-sm); margin-bottom:0.4rem;">{% trans "Models enabled in Domain Generator" %}</div>
+            {% include "governance/_domain_generator_model_rows.html" %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <div class="chart-row mt-5">
     <div class="card chart-card">
         <div class="card-title">{% trans "Cost & tokens over time" %}</div>

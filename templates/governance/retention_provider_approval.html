@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Retention & Provider Approval" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Conversation retention by department" %}</h1>
+    <p>{% trans "How long a conversation is kept before it's permanently deleted, measured from its last activity. Enforced by a daily background sweep." %}</p>
+    <div style="margin-top:var(--space-4);">
+        {% for department in departments %}
+        {% include "governance/_department_retention_row.html" %}
+        {% empty %}
+        <p class="text-faint">{% trans "No departments yet." %}</p>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <h1>{% trans "New provider approval" %}</h1>
+    <p>{% trans "Connecting a provider stages it here — none of its models can be enabled until a SuperAdmin approves it." %}</p>
+    {% include "governance/_pending_providers_list.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Data Handling" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+        <div>
+            <h1 style="margin-bottom:0.25rem;">{% trans "Only allow zero-retention models" %}</h1>
+            <p style="margin:0;">{% trans "Requests will be blocked from any model whose provider doesn't contractually guarantee your data isn't used for training." %}</p>
+        </div>
+        <form method="post" action="{% url 'governance:toggle_zero_retention_only' %}">
+            {% csrf_token %}
+            <label class="toggle-switch">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if settings.only_zero_retention_models %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+
+    <div class="cert-table" style="margin-top:var(--space-4);">
+        {% for provider in providers %}
+        {% include "governance/_zero_retention_cert_row.html" %}
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+        <div>
+            <h1 style="margin-bottom:0.25rem;">{% trans "Scan messages before sending to a model" %}</h1>
+            <p style="margin:0;">{% trans "Checks outgoing messages for the data types below and takes the selected action on each." %}</p>
+        </div>
+        <form method="post" action="{% url 'governance:toggle_pii_scanning_enabled' %}">
+            {% csrf_token %}
+            <label class="toggle-switch">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if settings.pii_scanning_enabled %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+
+    <div style="margin-top:var(--space-4);">
+        {% for rule in pii_rules %}
+        {% include "governance/_pii_rule_row.html" %}
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+{% block extra_head %}
+<script>
+function portalTogglePiiRule(ruleId) {
+    var form = document.getElementById("pii-rule-form-" + ruleId);
+    var hiddenInput = form.querySelector('input[name="is_enabled"]');
+    hiddenInput.value = hiddenInput.value === "on" ? "" : "on";
+    form.requestSubmit();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% load i18n %}
+<div id="domain-generator-model-rows">
+    {% for m in domain_generator_models %}
+    <div class="manager-model-row">
+        <span>{{ m.display_label }} <span class="text-faint" style="font-weight:400;">({{ m.provider.name }})</span></span>
+        <form method="post" action="{% url 'governance:toggle_domain_generator_model' model_id=m.id %}"
+              hx-post="{% url 'governance:toggle_domain_generator_model' model_id=m.id %}"
+              hx-target="#domain-generator-model-rows" hx-swap="outerHTML" style="margin:0;">
+            {% csrf_token %}
+            <label class="toggle-switch" title="{% if m.is_domain_generator_enabled %}{% trans 'Remove from Domain Generator' %}{% else %}{% trans 'Show in Domain Generator' %}{% endif %}">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_domain_generator_enabled %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+    {% empty %}
+    <p class="text-faint" style="padding:0.6rem 0;">{% trans "No enabled models yet — enable one on the Providers page first." %}</p>
+    {% endfor %}
+</div>

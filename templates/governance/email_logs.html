@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Email Logs" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1rem;">
+        <div>
+            <h1 style="margin-bottom:0.25rem;">{% trans "Email Logs" %}</h1>
+            <p style="margin:0;">{% trans "Every email sent by the system, and whether the recipient opened it." %}</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.6rem; flex-shrink:0;">
+            {% include "governance/_email_config_status.html" %}
+            <button type="button" class="btn" onclick="portalOpenModal('emailConfigModal')">{% trans "Email Configuration" %}</button>
+        </div>
+    </div>
+
+    <div class="email-stats-bar">
+        <div class="email-stat">
+            <div class="email-stat-value">{{ sent_count }}</div>
+            <div class="email-stat-label">{% trans "Sent (7 days)" %}</div>
+        </div>
+        <div class="email-stat">
+            <div class="email-stat-value success">{{ opened_count }}</div>
+            <div class="email-stat-label">{% trans "Opened" %}</div>
+        </div>
+        <div class="email-stat">
+            <div class="email-stat-value">{{ open_rate }}%</div>
+            <div class="email-stat-label">{% trans "Open rate" %}</div>
+        </div>
+    </div>
+
+    <div class="log-filter-row">
+        <div class="log-filter-chip active" data-filter="all" onclick="portalSetLogFilter('all', this)">{% trans "All" %}</div>
+        <div class="log-filter-chip" data-filter="opened" onclick="portalSetLogFilter('opened', this)">{% trans "Opened" %}</div>
+        <div class="log-filter-chip" data-filter="pending" onclick="portalSetLogFilter('pending', this)">{% trans "Not opened" %}</div>
+        <div class="log-filter-chip" data-filter="failed" onclick="portalSetLogFilter('failed', this)">{% trans "Failed" %}</div>
+    </div>
+
+    {% include "governance/_email_logs_list.html" %}
+</div>
+
+<div class="modal-overlay" id="emailConfigModal">
+    <div class="modal-box" style="width:min(560px, 100%);">
+        <div class="modal-head">
+            <h3 class="modal-title">{% trans "Email Configuration" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('emailConfigModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="emailConfigModalBody">
+            {% include "governance/_email_config_form.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_head %}
+<script>
+function portalSetLogFilter(filter, el) {
+    document.querySelectorAll(".log-filter-chip").forEach(function(c) { c.classList.remove("active"); });
+    el.classList.add("active");
+    document.querySelectorAll("#emailLogsList .email-log-row").forEach(function(row) {
+        row.style.display = (filter === "all" || row.dataset.status === filter) ? "flex" : "none";
+    });
+}
+function portalTogglePasswordField() {
+    var field = document.getElementById("emailPasswordField");
+    var btn = document.getElementById("emailPasswordToggle");
+    field.type = field.type === "password" ? "text" : "password";
+    btn.classList.toggle("revealed");
+}
+</script>
+{% endblock %}

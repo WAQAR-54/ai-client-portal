@@ -1,0 +1,32 @@
+{% load i18n %}
+<div id="emailLogsList">
+    {% for log in logs %}
+    <div class="email-log-row" data-status="{% if log.status == 'failed' %}failed{% elif log.opened_at %}opened{% else %}pending{% endif %}">
+        {% if log.status == "sent" %}
+        <div class="email-log-icon sent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        {% else %}
+        <div class="email-log-icon failed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+        {% endif %}
+        <div class="email-log-main">
+            <span class="email-log-recipient">{{ log.recipient }}</span>
+            <span class="email-log-meta"> · {{ log.subject }}</span>
+            <div class="email-log-detail">
+                {% if log.status == "sent" %}{% trans "Delivered" %} {{ log.created_at|timesince }} {% trans "ago" %}
+                {% else %}{{ log.error_message|truncatechars:80 }}{% endif %}
+            </div>
+        </div>
+        <div class="email-log-right">
+            {% if log.status == "sent" %}
+            {% if log.opened_at %}
+            <span class="email-open-badge opened">{% trans "Opened" %}</span>
+            {% else %}
+            <span class="email-open-badge pending">{% trans "Not opened yet" %}</span>
+            {% endif %}
+            {% endif %}
+            <span class="email-log-time">{{ log.created_at|timesince }} {% trans "ago" %}</span>
+        </div>
+    </div>
+    {% empty %}
+    <p class="text-faint">{% trans "No emails sent yet." %}</p>
+    {% endfor %}
+</div>

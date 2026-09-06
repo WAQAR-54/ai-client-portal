@@ -1,0 +1,18 @@
+{% load i18n %}
+<div class="pii-row" id="pii-rule-{{ rule.id }}">
+    <span class="pii-check {% if rule.is_enabled %}on{% endif %}" onclick="portalTogglePiiRule('{{ rule.id }}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </span>
+    <span class="pii-name">{{ rule.get_kind_display }}</span>
+    <form id="pii-rule-form-{{ rule.id }}" method="post" action="{% url 'governance:update_pii_rule' rule_id=rule.id %}"
+          hx-post="{% url 'governance:update_pii_rule' rule_id=rule.id %}"
+          hx-target="#pii-rule-{{ rule.id }}" hx-swap="outerHTML" style="display:inline;">
+        {% csrf_token %}
+        <input type="hidden" name="is_enabled" value="{% if rule.is_enabled %}on{% endif %}">
+        <select name="action" class="pii-action-select" onchange="this.form.requestSubmit()">
+            {% for value, label in rule.Action.choices %}
+            <option value="{{ value }}" {% if rule.action == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>

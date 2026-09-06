@@ -1,0 +1,17 @@
+{% load i18n %}
+<div class="cert-row" id="cert-row-{{ provider.id }}">
+    <span class="cert-provider-name">{{ provider.name }}</span>
+    <form method="post" action="{% url 'governance:toggle_provider_trains_on_data' provider_id=provider.id %}"
+          hx-post="{% url 'governance:toggle_provider_trains_on_data' provider_id=provider.id %}"
+          hx-target="#cert-row-{{ provider.id }}" hx-swap="outerHTML" style="display:inline;">
+        {% csrf_token %}
+        {% if provider.trains_on_data %}
+        <button type="submit" class="cert-badge fail">{% trans "Trains on data" %}</button>
+        {% else %}
+        <button type="submit" class="cert-badge pass">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            {% trans "Zero-retention" %}
+        </button>
+        {% endif %}
+    </form>
+</div>

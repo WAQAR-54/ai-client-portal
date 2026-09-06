@@ -1,0 +1,7 @@
+{% load i18n %}
+<span class="status-pill {{ email_settings.status }}" id="emailStatusPill" hx-swap-oob="true">
+    {% if email_settings.status == "connected" %}{% trans "Verified working" %}
+    {% elif email_settings.status == "failed" %}{% trans "Connection failed" %}
+    {% elif email_settings.status == "stale" %}{% trans "Config changed — retest needed" %}
+    {% else %}{% trans "Saved — not tested yet" %}{% endif %}
+</span>

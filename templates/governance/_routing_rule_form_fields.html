@@ -1,0 +1,39 @@
+{% load i18n %}
+<form method="post"
+      action="{% if rule %}{% url 'governance:routing_rule_edit' rule_id=rule.id %}{% else %}{% url 'governance:routing_rule_new' %}{% endif %}"
+      hx-post="{% if rule %}{% url 'governance:routing_rule_edit' rule_id=rule.id %}{% else %}{% url 'governance:routing_rule_new' %}{% endif %}"
+      hx-swap="none">
+    {% csrf_token %}
+
+    <label for="rr-condition">{% trans "If" %}</label>
+    <select class="input" name="condition" id="rr-condition" required>
+        {% for value, label in conditions %}
+        <option value="{{ value }}" {% if rule.condition == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+
+    <label for="rr-target">{% trans "Route to" %}</label>
+    <select class="input" name="target_model_id" id="rr-target" required>
+        <option value="">{% trans "— choose a model —" %}</option>
+        {% regroup fallback_models by provider.name as provider_groups %}
+        {% for group in provider_groups %}
+        <optgroup label="{{ group.grouper }}">
+            {% for m in group.list %}
+            <option value="{{ m.id }}" {% if rule.target_model_id == m.id %}selected{% endif %}>{{ m.display_label }}</option>
+            {% endfor %}
+        </optgroup>
+        {% endfor %}
+    </select>
+
+    <label for="rr-priority">{% trans "Priority — lower runs first when more than one rule could match" %}</label>
+    <input class="input" type="number" name="priority" id="rr-priority" value="{{ rule.priority|default:0 }}">
+
+    <label class="toggle-switch toggle-row">
+        <input type="checkbox" name="is_active" {% if not rule or rule.is_active %}checked{% endif %}>
+        <span class="toggle"><span class="toggle-knob"></span></span>
+        <span>{% trans "Active" %}</span>
+    </label>
+
+    <button type="submit">{% if rule %}{% trans "Save changes" %}{% else %}{% trans "Add rule" %}{% endif %}</button>
+    <button type="button" class="btn-small btn-ghost" style="margin-left:0.5rem;" onclick="portalCloseModal('routingRuleModal')">{% trans "Cancel" %}</button>
+</form>

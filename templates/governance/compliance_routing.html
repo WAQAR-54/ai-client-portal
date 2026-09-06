@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Compliance Routing" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Compliance Routing" %}</h1>
+    <p>{% trans "Restrict which providers a department's requests can ever be sent to. This is a hard ceiling — it only narrows what a user's Plan or team already allows, never widens it." %}</p>
+
+    <div class="dept-row-list" style="margin-top:var(--space-4);">
+        {% for department in departments %}
+        {% include "governance/_compliance_routing_row.html" %}
+        {% empty %}
+        <p class="text-faint">{% trans "No departments yet." %}</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,8 +1,10 @@
 from io import StringIO
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import Department, Team, User
 from chat.models import Conversation, Message, ModelConfig, PromptTemplate, UserModelPermission
@@ -23,6 +25,8 @@ from governance.plans import (
     check_request_count_limit,
     effective_allowed_model_ids,
     effective_allowed_provider_model_ids,
+    region_allowed_provider_model_ids,
+    get_budget_automation_status,
     validate_context_tokens,
 )
 from providers.models import Provider, ProviderModel
@@ -371,6 +375,96 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.client.login(email="u@example.com", password="pw12345!")
         response = self.client.post(reverse("governance:toggle_user_active", kwargs={"user_id": self.user.id}))
         self.assertEqual(response.status_code, 403)
+
+    def test_dashboard_shows_open_playground_link_for_admin_but_not_model_toggles(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, reverse("playground:home"))
+        # A scoped Admin can open Playground but not manage which models
+        # appear in it - that's a SuperAdmin-only decision.
+        self.assertNotContains(response, "Models enabled in Code Playground")
+
+    def test_dashboard_shows_model_toggles_for_superadmin(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "Models enabled in Code Playground")
+
+    def test_dashboard_shows_open_domain_generator_link_for_admin_but_not_model_toggles(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, reverse("domaingen:home"))
+        self.assertNotContains(response, "Models enabled in Domain Generator")
+
+    def test_dashboard_shows_domain_generator_model_toggles_for_superadmin(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "Models enabled in Domain Generator")
+
+    def test_disabling_code_playground_for_admin_hides_it_from_admins_dashboard(self):
+        """The reported bug: turning "code_playground" off for the admin
+        role in Feature Visibility had no effect, because Admin's access
+        used to bypass the role toggle entirely - see governance's
+        0019_admin_keeps_default_standalone_tool_access migration and
+        governance.features.user_can_access_standalone_tool."""
+        RoleFeatureToggle.objects.create(role="admin", feature_key="code_playground", is_enabled=False)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertNotContains(response, "Code Playground")
+        self.assertEqual(self.client.get(reverse("playground:home")).status_code, 403)
+
+    def test_disabling_domain_generator_for_admin_hides_it_from_admins_dashboard(self):
+        RoleFeatureToggle.objects.create(role="admin", feature_key="domain_generator", is_enabled=False)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertNotContains(response, "Domain Generator")
+        self.assertEqual(self.client.get(reverse("domaingen:home")).status_code, 403)
+
+    def test_disabling_for_admin_role_does_not_affect_superadmin(self):
+        RoleFeatureToggle.objects.create(role="admin", feature_key="code_playground", is_enabled=False)
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "Code Playground")
+        self.assertEqual(self.client.get(reverse("playground:home")).status_code, 200)
+
+    def test_dashboard_shows_todays_domain_search_count_scoped_to_department(self):
+        from domaingen.models import DomainSearch
+
+        other_department = Department.objects.create(name="Other Dept 2")
+        other_user = User.objects.create_user(
+            email="other2@example.com", password="pw12345!", department=other_department
+        )
+        DomainSearch.objects.create(user=self.user, query="a")
+        DomainSearch.objects.create(user=other_user, query="b")
+
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertEqual(response.context["domain_searches_today"], 1)
+
+        self.client.logout()
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertEqual(response.context["domain_searches_today"], 2)
+
+    def test_dashboard_shows_todays_playground_run_count_scoped_to_department(self):
+        from playground.models import PlaygroundRun
+
+        other_department = Department.objects.create(name="Other Dept")
+        other_user = User.objects.create_user(
+            email="other@example.com", password="pw12345!", department=other_department
+        )
+        PlaygroundRun.objects.create(user=self.user)
+        PlaygroundRun.objects.create(user=self.user)
+        PlaygroundRun.objects.create(user=other_user)
+
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        # Scoped Admin only sees their own department's 2 runs, not the 3rd.
+        self.assertEqual(response.context["playground_runs_today"], 2)
+
+        self.client.logout()
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertEqual(response.context["playground_runs_today"], 3)
 
     def test_dashboard_charts_zero_filled_across_14_days(self):
         conversation = Conversation.objects.create(user=self.user, title="c")
@@ -874,6 +968,482 @@ class PlanFormViewTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+class BudgetAutomationTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.fallback_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="cheap-model", is_enabled=True
+        )
+        self.plan = Plan.objects.create(name="Budget Plan", monthly_budget_cap=20)
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        assign_plan(self.user, self.plan)
+
+    def _spend(self, amount):
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content="hi", estimated_cost=amount
+        )
+
+    def test_inactive_when_auto_downgrade_disabled(self):
+        self._spend(19)
+        self.assertFalse(get_budget_automation_status(self.user)["active"])
+
+    def test_inactive_when_below_threshold(self):
+        self.plan.auto_downgrade_enabled = True
+        self.plan.auto_downgrade_fallback_model = self.fallback_model
+        self.plan.auto_downgrade_threshold_pct = 80
+        self.plan.save()
+        self._spend(10)  # 50% of a $20 cap
+        self.assertFalse(get_budget_automation_status(self.user)["active"])
+
+    def test_active_once_threshold_crossed(self):
+        self.plan.auto_downgrade_enabled = True
+        self.plan.auto_downgrade_fallback_model = self.fallback_model
+        self.plan.auto_downgrade_threshold_pct = 80
+        self.plan.save()
+        self._spend(17)  # 85% of a $20 cap
+        status = get_budget_automation_status(self.user)
+        self.assertTrue(status["active"])
+        self.assertEqual(status["fallback_model"], self.fallback_model)
+        self.assertEqual(status["pct"], 85)
+
+    def test_inactive_without_a_budget_cap(self):
+        uncapped = Plan.objects.create(
+            name="Uncapped",
+            auto_downgrade_enabled=True,
+            auto_downgrade_fallback_model=self.fallback_model,
+            auto_downgrade_threshold_pct=1,
+        )
+        other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
+        assign_plan(other_user, uncapped)
+        self.assertFalse(get_budget_automation_status(other_user)["active"])
+
+    def test_update_view_sets_fields(self):
+        response = self.client.post(
+            reverse("governance:update_budget_automation", kwargs={"plan_id": self.plan.id}),
+            {
+                "auto_downgrade_enabled": "on",
+                "auto_downgrade_threshold_pct": "75",
+                "auto_downgrade_fallback_model_id": str(self.fallback_model.id),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.plan.refresh_from_db()
+        self.assertTrue(self.plan.auto_downgrade_enabled)
+        self.assertEqual(self.plan.auto_downgrade_threshold_pct, 75)
+        self.assertEqual(self.plan.auto_downgrade_fallback_model, self.fallback_model)
+
+    def test_update_view_forces_disabled_without_budget_cap(self):
+        uncapped = Plan.objects.create(name="Uncapped 2")
+        response = self.client.post(
+            reverse("governance:update_budget_automation", kwargs={"plan_id": uncapped.id}),
+            {"auto_downgrade_enabled": "on", "auto_downgrade_threshold_pct": "50"},
+        )
+        self.assertEqual(response.status_code, 302)
+        uncapped.refresh_from_db()
+        self.assertFalse(uncapped.auto_downgrade_enabled)
+
+    def test_non_superadmin_cannot_view_or_update(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:budget_automation")).status_code, 403)
+        response = self.client.post(
+            reverse("governance:update_budget_automation", kwargs={"plan_id": self.plan.id}),
+            {"auto_downgrade_enabled": "on"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+
+class RoutingRuleAdminTests(TestCase):
+    def setUp(self):
+        from governance.models import RoutingRule
+
+        self.RoutingRule = RoutingRule
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.target_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="rule-model", is_enabled=True
+        )
+
+    def test_list_view_renders(self):
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.target_model)
+        response = self.client.get(reverse("governance:routing_rules"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Task looks like code")
+
+    def test_create_rule(self):
+        response = self.client.post(
+            reverse("governance:routing_rule_new"),
+            {"condition": "casual_short", "target_model_id": self.target_model.id, "priority": "3"},
+        )
+        self.assertEqual(response.status_code, 302)
+        rule = self.RoutingRule.objects.get()
+        self.assertEqual(rule.condition, "casual_short")
+        self.assertEqual(rule.target_model, self.target_model)
+        self.assertEqual(rule.priority, 3)
+        self.assertTrue(rule.is_active)
+
+    def test_create_rule_rejects_invalid_condition(self):
+        response = self.client.post(
+            reverse("governance:routing_rule_new"),
+            {"condition": "not-a-real-condition", "target_model_id": self.target_model.id},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_edit_rule(self):
+        rule = self.RoutingRule.objects.create(condition="code_like", target_model=self.target_model)
+        response = self.client.post(
+            reverse("governance:routing_rule_edit", kwargs={"rule_id": rule.id}),
+            {"condition": "image_attached", "target_model_id": self.target_model.id, "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 302)
+        rule.refresh_from_db()
+        self.assertEqual(rule.condition, "image_attached")
+
+    def test_delete_rule(self):
+        rule = self.RoutingRule.objects.create(condition="code_like", target_model=self.target_model)
+        response = self.client.post(reverse("governance:delete_routing_rule", kwargs={"rule_id": rule.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(self.RoutingRule.objects.filter(id=rule.id).exists())
+
+    def test_non_superadmin_cannot_access(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:routing_rules")).status_code, 403)
+        response = self.client.post(
+            reverse("governance:routing_rule_new"),
+            {"condition": "code_like", "target_model_id": self.target_model.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+
+class ComplianceRoutingTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Legal")
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!", department=self.department)
+        self.eu_model = ProviderModel.objects.create(
+            provider=Provider.objects.create(
+                name="EU Provider", slug="eu-provider", adapter_type="openai_compatible", region="eu"
+            ),
+            model_id="eu-model",
+            is_enabled=True,
+        )
+        self.us_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="us-model", is_enabled=True
+        )
+
+    def test_no_restriction_returns_none(self):
+        self.assertIsNone(region_allowed_provider_model_ids(self.user))
+
+    def test_no_department_returns_none(self):
+        user = User.objects.create_user(email="nodept@example.com", password="pw12345!")
+        self.department.region_restriction = Department.RegionRestriction.EU_ONLY
+        self.department.save()
+        self.assertIsNone(region_allowed_provider_model_ids(user))
+
+    def test_eu_only_restricts_to_eu_provider_models(self):
+        self.department.region_restriction = Department.RegionRestriction.EU_ONLY
+        self.department.save()
+        allowed = region_allowed_provider_model_ids(self.user)
+        self.assertIn(self.eu_model.id, allowed)
+        self.assertNotIn(self.us_model.id, allowed)
+
+    def test_router_excludes_non_eu_models_when_restricted(self):
+        from chat.router import models_visible_to_user
+
+        self.department.region_restriction = Department.RegionRestriction.EU_ONLY
+        self.department.save()
+        premium = Plan.objects.get(name="Premium")
+        assign_plan(self.user, premium)
+        premium.allowed_provider_models.add(self.eu_model, self.us_model)
+
+        visible_ids = set(models_visible_to_user(self.user).values_list("id", flat=True))
+        self.assertIn(self.eu_model.id, visible_ids)
+        self.assertNotIn(self.us_model.id, visible_ids)
+
+
+class ComplianceRoutingAdminTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.department = Department.objects.create(name="Legal")
+
+    def test_list_view_renders(self):
+        response = self.client.get(reverse("governance:compliance_routing"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Legal")
+
+    def test_update_sets_eu_only(self):
+        response = self.client.post(
+            reverse("governance:update_department_region_restriction", kwargs={"department_id": self.department.id}),
+            {"region_restriction": Department.RegionRestriction.EU_ONLY},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.department.refresh_from_db()
+        self.assertEqual(self.department.region_restriction, Department.RegionRestriction.EU_ONLY)
+
+    def test_update_back_to_none(self):
+        url = reverse("governance:update_department_region_restriction", kwargs={"department_id": self.department.id})
+        self.client.post(url, {"region_restriction": Department.RegionRestriction.EU_ONLY})
+        self.client.post(url, {"region_restriction": Department.RegionRestriction.NONE})
+        self.department.refresh_from_db()
+        self.assertEqual(self.department.region_restriction, Department.RegionRestriction.NONE)
+
+    def test_update_rejects_invalid_value(self):
+        response = self.client.post(
+            reverse("governance:update_department_region_restriction", kwargs={"department_id": self.department.id}),
+            {"region_restriction": "not-a-real-region"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_superadmin_cannot_update(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:update_department_region_restriction", kwargs={"department_id": self.department.id}),
+            {"region_restriction": Department.RegionRestriction.EU_ONLY},
+        )
+        self.assertEqual(response.status_code, 403)
+
+
+class RetentionProviderApprovalAdminTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.department = Department.objects.create(name="Legal")
+
+    def test_list_view_renders_departments_and_pending_providers(self):
+        pending = Provider.objects.get(slug="anthropic")
+        pending.approval_status = pending.ApprovalStatus.PENDING
+        pending.save()
+        response = self.client.get(reverse("governance:retention_provider_approval"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Legal")
+        self.assertContains(response, "Anthropic")
+
+    def test_update_retention(self):
+        response = self.client.post(
+            reverse("governance:update_department_retention", kwargs={"department_id": self.department.id}),
+            {"retention_period": Department.RetentionPeriod.DAYS_90},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.department.refresh_from_db()
+        self.assertEqual(self.department.retention_period, Department.RetentionPeriod.DAYS_90)
+
+    def test_update_retention_rejects_invalid_value(self):
+        response = self.client.post(
+            reverse("governance:update_department_retention", kwargs={"department_id": self.department.id}),
+            {"retention_period": "not-a-real-period"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_superadmin_cannot_access(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:retention_provider_approval")).status_code, 403)
+        response = self.client.post(
+            reverse("governance:update_department_retention", kwargs={"department_id": self.department.id}),
+            {"retention_period": Department.RetentionPeriod.DAYS_90},
+        )
+        self.assertEqual(response.status_code, 403)
+
+
+class ConversationRetentionSweepTests(TestCase):
+    def setUp(self):
+        from chat.models import Conversation
+
+        self.Conversation = Conversation
+        self.department = Department.objects.create(
+            name="Marketing", retention_period=Department.RetentionPeriod.DAYS_30
+        )
+        self.forever_department = Department.objects.create(name="Legal")
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!", department=self.department)
+        self.forever_user = User.objects.create_user(
+            email="forever@example.com", password="pw12345!", department=self.forever_department
+        )
+
+    def _old_conversation(self, user, days_old):
+        conversation = self.Conversation.objects.create(user=user)
+        self.Conversation.objects.filter(pk=conversation.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(days=days_old)
+        )
+        return conversation
+
+    def test_deletes_conversations_older_than_department_retention(self):
+        from governance.tasks import sweep_conversation_retention
+
+        old = self._old_conversation(self.user, days_old=31)
+        sweep_conversation_retention()
+        self.assertFalse(self.Conversation.all_objects.filter(id=old.id).exists())
+
+    def test_keeps_conversations_within_retention_window(self):
+        from governance.tasks import sweep_conversation_retention
+
+        recent = self._old_conversation(self.user, days_old=10)
+        sweep_conversation_retention()
+        self.assertTrue(self.Conversation.all_objects.filter(id=recent.id).exists())
+
+    def test_forever_department_is_never_swept(self):
+        from governance.tasks import sweep_conversation_retention
+
+        old = self._old_conversation(self.forever_user, days_old=10_000)
+        sweep_conversation_retention()
+        self.assertTrue(self.Conversation.all_objects.filter(id=old.id).exists())
+
+    def test_sweep_also_removes_already_soft_deleted_conversations(self):
+        from governance.tasks import sweep_conversation_retention
+
+        old = self._old_conversation(self.user, days_old=31)
+        old.is_deleted = True
+        old.save(update_fields=["is_deleted"])
+        sweep_conversation_retention()
+        self.assertFalse(self.Conversation.all_objects.filter(id=old.id).exists())
+
+
+class EmailLogsAdminTests(TestCase):
+    def setUp(self):
+        from notifications.models import EmailLog, EmailSettings
+
+        self.EmailLog = EmailLog
+        self.EmailSettings = EmailSettings
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+
+    def test_list_view_shows_stats_and_logs(self):
+        self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent")
+        self.EmailLog.objects.create(recipient="b@example.com", subject="Hi2", status="failed")
+        response = self.client.get(reverse("governance:email_logs"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "a@example.com")
+        self.assertContains(response, "b@example.com")
+        self.assertEqual(response.context["sent_count"], 2)
+
+    def test_open_rate_calculation(self):
+        self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent", opened_at=timezone.now())
+        self.EmailLog.objects.create(recipient="b@example.com", subject="Hi2", status="sent")
+        response = self.client.get(reverse("governance:email_logs"))
+        self.assertEqual(response.context["opened_count"], 1)
+        self.assertEqual(response.context["open_rate"], 50)
+
+    def test_update_settings_saves_fields(self):
+        response = self.client.post(
+            reverse("governance:update_email_settings"),
+            {
+                "host": "smtp.example.com",
+                "port": "465",
+                "encryption": "ssl",
+                "username": "noreply@example.com",
+                "password": "supersecret",
+                "from_address": "noreply@example.com",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        settings_row = self.EmailSettings.load()
+        self.assertEqual(settings_row.host, "smtp.example.com")
+        self.assertEqual(settings_row.port, 465)
+        self.assertEqual(settings_row.encryption, "ssl")
+        self.assertEqual(settings_row.get_password(), "supersecret")
+        self.assertEqual(settings_row.status, self.EmailSettings.Status.UNVERIFIED)
+
+    def test_blank_password_keeps_existing_password(self):
+        settings_row = self.EmailSettings.load()
+        settings_row.set_password("original-secret")
+        settings_row.host = "smtp.example.com"
+        settings_row.username = "noreply@example.com"
+        settings_row.save()
+
+        self.client.post(
+            reverse("governance:update_email_settings"),
+            {"host": "smtp.example.com", "username": "noreply@example.com", "encryption": "tls", "password": ""},
+        )
+        settings_row.refresh_from_db()
+        self.assertEqual(settings_row.get_password(), "original-secret")
+
+    def test_changing_config_marks_verified_settings_stale(self):
+        settings_row = self.EmailSettings.load()
+        settings_row.host = "smtp.example.com"
+        settings_row.username = "noreply@example.com"
+        settings_row.status = self.EmailSettings.Status.CONNECTED
+        settings_row.save()
+
+        self.client.post(
+            reverse("governance:update_email_settings"),
+            {"host": "smtp.other.com", "username": "noreply@example.com", "encryption": "tls"},
+        )
+        settings_row.refresh_from_db()
+        self.assertEqual(settings_row.status, self.EmailSettings.Status.STALE)
+
+    def test_update_settings_requires_host_and_username(self):
+        response = self.client.post(
+            reverse("governance:update_email_settings"), {"host": "", "username": "", "encryption": "tls"}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_send_test_email_success(self):
+        with patch("notifications.emailing.send_via_connection", return_value=(True, None)) as mock_send:
+            response = self.client.post(
+                reverse("governance:send_test_email"),
+                {
+                    "host": "smtp.example.com",
+                    "port": "587",
+                    "encryption": "tls",
+                    "username": "noreply@example.com",
+                    "password": "pw",
+                    "test_email": "me@example.com",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "me@example.com")
+        mock_send.assert_called_once()
+        settings_row = self.EmailSettings.load()
+        self.assertEqual(settings_row.status, self.EmailSettings.Status.CONNECTED)
+        self.assertIsNotNone(settings_row.last_tested_at)
+
+    def test_send_test_email_failure_sets_failed_status(self):
+        with patch("notifications.emailing.send_via_connection", return_value=(False, "Auth failed")):
+            response = self.client.post(
+                reverse("governance:send_test_email"),
+                {
+                    "host": "smtp.example.com",
+                    "username": "noreply@example.com",
+                    "encryption": "tls",
+                    "test_email": "me@example.com",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Auth failed")
+        settings_row = self.EmailSettings.load()
+        self.assertEqual(settings_row.status, self.EmailSettings.Status.FAILED)
+        self.assertEqual(settings_row.last_test_error, "Auth failed")
+
+    def test_send_test_email_requires_fields(self):
+        response = self.client.post(reverse("governance:send_test_email"), {"host": "", "test_email": ""})
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_superadmin_cannot_access(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:email_logs")).status_code, 403)
+        self.assertEqual(self.client.post(reverse("governance:update_email_settings")).status_code, 403)
+        self.assertEqual(self.client.post(reverse("governance:send_test_email")).status_code, 403)
+
+
 class AddTeamTests(TestCase):
     """teams.html only shows a department picker when there's more than one
     to choose from - the view must fall back sensibly with exactly one,
@@ -1214,6 +1784,31 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.assertTrue(new_user.check_password("a-brand-new-strong-pw9"))
         self.assertTrue(new_user.is_active)
         self.assertTrue(AuditLog.objects.filter(action_type="user.create", target_id=str(new_user.id)).exists())
+
+    def test_adding_a_user_sends_a_welcome_notification_without_the_password(self):
+        from django.core import mail
+
+        from notifications.models import Notification, NotificationType
+
+        self.client.login(email="admina@example.com", password="pw12345!")
+        mail.outbox = []
+        self.client.post(
+            reverse("governance:add_user"),
+            {
+                "email": "welcomed@example.com",
+                "new_password1": "a-brand-new-strong-pw9",
+                "new_password2": "a-brand-new-strong-pw9",
+                "role": User.Role.USER,
+                "team_id": "",
+            },
+        )
+        new_user = User.objects.get(email="welcomed@example.com")
+        notification = Notification.objects.get(user=new_user, notification_type=NotificationType.ACCOUNT_CREATED)
+        self.assertNotIn("a-brand-new-strong-pw9", notification.body)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [new_user.email])
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertNotIn("a-brand-new-strong-pw9", html_body)
 
     def test_adding_a_manager_with_a_team_makes_them_the_real_manager(self):
         self.client.login(email="super@example.com", password="pw12345!")
@@ -2071,6 +2666,96 @@ class FeatureVisibilityTests(TestCase):
         self.client.login(email="super@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:teams"))
         self.assertEqual(response.status_code, 200)
+
+    def test_superadmin_can_toggle_a_model_into_code_playground(self):
+        from providers.models import Provider, ProviderModel
+
+        model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="gpt-5", is_enabled=True
+        )
+        self.assertFalse(model.is_playground_enabled)
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_playground_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 302)
+        model.refresh_from_db()
+        self.assertTrue(model.is_playground_enabled)
+
+    def test_superadmin_can_toggle_a_model_into_domain_generator(self):
+        from providers.models import Provider, ProviderModel
+
+        model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="gpt-5", is_enabled=True
+        )
+        self.assertFalse(model.is_domain_generator_enabled)
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_domain_generator_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 302)
+        model.refresh_from_db()
+        self.assertTrue(model.is_domain_generator_enabled)
+
+    def test_admin_cannot_toggle_a_domain_generator_model(self):
+        from providers.models import Provider, ProviderModel
+
+        model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="gpt-5", is_enabled=True
+        )
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_domain_generator_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_domain_generator_is_off_by_default_for_user_and_manager_but_not_admin(self):
+        """User/Manager ship disabled (see 0018_seed_domain_generator_toggle);
+        Admin defaults to visible like every other feature (see
+        0019_admin_keeps_default_standalone_tool_access) - a SuperAdmin can
+        still explicitly turn it off for Admin from this same page."""
+        from governance.features import role_has_feature
+
+        self.assertFalse(role_has_feature(User.Role.USER, "domain_generator"))
+        self.assertFalse(role_has_feature(User.Role.MANAGER, "domain_generator"))
+        self.assertTrue(role_has_feature(User.Role.ADMIN, "domain_generator"))
+        self.assertTrue(role_has_feature(User.Role.SUPERADMIN, "domain_generator"))
+
+    def test_admin_cannot_toggle_a_playground_model(self):
+        from providers.models import Provider, ProviderModel
+
+        model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="gpt-5", is_enabled=True
+        )
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_playground_model", kwargs={"model_id": model.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_code_playground_is_off_by_default_for_user_and_manager_but_not_admin(self):
+        """User/Manager ship disabled (see 0017_seed_code_playground_toggle);
+        Admin defaults to visible like every other feature (see
+        0019_admin_keeps_default_standalone_tool_access) - a SuperAdmin can
+        still explicitly turn it off for Admin from this same page."""
+        from governance.features import role_has_feature
+
+        self.assertFalse(role_has_feature(User.Role.USER, "code_playground"))
+        self.assertFalse(role_has_feature(User.Role.MANAGER, "code_playground"))
+        self.assertTrue(role_has_feature(User.Role.ADMIN, "code_playground"))
+        # SuperAdmin is unaffected by any role toggle, same as every feature.
+        self.assertTrue(role_has_feature(User.Role.SUPERADMIN, "code_playground"))
+
+    def test_superadmin_can_turn_code_playground_on_for_a_role(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        post_data = {}
+        for key, _label in ADMIN_NAV_FEATURES:
+            post_data[f"toggle_{key}_admin"] = "on"
+        for key, _label in USER_CHAT_FEATURES:
+            for role in ROLE_FEATURE_ROLES:
+                if key == "code_playground" and role != "user":
+                    continue
+                post_data[f"toggle_{key}_{role}"] = "on"
+        self.client.post(reverse("governance:feature_visibility"), post_data)
+
+        from governance.features import role_has_feature
+
+        self.assertTrue(role_has_feature(User.Role.USER, "code_playground"))
+        self.assertFalse(role_has_feature(User.Role.ADMIN, "code_playground"))
 
     def test_superadmin_disables_dark_mode_for_user_role(self):
         RoleFeatureToggle.objects.create(role="user", feature_key="dark_mode", is_enabled=False)

@@ -1,0 +1,56 @@
+{% load i18n %}
+<form id="emailConfigForm" method="post" action="{% url 'governance:update_email_settings' %}"
+      hx-post="{% url 'governance:update_email_settings' %}" hx-swap="none">
+    {% csrf_token %}
+    <div class="form-section-label">{% trans "SMTP Settings" %}</div>
+
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:0.75rem;">
+        <div>
+            <label for="emailHost">{% trans "SMTP Host" %}</label>
+            <input class="input mono" type="text" name="host" id="emailHost" required value="{{ email_settings.host }}" placeholder="mail.example.com">
+        </div>
+        <div>
+            <label for="emailPort">{% trans "Port" %}</label>
+            <input class="input mono" type="number" name="port" id="emailPort" value="{{ email_settings.port }}">
+        </div>
+    </div>
+
+    <label for="emailEncryption">{% trans "Encryption" %}</label>
+    <select class="input" name="encryption" id="emailEncryption" onchange="document.getElementById('emailPort').value = this.value === 'tls' ? '587' : '465';">
+        <option value="tls" {% if email_settings.encryption == "tls" %}selected{% endif %}>{% trans "TLS (port 587)" %}</option>
+        <option value="ssl" {% if email_settings.encryption == "ssl" %}selected{% endif %}>{% trans "SSL (port 465)" %}</option>
+    </select>
+
+    <label for="emailUsername">{% trans "Username" %}</label>
+    <input class="input" type="text" name="username" id="emailUsername" required value="{{ email_settings.username }}" placeholder="noreply@example.com">
+
+    <label for="emailPasswordField">{% trans "Password" %}</label>
+    <div class="password-field-wrap">
+        <input class="input" type="password" name="password" id="emailPasswordField"
+               placeholder="{% if email_settings.password_encrypted %}{% trans 'Leave blank to keep the current password' %}{% else %}{% trans 'SMTP password' %}{% endif %}">
+        <button type="button" class="password-reveal-btn" id="emailPasswordToggle" onclick="portalTogglePasswordField()" aria-label="{% trans 'Show password' %}">
+            <svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+    </div>
+    <div class="form-hint">{% trans "Stored encrypted. Never shown in full once saved." %}</div>
+
+    <label for="emailFrom">{% trans "From address" %}</label>
+    <input class="input" type="email" name="from_address" id="emailFrom" value="{{ email_settings.from_address }}" placeholder="noreply@example.com">
+
+    <button type="submit" class="btn-small mt-3">{% trans "Save settings" %}</button>
+</form>
+
+<div class="form-section-label" style="margin-top:1.5rem;">{% trans "Send a Test Email" %}</div>
+<p class="text-faint" style="font-size:0.82rem; margin:-0.3rem 0 0.75rem;">{% trans "Confirm the settings above actually work end-to-end before relying on them for real alerts." %}</p>
+
+<form id="emailTestForm" hx-post="{% url 'governance:send_test_email' %}" hx-target="#emailTestResultWrap" hx-swap="innerHTML" hx-include="#emailConfigForm">
+    {% csrf_token %}
+    <div style="display:flex; gap:0.6rem; align-items:flex-end;">
+        <div style="flex:1;">
+            <label for="testEmailInput">{% trans "Send to" %}</label>
+            <input class="input" type="email" name="test_email" id="testEmailInput" required placeholder="you@company.com">
+        </div>
+        <button type="submit" class="btn-small btn-ghost">{% trans "Send test email" %}</button>
+    </div>
+</form>
+<div id="emailTestResultWrap"></div>
