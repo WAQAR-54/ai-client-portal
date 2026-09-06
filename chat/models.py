@@ -217,6 +217,36 @@ class Message(models.Model):
         return ""
 
 
+class ArenaComparison(models.Model):
+    """Compare mode: one user prompt answered by two models at once,
+    shown side by side (see chat/views.py::post_arena_message). response_a
+    and response_b are ordinary pending Message rows - stream_message
+    (chat/views.py) fills each in exactly like a normal reply, just with an
+    explicit model_id forcing which model each one uses, so no separate
+    streaming code path exists for Compare mode. Kept as its own row (not a
+    field on Message) so a comparison always has exactly the two responses
+    it was created with, and so `picked` can point at either one without an
+    awkward self-referential FK on Message itself."""
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="arena_comparisons")
+    user_message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="arena_comparison")
+    response_a = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="arena_as_a")
+    response_b = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="arena_as_b")
+    model_a = models.ForeignKey("providers.ProviderModel", on_delete=models.CASCADE, related_name="+")
+    model_b = models.ForeignKey("providers.ProviderModel", on_delete=models.CASCADE, related_name="+")
+    # Which of response_a/response_b the user judged better - null until
+    # they click "Better" on one. Deliberately not exclusive of "neither":
+    # a user who never picks just leaves this null.
+    picked = models.ForeignKey(Message, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Arena #{self.pk}: {self.model_a} vs {self.model_b}"
+
+
 class MessageFeedback(models.Model):
     class Rating(models.TextChoices):
         UP = "up", "Thumbs up"

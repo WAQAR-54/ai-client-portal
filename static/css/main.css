@@ -477,6 +477,14 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    /* A SuperAdmin's nav now runs past one screenful (Automation/Models/
+       System groups) - this fades the top/bottom few pixels toward
+       transparent so a partially-scrolled item reads as "there's more
+       above/below", not as a clipped/broken row. 24px is intentionally
+       shy of one full nav-item's height, so it never fully hides a link,
+       only its edge. */
+    mask-image: linear-gradient(to bottom, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
 }
 
 
@@ -867,6 +875,11 @@ main { animation: page-fade-in 240ms var(--ease); }
     box-shadow: var(--shadow-card);
     transition: box-shadow 150ms ease, transform 150ms ease;
 }
+/* .card carries no margin of its own (so a single page-wrapping card, the
+   common case, sits flush with main's own padding) - a page stacking more
+   than one top-level card (Retention & Provider Approval, Data Handling)
+   needs this or they render with zero gap between them, edges touching. */
+main .card + .card { margin-top: var(--space-5); }
 .card:hover {
     box-shadow: var(--shadow-card-hover);
     transform: translateY(-2px);
@@ -1156,6 +1169,24 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 }
 .alert-danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .alert-warning { background: var(--warn-soft); color: var(--warn); }
+
+/* Budget-automation banner (chat/views.py::get_budget_automation_status) -
+   same visual weight as .alert-warning but centered over the chat column
+   and pinned above the thread rather than stretched full-width, matching
+   where the other chat-only banners (grace/expired) already sit. */
+.budget-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 640px;
+    margin: 0 auto 1rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--radius-md);
+    background: var(--warn-soft);
+    color: var(--warn);
+    font-size: 0.82rem;
+}
+.budget-banner svg { width: 16px; height: 16px; flex-shrink: 0; }
 
 .errorlist { color: var(--color-danger); list-style: none; padding: 0; font-size: 0.82rem; margin: -0.5rem 0 0.75rem; }
 
@@ -1862,7 +1893,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     padding: 0.5rem 0.6rem 0.25rem;
 }
 .model-select-option {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     width: 100%;
     text-align: left;
     padding: 0.5rem 0.6rem;
@@ -1878,6 +1911,18 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 }
 .model-select-option:hover { background: var(--color-surface-muted); }
 .model-select-option.is-selected { color: var(--accent); background: rgba(0, 174, 240, 0.08); border: 1px solid var(--accent-dim); font-weight: 650; }
+
+/* Per-provider dot in the (grouped-by-provider) model dropdown and composer
+   chips - reuses the same palette as the chat model badges (main.css
+   ":root - Provider brand colors") so a provider reads as one consistent
+   color everywhere it shows up. */
+.provider-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.provider-dot-anthropic { background: var(--secondary); }
+.provider-dot-openai { background: var(--provider-openai); }
+.provider-dot-gemini { background: var(--provider-gemini); }
+.provider-dot-grok { background: var(--provider-grok); }
+.provider-dot-deepseek { background: var(--provider-deepseek); }
+.provider-dot-default { background: var(--color-text-faint); }
 .model-select-option-locked {
     display: flex;
     align-items: center;
@@ -2051,6 +2096,190 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .model-badge-deepseek { background: var(--provider-deepseek-soft); color: var(--provider-deepseek); }
 .model-badge-default { background: var(--color-surface-muted); color: var(--color-text-muted); }
 
+/* Admin Smart Routing Rules list (governance/models.py::RoutingRule) */
+.routing-rule-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: var(--space-4); }
+.routing-rule-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+}
+.rule-if-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-faint); }
+.rule-arrow { color: var(--color-text-faint); }
+.rule-row-spacer { flex: 1; }
+
+/* Admin Compliance Routing (accounts/models.py::Department.region_restriction) */
+.dept-row-list { display: flex; flex-direction: column; }
+.dept-row { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--color-border); }
+.dept-row:last-child { border-bottom: none; }
+.dept-name { font-size: 0.85rem; font-weight: 600; }
+.dept-restriction { font-size: 0.78rem; color: var(--color-text-muted); }
+.restriction-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: transform 120ms var(--ease-spring);
+}
+.restriction-badge:hover { transform: scale(1.05); }
+.restriction-badge.strict { background: var(--color-danger-soft); color: var(--color-danger); }
+.restriction-badge.none { background: var(--color-surface-muted); color: var(--color-text-faint); }
+
+/* Admin Retention & Provider Approval, and Security (per-department rows
+   with a control on the right - retention select, MFA timeout, etc). */
+.dept-mfa-row { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.25rem; border-bottom: 1px solid var(--color-border); }
+.dept-mfa-row:last-child { border-bottom: none; }
+
+.pending-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--warn);
+    background: var(--warn-soft);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.5rem;
+}
+.pending-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--warn);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.pending-icon svg { width: 15px; height: 15px; }
+.pending-name { font-size: 0.85rem; font-weight: 600; }
+.pending-sub { font-size: 0.76rem; color: var(--color-text-muted); }
+.pending-approve {
+    background: var(--color-success);
+    color: #fff;
+    border: none;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 0.35rem 0.8rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+/* Admin Data Handling - zero-retention cert table + PII rule checklist */
+.cert-table { display: flex; flex-direction: column; }
+.cert-row { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.25rem; border-bottom: 1px solid var(--color-border); }
+.cert-row:last-child { border-bottom: none; }
+.cert-provider-name { font-size: 0.85rem; font-weight: 600; }
+.cert-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.cert-badge svg { width: 10px; height: 10px; }
+.cert-badge.pass { background: var(--color-success-soft); color: var(--color-success); }
+.cert-badge.fail { background: var(--color-surface-muted); color: var(--color-text-faint); }
+
+.pii-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.25rem; }
+.pii-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid var(--color-border-strong);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.pii-check.on { background: var(--accent); border-color: var(--accent); }
+.pii-check svg { width: 11px; height: 11px; color: #fff; opacity: 0; }
+.pii-check.on svg { opacity: 1; }
+.pii-name { font-size: 0.85rem; font-weight: 500; flex: 1; }
+.pii-action-select {
+    background: var(--color-surface-muted);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.pending-reject {
+    background: transparent;
+    border: 1px solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    font-weight: 500;
+    padding: 0.35rem 0.8rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    margin-right: 0.4rem;
+}
+
+/* Admin Email Logs (notifications/models.py::EmailLog, EmailSettings) */
+.email-stats-bar { display: flex; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-4); }
+.email-stat { flex: 1; padding: 0.85rem 1.1rem; border-right: 1px solid var(--color-border); }
+.email-stat:last-child { border-right: none; }
+.email-stat-value { font-family: var(--font-display); font-size: 1.4rem; font-weight: 600; }
+.email-stat-value.success { color: var(--color-success); }
+.email-stat-label { font-size: 0.7rem; color: var(--color-text-faint); margin-top: 0.15rem; }
+
+.log-filter-row { display: flex; gap: 2px; background: var(--color-surface-muted); border-radius: var(--radius-sm); padding: 3px; width: fit-content; margin-bottom: var(--space-4); }
+.log-filter-chip { font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.85rem; border-radius: 5px; color: var(--color-text-muted); cursor: pointer; }
+.log-filter-chip.active { background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-sm); }
+
+.email-log-row { display: flex; align-items: center; gap: 0.85rem; padding: 0.7rem 0; border-bottom: 1px solid var(--color-border); }
+.email-log-row:last-child { border-bottom: none; }
+.email-log-icon { width: 30px; height: 30px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.email-log-icon svg { width: 14px; height: 14px; }
+.email-log-icon.sent { background: var(--color-success-soft); color: var(--color-success); }
+.email-log-icon.failed { background: var(--color-danger-soft); color: var(--color-danger); }
+.email-log-main { flex: 1; min-width: 0; font-size: 0.85rem; }
+.email-log-recipient { font-weight: 600; }
+.email-log-meta { color: var(--color-text-faint); }
+.email-log-detail { font-size: 0.74rem; color: var(--color-text-faint); margin-top: 0.1rem; }
+.email-log-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; flex-shrink: 0; }
+.email-log-time { font-size: 0.74rem; color: var(--color-text-faint); }
+.email-open-badge { font-size: 0.68rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; }
+.email-open-badge.opened { background: var(--color-success-soft); color: var(--color-success); }
+.email-open-badge.pending { background: var(--color-surface-muted); color: var(--color-text-faint); }
+
+.status-pill { font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.65rem; border-radius: 999px; display: inline-flex; align-items: center; gap: 0.3rem; }
+.status-pill.connected { background: var(--color-success-soft); color: var(--color-success); }
+.status-pill.unverified { background: var(--warn-soft); color: var(--warn); }
+.status-pill.failed { background: var(--color-danger-soft); color: var(--color-danger); }
+.status-pill.stale { background: var(--color-surface-muted); color: var(--color-text-faint); }
+
+.password-field-wrap { position: relative; }
+.password-field-wrap .input { padding-right: 2.4rem; margin: 0; }
+.password-reveal-btn {
+    position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; border-radius: var(--radius-sm); border: none; background: none;
+    color: var(--color-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.password-reveal-btn:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.password-reveal-btn svg { width: 15px; height: 15px; }
+
+.test-result-box { padding: 0.75rem 0.9rem; border-radius: var(--radius-md); font-size: 0.8rem; margin-top: var(--space-3); line-height: 1.5; }
+.test-result-box.success { background: var(--color-success-soft); color: var(--color-success); }
+.test-result-box.error { background: var(--color-danger-soft); color: var(--color-danger); }
+.test-result-title { font-weight: 600; margin-bottom: 0.15rem; }
+
 /* Sits between two assistant replies that used different models, so a
    routed/manually-switched conversation reads clearly instead of looking
    like one model just changed its voice mid-thread. */
@@ -2068,6 +2297,155 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     height: 1px;
     background: var(--color-border);
 }
+
+/* Compare mode (chat/views.py::post_arena_message, ArenaComparison) - one
+   prompt answered by two models side by side, with a "Better" pick per
+   pane. Reuses .provider-dot for the per-model color so a model reads the
+   same way here as it does in the header dropdown and the composer chips. */
+/* Sidebar Chat/Compare mode switch - same shape/hover/active language as
+   .app-nav a already uses (see the admin sidebar), just a plain two-item
+   list rather than the admin nav's grouped sections. */
+.mode-list { display: flex; flex-direction: column; gap: 1px; margin-bottom: var(--space-3); }
+.mode-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    text-decoration: none;
+    cursor: pointer;
+}
+.mode-item:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
+.mode-item.active { background: var(--secondary); color: var(--secondary-ink); }
+.mode-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+/* Compare setup screen - replaces the message thread + composer while a
+   user is picking exactly 2 models (see portalSidebarCompareClick /
+   portalStartCompareFromSetup below). */
+.compare-setup { max-width: 480px; margin: 15vh auto 0; text-align: center; padding: 0 1rem; }
+.compare-setup-title { font-family: var(--font-display); font-size: 1.3rem; font-weight: 600; margin-bottom: 0.4rem; }
+.compare-setup-sub { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1.5rem; line-height: 1.55; }
+.compare-setup-list { display: flex; flex-direction: column; gap: 0.5rem; text-align: left; margin-bottom: 1.25rem; }
+.compare-setup-row {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 0.85rem;
+    border: 1.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color 140ms var(--ease), background 140ms var(--ease), opacity 140ms var(--ease);
+}
+.compare-setup-row:hover { border-color: var(--color-border-strong); }
+.compare-setup-row.checked { border-color: var(--accent); background: var(--accent-soft); }
+.compare-setup-row.disabled { opacity: 0.4; pointer-events: none; }
+.compare-setup-check {
+    width: 19px;
+    height: 19px;
+    border-radius: 6px;
+    border: 1.5px solid var(--color-border-strong);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.compare-setup-row.checked .compare-setup-check { background: var(--accent); border-color: var(--accent); }
+.compare-setup-check svg { width: 12px; height: 12px; color: #fff; opacity: 0; }
+.compare-setup-row.checked .compare-setup-check svg { opacity: 1; }
+.compare-setup-name { font-size: 0.85rem; font-weight: 600; flex: 1; }
+.compare-setup-provider { font-size: 0.72rem; color: var(--color-text-faint); }
+.compare-setup-start {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.7rem 0;
+    border-radius: var(--radius-md);
+    border: none;
+    width: 100%;
+    background: var(--color-border-strong);
+    color: var(--color-surface);
+    cursor: not-allowed;
+    transition: background 140ms var(--ease);
+}
+.compare-setup-start.enabled { background: var(--accent); color: var(--accent-text); cursor: pointer; }
+
+/* Composer's "compare mode is armed" indicator, once the setup screen's
+   Start button has locked in the 2 models - replaces .composer-chips for
+   this one send, cleared automatically after (see portalResetComposerAttrs). */
+.compare-active-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--accent-text);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+}
+.compare-active-pill svg { width: 13px; height: 13px; }
+.compare-active-pill-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.08);
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+.compare-active-pill-clear svg { width: 9px; height: 9px; }
+
+.arena-label {
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--color-text-faint);
+    margin: 0.2rem 0 0.75rem;
+}
+.arena-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 1.25rem; }
+@media (max-width: 720px) { .arena-grid { grid-template-columns: 1fr; } }
+.arena-pane {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.arena-pane.picked { border-color: var(--color-success); box-shadow: 0 0 0 2px var(--color-success-soft); }
+.arena-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface-muted);
+}
+.arena-model-name { font-size: 0.82rem; font-weight: 650; }
+.arena-body { padding: 0.75rem; min-height: 60px; }
+.arena-body .msg-row { margin: 0; }
+.arena-foot { padding: 0.5rem 0.75rem; border-top: 1px solid var(--color-border); display: flex; justify-content: center; }
+.pick-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border-strong);
+    background: none;
+    padding: 0.3rem 0.9rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
+}
+.pick-btn:hover { border-color: var(--color-success); color: var(--color-success); }
+.pick-btn.picked { background: var(--color-success-soft); color: var(--color-success); border-color: var(--color-success); }
 
 /* Copy/Edit/Regenerate are always visible now, not hover-only - a user on
    touch (no hover at all) or who hasn't learned to hover here yet should
@@ -2390,6 +2768,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .composer-footer-left { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .composer-chips { display: flex; align-items: center; gap: 6px; overflow-x: auto; }
 .composer-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     flex-shrink: 0;
     font-size: 11.5px;
     font-weight: 700;
@@ -2852,6 +3233,20 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .plan-row { display: flex; justify-content: space-between; font-size: var(--text-xs); padding: 0.45rem 0; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); }
 .plan-row:last-child { border-bottom: none; }
 .plan-row span:last-child { color: var(--color-text); }
+
+/* Providers reuses .plan-grid/.plan-card (same elevated-card language as
+   Plans), but "Google Gemini"/"DeepSeek"/"xAI Grok" plus a status badge
+   and now a Region select need more width than the 3-up grid Plans' short
+   tier names were sized for - at 3 columns the head wrapped into an ugly
+   2-line title fighting a 2-line badge. auto-fit/minmax keeps cards a
+   comfortable width and drops to fewer per row instead of squeezing. */
+.provider-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.provider-grid .plan-card-head { flex-wrap: wrap; gap: 0.4rem; row-gap: 0.15rem; }
+.provider-grid .plan-card-title { min-width: 0; }
+.provider-grid .plan-card-head .badge { flex-shrink: 0; white-space: nowrap; }
+.provider-grid .plan-row { flex-wrap: wrap; row-gap: 0.3rem; }
+.provider-grid .plan-row form { display: flex; }
+
 .feat-list { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .feat-tag { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-sm); }
 .feat-tag.on { background: var(--color-success-soft); color: var(--color-success); }

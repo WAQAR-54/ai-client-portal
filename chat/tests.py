@@ -8,7 +8,7 @@ from django.utils import timezone
 from accounts.models import Department, User
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from chat.providers import ProviderError, StreamChunk, get_provider
-from chat.router import NoModelAvailableError, classify_complexity, select_model_for_user
+from chat.router import NoModelAvailableError, classify_complexity, match_routing_rule, select_model_for_user
 from providers.models import Provider, ProviderModel
 
 
@@ -168,6 +168,105 @@ class RouterTests(TestCase):
         self.default.save()
         selected = select_model_for_user(self.user, ProviderModel.Tier.DEFAULT)
         self.assertEqual(selected, self.economy)
+
+
+class RoutingRuleMatchingTests(TestCase):
+    """chat.router.match_routing_rule - the deterministic-heuristic layer
+    that runs before tier classification when the admin has defined
+    RoutingRule rows (governance/models.py)."""
+
+    def setUp(self):
+        from governance.models import RoutingRule
+
+        self.RoutingRule = RoutingRule
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        openai = Provider.objects.get(slug="openai")
+        self.code_model = ProviderModel.objects.create(provider=openai, model_id="code-model", is_enabled=True)
+        self.casual_model = ProviderModel.objects.create(provider=openai, model_id="casual-model", is_enabled=True)
+        self.image_model = ProviderModel.objects.create(provider=openai, model_id="image-model", is_enabled=True)
+        self.doc_model = ProviderModel.objects.create(provider=openai, model_id="doc-model", is_enabled=True)
+        self.not_granted_model = ProviderModel.objects.create(provider=openai, model_id="not-granted", is_enabled=True)
+        _grant_premium_plan(self.user, self.code_model, self.casual_model, self.image_model, self.doc_model)
+
+    def _conversation_with_message(self, **message_kwargs):
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, **message_kwargs)
+        return conversation
+
+    def test_no_rules_returns_none(self):
+        conversation = self._conversation_with_message(content="hello")
+        self.assertIsNone(match_routing_rule(self.user, conversation))
+
+    def test_code_like_matches_code_fence(self):
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.code_model)
+        conversation = self._conversation_with_message(content="fix this:\n```python\nprint(1)\n```")
+        self.assertEqual(match_routing_rule(self.user, conversation), self.code_model)
+
+    def test_code_like_matches_keyword_heuristic(self):
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.code_model)
+        conversation = self._conversation_with_message(content="can you fix this function for me please")
+        self.assertEqual(match_routing_rule(self.user, conversation), self.code_model)
+
+    def test_casual_short_matches_short_message(self):
+        self.RoutingRule.objects.create(condition="casual_short", target_model=self.casual_model)
+        conversation = self._conversation_with_message(content="hey what's up")
+        self.assertEqual(match_routing_rule(self.user, conversation), self.casual_model)
+
+    def test_casual_short_does_not_match_long_message(self):
+        self.RoutingRule.objects.create(condition="casual_short", target_model=self.casual_model)
+        conversation = self._conversation_with_message(
+            content="hey I was wondering if you could help me understand this in a lot more detail please"
+        )
+        self.assertIsNone(match_routing_rule(self.user, conversation))
+
+    def test_image_attached_matches(self):
+        self.RoutingRule.objects.create(condition="image_attached", target_model=self.image_model)
+        conversation = self._conversation_with_message(content="what's in this", attachment_original_name="photo.png")
+        self.assertEqual(match_routing_rule(self.user, conversation), self.image_model)
+
+    def test_long_document_attached_matches_above_size_threshold(self):
+        self.RoutingRule.objects.create(condition="long_document_attached", target_model=self.doc_model)
+        conversation = self._conversation_with_message(
+            content="summarize this", attachment_original_name="report.pdf", attachment_size=50_000
+        )
+        self.assertEqual(match_routing_rule(self.user, conversation), self.doc_model)
+
+    def test_long_document_attached_does_not_match_small_file(self):
+        self.RoutingRule.objects.create(condition="long_document_attached", target_model=self.doc_model)
+        conversation = self._conversation_with_message(
+            content="summarize this", attachment_original_name="note.txt", attachment_size=100
+        )
+        self.assertIsNone(match_routing_rule(self.user, conversation))
+
+    def test_image_extension_never_matches_long_document(self):
+        self.RoutingRule.objects.create(condition="long_document_attached", target_model=self.doc_model)
+        conversation = self._conversation_with_message(
+            content="what's this", attachment_original_name="huge.png", attachment_size=500_000
+        )
+        self.assertIsNone(match_routing_rule(self.user, conversation))
+
+    def test_priority_order_first_match_wins(self):
+        self.RoutingRule.objects.create(condition="casual_short", target_model=self.casual_model, priority=5)
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.code_model, priority=1)
+        # Short AND code-like at once - priority 1 (code_like) should win.
+        conversation = self._conversation_with_message(content="fix this bug;")
+        self.assertEqual(match_routing_rule(self.user, conversation), self.code_model)
+
+    def test_inactive_rule_is_skipped(self):
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.code_model, is_active=False)
+        conversation = self._conversation_with_message(content="```python\nprint(1)\n```")
+        self.assertIsNone(match_routing_rule(self.user, conversation))
+
+    def test_falls_through_when_target_model_not_visible_to_user(self):
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.not_granted_model)
+        conversation = self._conversation_with_message(content="```python\nprint(1)\n```")
+        self.assertIsNone(match_routing_rule(self.user, conversation))
+
+    def test_falls_through_to_next_rule_when_first_target_not_visible(self):
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.not_granted_model, priority=1)
+        self.RoutingRule.objects.create(condition="code_like", target_model=self.code_model, priority=2)
+        conversation = self._conversation_with_message(content="```python\nprint(1)\n```")
+        self.assertEqual(match_routing_rule(self.user, conversation), self.code_model)
 
 
 class ChatViewTests(TestCase):
@@ -378,6 +477,226 @@ class ChatViewTests(TestCase):
         self.assertNotIn("event: error", body)
         pending.refresh_from_db()
         self.assertEqual(pending.content, "The assistant hit a problem generating a response. Please try again.")
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_stream_message_uses_budget_fallback_model_when_active(self, mock_get_provider, mock_classify):
+        # Budget automation overrides even an EXPLICIT manual model pick -
+        # it's a hard guardrail, not a routing suggestion (see the comment
+        # above the override in chat/views.py::stream_message).
+        fallback_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"),
+            model_id="cheap-fallback",
+            tier=ProviderModel.Tier.ECONOMY,
+            input_price_per_mtok=1,
+            output_price_per_mtok=1,
+            is_enabled=True,
+        )
+        self.premium.allowed_provider_models.add(fallback_model)
+        self.premium.monthly_budget_cap = 10
+        self.premium.auto_downgrade_enabled = True
+        self.premium.auto_downgrade_threshold_pct = 50
+        self.premium.auto_downgrade_fallback_model = fallback_model
+        self.premium.save()
+
+        conversation = Conversation.objects.create(user=self.user)
+        # Prior spend already past the 50% threshold of a $10 cap.
+        Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content="earlier reply", estimated_cost=6
+        )
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="cheap reply"), StreamChunk(done=True, input_tokens=2, output_tokens=2)]
+        )
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+            )
+            + f"?model_id={self.model.id}"  # explicitly ask for the (non-fallback) default model
+        )
+        b"".join(response.streaming_content)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.provider_model_used, fallback_model)
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_stream_message_ignores_inactive_budget_automation(self, mock_get_provider, mock_classify):
+        fallback_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"),
+            model_id="unused-fallback",
+            is_enabled=True,
+        )
+        self.premium.allowed_provider_models.add(fallback_model)
+        self.premium.monthly_budget_cap = 10
+        self.premium.auto_downgrade_enabled = True
+        self.premium.auto_downgrade_threshold_pct = 50
+        self.premium.auto_downgrade_fallback_model = fallback_model
+        self.premium.save()  # no prior spend recorded - threshold not crossed
+
+        conversation = Conversation.objects.create(user=self.user)
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="normal reply"), StreamChunk(done=True, input_tokens=2, output_tokens=2)]
+        )
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+            )
+        )
+        b"".join(response.streaming_content)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.provider_model_used, self.model)
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_stream_message_uses_matching_routing_rule_over_tier_classification(self, mock_get_provider, mock_classify):
+        from governance.models import RoutingRule
+
+        rule_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="rule-target", is_enabled=True
+        )
+        self.premium.allowed_provider_models.add(rule_model)
+        RoutingRule.objects.create(condition="code_like", target_model=rule_model)
+
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, content="fix this:\n```\nx=1\n```")
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="fixed"), StreamChunk(done=True, input_tokens=2, output_tokens=2)]
+        )
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+            )
+        )
+        b"".join(response.streaming_content)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.provider_model_used, rule_model)
+        mock_classify.assert_not_called()
+
+
+class ArenaCompareModeTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model_a = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="model-a", is_enabled=True
+        )
+        self.model_b = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="model-b", is_enabled=True
+        )
+        _grant_premium_plan(self.user, self.model_a, self.model_b)
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    def test_post_arena_message_creates_pair(self):
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "compare these", "model_a_id": self.model_a.id, "model_b_id": self.model_b.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        from chat.models import ArenaComparison
+
+        comparison = ArenaComparison.objects.get(conversation=self.conversation)
+        self.assertEqual(comparison.model_a, self.model_a)
+        self.assertEqual(comparison.model_b, self.model_b)
+        self.assertEqual(comparison.response_a.role, Message.Role.ASSISTANT)
+        self.assertEqual(comparison.response_b.role, Message.Role.ASSISTANT)
+        user_message = Message.objects.get(role=Message.Role.USER, conversation=self.conversation)
+        self.assertEqual(comparison.user_message, user_message)
+
+    def test_post_arena_message_rejects_same_model_twice(self):
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "compare these", "model_a_id": self.model_a.id, "model_b_id": self.model_a.id},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_arena_message_rejects_model_user_cannot_use(self):
+        other_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="not-granted", is_enabled=True
+        )
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "compare these", "model_a_id": self.model_a.id, "model_b_id": other_model.id},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_arena_message_requires_model_selection_feature(self):
+        from governance.plans import get_plan_status
+
+        plan = get_plan_status(self.user)["plan"]
+        plan.feature_flags = {"model_selection": False}
+        plan.save(update_fields=["feature_flags"])
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "compare these", "model_a_id": self.model_a.id, "model_b_id": self.model_b.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_pick_arena_winner(self):
+        from chat.models import ArenaComparison
+
+        user_message = Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="hi")
+        response_a = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="a")
+        response_b = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="b")
+        comparison = ArenaComparison.objects.create(
+            conversation=self.conversation,
+            user_message=user_message,
+            response_a=response_a,
+            response_b=response_b,
+            model_a=self.model_a,
+            model_b=self.model_b,
+        )
+        response = self.client.post(
+            reverse(
+                "chat:pick_arena_winner",
+                kwargs={"conversation_id": self.conversation.id, "comparison_id": comparison.id},
+            ),
+            {"picked_message_id": response_b.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        # The rendered response, not just a post-refresh DB check - a
+        # string/int mismatch between comparison.picked_id and
+        # response_b_id (comparison.picked_id = picked_id instead of
+        # int(picked_id)) previously passed a DB-level assertion just fine
+        # (refresh_from_db always returns a real int) while the template's
+        # `{% if comparison.picked_id == comparison.response_b_id %}` -
+        # comparing whatever was in memory at render time - silently
+        # stayed False, so the "Picked" button never actually rendered.
+        body = response.content.decode()
+        self.assertIn("Picked", body)
+        comparison.refresh_from_db()
+        self.assertEqual(comparison.picked, response_b)
+        self.assertEqual(comparison.picked_id, response_b.id)
+
+    def test_chat_home_marks_arena_pair_for_rendering(self):
+        from chat.models import ArenaComparison
+
+        user_message = Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="hi")
+        response_a = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="a")
+        response_b = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="b")
+        ArenaComparison.objects.create(
+            conversation=self.conversation,
+            user_message=user_message,
+            response_a=response_a,
+            response_b=response_b,
+            model_a=self.model_a,
+            model_b=self.model_b,
+        )
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        messages_by_id = {m.id: m for m in response.context["messages_list"]}
+        self.assertTrue(getattr(messages_by_id[response_a.id], "arena_comparison", None))
+        self.assertTrue(getattr(messages_by_id[response_b.id], "arena_skip", False))
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())

@@ -13,13 +13,19 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 from sentry_sdk import capture_exception
 
-from chat.models import Conversation, Message, MessageFeedback, PromptTemplate
+from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
 from chat.document_extraction import EXTRACTABLE_EXTENSIONS, extract_text, wrap_for_prompt
 from chat.export import render_conversation_markdown, render_conversation_pdf, render_conversation_text
 from chat.response_cache import get_cached_response, store_cached_response
-from chat.router import NoModelAvailableError, classify_complexity, models_visible_to_user, select_model_candidates
+from chat.router import (
+    NoModelAvailableError,
+    classify_complexity,
+    match_routing_rule,
+    models_visible_to_user,
+    select_model_candidates,
+)
 from chat.utils import group_conversations
 from governance.audit import log_action
 from governance.features import require_feature
@@ -65,7 +71,7 @@ def chat_home(request, conversation_id=None):
         conversation = _owned_conversation_or_404(request, conversation_id)
 
     from governance.models import Plan
-    from governance.plans import get_plan_status, get_request_count_status, has_feature
+    from governance.plans import get_budget_automation_status, get_plan_status, get_request_count_status, has_feature
 
     available_models = models_visible_to_user(request.user)
     plan_status = get_plan_status(request.user)
@@ -80,6 +86,7 @@ def chat_home(request, conversation_id=None):
         "available_models": available_models,
         "model_rows": _model_catalog_rows(available_models, upgrade_plan_choices),
         "plan_status": plan_status,
+        "budget_automation": get_budget_automation_status(request.user),
         "usage": get_usage_status(request.user, conversation=conversation),
         "request_count": get_request_count_status(request.user, conversation=conversation),
         "can_select_model": has_feature(request.user, "model_selection"),
@@ -99,12 +106,36 @@ def _messages_with_switch_dividers(conversation):
     the attribute instead of re-deriving it - and so a single-message htmx
     response (post_message/regenerate/edit, which renders _message_bubble.html
     standalone) safely has no such attribute and the template's
-    {% if message.show_switch_divider %} just resolves falsy for it."""
+    {% if message.show_switch_divider %} just resolves falsy for it.
+
+    Also annotates Compare-mode (ArenaComparison) messages so the template
+    can render each pair as one side-by-side block instead of two separate
+    linear bubbles: the pair's first response gets .arena_comparison (render
+    chat/_arena_pair.html for it), its second response gets .arena_skip
+    (already rendered as part of that pair, skip it here). Neither
+    contributes to the switch-divider tracking above - two models answering
+    side by side isn't a "switch", and resuming normal chat afterward should
+    still compare against the last *single-model* reply, not either arena
+    side."""
     if not conversation:
         return []
     messages = list(conversation.messages.all())
+    arena_by_response_id = {}
+    for comparison in conversation.arena_comparisons.select_related(
+        "model_a__provider", "model_b__provider", "response_a", "response_b"
+    ):
+        arena_by_response_id[comparison.response_a_id] = comparison
+        arena_by_response_id[comparison.response_b_id] = comparison
+
     previous_label = None
     for message in messages:
+        comparison = arena_by_response_id.get(message.id)
+        if comparison is not None:
+            if message.id == comparison.response_a_id:
+                message.arena_comparison = comparison
+            else:
+                message.arena_skip = True
+            continue
         if message.role != Message.Role.ASSISTANT:
             continue
         label = message.model_label
@@ -120,7 +151,11 @@ def _model_catalog_rows(available_models, upgrade_plan_choices):
     *does* include it, pulled from Plan.allowed_models rather than any
     hardcoded model->plan mapping, so a plan edit in the admin dashboard
     is reflected here automatically."""
-    all_enabled = ProviderModel.objects.filter(is_enabled=True).order_by("tier", "display_name")
+    all_enabled = (
+        ProviderModel.objects.filter(is_enabled=True)
+        .select_related("provider")
+        .order_by("provider__name", "tier", "display_name")
+    )
     allowed_ids = set(available_models.values_list("id", flat=True))
 
     plans_by_model_id = {}
@@ -288,6 +323,22 @@ def post_message(request, conversation_id):
             status=400,
         )
 
+    if content:
+        from governance.pii import PIIBlocked, apply_pii_rules
+
+        try:
+            content = apply_pii_rules(content)
+        except PIIBlocked as exc:
+            return render(
+                request,
+                "chat/_limit_exceeded.html",
+                {
+                    "message": _("This message appears to contain %(kind)s and can't be sent.")
+                    % {"kind": exc.kind_label}
+                },
+                status=400,
+            )
+
     if uploaded_file:
         from governance.plans import has_feature
 
@@ -362,6 +413,112 @@ def post_message(request, conversation_id):
             "model_id": model_id,
         },
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def post_arena_message(request, conversation_id):
+    """Compare mode: one prompt, two models. Creates one user Message and
+    TWO pending assistant Messages - each one streams through the exact
+    same chat:stream_message view/URL as a normal reply, just with its own
+    explicit ?model_id= forcing which model it uses (see
+    _pending_assistant_row.html's sse-connect), so no separate streaming
+    code path exists for this. Requires "model_selection" (comparing IS
+    manually picking two specific models) rather than a dedicated feature
+    flag, mirroring post_message's own model_id gate above."""
+    from governance.plans import has_feature
+
+    content = request.POST.get("content", "").strip()
+    if not content:
+        return render(request, "chat/_limit_exceeded.html", {"message": _("Type a message first.")}, status=400)
+
+    from governance.pii import PIIBlocked, apply_pii_rules
+
+    try:
+        content = apply_pii_rules(content)
+    except PIIBlocked as exc:
+        return render(
+            request,
+            "chat/_limit_exceeded.html",
+            {"message": _("This message appears to contain %(kind)s and can't be sent.") % {"kind": exc.kind_label}},
+            status=400,
+        )
+
+    if not has_feature(request.user, "model_selection"):
+        return render(
+            request,
+            "chat/_limit_exceeded.html",
+            {"message": _("Comparing models isn't included in your current plan.")},
+            status=403,
+        )
+
+    visible_ids = set(models_visible_to_user(request.user).values_list("id", flat=True))
+    model_a_id = request.POST.get("model_a_id", "").strip()
+    model_b_id = request.POST.get("model_b_id", "").strip()
+    if (
+        not model_a_id
+        or not model_b_id
+        or model_a_id == model_b_id
+        or not model_a_id.isdigit()
+        or not model_b_id.isdigit()
+        or int(model_a_id) not in visible_ids
+        or int(model_b_id) not in visible_ids
+    ):
+        return render(
+            request,
+            "chat/_limit_exceeded.html",
+            {"message": _("Pick two different models you have access to.")},
+            status=400,
+        )
+
+    with transaction.atomic():
+        conversation = get_object_or_404(
+            Conversation.objects.select_for_update(), id=conversation_id, user=request.user
+        )
+        try:
+            check_usage_limits(request.user, conversation)
+        except UsageLimitExceeded as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
+
+        Conversation.objects.filter(pk=conversation.pk).update(updated_at=timezone.now())
+        user_message = Message.objects.create(conversation=conversation, role=Message.Role.USER, content=content)
+        if conversation.title == "New conversation":
+            conversation.title = content[:60]
+            conversation.save(update_fields=["title"])
+
+        response_a = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        response_b = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        comparison = ArenaComparison.objects.create(
+            conversation=conversation,
+            user_message=user_message,
+            response_a=response_a,
+            response_b=response_b,
+            model_a_id=model_a_id,
+            model_b_id=model_b_id,
+        )
+
+    return render(
+        request,
+        "chat/_arena_pending.html",
+        {"conversation": conversation, "user_message": user_message, "comparison": comparison},
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def pick_arena_winner(request, conversation_id, comparison_id):
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    comparison = get_object_or_404(ArenaComparison, id=comparison_id, conversation=conversation)
+    picked_id = request.POST.get("picked_message_id", "").strip()
+    if picked_id and int(picked_id) in (comparison.response_a_id, comparison.response_b_id):
+        # int(...), not the raw string - comparison.picked_id has to match
+        # comparison.response_a_id/response_b_id by type too, since
+        # _arena_pair.html compares them directly with `==` (Django
+        # templates don't coerce "5" == 5 to True the way Python's `==`
+        # against a freshly-queried FK would).
+        comparison.picked_id = int(picked_id)
+        comparison.save(update_fields=["picked"])
+    return render(request, "chat/_arena_pair.html", {"comparison": comparison, "conversation": conversation})
 
 
 @login_required
@@ -577,6 +734,7 @@ def _notify_if_usage_warning(user):
         NotificationType.USAGE_WARNING,
         title="You're approaching a usage limit",
         body=f"{worst['label']}: {worst['pct']}% used. Contact your administrator if you need more.",
+        metadata={"metric_label": worst["label"], "metric_pct": worst["pct"]},
     )
 
 
@@ -634,8 +792,12 @@ def stream_message(request, conversation_id, message_id):
             if requested_model_id and models_visible_to_user(request.user).filter(id=requested_model_id).exists():
                 candidates = [ProviderModel.objects.get(id=requested_model_id)]
             else:
-                tier = classify_complexity(history[-1]["content"] if history else "")
-                candidates = select_model_candidates(request.user, tier)
+                rule_model = match_routing_rule(request.user, conversation)
+                if rule_model is not None:
+                    candidates = [rule_model]
+                else:
+                    tier = classify_complexity(history[-1]["content"] if history else "")
+                    candidates = select_model_candidates(request.user, tier)
         except NoModelAvailableError as exc:
             message.content = str(exc)
             message.save(update_fields=["content"])
@@ -646,6 +808,23 @@ def stream_message(request, conversation_id, message_id):
             message.save(update_fields=["content"])
             yield _sse_event("done", "")
             return
+
+        # Budget automation overrides whatever was just selected above -
+        # including an explicit manual pick - once the user's Plan has
+        # crossed its spend threshold; it's the softer guardrail that runs
+        # before the hard monthly_budget_cap block in
+        # governance/limits.py::check_usage_limits (validate_context_tokens
+        # below is a different, unrelated cap). Silently falls through to
+        # the normal candidates if the fallback model somehow isn't one
+        # this user can actually use, rather than blocking the message.
+        from governance.plans import get_budget_automation_status
+
+        budget_status = get_budget_automation_status(request.user)
+        if (
+            budget_status["active"]
+            and models_visible_to_user(request.user).filter(id=budget_status["fallback_model"].id).exists()
+        ):
+            candidates = [budget_status["fallback_model"]]
 
         system_prompt = build_system_prompt(request.user)
 

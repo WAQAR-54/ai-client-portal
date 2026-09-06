@@ -11,6 +11,12 @@ urlpatterns = [
     path("conversations/<int:conversation_id>/pin/", views.toggle_pin, name="toggle_pin"),
     path("conversations/<int:conversation_id>/delete/", views.delete_conversation, name="delete_conversation"),
     path("conversations/<int:conversation_id>/messages/", views.post_message, name="post_message"),
+    path("conversations/<int:conversation_id>/arena-messages/", views.post_arena_message, name="post_arena_message"),
+    path(
+        "conversations/<int:conversation_id>/arena/<int:comparison_id>/pick/",
+        views.pick_arena_winner,
+        name="pick_arena_winner",
+    ),
     path(
         "conversations/<int:conversation_id>/messages/<int:message_id>/stream/",
         views.stream_message,
