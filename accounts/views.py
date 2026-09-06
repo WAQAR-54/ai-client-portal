@@ -24,6 +24,14 @@ from accounts.forms import (
     ProfileForm,
     SignupForm,
 )
+from accounts.mfa import (
+    MAX_MFA_ATTEMPTS,
+    OTP_EXPIRY_MINUTES,
+    clear_mfa_session,
+    mfa_challenge_expired,
+    start_mfa_challenge,
+    user_requires_mfa,
+)
 from accounts.models import User
 from accounts.permissions import AdminRequiredMixin
 from governance.features import require_feature
@@ -81,6 +89,24 @@ def replay_onboarding(request):
     return redirect("chat:chat_home")
 
 
+def _send_mfa_code_email(request, user, code):
+    """Sends the login verification code, through the same
+    send_tracked_email() path (and EmailLog audit trail) every other real
+    email in the app goes through."""
+    from notifications.emailing import send_tracked_email
+
+    with translation.override(user.preferred_language):
+        html_body = render_to_string(
+            "accounts/email_mfa_code.html", {"code": code, "expiry_minutes": OTP_EXPIRY_MINUTES}
+        )
+    send_tracked_email(
+        to_email=user.email,
+        subject="[AI Client Portal] Your verification code",
+        text_body=strip_tags(html_body),
+        html_body=html_body,
+    )
+
+
 class PortalLoginView(LoginView):
     template_name = "accounts/login.html"
     authentication_form = EmailAuthenticationForm
@@ -95,10 +121,105 @@ class PortalLoginView(LoginView):
         # dashboard instead of back where they were headed.
         return self.get_redirect_url() or reverse_lazy("accounts:dashboard")
 
+    def form_valid(self, form):
+        """form_valid means the password already checked out (that's what
+        AuthenticationForm.is_valid() verified) but form.get_user() is NOT
+        yet actually logged in - super().form_valid() is what calls
+        django.contrib.auth.login(). Intercepting here, before that call,
+        is what lets MFA require a second step without ever granting a
+        real session first."""
+        user = form.get_user()
+        if user_requires_mfa(user):
+            code = start_mfa_challenge(self.request, user, str(self.get_success_url()))
+            _send_mfa_code_email(self.request, user, code)
+            return redirect("accounts:mfa_verify")
+        return super().form_valid(form)
+
 
 def logout_view(request):
     logout(request)
     return redirect("accounts:login")
+
+
+def _mfa_redirect_target(request):
+    """The safe (already-validated at storage time - see PortalLoginView.
+    form_valid) URL to send the user to once MFA succeeds."""
+    from django.urls import reverse
+
+    return request.session.get("mfa_next") or reverse("accounts:dashboard")
+
+
+class MFAVerifyView(TemplateView):
+    """The second step of login for anyone user_requires_mfa() applies to -
+    reached only via PortalLoginView.form_valid() redirecting here, never
+    linked from anywhere else. dispatch() bounces back to the login form if
+    there's no pending challenge (direct URL visit, expired-and-cleared
+    session, or already completed) rather than showing a broken form."""
+
+    template_name = "accounts/mfa_verify.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if "mfa_user_id" not in request.session:
+            return redirect("accounts:login")
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request):
+        if mfa_challenge_expired(request):
+            clear_mfa_session(request)
+            messages.error(request, translation.gettext("That code expired — log in again to get a new one."))
+            return redirect("accounts:login")
+
+        attempts = request.session.get("mfa_attempts", 0)
+        if attempts >= MAX_MFA_ATTEMPTS:
+            clear_mfa_session(request)
+            messages.error(
+                request, translation.gettext("Too many incorrect attempts — log in again to get a new code.")
+            )
+            return redirect("accounts:login")
+
+        submitted = request.POST.get("code", "").strip()
+        if submitted != request.session.get("mfa_code"):
+            request.session["mfa_attempts"] = attempts + 1
+            messages.error(request, translation.gettext("Incorrect code — please try again."))
+            return self.get(request)
+
+        user = User.objects.get(id=request.session["mfa_user_id"])
+        next_url = _mfa_redirect_target(request)
+        clear_mfa_session(request)
+        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        return redirect(next_url)
+
+
+@require_POST
+def resend_mfa_code(request):
+    if "mfa_user_id" not in request.session:
+        return redirect("accounts:login")
+    user = User.objects.get(id=request.session["mfa_user_id"])
+    next_url = request.session.get("mfa_next", "")
+    code = start_mfa_challenge(request, user, next_url)
+    _send_mfa_code_email(request, user, code)
+    messages.success(request, translation.gettext("A new code is on its way."))
+    return redirect("accounts:mfa_verify")
+
+
+@login_required
+@require_POST
+def toggle_own_mfa(request):
+    """Self-service - User/Manager only in the UI (see profile.html), but
+    the view itself doesn't need to enforce that: an Admin/SuperAdmin
+    toggling their own mfa_enabled is harmless since user_requires_mfa()
+    ignores that field for them entirely."""
+    request.user.mfa_enabled = not request.user.mfa_enabled
+    request.user.save(update_fields=["mfa_enabled"])
+    messages.success(
+        request,
+        (
+            translation.gettext("Two-step verification turned on.")
+            if request.user.mfa_enabled
+            else translation.gettext("Two-step verification turned off.")
+        ),
+    )
+    return redirect("accounts:profile")
 
 
 def signup_view(request):

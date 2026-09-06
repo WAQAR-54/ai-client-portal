@@ -1,0 +1,15 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; background:#f5f7fa; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">{% blocktrans %}Your verification code is {{ code }}{% endblocktrans %}</div>
+
+    {% with accent="#00aef0" accent_soft="#e3f6fd" content_template="accounts/_email_content_mfa_code.html" footer_template="accounts/_email_footer_mfa.html" %}
+        {% include "notifications/_email_shell.html" %}
+    {% endwith %}
+</body>
+</html>

@@ -89,6 +89,10 @@ MIDDLEWARE = [
     # persistence).
     "accounts.middleware.UserLanguagePreferenceMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # After MessageMiddleware (uses django.contrib.messages to explain the
+    # logged-out-for-inactivity redirect) and AuthenticationMiddleware
+    # (needs request.user, set up above).
+    "accounts.middleware.SessionTimeoutMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",  # must stay last (see django-axes docs)
 ]

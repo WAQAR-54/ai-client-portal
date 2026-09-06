@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.test import TestCase
 from django.urls import reverse
-from django.utils import translation
+from django.utils import timezone, translation
 
 from accounts.geo import language_for_ip
 from accounts.models import Department, User
@@ -435,3 +435,137 @@ class DepartmentRetentionDaysTests(TestCase):
         self.assertEqual(department.retention_days, 30)
         department.retention_period = Department.RetentionPeriod.YEARS_7
         self.assertEqual(department.retention_days, 2555)
+
+
+class MFALoginFlowTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+        self.user = User.objects.create_user(email="user@example.com", password="pw12345!")
+        self.mfa_user = User.objects.create_user(email="mfauser@example.com", password="pw12345!", mfa_enabled=True)
+
+    def test_admin_login_redirects_to_mfa_verify_not_logged_in_yet(self):
+        response = self.client.post(
+            reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"}
+        )
+        self.assertRedirects(response, reverse("accounts:mfa_verify"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_regular_user_without_mfa_enabled_logs_in_directly(self):
+        response = self.client.post(reverse("accounts:login"), {"username": "user@example.com", "password": "pw12345!"})
+        self.assertRedirects(response, reverse("accounts:dashboard"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+
+    def test_user_with_mfa_enabled_is_challenged(self):
+        response = self.client.post(
+            reverse("accounts:login"), {"username": "mfauser@example.com", "password": "pw12345!"}
+        )
+        self.assertRedirects(response, reverse("accounts:mfa_verify"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_mfa_email_is_sent_with_the_real_session_code(self):
+        from django.core import mail
+
+        mail.outbox = []
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        code = self.client.session["mfa_code"]
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(code, mail.outbox[0].alternatives[0][0] if mail.outbox[0].alternatives else mail.outbox[0].body)
+
+    def test_correct_code_completes_login_and_honors_next(self):
+        self.client.post(
+            reverse("accounts:login") + "?next=/chat/", {"username": "admin@example.com", "password": "pw12345!"}
+        )
+        code = self.client.session["mfa_code"]
+        response = self.client.post(reverse("accounts:mfa_verify"), {"code": code})
+        self.assertRedirects(response, "/chat/")
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.admin.pk)
+
+    def test_incorrect_code_does_not_log_in(self):
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        response = self.client.post(reverse("accounts:mfa_verify"), {"code": "000000"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_too_many_incorrect_attempts_forces_restart(self):
+        from accounts.mfa import MAX_MFA_ATTEMPTS
+
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        for _ in range(MAX_MFA_ATTEMPTS):
+            self.client.post(reverse("accounts:mfa_verify"), {"code": "000000"})
+        response = self.client.post(reverse("accounts:mfa_verify"), {"code": "000000"})
+        self.assertRedirects(response, reverse("accounts:login"))
+        self.assertNotIn("mfa_user_id", self.client.session)
+
+    def test_expired_code_forces_restart(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        session = self.client.session
+        session["mfa_expires_at"] = (timezone.now() - timedelta(minutes=1)).isoformat()
+        session.save()
+        response = self.client.post(reverse("accounts:mfa_verify"), {"code": session["mfa_code"]})
+        self.assertRedirects(response, reverse("accounts:login"))
+
+    def test_resend_issues_a_different_code_and_still_works(self):
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        first_code = self.client.session["mfa_code"]
+        self.client.post(reverse("accounts:resend_mfa_code"))
+        second_code = self.client.session["mfa_code"]
+        response = self.client.post(reverse("accounts:mfa_verify"), {"code": second_code})
+        self.assertRedirects(response, reverse("accounts:dashboard"))
+        # Not asserting first_code != second_code (a random 6-digit regen
+        # could coincidentally repeat) - only that resend produces a code
+        # that actually completes login.
+        del first_code
+
+    def test_direct_visit_without_pending_challenge_redirects_to_login(self):
+        response = self.client.get(reverse("accounts:mfa_verify"))
+        self.assertRedirects(response, reverse("accounts:login"))
+
+
+class ToggleOwnMFATests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="user@example.com", password="pw12345!")
+        self.client.login(email="user@example.com", password="pw12345!")
+
+    def test_user_can_enable_own_mfa(self):
+        self.client.post(reverse("accounts:toggle_own_mfa"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.mfa_enabled)
+
+    def test_user_can_disable_own_mfa(self):
+        self.user.mfa_enabled = True
+        self.user.save(update_fields=["mfa_enabled"])
+        self.client.post(reverse("accounts:toggle_own_mfa"))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.mfa_enabled)
+
+
+class SessionTimeoutMiddlewareTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="user@example.com", password="pw12345!")
+        self.client.login(email="user@example.com", password="pw12345!")
+
+    def test_active_session_stays_logged_in(self):
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_idle_past_timeout_logs_out(self):
+        from accounts.middleware import SESSION_TIMEOUT_MINUTES
+
+        session = self.client.session
+        session["last_activity"] = timezone.now().timestamp() - (SESSION_TIMEOUT_MINUTES * 60 + 30)
+        session.save()
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertRedirects(response, reverse("accounts:login"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_anonymous_request_is_unaffected(self):
+        self.client.logout()
+        response = self.client.get(reverse("accounts:login"))
+        self.assertEqual(response.status_code, 200)

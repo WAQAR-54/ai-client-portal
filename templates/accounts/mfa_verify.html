@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Verify it's you" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block content %}
+<div class="auth-split">
+    <div class="auth-split-brand">
+        <div class="brand-mark"><span class="dot"></span>{% trans "AI Client Portal" %}</div>
+        <h2>{% trans "One assistant. Every model. Full control." %}</h2>
+        <p>{% trans "Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally." %}</p>
+    </div>
+    <div class="auth-split-form">
+        <div class="auth-card">
+            <h1>{% trans "Verify it's you" %}</h1>
+            <p class="auth-subtitle">{% trans "We emailed a 6-digit code to your account's email address. Enter it below to finish signing in." %}</p>
+            <form method="post">
+                {% csrf_token %}
+                <label for="mfaCodeInput">{% trans "Verification code" %}</label>
+                <input class="input mono" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                       autocomplete="one-time-code" autofocus id="mfaCodeInput" name="code"
+                       placeholder="000000" style="letter-spacing:0.3em; font-size:1.2rem; text-align:center;">
+                <button type="submit">{% trans "Verify" %}</button>
+            </form>
+            <form method="post" action="{% url 'accounts:resend_mfa_code' %}" class="auth-footer">
+                {% csrf_token %}
+                <button type="submit" style="background:none; border:none; padding:0; font:inherit; color:var(--accent); text-decoration:underline; cursor:pointer;">{% trans "Didn't get a code? Resend" %}</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

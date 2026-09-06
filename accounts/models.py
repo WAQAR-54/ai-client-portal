@@ -171,6 +171,12 @@ class User(AbstractUser):
         help_text="UI color theme. 'System' follows the OS/browser preference "
         "automatically. Set from Settings; see base.html for how this is applied.",
     )
+    # Email-OTP MFA. Only meaningful for User/Manager - Admin/SuperAdmin are
+    # ALWAYS required to complete MFA regardless of this flag's value (see
+    # accounts/mfa.py::user_requires_mfa), so it's never toggled for them and
+    # this field just sits at its default True/False for those roles without
+    # being read. A User/Manager can turn it on/off themselves from Settings.
+    mfa_enabled = models.BooleanField(default=False)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

@@ -33,6 +33,10 @@
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             {% trans "Password" %}
         </button>
+        <button type="button" class="settings-tab settings-tab-sidebar" data-tab="security">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            {% trans "Security" %}
+        </button>
         {% if user|has_feature:"notifications" %}
         <button type="button" class="settings-tab settings-tab-sidebar" data-tab="notifications">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -147,6 +151,28 @@
                 {{ password_form.new_password2.errors }}
                 <button type="submit">{% trans "Change password" %}</button>
             </form>
+        </div>
+    </div>
+
+    <div class="settings-tab-panel" data-tab-panel="security">
+        <div class="card">
+            <h2>{% trans "Two-step verification" %}</h2>
+            <p class="text-muted" style="margin-top:-0.5rem;">
+                {% trans "Adds a 6-digit code, emailed to you, as a second step after your password when you log in." %}
+            </p>
+            {% if user.is_admin %}
+            <p><span class="badge badge-muted">{% trans "Required for your role" %}</span></p>
+            <p class="text-faint" style="font-size:0.82rem;">{% trans "Admin and SuperAdmin accounts always require two-step verification — it can't be turned off." %}</p>
+            {% else %}
+            <form method="post" action="{% url 'accounts:toggle_own_mfa' %}">
+                {% csrf_token %}
+                <label class="toggle-switch" title="{% if user.mfa_enabled %}{% trans 'Turn off' %}{% else %}{% trans 'Turn on' %}{% endif %}">
+                    <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if user.mfa_enabled %}checked{% endif %}>
+                    <span class="toggle"><span class="toggle-knob"></span></span>
+                </label>
+                <span style="margin-left:0.6rem; font-weight:500;">{% if user.mfa_enabled %}{% trans "On" %}{% else %}{% trans "Off" %}{% endif %}</span>
+            </form>
+            {% endif %}
         </div>
     </div>
 
