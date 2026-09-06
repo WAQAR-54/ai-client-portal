@@ -206,6 +206,34 @@ class GenerateDomainsViewTests(TestCase):
         self.assertFalse(DomainSearch.objects.exists())
 
     @patch("chat.providers.get_provider")
+    def test_unexpected_exception_during_generation_returns_json_not_html(self, mock_get_provider):
+        """Regression guard: an uncaught exception here used to render
+        Django's HTML error page, which the frontend's fetch().then(r =>
+        r.json()) can't parse - it throws, and the user sees a generic
+        "Network error" with no indication anything AI-related broke."""
+        mock_get_provider.side_effect = RuntimeError("boom")
+        response = self._post()
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("error", response.json())
+
+    @patch("domaingen.views.check_domain_available")
+    @patch("chat.providers.get_provider")
+    def test_whois_pool_failure_degrades_to_unknown_instead_of_failing_the_search(
+        self, mock_get_provider, mock_check_available
+    ):
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [
+                StreamChunk(text='[{"name": "legaldesk", "tld": "com"}]'),
+                StreamChunk(done=True, input_tokens=10, output_tokens=5),
+            ]
+        )
+        mock_check_available.side_effect = RuntimeError("network unreachable")
+        response = self._post()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"][0]["available"], None)
+
+    @patch("chat.providers.get_provider")
     def test_unparseable_ai_response_returns_502_and_does_not_log_a_search(self, mock_get_provider):
         mock_provider = mock_get_provider.return_value
         mock_provider.stream_chat.return_value = iter(

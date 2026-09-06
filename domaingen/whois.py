@@ -40,7 +40,7 @@ def _raw_whois_query(server, domain, timeout):
     return b"".join(chunks).decode(errors="replace")
 
 
-def check_domain_available(name, tld, timeout=5):
+def check_domain_available(name, tld, timeout=3):
     """True (available) / False (taken) / None (unsupported TLD, timeout,
     or a response this heuristic can't confidently read). `name` is the
     label only (e.g. "google", no TLD) - querying WHOIS for a bare label

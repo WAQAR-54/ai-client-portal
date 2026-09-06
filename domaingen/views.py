@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
@@ -17,6 +18,8 @@ from django.views.generic import TemplateView
 from domaingen.models import DomainSearch
 from domaingen.whois import check_domain_available
 from governance.features import RequireStandaloneToolAccessMixin, require_standalone_tool_access
+
+logger = logging.getLogger(__name__)
 
 # A real per-user daily cap on AI generation calls - same cost-control
 # philosophy as playground.views.DAILY_RUN_LIMIT, just for a feature that
@@ -176,18 +179,38 @@ def generate_domains(request):
     )
     prompt += f"\n\nBusiness idea: {query}"
 
-    provider = get_provider(provider_model.provider)
     try:
+        provider = get_provider(provider_model.provider)
         raw_text, input_tokens, output_tokens = _complete_with_usage(provider, prompt, provider_model.model_id)
     except ProviderError as exc:
         return JsonResponse({"error": f"Generation failed: {exc}"}, status=502)
+    except Exception:
+        # Anything else here (a bad adapter_type, a provider SDK raising a
+        # type ProviderError doesn't wrap, ...) must still come back as
+        # JSON - an uncaught exception renders Django's HTML error page,
+        # and the frontend's fetch().then(r => r.json()) throws on that,
+        # surfacing as an opaque "Network error" with zero information
+        # about what actually broke. Logged so it's still visible server-
+        # side even though the client only gets a generic message.
+        logger.exception("Domain Generator: AI generation failed unexpectedly")
+        return JsonResponse({"error": "Generation failed unexpectedly - try again."}, status=502)
 
     suggestions = _parse_suggestions(raw_text, tld_filter)
     if not suggestions:
         return JsonResponse({"error": "Couldn't generate suggestions for that idea - try rephrasing it."}, status=502)
 
-    with ThreadPoolExecutor(max_workers=len(suggestions)) as pool:
-        availability = list(pool.map(lambda s: check_domain_available(s["name"], s["tld"]), suggestions))
+    try:
+        with ThreadPoolExecutor(max_workers=len(suggestions)) as pool:
+            availability = list(pool.map(lambda s: check_domain_available(s["name"], s["tld"]), suggestions))
+    except Exception:
+        # A WHOIS lookup failure/timeout is already handled per-domain
+        # inside check_domain_available (returns None) - this only catches
+        # something unexpected in the pool machinery itself, so a network
+        # environment that can't reach WHOIS at all (e.g. outbound port 43
+        # blocked) degrades to "Unknown" per domain instead of failing the
+        # whole search.
+        logger.exception("Domain Generator: WHOIS availability check failed unexpectedly")
+        availability = [None] * len(suggestions)
 
     results = []
     for suggestion, available in zip(suggestions, availability):
