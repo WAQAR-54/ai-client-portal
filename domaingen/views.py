@@ -2,7 +2,6 @@ import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from decimal import Decimal
 from itertools import groupby
 
 from django.conf import settings
@@ -30,11 +29,6 @@ DAILY_SEARCH_LIMIT = getattr(settings, "DOMAIN_GENERATOR_DAILY_LIMIT", 20)
 # matches the reference UI's own TLD chip row (All/.com/.co/.pk/.uk)
 # exactly, so nothing is offered that the backend can't really check.
 ALLOWED_TLDS = ["com", "co", "pk", "uk"]
-
-# Typical street price for a first-year registration - not webhostera.pk's
-# actual live pricing (no reseller API/credentials for that), so this is
-# labeled "around" in the UI rather than presented as an exact quote.
-_TLD_PRICE_ESTIMATE = {"com": Decimal("12"), "co": Decimal("25"), "pk": Decimal("10"), "uk": Decimal("12")}
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,22}[a-z0-9]$")
 
@@ -212,16 +206,7 @@ def generate_domains(request):
         logger.exception("Domain Generator: WHOIS availability check failed unexpectedly")
         availability = [None] * len(suggestions)
 
-    results = []
-    for suggestion, available in zip(suggestions, availability):
-        price = _TLD_PRICE_ESTIMATE.get(suggestion["tld"])
-        results.append(
-            {
-                "domain": suggestion["domain"],
-                "available": available,
-                "price_estimate": f"~${price}/yr" if available and price is not None else None,
-            }
-        )
+    results = [{"domain": s["domain"], "available": available} for s, available in zip(suggestions, availability)]
 
     estimated_cost = provider_model.estimate_cost(input_tokens, output_tokens)
     search = DomainSearch.objects.create(

@@ -126,7 +126,6 @@
   .status-badge svg{width:11px;height:11px;}
   .checking-spin{width:11px;height:11px;border:2px solid #2A2F3C;border-top-color:var(--text-lo);border-radius:50%;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  .price-tag{font-size:12.5px;color:var(--text-mid);width:64px;text-align:right;}
   .reg-btn{font-size:12px;font-weight:700;color:#04141A;background:var(--cyan);padding:7px 16px;border-radius:8px;border:none;cursor:pointer;transition:transform .15s var(--ease);white-space:nowrap;}
   .reg-btn:hover{transform:scale(1.05);}
   .reg-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
@@ -278,8 +277,7 @@
 
     let statusHtml = statusBadgeHtml(result.available);
     if(result.available === true){
-      statusHtml += '<span class="price-tag">' + (result.price_estimate || '') + '</span>' +
-        '<div class="reg-wrap"><button class="reg-btn" onclick="registerDomain(\'' + result.domain + '\')">Register</button><span class="reg-note">via webhostera.pk</span></div>';
+      statusHtml += '<div class="reg-wrap"><button class="reg-btn" onclick="registerDomain(\'' + result.domain + '\')">Register</button><span class="reg-note">via webhostera.pk</span></div>';
     }
 
     row.innerHTML = '<div class="fav-btn" onclick="toggleFav(this)">' + FAV_ICON + '</div>' +

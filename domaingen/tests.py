@@ -217,7 +217,7 @@ class GenerateDomainsViewTests(TestCase):
         response = self._post()
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["results"], [{"domain": "legaldesk.com", "available": True, "price_estimate": "~$12/yr"}])
+        self.assertEqual(data["results"], [{"domain": "legaldesk.com", "available": True}])
         self.assertEqual(data["remaining"], DAILY_SEARCH_LIMIT - 1)
         self.assertIsNotNone(data["cost_display"])
 
@@ -229,7 +229,7 @@ class GenerateDomainsViewTests(TestCase):
 
     @patch("domaingen.views.check_domain_available")
     @patch("chat.providers.get_provider")
-    def test_taken_domain_has_no_price_estimate(self, mock_get_provider, mock_check_available):
+    def test_taken_domain_result(self, mock_get_provider, mock_check_available):
         mock_provider = mock_get_provider.return_value
         mock_provider.stream_chat.return_value = iter(
             [
@@ -240,7 +240,7 @@ class GenerateDomainsViewTests(TestCase):
         mock_check_available.return_value = False
 
         data = self._post().json()
-        self.assertEqual(data["results"], [{"domain": "google.com", "available": False, "price_estimate": None}])
+        self.assertEqual(data["results"], [{"domain": "google.com", "available": False}])
 
     def test_query_too_short_returns_400_without_calling_ai(self):
         with patch("chat.providers.get_provider") as mock_get_provider:
