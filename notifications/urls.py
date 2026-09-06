@@ -9,4 +9,5 @@ urlpatterns = [
     path("<int:notification_id>/read/", views.mark_read, name="mark_read"),
     path("mark-all-read/", views.mark_all_read, name="mark_all_read"),
     path("preferences/", views.update_preferences, name="update_preferences"),
+    path("track/<uuid:token>.gif", views.track_email_open, name="track_email_open"),
 ]

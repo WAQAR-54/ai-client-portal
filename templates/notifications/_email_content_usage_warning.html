@@ -1,0 +1,18 @@
+{% load i18n %}
+<span style="display:inline-block; padding:4px 10px; border-radius:999px; background:{{ accent_soft }}; color:{{ accent }}; font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase;">{{ notification.get_notification_type_display }}</span>
+<h1 style="margin:14px 0 12px; font-size:20px; line-height:1.35; color:#12172b;">{{ notification.title }}</h1>
+{% if notification.metadata.metric_pct %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 16px;">
+    <tr>
+        <td style="font-size:12px; color:#5b6472;">{{ notification.metadata.metric_label }}</td>
+        <td align="right" style="font-size:12px; font-weight:700; color:{{ accent }};">{{ notification.metadata.metric_pct }}%</td>
+    </tr>
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f5; border-radius:999px; margin-bottom:16px;">
+    <tr>
+        <td style="background:{{ accent }}; width:{{ notification.metadata.metric_pct }}%; height:8px; border-radius:999px; font-size:0; line-height:0;">&nbsp;</td>
+        <td style="height:8px; font-size:0; line-height:0;">&nbsp;</td>
+    </tr>
+</table>
+{% endif %}
+<p style="margin:0; font-size:14px; line-height:1.6; color:#5b6472;">{{ notification.body }}</p>

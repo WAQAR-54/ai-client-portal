@@ -1,36 +1,17 @@
 {% load i18n %}
 <!DOCTYPE html>
 <html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
 <body style="margin:0; padding:0; background:#f5f7fa; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa; padding:32px 0;">
-        <tr>
-            <td align="center">
-                <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff; border:1px solid #dde2ea; border-radius:12px; overflow:hidden;">
-                    <tr>
-                        <td style="padding:24px 32px; border-bottom:1px solid #dde2ea;">
-                            <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#00aef0; margin-right:8px;"></span>
-                            <span style="font-weight:700; font-size:16px; color:#12172b;">{% trans "AI Client Portal" %}</span>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:32px;">
-                            <h1 style="margin:0 0 12px; font-size:20px; color:#12172b;">{{ notification.title }}</h1>
-                            <p style="margin:0; font-size:14px; line-height:1.6; color:#5b6472;">{{ notification.body }}</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:0 32px 32px;">
-                            <a href="#" style="display:inline-block; background:#00aef0; color:#122268; text-decoration:none; font-weight:600; font-size:14px; padding:10px 20px; border-radius:6px;">{% trans "Open the portal" %}</a>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:16px 32px; background:#f5f7fa; font-size:12px; color:#8992a3;">
-                            {% trans "You can change what you're emailed about under Settings, in the Notifications section." %}
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
+    {# Preheader: hidden preview text shown next to the subject in most inboxes. #}
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">{{ notification.body|truncatewords:16 }}</div>
+
+    {% trans "Open the portal" as cta_text %}
+    {% with cta_url=portal_url cta_text=cta_text footer_template="notifications/_email_footer_preferences.html" %}
+        {% include "notifications/_email_shell.html" %}
+    {% endwith %}
 </body>
 </html>

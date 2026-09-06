@@ -9,7 +9,7 @@ from accounts.models import Department, Team, User
 from chat.views import _notify_if_usage_warning
 from governance.models import Plan, UserPlanAssignment
 from governance.plans import assign_plan
-from notifications.models import Notification, NotificationPreference, NotificationType
+from notifications.models import EmailLog, EmailSettings, Notification, NotificationPreference, NotificationType
 from notifications.notify import notify, recently_notified
 from notifications.tasks import sweep_expiring_demo_plans
 
@@ -307,3 +307,177 @@ class BellDropdownAndPreferencesTests(TestCase):
         self.assertEqual(response.status_code, 302)
         preference = NotificationPreference.objects.get(user=self.user)
         self.assertFalse(preference.email_usage_warning)
+
+
+class EmailSettingsModelTests(TestCase):
+    def test_load_creates_singleton(self):
+        first = EmailSettings.load()
+        second = EmailSettings.load()
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(EmailSettings.objects.count(), 1)
+
+    def test_password_round_trips_through_encryption(self):
+        settings_row = EmailSettings.load()
+        settings_row.set_password("super-secret-pw")
+        settings_row.save()
+        settings_row.refresh_from_db()
+        self.assertNotIn(b"super-secret-pw", bytes(settings_row.password_encrypted))
+        self.assertEqual(settings_row.get_password(), "super-secret-pw")
+
+    def test_empty_password_stores_nothing(self):
+        settings_row = EmailSettings.load()
+        settings_row.set_password("")
+        self.assertEqual(settings_row.password_encrypted, b"")
+        self.assertEqual(settings_row.get_password(), "")
+
+    def test_is_configured_requires_host_and_username(self):
+        settings_row = EmailSettings.load()
+        self.assertFalse(settings_row.is_configured())
+        settings_row.host = "smtp.example.com"
+        self.assertFalse(settings_row.is_configured())
+        settings_row.username = "noreply@example.com"
+        self.assertTrue(settings_row.is_configured())
+
+
+class SendTrackedEmailTests(TestCase):
+    """notifications/emailing.py - the wrapper every real send in the app
+    goes through."""
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_falls_back_to_django_settings_when_unconfigured(self):
+        from notifications.emailing import send_tracked_email
+
+        # No EmailSettings configured - must still actually send (via
+        # Django's own EMAIL_BACKEND), not silently no-op. This is the
+        # exact regression this test guards: an existing deployment that
+        # already had EMAIL_HOST set before this feature existed must
+        # keep sending notification emails without any admin action.
+        sent, error = send_tracked_email("someone@example.com", "Subject", "Body")
+        self.assertTrue(sent)
+        self.assertIsNone(error)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["someone@example.com"])
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_creates_email_log_on_success(self):
+        from notifications.emailing import send_tracked_email
+
+        send_tracked_email("someone@example.com", "Hello", "Body text")
+        log = EmailLog.objects.get()
+        self.assertEqual(log.status, EmailLog.Status.SENT)
+        self.assertEqual(log.recipient, "someone@example.com")
+
+    def test_uses_configured_settings_when_present(self):
+        from notifications.emailing import send_tracked_email
+
+        settings_row = EmailSettings.load()
+        settings_row.host = "smtp.example.com"
+        settings_row.username = "noreply@example.com"
+        settings_row.save()
+
+        with patch("notifications.emailing.build_connection") as mock_build:
+            mock_connection = mock_build.return_value
+            mock_connection.send_messages = lambda msgs: 1
+            sent, error = send_tracked_email("someone@example.com", "Subject", "Body")
+
+        mock_build.assert_called_once_with("smtp.example.com", 587, "noreply@example.com", "", "tls")
+        self.assertTrue(sent)
+
+    def test_records_failure_without_raising(self):
+        from notifications.emailing import send_tracked_email
+
+        settings_row = EmailSettings.load()
+        settings_row.host = "smtp.example.com"
+        settings_row.username = "noreply@example.com"
+        settings_row.save()
+
+        with patch("notifications.emailing.build_connection"), patch(
+            "notifications.emailing.EmailMultiAlternatives.send", side_effect=Exception("boom")
+        ):
+            sent, error = send_tracked_email("someone@example.com", "Subject", "Body")
+
+        self.assertFalse(sent)
+        self.assertEqual(error, "boom")
+        log = EmailLog.objects.get()
+        self.assertEqual(log.status, EmailLog.Status.FAILED)
+        self.assertEqual(log.error_message, "boom")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class NotificationEmailTemplateTests(TestCase):
+    """Guards the email_generic.html content itself - the "Open the
+    portal"/preferences links must be real absolute URLs, not the dead
+    href="#" the template shipped with before this pass."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="template@example.com", password="pw12345!")
+
+    def test_cta_link_is_a_real_absolute_url_not_a_dead_anchor(self):
+        mail.outbox = []
+        notify(self.user, NotificationType.USAGE_WARNING, title="Approaching limit", body="85% used")
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertNotIn('href="#"', html_body)
+        self.assertIn(f"{reverse('chat:chat_home')}\"", html_body)
+        self.assertIn(f"{reverse('accounts:profile')}\"", html_body)
+
+    def test_shows_a_human_readable_type_label(self):
+        mail.outbox = []
+        notify(self.user, NotificationType.TRIAL_EXPIRED, title="Your trial has ended", body="...")
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertIn("Trial expired", html_body)
+
+    def test_usage_warning_renders_metadata_driven_progress_bar(self):
+        mail.outbox = []
+        notify(
+            self.user,
+            NotificationType.USAGE_WARNING,
+            title="Approaching a limit",
+            body="...",
+            metadata={"metric_label": "Monthly tokens", "metric_pct": 87},
+        )
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertIn("Monthly tokens", html_body)
+        self.assertIn("87%", html_body)
+
+    def test_plan_change_renders_plan_name_card(self):
+        mail.outbox = []
+        notify(
+            self.user,
+            NotificationType.PLAN_CHANGE,
+            title="Your plan has changed",
+            body="...",
+            metadata={"plan_name": "Advanced"},
+        )
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertIn("Advanced", html_body)
+
+    def test_falls_back_gracefully_when_metadata_is_missing(self):
+        # Older/other notify() calls that don't pass metadata must not
+        # crash the per-type template - it degrades to plain title/body.
+        mail.outbox = []
+        notify(self.user, NotificationType.USAGE_WARNING, title="Approaching a limit", body="Plain body text")
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertIn("Plain body text", html_body)
+
+
+class TrackEmailOpenViewTests(TestCase):
+    def test_pixel_marks_opened_once(self):
+        log = EmailLog.objects.create(recipient="a@example.com", subject="s", status=EmailLog.Status.SENT)
+        self.assertIsNone(log.opened_at)
+
+        response = self.client.get(reverse("notifications:track_email_open", kwargs={"token": log.tracking_token}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/gif")
+        log.refresh_from_db()
+        first_opened_at = log.opened_at
+        self.assertIsNotNone(first_opened_at)
+
+        self.client.get(reverse("notifications:track_email_open", kwargs={"token": log.tracking_token}))
+        log.refresh_from_db()
+        self.assertEqual(log.opened_at, first_opened_at)
+
+    def test_unknown_token_still_returns_pixel(self):
+        import uuid
+
+        response = self.client.get(reverse("notifications:track_email_open", kwargs={"token": uuid.uuid4()}))
+        self.assertEqual(response.status_code, 200)

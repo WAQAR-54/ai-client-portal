@@ -5,12 +5,13 @@ in-app Notification row; only queues the email if the user's preference
 from notifications.models import Notification, NotificationPreference
 
 
-def notify(user, notification_type, title, body=""):
+def notify(user, notification_type, title, body="", metadata=None):
     notification = Notification.objects.create(
         user=user,
         notification_type=notification_type,
         title=title,
         body=body,
+        metadata=metadata or {},
     )
 
     preference = NotificationPreference.objects.filter(user=user).first()

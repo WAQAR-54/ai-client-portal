@@ -3,8 +3,8 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import send_mail
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.utils.translation import override as translation_override
@@ -12,6 +12,21 @@ from django.utils.translation import override as translation_override
 logger = logging.getLogger(__name__)
 
 TRIAL_EXPIRING_NOTICE_DAYS = getattr(settings, "TRIAL_EXPIRING_NOTICE_DAYS", 2)
+
+# (accent, accent_soft, content partial) per NotificationType - drives the
+# per-type visual in email_generic.html. Keyed by the raw string value
+# (matching NotificationType's choices) rather than importing the enum, to
+# keep this a plain module-level constant. A type missing here (or a stale
+# value from before a type was added) falls back to _DEFAULT_EMAIL_STYLE.
+_EMAIL_TYPE_STYLE = {
+    "usage_warning": ("#b5761e", "#fcf0dc", "notifications/_email_content_usage_warning.html"),
+    "trial_expiring": ("#b5761e", "#fcf0dc", "notifications/_email_content_trial_expiring.html"),
+    "trial_expired": ("#c7443f", "#fbe7e8", "notifications/_email_content_trial_expired.html"),
+    "plan_change": ("#1e9a6c", "#e3f5ec", "notifications/_email_content_plan_change.html"),
+    "model_sync_available": ("#00aef0", "#e3f6fd", "notifications/_email_content_model_sync.html"),
+    "account_created": ("#00aef0", "#e3f6fd", "notifications/_email_content_account_created.html"),
+}
+_DEFAULT_EMAIL_STYLE = ("#00aef0", "#e3f6fd", "notifications/_email_content_default.html")
 
 
 @shared_task
@@ -27,16 +42,32 @@ def send_notification_email(notification_id):
     # written in English at the many notify() call sites throughout the
     # codebase and aren't translated in this pass (see AI_Client_Portal
     # notes on B5 scope).
+    from notifications.emailing import send_tracked_email
+
+    accent, accent_soft, content_template = _EMAIL_TYPE_STYLE.get(notification.notification_type, _DEFAULT_EMAIL_STYLE)
+    site_url = settings.SITE_URL.rstrip("/")
     with translation_override(notification.user.preferred_language):
-        html_body = render_to_string("notifications/email_generic.html", {"notification": notification})
-    send_mail(
+        html_body = render_to_string(
+            "notifications/email_generic.html",
+            {
+                "notification": notification,
+                "accent": accent,
+                "accent_soft": accent_soft,
+                "content_template": content_template,
+                "portal_url": site_url + reverse("chat:chat_home"),
+                "preferences_url": site_url + reverse("accounts:profile"),
+                "password_reset_url": site_url + reverse("accounts:password_reset_request"),
+            },
+        )
+    sent, error = send_tracked_email(
+        to_email=notification.user.email,
         subject=f"[AI Client Portal] {notification.title}",
-        message=strip_tags(html_body),
-        html_message=html_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[notification.user.email],
-        fail_silently=False,
+        text_body=strip_tags(html_body),
+        html_body=html_body,
     )
+    if not sent:
+        logger.warning("Notification email %s to %s failed: %s", notification.id, notification.user.email, error)
+        return
     notification.email_sent = True
     notification.save(update_fields=["email_sent"])
     logger.info("Sent notification email %s to %s", notification.id, notification.user.email)
@@ -75,6 +106,7 @@ def sweep_expiring_demo_plans():
                     title="Your trial is ending soon",
                     body=f"Your {assignment.plan.name} trial ends in about {days_left} day(s). "
                     "Contact your administrator if you'd like to keep full access.",
+                    metadata={"days_left": days_left, "plan_name": assignment.plan.name},
                 )
                 expiring_count += 1
         else:
@@ -84,6 +116,7 @@ def sweep_expiring_demo_plans():
                     NotificationType.TRIAL_EXPIRED,
                     title="Your trial has ended",
                     body="Your trial has ended — contact your administrator to continue.",
+                    metadata={"plan_name": assignment.plan.name},
                 )
                 expired_count += 1
 
