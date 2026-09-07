@@ -880,6 +880,15 @@ main { animation: page-fade-in 240ms var(--ease); }
    than one top-level card (Retention & Provider Approval, Data Handling)
    needs this or they render with zero gap between them, edges touching. */
 main .card + .card { margin-top: var(--space-5); }
+
+/* A page's title+description next to a trailing action (button/badge) -
+   reused across data_handling/email_logs/plans/routing_rules/users, each
+   with its own duplicated inline style and none of them setting
+   flex-wrap. At narrow widths this squeezed the title block into an
+   unreadable one-word-per-line column while the button/badge got pushed
+   past the visible edge. flex-wrap/row-gap only - per-page inline
+   align-items/margin overrides still win via specificity, unaffected. */
+.page-head-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; row-gap: 0.6rem; }
 .card:hover {
     box-shadow: var(--shadow-card-hover);
     transform: translateY(-2px);
@@ -3274,6 +3283,17 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .feature-role-toggles { display: flex; gap: 1.2rem; flex-wrap: wrap; }
 .feature-role-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text-muted); font-weight: 500; margin: 0; }
 .feature-role-toggle input { width: auto; margin: 0; }
+
+/* Manager Dashboard's "Team activity" - was a 5-column <table> (Member/
+   Tokens/Cost/Engagement/Actions) that rendered ONLY the Member column at
+   phone width; everything else, including both action buttons, was
+   entirely invisible with no scroll affordance. Same stacked-row fix. */
+.team-activity-row { padding: 0.75rem 0; border-bottom: 1px solid var(--color-border); }
+.team-activity-row:last-child { border-bottom: none; }
+.team-activity-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.4rem; }
+.team-activity-stats { display: flex; gap: 1.2rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--color-text-faint); margin-bottom: 0.55rem; }
+.team-activity-stats .mono { color: var(--color-text-muted); font-weight: 600; }
+.team-activity-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 .feat-list { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .feat-tag { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-sm); }
