@@ -932,6 +932,18 @@ input[type="text"], input[type="email"], input[type="password"], select, textare
 }
 textarea { resize: vertical; font-family: inherit; }
 
+/* Plain (non-.toggle-switch) checkboxes throughout the admin console -
+   Feature Visibility's role toggles, provider model toggles, etc. Had no
+   interaction feedback at all beyond the browser's own instant native
+   tick. A tiny press-scale on click reads as "smooth" the same way the
+   .toggle-switch knob's own spring transition already does elsewhere. */
+input[type="checkbox"]:not(.toggle-switch input) {
+    transition: transform 100ms var(--ease-spring);
+}
+input[type="checkbox"]:not(.toggle-switch input):active {
+    transform: scale(0.85);
+}
+
 /* ---------- Buttons ---------- */
 /* Fill = accent (cyan), text = accent-text (navy) - the pairing that
    passes contrast (~5.7:1), not white-on-cyan (~2.5:1, fails). */
@@ -3265,8 +3277,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    ~280-400px provider-grid card, forcing an unreadable inner horizontal
    scroll. A stacked row (name+badges on top, toggles below, both flex-wrap)
    has no fixed column widths to overflow - it just wraps at any card size. */
-.provider-model-row { padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); }
+.provider-model-row { padding: 0.6rem 0.6rem; margin: 0 -0.6rem; border-bottom: 1px solid var(--color-border); border-radius: var(--radius-sm); transition: background-color 150ms var(--ease); }
 .provider-model-row:last-child { border-bottom: none; }
+.provider-model-row:hover { background: var(--color-surface-muted); }
 .provider-model-name { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.8rem; margin-bottom: 0.5rem; }
 .provider-model-controls { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
 .provider-model-controls form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
@@ -3284,8 +3297,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    min-width so User/Manager/Admin still line up as visual columns across
    rows, closer to the original table's alignment without a real <table>
    to clip. */
-.feature-role-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1.5rem; padding: 0.7rem 0; border-bottom: 1px solid var(--color-border); }
+.feature-role-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1.5rem; padding: 0.7rem 0.6rem; margin: 0 -0.6rem; border-bottom: 1px solid var(--color-border); border-radius: var(--radius-sm); transition: background-color 150ms var(--ease); }
 .feature-role-row:last-child { border-bottom: none; }
+.feature-role-row:hover { background: var(--color-surface-muted); }
 .feature-role-label { font-weight: 500; flex: 1 1 260px; min-width: 0; }
 .feature-role-toggles { display: flex; gap: 1.4rem; flex-wrap: wrap; flex-shrink: 0; }
 .feature-role-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text-muted); font-weight: 500; margin: 0; min-width: 78px; }
@@ -3295,8 +3309,9 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    Tokens/Cost/Engagement/Actions) that rendered ONLY the Member column at
    phone width; everything else, including both action buttons, was
    entirely invisible with no scroll affordance. Same stacked-row fix. */
-.team-activity-row { padding: 0.75rem 0; border-bottom: 1px solid var(--color-border); }
+.team-activity-row { padding: 0.75rem 0.6rem; margin: 0 -0.6rem; border-bottom: 1px solid var(--color-border); border-radius: var(--radius-sm); transition: background-color 150ms var(--ease); }
 .team-activity-row:last-child { border-bottom: none; }
+.team-activity-row:hover { background: var(--color-surface-muted); }
 .team-activity-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.4rem; }
 .team-activity-stats { display: flex; gap: 1.2rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--color-text-faint); margin-bottom: 0.55rem; }
 .team-activity-stats .mono { color: var(--color-text-muted); font-weight: 600; }
