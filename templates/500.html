@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+{% load i18n %}
+{% comment %}
+Deliberately NOT extending base.html: a 500 can be caused by the very
+thing base.html needs to render (a DB outage breaks governance's
+`site_branding` context processor, which runs on EVERY templated
+response including this one) - rendering the error page would then
+itself raise, and Django falls back to its own bare, unstyled crash
+text instead. Fully self-contained: hardcoded colors (light/dark via
+prefers-color-scheme, no server-side theme lookup), system fonts only,
+no static file or database dependency of any kind.
+
+Django's {# #} comment syntax does NOT support multi-line (confirmed
+the hard way once already this session, in notifications/_email_shell.
+html) - it silently renders as literal visible text instead of being
+treated as a comment at all. {% comment %} does support multi-line.
+{% endcomment %}
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% trans "Something went wrong" %}</title>
+<style>
+  :root { --bg:#f1f0eb; --surface:#f9f8f4; --border:rgba(32,26,10,0.09); --text:#232019; --text-muted:#6f6c62; --accent:#00aef0; --accent-soft:#e3f6fd; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0a0d16; --surface:#12151d; --border:#232838; --text:#e7e8ec; --text-muted:#9296a3; --accent:#00aef0; --accent-soft:#123244; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .card { max-width: 440px; margin: 1.5rem; padding: 2rem; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
+  .icon-badge { width: 48px; height: 48px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+  p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; margin: 0 0 1.25rem; }
+  a { display: inline-block; padding: 0.6rem 1.2rem; background: var(--accent); color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.88rem; }
+  a:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-badge">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <h1>{% trans "Something went wrong" %}</h1>
+    <p>{% trans "Our side, not yours - it's already been logged. Try again in a moment." %}</p>
+    <a href="/">{% trans "Go home" %}</a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Page not found" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px; margin:10vh auto; text-align:center;">
+    <div class="empty-icon-badge" style="width:48px; height:48px; margin:0 auto 1rem;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    <h1 style="margin-bottom:0.4rem;">{% trans "Page not found" %}</h1>
+    <p class="text-muted">{% trans "That page doesn't exist, or you don't have a link to it anymore." %}</p>
+    <a href="{% if user.is_authenticated %}{% url 'accounts:dashboard' %}{% else %}{% url 'accounts:login' %}{% endif %}" class="btn mt-3" style="text-decoration:none; display:inline-block;">
+        {% trans "Back to safety" %}
+    </a>
+</div>
+{% endblock %}

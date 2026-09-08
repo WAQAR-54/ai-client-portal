@@ -1,5 +1,8 @@
+import re
+from pathlib import Path
+
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone, translation
 
@@ -588,3 +591,67 @@ class SessionTimeoutMiddlewareTests(TestCase):
         self.client.logout()
         response = self.client.get(reverse("accounts:login"))
         self.assertEqual(response.status_code, 200)
+
+
+@override_settings(DEBUG=False)
+class ErrorPageTests(TestCase):
+    """templates/404.html, 403.html, 500.html - Django only renders these
+    (instead of its own bare default, or the DEBUG=True technical page)
+    when DEBUG=False, so every test here forces that explicitly - the
+    project's own tests otherwise all run with DEBUG=True (see ci.yml's
+    comment on why). The test client re-raises exceptions by default
+    (raise_request_exception=True) rather than converting them to the
+    response a real server would return - turned off per-request here so
+    these actually exercise the same path production does."""
+
+    def test_404_renders_custom_template(self):
+        self.client.raise_request_exception = False
+        response = self.client.get("/this-path-does-not-exist/")
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "Page not found", status_code=404)
+
+    def test_403_renders_custom_template(self):
+        User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.client.raise_request_exception = False
+        response = self.client.get(reverse("governance:branding"))
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Access denied", status_code=403)
+
+    def test_500_template_renders_standalone_with_zero_context(self):
+        """Mirrors django.views.defaults.server_error's own call exactly
+        (template.render() with no context and no request at all) - the
+        real-world case this guards is a 500 caused by a DB outage, where
+        rendering the error page must not itself depend on a DB query
+        (e.g. governance's site_branding context processor) or it would
+        raise a second time and Django would fall back to its own bare
+        crash text instead of this template."""
+        from django.template import loader
+
+        html = loader.get_template("500.html").render()
+        self.assertIn("Something went wrong", html)
+
+
+class TemplateHygieneTests(TestCase):
+    """Static scans across every template file - catch a whole bug class at
+    once instead of one regression test per file it happens to bite next."""
+
+    def test_no_multiline_django_comment_tags(self):
+        """Django's {# #} comment tag does NOT support spanning multiple
+        lines - written across several lines, it's not recognized as a
+        comment at all and renders as literal visible text. Has bitten
+        this codebase twice already: notifications/_email_shell.html (a
+        real comment was genuinely emailed to a real recipient) and then
+        500.html (found via this session's own screenshot review, before
+        ever reaching production) - both converted to {% comment %}
+        {% endcomment %}, which does support multiple lines. This scans
+        every template for the same mistake happening a third time,
+        rather than relying on a fix ever getting a dedicated test."""
+        templates_dir = Path(settings.BASE_DIR) / "templates"
+        offenders = []
+        for path in templates_dir.rglob("*.html"):
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"\{#.*?#\}", text, re.DOTALL):
+                if "\n" in match.group():
+                    offenders.append(f"{path.relative_to(templates_dir)}: {match.group()[:60]!r}")
+        self.assertEqual(offenders, [], f"Multi-line {{# #}} comment(s) that will leak as text: {offenders}")
