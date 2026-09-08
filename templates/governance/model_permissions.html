@@ -2,7 +2,7 @@
 {% load i18n %}
 {% block title %}{% blocktrans with name=model_config.display_label %}Who can use {{ name }}{% endblocktrans %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
-<div class="card" style="overflow-x:auto;">
+<div class="card scroll-shadow" style="overflow-x:auto;">
     <h1>{% blocktrans with name=model_config.display_label %}Who can use {{ name }}{% endblocktrans %}</h1>
     <p>{% trans "Every user can use an enabled model by default. Deny access below to restrict specific users." %}</p>
     <table class="data">

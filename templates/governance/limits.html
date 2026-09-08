@@ -2,7 +2,7 @@
 {% load i18n %}
 {% block title %}{% trans "Limits" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
-<div class="card" style="overflow-x:auto;">
+<div class="card scroll-shadow" style="overflow-x:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <h1>{% trans "Usage & Upload Limits" %}</h1>
         <a href="{% url 'governance:limit_new' %}" class="btn">+ {% trans "New limit" %}</a>

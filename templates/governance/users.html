@@ -50,7 +50,7 @@ wrapper div - htmx's default innerHTML swap replaces everything INSIDE #users-ta
 any wrapper element placed inside it would be destroyed on the first filter/search swap.
 overflow-y:hidden still clips the table to the card's rounded corners on this one axis.
 {% endcomment %}
-<div class="card mt-4" style="padding:0; overflow-x:auto; overflow-y:hidden;" id="users-table">
+<div class="card mt-4 scroll-shadow" style="padding:0; overflow-x:auto; overflow-y:hidden;" id="users-table">
     {% include "governance/_users_table.html" %}
 </div>
 

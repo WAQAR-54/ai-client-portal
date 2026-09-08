@@ -489,11 +489,16 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     /* A SuperAdmin's nav now runs past one screenful (Automation/Models/
        System groups) - this fades the top/bottom few pixels toward
        transparent so a partially-scrolled item reads as "there's more
-       above/below", not as a clipped/broken row. 24px is intentionally
-       shy of one full nav-item's height, so it never fully hides a link,
-       only its edge. */
-    mask-image: linear-gradient(to bottom, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
+       above/below", not as a clipped/broken row. A nav row is ~35px tall
+       (17px icon + 9px top/bottom padding) - the original 24px here
+       covered ~70% of that, not just "an edge": confirmed via screenshot
+       that whichever link the auto-scroll (see base.html's
+       activeNavLink.scrollIntoView) lands at the very top renders almost
+       unreadable (measured pixel value nearly matching the background)
+       any time the active link is deep in the nav - i.e. most Automation/
+       Models/System pages. 10px fades roughly a third of a row instead. */
+    mask-image: linear-gradient(to bottom, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
 }
 
 
@@ -897,6 +902,33 @@ main { animation: page-fade-in 240ms var(--ease); }
    than one top-level card (Retention & Provider Approval, Data Handling)
    needs this or they render with zero gap between them, edges touching. */
 main .card + .card { margin-top: var(--space-5); }
+
+/* A dense multi-column <table> inside an overflow-x:auto wrapper (Audit
+   Logs, Limits, Usage & Cost, Feedback, ...) IS scrollable on mobile, but
+   nothing said so - confirmed via screenshot that several columns (and
+   the row's own action buttons) just render cut off at the card's edge
+   with no scrollbar or any other visual cue, reading as broken/clipped
+   rather than "swipe for more". Add this class alongside the existing
+   overflow-x:auto wrapper (never remove that inline style, this only
+   layers a hint on top of it) - classic CSS-only scroll-shadow recipe:
+   an opaque-to-transparent `local` gradient masks the table's own edge so
+   text doesn't render harshly under the shadow, and a `scroll`-attached
+   shadow gradient sits UNDER it, only visible while there's still
+   something to scroll toward on that side (it scrolls out of view with
+   the content, the mask stays put) - so the hint disappears on its own
+   once you've scrolled all the way. */
+.scroll-shadow {
+    background-image:
+        linear-gradient(to right, var(--color-surface) 0%, rgba(0, 0, 0, 0) 100%),
+        linear-gradient(to left, var(--color-surface) 0%, rgba(0, 0, 0, 0) 100%),
+        linear-gradient(to right, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0) 100%),
+        linear-gradient(to left, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0) 100%);
+    background-position: left center, right center, left center, right center;
+    background-repeat: no-repeat;
+    background-color: var(--color-surface);
+    background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+    background-attachment: local, local, scroll, scroll;
+}
 
 /* A page's title+description next to a trailing action (button/badge) -
    reused across data_handling/email_logs/plans/routing_rules/users, each
