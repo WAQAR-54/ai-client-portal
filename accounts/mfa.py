@@ -25,11 +25,15 @@ def generate_otp():
 
 
 def user_requires_mfa(user):
-    """Admin/SuperAdmin always go through MFA (user.is_admin covers both) -
-    it's not a per-user choice for them, so their own mfa_enabled value is
-    never consulted. User/Manager only go through it if they've turned it
-    on themselves (see accounts/views.py::toggle_own_mfa)."""
-    return user.is_admin or user.mfa_enabled
+    """Admin/SuperAdmin go through MFA whenever settings.MFA_ENFORCED is on
+    (user.is_admin covers both roles) - not a per-user choice for them in
+    that case, so their own mfa_enabled value is never consulted. Any
+    other role only goes through it if they've turned it on themselves
+    (see accounts/views.py::toggle_own_mfa), regardless of MFA_ENFORCED -
+    that flag only ever makes it mandatory, never blocks an opt-in."""
+    from django.conf import settings
+
+    return (settings.MFA_ENFORCED and user.is_admin) or user.mfa_enabled
 
 
 def start_mfa_challenge(request, user, next_url):
