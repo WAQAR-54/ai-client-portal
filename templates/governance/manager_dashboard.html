@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% trans "My Team" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "My Team" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 {% if not team %}
 <div class="card">

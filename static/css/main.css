@@ -430,6 +430,15 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     flex-shrink: 0;
 }
 
+/* Uploaded logo image (Settings > Branding) standing in for the plain
+   accent dot in any brand mark - sized to sit on the text baseline across
+   all three contexts (sidebar, mobile topbar, auth pages) without needing
+   a per-context override. */
+.brand-logo-img {
+    height: 22px; width: auto; max-width: 140px;
+    object-fit: contain; border-radius: 4px; flex-shrink: 0;
+}
+
 /* Chat/Admin segmented switch at the top of the sidebar - replaces the old
    flat "Chat" + "Admin" links for anyone who can see both. A real <a href>
    pair (full page navigation, this is an MPA, not the design concept's
@@ -1347,6 +1356,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     font-weight: 700; font-size: 1.15rem; position: relative;
 }
 .auth-split-brand .brand-mark .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.brand-tagline { opacity: 0.75; font-size: 0.9rem; margin: 0.5rem 0 0; position: relative; }
 .auth-split-brand h2 {
     font-size: 2rem;
     font-weight: 700;
@@ -3102,6 +3112,20 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     border-top: 1px solid var(--color-border);
 }
 .form-section-label:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+/* Settings > Branding logo/favicon uploads - a fixed preview box (showing
+   the current image, or a live client-side preview of the just-picked
+   file via portalPreviewBrandingImage) beside the file input. */
+.branding-upload-row { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: var(--space-3); }
+.branding-preview {
+    width: 96px; height: 64px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--color-border); border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: 0.4rem; text-align: center;
+}
+.branding-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.branding-preview-square { width: 64px; }
+
 .toggle-row-group { display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: var(--space-2); }
 .toggle-row-group.toggle-row-wrap { flex-direction: row; flex-wrap: wrap; gap: 1.25rem; }
 .toggle-row { font-weight: 500; }

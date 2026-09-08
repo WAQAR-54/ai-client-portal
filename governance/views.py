@@ -34,6 +34,7 @@ from governance.models import (
     RoleFeatureToggle,
     RoutingRule,
     SecuritySettings,
+    SiteBranding,
     SystemPromptVersion,
     UpgradeRequest,
     USER_CHAT_FEATURES,
@@ -2706,3 +2707,85 @@ def toggle_mfa_required(request):
         request.user, "security.mfa_required_toggle", settings_row, new_value=settings_row.mfa_required_for_admins
     )
     return redirect("governance:feature_visibility")
+
+
+_MAX_BRANDING_IMAGE_BYTES = 2 * 1024 * 1024
+
+
+class BrandingSettingsView(SuperAdminRequiredMixin, TemplateView):
+    """White-label identity (site name, tagline, logo, favicon) - see
+    SiteBranding's docstring and governance.context_processors.branding.
+    Two POST actions share this one view/URL rather than a separate toggle
+    endpoint (unlike toggle_mfa_required above): "save" and "reset" are
+    both just different target values for the same handful of fields, not
+    an independent on/off switch worth its own route."""
+
+    template_name = "governance/branding.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | {
+            "branding": SiteBranding.load(),
+        }
+
+    def post(self, request):
+        from django import forms as django_forms
+
+        branding = SiteBranding.load()
+
+        if request.POST.get("action") == "reset":
+            if branding.logo:
+                branding.logo.delete(save=False)
+            if branding.favicon:
+                branding.favicon.delete(save=False)
+            branding.site_name = "AI Client Portal"
+            branding.tagline = ""
+            branding.logo = None
+            branding.favicon = None
+            branding.save()
+            log_action(request.user, "branding.reset", branding)
+            django_messages.success(request, _("Branding reset to the defaults."))
+            return redirect("governance:branding")
+
+        site_name = request.POST.get("site_name", "").strip()
+        tagline = request.POST.get("tagline", "").strip()
+        errors = {}
+        if not site_name:
+            errors["site_name"] = _("Site name can't be empty.")
+        elif len(site_name) > 100:
+            errors["site_name"] = _("Keep the site name under 100 characters.")
+
+        logo_file = request.FILES.get("logo")
+        favicon_file = request.FILES.get("favicon")
+        for field_name, uploaded in (("logo", logo_file), ("favicon", favicon_file)):
+            if not uploaded:
+                continue
+            if uploaded.size > _MAX_BRANDING_IMAGE_BYTES:
+                errors[field_name] = _("That file is too big - keep it under 2 MB.")
+                continue
+            try:
+                django_forms.ImageField().clean(uploaded)
+            except ValidationError:
+                errors[field_name] = _("That doesn't look like a valid image file.")
+
+        if errors:
+            django_messages.error(request, _("Couldn't save - see the errors below."))
+            return self.render_to_response(
+                self.get_context_data(errors=errors, posted_site_name=site_name, posted_tagline=tagline)
+            )
+
+        branding.site_name = site_name
+        branding.tagline = tagline
+        if logo_file:
+            branding.logo = logo_file
+        elif request.POST.get("remove_logo") == "1" and branding.logo:
+            branding.logo.delete(save=False)
+            branding.logo = None
+        if favicon_file:
+            branding.favicon = favicon_file
+        elif request.POST.get("remove_favicon") == "1" and branding.favicon:
+            branding.favicon.delete(save=False)
+            branding.favicon = None
+        branding.save()
+        log_action(request.user, "branding.update", branding, new_value=site_name)
+        django_messages.success(request, _("Branding updated."))
+        return redirect("governance:branding")

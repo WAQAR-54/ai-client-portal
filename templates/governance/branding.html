@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Branding" %} — {{ site_branding.site_name }}{% endblock %}
+{% block admin_page_title %}{% trans "Branding" %}{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <h1>{% trans "Branding" %}</h1>
+    <p class="text-muted">
+        {% trans "This name, logo, and favicon replace \"AI Client Portal\" everywhere in the app - the sidebar, the browser tab, and the login page - for every user, immediately." %}
+    </p>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="card">
+    {% csrf_token %}
+
+    <div class="form-section-label">{% trans "Name" %}</div>
+    <label for="brandingSiteName">{% trans "Site name" %}</label>
+    <input class="input" type="text" name="site_name" id="brandingSiteName" maxlength="100"
+           value="{% if errors %}{{ posted_site_name }}{% else %}{{ branding.site_name }}{% endif %}"
+           placeholder="{% trans 'AI Client Portal' %}">
+    {% if errors.site_name %}<div class="form-hint" style="color:var(--color-danger);">{{ errors.site_name }}</div>{% endif %}
+
+    <label for="brandingTagline">{% trans "Tagline (optional)" %}</label>
+    <input class="input" type="text" name="tagline" id="brandingTagline" maxlength="200"
+           value="{% if errors %}{{ posted_tagline }}{% else %}{{ branding.tagline }}{% endif %}"
+           placeholder="{% trans 'e.g. One assistant. Every model.' %}">
+    <div class="form-hint">{% trans "Shown under the logo on the login page. Leave blank to show nothing." %}</div>
+
+    <div class="form-section-label" style="margin-top:1.5rem;">{% trans "Logo" %}</div>
+    <p class="text-faint" style="font-size:0.82rem; margin:-0.3rem 0 0.75rem;">
+        {% trans "Appears in the sidebar, the mobile header, and the login page. A short, wide mark works best - it's shown about 22px tall. PNG or SVG with a transparent background, under 2 MB." %}
+    </p>
+    <div class="branding-upload-row">
+        <div class="branding-preview" id="logoPreviewWrap">
+            {% if branding.logo %}<img src="{{ branding.logo.url }}" alt="" id="logoPreviewImg">
+            {% else %}<span class="text-faint" id="logoPreviewImg" style="font-size:0.78rem;">{% trans "No logo yet" %}</span>{% endif %}
+        </div>
+        <div style="flex:1;">
+            <input type="file" name="logo" accept="image/*" onchange="portalPreviewBrandingImage(this, 'logoPreviewWrap', 'logoPreviewImg')">
+            {% if errors.logo %}<div class="form-hint" style="color:var(--color-danger);">{{ errors.logo }}</div>{% endif %}
+            {% if branding.logo %}
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin-top:0.5rem;">
+                <input type="checkbox" name="remove_logo" value="1" style="width:auto;"> {% trans "Remove current logo" %}
+            </label>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="form-section-label" style="margin-top:1.5rem;">{% trans "Favicon" %}</div>
+    <p class="text-faint" style="font-size:0.82rem; margin:-0.3rem 0 0.75rem;">
+        {% trans "The browser tab icon. Square, at least 32×32px, PNG works best." %}
+    </p>
+    <div class="branding-upload-row">
+        <div class="branding-preview branding-preview-square" id="faviconPreviewWrap">
+            {% if branding.favicon %}<img src="{{ branding.favicon.url }}" alt="" id="faviconPreviewImg">
+            {% else %}<span class="text-faint" id="faviconPreviewImg" style="font-size:0.7rem;">{% trans "None" %}</span>{% endif %}
+        </div>
+        <div style="flex:1;">
+            <input type="file" name="favicon" accept="image/*" onchange="portalPreviewBrandingImage(this, 'faviconPreviewWrap', 'faviconPreviewImg')">
+            {% if errors.favicon %}<div class="form-hint" style="color:var(--color-danger);">{{ errors.favicon }}</div>{% endif %}
+            {% if branding.favicon %}
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin-top:0.5rem;">
+                <input type="checkbox" name="remove_favicon" value="1" style="width:auto;"> {% trans "Remove current favicon" %}
+            </label>
+            {% endif %}
+        </div>
+    </div>
+
+    <button type="submit" class="mt-4">{% trans "Save changes" %}</button>
+</form>
+
+<form method="post" class="mt-4" onsubmit="return portalConfirmSubmit(event, '{% trans "Reset the site name, tagline, logo, and favicon back to the defaults?" %}');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="reset">
+    <button type="submit" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Reset to default" %}</button>
+</form>
+
+<script>
+function portalPreviewBrandingImage(input, wrapId, imgId) {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    var wrap = document.getElementById(wrapId);
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var img = document.getElementById(imgId);
+        if (img.tagName !== "IMG") {
+            img = document.createElement("img");
+            img.id = imgId;
+            wrap.innerHTML = "";
+            wrap.appendChild(img);
+        }
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+</script>
+{% endblock %}

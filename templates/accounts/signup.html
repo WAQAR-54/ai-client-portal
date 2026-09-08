@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% trans "Sign up" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "Sign up" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="auth-split">
     <div class="auth-split-brand">
-        <div class="brand-mark"><span class="dot"></span>{% trans "AI Client Portal" %}</div>
+        <div class="brand-mark">{% include "_brand_mark.html" %}</div>
         <h2>{% trans "Get started in seconds." %}</h2>
         <p>{% trans "Create your account to start chatting — an admin can adjust your role, department, and model access anytime." %}</p>
     </div>
     <div class="auth-split-form">
         <div class="auth-card">
             <h1>{% trans "Create your account" %}</h1>
-            <p class="auth-subtitle">{% trans "Get started with the AI Client Portal." %}</p>
+            <p class="auth-subtitle">{% blocktrans with name=site_branding.site_name %}Get started with {{ name }}.{% endblocktrans %}</p>
             <form method="post">
                 {% csrf_token %}
                 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}

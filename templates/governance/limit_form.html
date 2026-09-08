@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% if limit %}{% trans "Edit" %}{% else %}{% trans "New" %}{% endif %} {% trans "Limit" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% if limit %}{% trans "Edit" %}{% else %}{% trans "New" %}{% endif %} {% trans "Limit" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
     <h1>{% if limit %}{% trans "Edit limit" %}{% else %}{% trans "New limit" %}{% endif %}</h1>

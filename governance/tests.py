@@ -1,8 +1,9 @@
+import tempfile
 from io import StringIO
 from unittest.mock import patch
 
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -2839,6 +2840,147 @@ class MFARequiredToggleTests(TestCase):
             reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"}
         )
         self.assertRedirects(response, reverse("accounts:mfa_verify"))
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class BrandingSettingsTests(TestCase):
+    """Settings > Branding - see governance.models.SiteBranding and
+    governance.context_processors.branding. MEDIA_ROOT overridden to a
+    throwaway temp dir so uploaded test images never land in the real
+    media/ folder."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+
+    @staticmethod
+    def _make_image(name="logo.png"):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new("RGB", (10, 10), color="red").save(buf, format="PNG")
+        return SimpleUploadedFile(name, buf.getvalue(), content_type="image/png")
+
+    def test_defaults(self):
+        from governance.models import SiteBranding
+
+        branding = SiteBranding.load()
+        self.assertEqual(branding.site_name, "AI Client Portal")
+        self.assertFalse(branding.logo)
+        self.assertFalse(branding.favicon)
+
+    def test_non_superadmin_cannot_access(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:branding"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_update_site_name_and_tagline(self):
+        from governance.models import SiteBranding
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:branding"), {"site_name": "Acme AI", "tagline": "Built for Acme"}
+        )
+        self.assertRedirects(response, reverse("governance:branding"))
+        branding = SiteBranding.load()
+        self.assertEqual(branding.site_name, "Acme AI")
+        self.assertEqual(branding.tagline, "Built for Acme")
+
+    def test_updated_site_name_appears_on_an_unrelated_page(self):
+        from governance.models import SiteBranding
+
+        SiteBranding.objects.update_or_create(pk=1, defaults={"site_name": "Acme AI"})
+        response = self.client.get(reverse("accounts:login"))
+        self.assertContains(response, "Acme AI")
+
+    def test_empty_site_name_rejected_without_losing_existing_value(self):
+        from governance.models import SiteBranding
+
+        SiteBranding.objects.update_or_create(pk=1, defaults={"site_name": "Acme AI"})
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:branding"), {"site_name": "  ", "tagline": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "can&#x27;t be empty")
+        self.assertEqual(SiteBranding.load().site_name, "Acme AI")
+
+    def test_uploading_a_logo_sets_it(self):
+        from governance.models import SiteBranding
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:branding"),
+            {"site_name": "AI Client Portal", "tagline": "", "logo": self._make_image()},
+        )
+        self.assertRedirects(response, reverse("governance:branding"))
+        self.assertTrue(SiteBranding.load().logo)
+
+    def test_non_image_upload_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from governance.models import SiteBranding
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        fake = SimpleUploadedFile("logo.png", b"not actually an image", content_type="image/png")
+        response = self.client.post(
+            reverse("governance:branding"), {"site_name": "AI Client Portal", "tagline": "", "logo": fake}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "doesn&#x27;t look like a valid image")
+        self.assertFalse(SiteBranding.load().logo)
+
+    def test_oversized_upload_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from governance.models import SiteBranding
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        big = SimpleUploadedFile("logo.png", b"x" * (3 * 1024 * 1024), content_type="image/png")
+        response = self.client.post(
+            reverse("governance:branding"), {"site_name": "AI Client Portal", "tagline": "", "logo": big}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "too big")
+        self.assertFalse(SiteBranding.load().logo)
+
+    def test_remove_logo_checkbox_clears_it(self):
+        from governance.models import SiteBranding
+
+        branding = SiteBranding.load()
+        branding.logo = self._make_image()
+        branding.save()
+        self.assertTrue(SiteBranding.load().logo)
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:branding"),
+            {"site_name": "AI Client Portal", "tagline": "", "remove_logo": "1"},
+        )
+        self.assertFalse(SiteBranding.load().logo)
+
+    def test_reset_restores_defaults(self):
+        from governance.models import SiteBranding
+
+        branding = SiteBranding.load()
+        branding.site_name = "Acme AI"
+        branding.tagline = "Something custom"
+        branding.logo = self._make_image()
+        branding.save()
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:branding"), {"action": "reset"})
+        self.assertRedirects(response, reverse("governance:branding"))
+
+        branding = SiteBranding.load()
+        self.assertEqual(branding.site_name, "AI Client Portal")
+        self.assertEqual(branding.tagline, "")
+        self.assertFalse(branding.logo)
 
 
 class CapabilityLimitsHelperTests(TestCase):

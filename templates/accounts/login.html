@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% trans "Log in" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "Log in" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="auth-split">
     <div class="auth-split-brand">
-        <div class="brand-mark"><span class="dot"></span>{% trans "AI Client Portal" %}</div>
+        <div class="brand-mark">{% include "_brand_mark.html" %}</div>
+        {% if site_branding.tagline %}<p class="brand-tagline">{{ site_branding.tagline }}</p>{% endif %}
         <h2>{% trans "One assistant. Every model. Full control." %}</h2>
         <p>{% trans "Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally." %}</p>
     </div>

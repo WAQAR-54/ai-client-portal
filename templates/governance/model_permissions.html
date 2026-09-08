@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% blocktrans with name=model_config.display_label %}Who can use {{ name }}{% endblocktrans %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% blocktrans with name=model_config.display_label %}Who can use {{ name }}{% endblocktrans %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card" style="overflow-x:auto;">
     <h1>{% blocktrans with name=model_config.display_label %}Who can use {{ name }}{% endblocktrans %}</h1>

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n governance_extras %}
-{% block title %}{% trans "Feature Visibility" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "Feature Visibility" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <form method="post">
     {% csrf_token %}

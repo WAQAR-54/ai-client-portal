@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% trans "Users" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "Users" %} — {{ site_branding.site_name }}{% endblock %}
 {% block admin_page_title %}{% trans "Users" %}{% endblock %}
 {% block content %}
 <div class="admin-eyebrow">{{ total_count|default:"" }} {% trans "total users" %}</div>

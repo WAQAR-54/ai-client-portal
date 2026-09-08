@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% blocktrans with email=target.email %}Overrides — {{ email }}{% endblocktrans %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% blocktrans with email=target.email %}Overrides — {{ email }}{% endblocktrans %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width:720px;">
     <div style="display:flex; justify-content:space-between; align-items:center;">

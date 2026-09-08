@@ -1,0 +1,10 @@
+{% comment %}
+Shared "icon + site name" inner content for every brand link/mark (sidebar,
+mobile topbar, auth pages) - included inside whatever wrapper element each
+context already uses (<a class="brand">, <div class="brand-mark">, etc.),
+never wraps its own element, so it drops into any of them unchanged. Reads
+`site_branding` from governance.context_processors.branding, available on
+every request. Falls back to the plain accent dot when no logo has been
+uploaded from Settings > Branding.
+{% endcomment %}
+{% if site_branding.logo %}<img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img">{% else %}<span class="dot"></span>{% endif %}{{ site_branding.site_name }}

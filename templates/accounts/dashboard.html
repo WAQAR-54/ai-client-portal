@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% trans "Dashboard" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "Dashboard" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 {% trans "No department assigned" as no_dept_label %}
 <div class="card">

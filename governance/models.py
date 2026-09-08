@@ -503,6 +503,34 @@ class SecuritySettings(models.Model):
         return obj
 
 
+class SiteBranding(models.Model):
+    """Singleton (always pk=1, via .load()) holding the org's white-label
+    identity - shown in the sidebar/topbar brand mark, the browser tab
+    title/favicon, and the login page, via governance.context_processors.
+    branding (registered on every request, so every template - including
+    ones outside this app - can read `site_branding` without each view
+    passing it explicitly). logo/favicon are optional: templates fall back
+    to the plain accent dot / no favicon when unset, exactly like a fresh
+    install today."""
+
+    site_name = models.CharField(max_length=100, default="AI Client Portal")
+    tagline = models.CharField(max_length=200, blank=True, default="")
+    logo = models.ImageField(upload_to="branding/", null=True, blank=True)
+    favicon = models.ImageField(upload_to="branding/", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Site branding"
+        verbose_name_plural = "Site branding"
+
+    def __str__(self):
+        return "Site branding"
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class ComplianceSettings(models.Model):
     """Singleton (always pk=1, via .load()) holding org-wide Data Handling
     toggles that don't belong to any one Provider/Department - see

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% if plan %}{% trans "Edit Plan" %}{% else %}{% trans "New Plan" %}{% endif %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% if plan %}{% trans "Edit Plan" %}{% else %}{% trans "New Plan" %}{% endif %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width:720px;">
     <h1>{% if plan %}{% blocktrans with name=plan.name %}Edit {{ name }}{% endblocktrans %}{% else %}{% trans "New plan" %}{% endif %}</h1>

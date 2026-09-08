@@ -7,7 +7,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{% trans "AI Client Portal" %}{% endblock %}</title>
+    <title>{% block title %}{{ site_branding.site_name }}{% endblock %}</title>
+    {% if site_branding.favicon %}<link rel="icon" href="{{ site_branding.favicon.url }}">{% endif %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -24,7 +25,7 @@
             <button type="button" class="mobile-menu-btn" aria-label="{% trans 'Open menu' %}" onclick="document.body.classList.add('sidebar-open')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
-            <span class="mobile-topbar-brand"><span class="dot"></span>{% trans "AI Client Portal" %}</span>
+            <span class="mobile-topbar-brand">{% include "_brand_mark.html" %}</span>
         </header>
         <div class="sidebar-backdrop" onclick="document.body.classList.remove('sidebar-open')"></div>
         <aside class="app-sidebar">
@@ -32,7 +33,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
             {% block sidebar %}
-            <a class="brand" href="{% url 'accounts:dashboard' %}"><span class="dot"></span>{% trans "AI Client Portal" %}</a>
+            <a class="brand" href="{% url 'accounts:dashboard' %}">{% include "_brand_mark.html" %}</a>
             {% if user.is_admin or user.is_manager %}
             <div class="app-switch" role="group" aria-label="{% trans 'Switch product area' %}" style="margin-bottom: var(--space-4);">
                 <div class="app-switch-pill" id="appSwitchPill"></div>
@@ -109,6 +110,10 @@
                     <a href="{% url 'governance:feature_visibility' %}" class="{% if request.resolver_match.url_name == "feature_visibility" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
                         {% trans "Feature Visibility" %}
+                    </a>
+                    <a href="{% url 'governance:branding' %}" class="{% if request.resolver_match.url_name == "branding" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-6 4 4 5-7 4 5"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
+                        {% trans "Branding" %}
                     </a>
                     <a href="{% url 'governance:budget_automation' %}" class="{% if request.resolver_match.url_name == "budget_automation" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>

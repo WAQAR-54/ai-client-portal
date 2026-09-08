@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% if rule %}{% trans "Edit Rule" %}{% else %}{% trans "New Rule" %}{% endif %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% if rule %}{% trans "Edit Rule" %}{% else %}{% trans "New Rule" %}{% endif %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width:520px;">
     <h1>{% if rule %}{% trans "Edit routing rule" %}{% else %}{% trans "New routing rule" %}{% endif %}</h1>

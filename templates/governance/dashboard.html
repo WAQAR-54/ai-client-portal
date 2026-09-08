@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n governance_extras %}
-{% block title %}{% trans "Admin Dashboard" %} — {% trans "AI Client Portal" %}{% endblock %}
+{% block title %}{% trans "Admin Dashboard" %} — {{ site_branding.site_name }}{% endblock %}
 {% block admin_page_title %}{% trans "Dashboard" %}{% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
