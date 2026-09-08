@@ -95,6 +95,15 @@ jobs:
           script: |
             set -e
             cd ~/ai-client-portal
+            # Best-effort, never blocks the deploy: dumps the CURRENT (pre-
+            # deploy) database via the existing web container before any new
+            # code/migrations land, using accounts/management/commands/
+            # backup_database.py (pg_dump + S3 upload, same command the daily
+            # scheduled backup would use). No-ops loudly (not silently) via
+            # deploy.log if BACKUP_S3_BUCKET isn't configured yet - see
+            # docs/BACKUP_RESTORE.md - rather than ever failing the deploy
+            # over a backup that was never set up.
+            docker compose exec -T web python manage.py backup_database || echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) WARNING: pre-deploy backup skipped/failed" >> ~/ai-client-portal/deploy.log
             git rev-parse HEAD > /tmp/ai_client_portal_prev_sha
             git pull origin main
             # migrate + collectstatic are NOT run here — docker-entrypoint.sh
@@ -130,6 +139,24 @@ jobs:
           echo "::error::Health check failed after 8 attempts - last status was $status"
           exit 1
 
+      # Only reached if the health check above actually passed (default
+      # `if:` behavior - no `if:` means "only if every previous step
+      # succeeded"). Emails every active SuperAdmin so a passing deploy
+      # doesn't need a manual GitHub Actions check - see
+      # notifications/management/commands/send_deploy_notification.py.
+      # `|| true` in the script keeps a flaky send from ever turning a
+      # real, successful deploy into a failed CI run.
+      - name: Notify SuperAdmins of successful deploy
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 2m
+          script: |
+            cd ~/ai-client-portal
+            docker compose exec -T web python manage.py send_deploy_notification --status success --sha "${{ github.sha }}" || true
+
       # Only runs if something above failed. Reverts the CODE to whatever was
       # deployed before this run and rebuilds - see the note in the PR/commit
       # this shipped with: this does NOT undo a database migration that
@@ -156,3 +183,6 @@ jobs:
             git reset --hard "$PREV_SHA"
             docker compose up -d --build
             echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ROLLED BACK to $PREV_SHA after failed deploy/health check" >> ~/ai-client-portal/deploy.log
+            # Best-effort - the rollback itself already happened above and
+            # must never be masked by a notification hiccup.
+            docker compose exec -T web python manage.py send_deploy_notification --status failure --sha "${{ github.sha }}" --prev-sha "$PREV_SHA" || true

@@ -495,3 +495,64 @@ class TrackEmailOpenViewTests(TestCase):
 
         response = self.client.get(reverse("notifications:track_email_open", kwargs={"token": uuid.uuid4()}))
         self.assertEqual(response.status_code, 200)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class SendDeployNotificationCommandTests(TestCase):
+    """notifications/management/commands/send_deploy_notification.py - called
+    from the deploy job's SSH steps (see .github/workflows/ci.yml)."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.other_superadmin = User.objects.create_user(
+            email="super2@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+        mail.outbox = []
+
+    def test_success_notifies_every_active_superadmin_only(self):
+        from django.core.management import call_command
+
+        call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456")
+        self.assertEqual(len(mail.outbox), 2)
+        recipients = {m.to[0] for m in mail.outbox}
+        self.assertEqual(recipients, {"super@example.com", "super2@example.com"})
+        self.assertIn("succeeded", mail.outbox[0].subject)
+        self.assertIn("abc123def456", mail.outbox[0].subject)
+
+    def test_inactive_superadmin_not_notified(self):
+        from django.core.management import call_command
+
+        self.other_superadmin.is_active = False
+        self.other_superadmin.save(update_fields=["is_active"])
+
+        call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["super@example.com"])
+
+    def test_failure_mentions_rollback_target(self):
+        from django.core.management import call_command
+
+        call_command(
+            "send_deploy_notification",
+            "--status",
+            "failure",
+            "--sha",
+            "abc123def456",
+            "--prev-sha",
+            "999888777666",
+        )
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn("FAILED", mail.outbox[0].subject)
+        self.assertIn("999888777666", mail.outbox[0].body)
+
+    def test_no_superadmin_does_not_error(self):
+        from django.core.management import call_command
+
+        User.objects.filter(role=User.Role.SUPERADMIN).delete()
+        call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456")
+        self.assertEqual(len(mail.outbox), 0)

@@ -97,4 +97,15 @@ deploys use `railway.json` and don't need any of this.)
 
 ### Database backups
 
-See [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
+See [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md) — including a
+pre-deploy backup that now runs automatically as part of every deploy.
+
+### Deploy notifications
+
+Every active SuperAdmin gets an email when a production deploy finishes —
+one on a successful, health-checked deploy, another (with what it rolled
+back to) if the health check fails and the automatic rollback kicks in.
+See `notifications/management/commands/send_deploy_notification.py` and
+the two SSH steps that call it in `.github/workflows/ci.yml`. Uses
+whatever's already configured on Email Logs → Settings (or the `EMAIL_*`
+env fallback) — no separate secrets needed in GitHub Actions.

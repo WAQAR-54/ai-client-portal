@@ -15,8 +15,14 @@ against SQLite (local dev) — it's meant for the real Postgres database only.
 
 ## Required environment variables
 
-Set these in the production environment (Railway service variables), not
-in `.env` (which is dev-only and never committed):
+Production actually runs on a self-managed VPS via Docker Compose over SSH
+(`.github/workflows/ci.yml`'s deploy job), not Railway — despite the
+Railway-specific scheduling instructions further down, written for an
+earlier hosting plan and left as-is below since the underlying cron-job
+mechanics still apply to whatever host actually runs a recurring job. Set
+these in the **server's own `.env`** (the same file `docker-compose.yml`'s
+`env_file:` already reads for the `web`/`worker`/`beat` services), not in
+this repo's `.env.example`, which only documents the variable names:
 
 | Variable | Meaning |
 |---|---|
@@ -31,10 +37,28 @@ The bucket/account running these backups should be **separate from
 Railway** (a different provider or at minimum a different account) —
 that's the whole point of an off-server backup.
 
-## Scheduling it (Railway)
+## It now also runs automatically before every deploy
+
+`.github/workflows/ci.yml`'s deploy job runs `docker compose exec -T web
+python manage.py backup_database` against the *currently running* (pre-
+deploy) container before pulling new code or applying any migration —
+see that file's "Deploy over SSH" step. This is best-effort: if
+`BACKUP_S3_BUCKET` isn't set yet, the command exits non-zero and the
+deploy script logs a warning to `~/ai-client-portal/deploy.log` and
+carries on rather than blocking the deploy. Once the variables below are
+actually set on the server, this pre-deploy backup starts working for
+real with no further changes needed.
+
+This does not replace a recurring schedule below — it only guarantees a
+fresh backup exists right before the riskiest moment (a new migration
+running), not one at a predictable time of day regardless of deploys.
+
+## Scheduling a recurring one (Railway example)
 
 Railway does not run this automatically. Set it up as a **Railway Cron
-Job** (a separate service in the same project):
+Job** (a separate service in the same project) — or, on a plain VPS like
+this project's actual host, a standard crontab entry running `docker
+compose exec -T web python manage.py backup_database` on a schedule:
 
 1. In the Railway project, add a new service → "Cron Job" (or a normal
    service with a cron schedule set in its settings).
@@ -99,11 +123,21 @@ change needed.
 
 **The actual `pg_dump`/`pg_restore`/S3 path (steps above) is still
 untested.** The environment this project is built in has no PostgreSQL
-server, no `pg_dump`/`pg_restore` client tools, and no S3-compatible
-bucket credentials — `backup_database.py` itself checks for a PostgreSQL
-engine and refuses to run against anything else, so it cannot be exercised
-here at all, not even to see it fail cleanly. This has not changed since
-this doc was first written.
+server and no S3-compatible bucket credentials — `backup_database.py`
+itself checks for a PostgreSQL engine and refuses to run against anything
+else, so it cannot be exercised here at all, not even to see it fail
+cleanly. This has not changed since this doc was first written.
+
+**One real gap this did surface and fix**: the production Docker image
+installed `libpq5` (the client *library*, for psycopg2) but never
+`postgresql-client` (the package that actually provides the `pg_dump`
+binary) — so `backup_database` would have failed with "command not
+found" the very first time anything tried to run it, pre-deploy backup
+included. Fixed in the `Dockerfile`'s runtime stage. Still worth knowing:
+Debian bookworm's default `postgresql-client` package is v15, one major
+version behind the `db` service's `postgres:16` — pg_dump one version
+behind its server is normally fine for a plain dump, but isn't the same
+guarantee as a matched version.
 
 **What *was* tested for real, 2026-08-30, as a partial substitute**: a
 logical backup/restore cycle against this environment's actual SQLite dev
