@@ -241,6 +241,14 @@ LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "accounts:dashboard"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
+# base.html renders each Django message as class="alert alert-{{ message.tags }}"
+# - Django's own default tag for messages.error() is "error", but this
+# app's existing CSS class (predating this) is .alert-danger, so map it
+# rather than adding a redundant third class.
+from django.contrib.messages import constants as _message_constants  # noqa: E402
+
+MESSAGE_TAGS = {_message_constants.ERROR: "danger"}
+
 # Session hardening. HttpOnly/SameSite=Lax are Django's defaults already,
 # made explicit here so they're not silently relying on defaults changing
 # out from under this app. SESSION_COOKIE_AGE + SESSION_SAVE_EVERY_REQUEST

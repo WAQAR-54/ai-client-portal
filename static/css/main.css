@@ -351,6 +351,25 @@
 
 * { box-sizing: border-box; }
 
+/* Every page had a keyboard/screen-reader user tab through the entire
+   sidebar nav before ever reaching the actual page content - no way to
+   jump past it. Standard WCAG 2.4.1 pattern: invisible until it receives
+   focus (the first Tab press on any page), at which point it becomes a
+   real, visible, clickable link pinned to the top-left. */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--accent);
+    color: #fff;
+    padding: 0.6rem 1rem;
+    z-index: 200;
+    border-radius: 0 0 var(--radius-sm) 0;
+    font-weight: 600;
+    font-size: var(--text-sm);
+}
+.skip-link:focus { top: 0; }
+
 /* Every scrollable area in the app - sidebar nav, conversation list, modal
    bodies, dense tables - was rendering the raw OS scrollbar (chunky, grey,
    never matching either theme) against an otherwise fully custom-designed
@@ -1287,6 +1306,17 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 }
 .alert-danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .alert-warning { background: var(--warn-soft); color: var(--warn); }
+/* base.html used to render every Django message as .alert-warning
+   regardless of its real level - every django_messages.success(...) call
+   across the app (there are many: user creation, branding updates, email
+   settings, ...) has been showing amber/warning-colored, never green, since
+   the template never read message.tags. Fixed there; these two classes
+   were simply missing (danger/warning already existed). MESSAGE_TAGS in
+   settings.py maps Django's default "error" tag to "danger" so this lines
+   up with the existing .alert-danger class instead of needing a third
+   error-specific one. */
+.alert-success { background: var(--color-success-soft); color: var(--color-success); }
+.alert-info { background: var(--accent-soft); color: var(--accent); }
 
 /* Budget-automation banner (chat/views.py::get_budget_automation_status) -
    same visual weight as .alert-warning but centered over the chat column
