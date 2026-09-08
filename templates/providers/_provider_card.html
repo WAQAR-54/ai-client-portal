@@ -58,8 +58,8 @@
     </div>
 
     {% if models %}
-    <details style="margin-top:0.9rem;">
-        <summary style="cursor:pointer; font-size:var(--text-xs); color:var(--color-text-muted);">{% trans "Manage models" %}</summary>
+    <details class="smooth-details" style="margin-top:0.9rem;">
+        <summary class="smooth-details-summary">{% trans "Manage models" %}</summary>
         <div style="margin-top:0.6rem;">
             {% for m in models %}
             <div class="provider-model-row">

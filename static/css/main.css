@@ -3285,6 +3285,39 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .provider-model-controls form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
 .provider-model-toggle-label { font-size: 0.75rem; color: var(--color-text-muted); }
 
+/* Paired with ui-kit.js's portalSmoothDetails() - a chevron that rotates
+   on open plus a hover tint, so an in-flow <details> reveal ("Manage
+   models", a Plan's legacy-models list) reads as an intentional
+   interactive control instead of a plain unstyled browser default. Not
+   applied to the OTHER <details> elsewhere (profile menu, model-select
+   dropdown, notif bell, etc.) - those are floating popover overlays, a
+   different pattern that shouldn't animate its own layout height. */
+.smooth-details-summary {
+    cursor: pointer;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.4rem;
+    margin: -0.2rem -0.4rem;
+    border-radius: var(--radius-sm);
+    transition: background-color 150ms var(--ease), color 150ms var(--ease);
+}
+.smooth-details-summary:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.smooth-details-summary::-webkit-details-marker { display: none; }
+.smooth-details-summary::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 200ms var(--ease);
+    flex-shrink: 0;
+}
+details[open] > .smooth-details-summary::before { transform: rotate(45deg); }
+
 /* Feature Visibility's per-role feature matrix - was a 4-column <table>
    (Feature/User/Manager/Admin) that silently clipped the Admin column at
    narrow widths with no visible scroll affordance (overflow-x:auto on the

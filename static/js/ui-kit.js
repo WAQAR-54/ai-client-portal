@@ -188,3 +188,81 @@ document.addEventListener("htmx:confirm", function(evt) {
         evt.detail.issueRequest(true);
     });
 });
+
+/* Smooth open/close for any <details class="smooth-details"> (e.g. a
+   Provider card's "Manage models" panel) - plain CSS can't animate to/from
+   "auto" height, so this measures the real content height and animates
+   with the Web Animations API instead (broadly supported for years,
+   unlike the still-patchy CSS calc-size()/allow-keywords route). Standard
+   pattern - see web.dev's "Building an expand and collapse component". */
+function portalSmoothDetails(details) {
+    if (details._portalSmoothBound) return;
+    details._portalSmoothBound = true;
+    var summary = details.querySelector("summary");
+    if (!summary) return;
+    var animation = null;
+    var isClosing = false;
+    var isExpanding = false;
+
+    summary.addEventListener("click", function(e) {
+        e.preventDefault();
+        details.style.overflow = "hidden";
+        if (isClosing || !details.open) {
+            openAndExpand();
+        } else if (isExpanding || details.open) {
+            shrink();
+        }
+    });
+
+    function shrink() {
+        isClosing = true;
+        var startHeight = details.offsetHeight + "px";
+        var endHeight = summary.offsetHeight + "px";
+        if (animation) animation.cancel();
+        animation = details.animate(
+            { height: [startHeight, endHeight] },
+            { duration: portalReduceMotion() ? 0 : 200, easing: "ease-out" }
+        );
+        animation.onfinish = function() { onAnimationFinish(false); };
+        animation.oncancel = function() { isClosing = false; };
+    }
+
+    function openAndExpand() {
+        details.style.height = details.offsetHeight + "px";
+        details.open = true;
+        window.requestAnimationFrame(function() { expand(); });
+    }
+
+    function expand() {
+        isExpanding = true;
+        var startHeight = details.offsetHeight + "px";
+        var endHeight = summary.offsetHeight + Array.from(details.children).reduce(function(sum, child) {
+            return child === summary ? sum : sum + child.offsetHeight;
+        }, 0);
+        endHeight += "px";
+        if (animation) animation.cancel();
+        animation = details.animate(
+            { height: [startHeight, endHeight] },
+            { duration: portalReduceMotion() ? 0 : 200, easing: "ease-out" }
+        );
+        animation.onfinish = function() { onAnimationFinish(true); };
+        animation.oncancel = function() { isExpanding = false; };
+    }
+
+    function onAnimationFinish(open) {
+        details.open = open;
+        animation = null;
+        isClosing = false;
+        isExpanding = false;
+        details.style.height = details.style.overflow = "";
+    }
+}
+
+function portalInitSmoothDetails(root) {
+    (root || document).querySelectorAll("details.smooth-details").forEach(portalSmoothDetails);
+}
+document.addEventListener("DOMContentLoaded", function() { portalInitSmoothDetails(); });
+document.addEventListener("htmx:afterSwap", function(evt) {
+    var target = evt.detail && evt.detail.target;
+    if (target) portalInitSmoothDetails(target);
+});
