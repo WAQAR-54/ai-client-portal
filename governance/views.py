@@ -33,6 +33,7 @@ from governance.models import (
     ROLE_FEATURE_ROLES,
     RoleFeatureToggle,
     RoutingRule,
+    SecuritySettings,
     SystemPromptVersion,
     UpgradeRequest,
     USER_CHAT_FEATURES,
@@ -2663,6 +2664,7 @@ class FeatureVisibilityView(SuperAdminRequiredMixin, TemplateView):
             "admin_rows": admin_rows,
             "user_rows": user_rows,
             "roles": ROLE_FEATURE_ROLES,
+            "security_settings": SecuritySettings.load(),
         }
 
     def post(self, request):
@@ -2685,3 +2687,22 @@ class FeatureVisibilityView(SuperAdminRequiredMixin, TemplateView):
         log_action(request.user, "feature_visibility.update", request.user, new_value=", ".join(changed)[:2000])
         django_messages.success(request, _("Feature visibility updated."))
         return redirect("governance:feature_visibility")
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["POST"])
+def toggle_mfa_required(request):
+    """SecuritySettings.mfa_required_for_admins - see accounts/mfa.py::
+    user_requires_mfa. A dedicated auto-submitting toggle (like Data
+    Handling's toggle_zero_retention_only) rather than folded into the
+    bulk ADMIN_NAV_FEATURES table above, since this isn't a "which nav
+    sections can Admin see" visibility switch - flipping it can affect
+    whether the acting SuperAdmin themselves needs a code on their very
+    next login, so it gets its own explicit, immediate action."""
+    settings_row = SecuritySettings.load()
+    settings_row.mfa_required_for_admins = not settings_row.mfa_required_for_admins
+    settings_row.save(update_fields=["mfa_required_for_admins"])
+    log_action(
+        request.user, "security.mfa_required_toggle", settings_row, new_value=settings_row.mfa_required_for_admins
+    )
+    return redirect("governance:feature_visibility")

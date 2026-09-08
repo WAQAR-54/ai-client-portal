@@ -57,4 +57,22 @@
 
     <button type="submit" class="mt-4">{% trans "Save changes" %}</button>
 </form>
+
+<div class="card mt-5">
+    <div class="page-head-row">
+        <div>
+            <h2 style="margin-bottom:0.25rem;">{% trans "Security" %}</h2>
+            <p class="text-muted" style="margin:0;">
+                {% trans "Force Admin/SuperAdmin through an email-OTP code on every login. Leave off until real email delivery here is confirmed reliable — turning this on with unreliable outbound email can lock every admin out waiting on a code that never arrives." %}
+            </p>
+        </div>
+        <form method="post" action="{% url 'governance:toggle_mfa_required' %}">
+            {% csrf_token %}
+            <label class="toggle-switch" title="{% trans 'Require MFA for Admin/SuperAdmin login' %}">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if security_settings.mfa_required_for_admins %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+</div>
 {% endblock %}

@@ -393,16 +393,6 @@ if EMAIL_HOST:
 # nothing external will ever fetch the pixel anyway.
 SITE_URL = env("SITE_URL", default="http://localhost:8000")
 
-# Whether Admin/SuperAdmin are FORCED through email-OTP MFA on every login
-# (accounts/mfa.py::user_requires_mfa) - defaults False so a deploy with
-# unreliable outbound email (e.g. SITE_URL not yet set, or SMTP not fully
-# configured) can never lock an admin out of their own account waiting on
-# a code that never arrives. A user can still self-enable MFA for their
-# own account regardless of this flag (accounts:toggle_own_mfa) - this
-# only controls whether it's mandatory for Admin/SuperAdmin. Flip to True
-# once real email delivery in this environment is confirmed reliable.
-MFA_ENFORCED = env.bool("MFA_ENFORCED", default=False)
-
 if not EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
     DEFAULT_FROM_EMAIL = "noreply@example.com"

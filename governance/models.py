@@ -478,6 +478,31 @@ class RoutingRule(models.Model):
         return f"{self.get_condition_display()} -> {self.target_model}"
 
 
+class SecuritySettings(models.Model):
+    """Singleton (always pk=1, via .load()) holding global security
+    toggles managed from the Feature Visibility admin page - a real DB
+    row rather than a Django setting/env var, specifically so a SuperAdmin
+    can flip this without needing server/SSH access. mfa_required_for_admins
+    gates accounts/mfa.py::user_requires_mfa's mandatory-for-Admin/
+    SuperAdmin behavior - defaults to False since turning it on in an
+    environment where outbound email isn't yet confirmed reliable could
+    otherwise lock every admin out waiting on a code that never arrives."""
+
+    mfa_required_for_admins = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Security settings"
+        verbose_name_plural = "Security settings"
+
+    def __str__(self):
+        return "Security settings"
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class ComplianceSettings(models.Model):
     """Singleton (always pk=1, via .load()) holding org-wide Data Handling
     toggles that don't belong to any one Provider/Department - see

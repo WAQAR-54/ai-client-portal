@@ -2784,6 +2784,63 @@ class FeatureVisibilityTests(TestCase):
         self.assertTrue(admin_rows["teams"])
 
 
+class MFARequiredToggleTests(TestCase):
+    """SecuritySettings.mfa_required_for_admins, toggled from the same
+    Feature Visibility page - see accounts/mfa.py::user_requires_mfa and
+    governance/views.py::toggle_mfa_required. A dedicated toggle rather
+    than part of the bulk ADMIN_NAV_FEATURES save-all form."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+
+    def test_off_by_default(self):
+        from governance.models import SecuritySettings
+
+        self.assertFalse(SecuritySettings.load().mfa_required_for_admins)
+
+    def test_feature_visibility_page_shows_the_toggle(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:feature_visibility"))
+        self.assertContains(response, "Require MFA for Admin/SuperAdmin login")
+
+    def test_superadmin_can_toggle_it_on_and_off(self):
+        from governance.models import SecuritySettings
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_mfa_required"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(SecuritySettings.load().mfa_required_for_admins)
+
+        self.client.post(reverse("governance:toggle_mfa_required"))
+        self.assertFalse(SecuritySettings.load().mfa_required_for_admins)
+
+    def test_non_superadmin_cannot_toggle_it(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_mfa_required"))
+        self.assertEqual(response.status_code, 403)
+        self.client.logout()
+
+        self.client.login(email="u@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_mfa_required"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_toggle_actually_changes_login_behavior_for_admin(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(reverse("governance:toggle_mfa_required"))
+        self.client.logout()
+
+        response = self.client.post(
+            reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"}
+        )
+        self.assertRedirects(response, reverse("accounts:mfa_verify"))
+
+
 class CapabilityLimitsHelperTests(TestCase):
     """governance/plans.py's numeric per-action caps - distinct from the
     existing token-volume/request-count caps already covered elsewhere in

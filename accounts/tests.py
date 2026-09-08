@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone, translation
 
@@ -437,9 +437,11 @@ class DepartmentRetentionDaysTests(TestCase):
         self.assertEqual(department.retention_days, 2555)
 
 
-@override_settings(MFA_ENFORCED=True)
 class MFALoginFlowTests(TestCase):
     def setUp(self):
+        from governance.models import SecuritySettings
+
+        SecuritySettings.objects.update_or_create(pk=1, defaults={"mfa_required_for_admins": True})
         self.admin = User.objects.create_user(
             email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
         )
@@ -458,14 +460,16 @@ class MFALoginFlowTests(TestCase):
         self.assertRedirects(response, reverse("accounts:dashboard"))
         self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
 
-    @override_settings(MFA_ENFORCED=False)
     def test_admin_logs_in_directly_when_mfa_not_enforced(self):
-        """MFA_ENFORCED defaults to False in production settings - an
+        """SecuritySettings.mfa_required_for_admins defaults to False - an
         unreliable/misconfigured outbound email setup must never lock an
         Admin/SuperAdmin out of their own account waiting on a code that
         never arrives. Only affects the mandatory-for-admin behavior - a
         user who explicitly opted into their own MFA (mfa_user, tested
         elsewhere in this class) is unaffected either way."""
+        from governance.models import SecuritySettings
+
+        SecuritySettings.objects.update_or_create(pk=1, defaults={"mfa_required_for_admins": False})
         response = self.client.post(
             reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"}
         )
