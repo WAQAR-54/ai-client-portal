@@ -365,6 +365,19 @@ body {
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
 }
+/* The light/dark toggle (.theme-toggle-quick in ui-kit.js, or the full
+   picker on Settings > Display) flips every token instantly today - one
+   frame the whole app is light, the next it's dark, no crossfade at all,
+   unlike everything else in the app now having some transition. Only
+   `body` gets it here (the others - .card, .app-sidebar - get it added to
+   their OWN existing `transition:` list further down instead of a
+   separate rule here, since `transition` doesn't merge across rules of
+   equal specificity - a second rule setting it would have silently
+   replaced their existing hover/lift transitions, not added to them). */
+body { transition: background-color 220ms var(--ease), color 220ms var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+    body { transition: none; }
+}
 
 h1, h2, h3 {
     margin: 0 0 var(--space-4);
@@ -397,6 +410,12 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     flex-shrink: 0;
     background: var(--sidebar-bg);
     border-right: 1px solid var(--sidebar-border);
+    /* Light/dark toggle crossfade (see body's own rule) - the mobile
+       drawer's own `transition: transform ...` (further down, inside the
+       max-width:900px block) merges this same background/border-color
+       pair into ITS declaration too, rather than just adding a second
+       transition rule that would replace it outright at mobile widths. */
+    transition: background-color 220ms var(--ease), border-color 220ms var(--ease);
     display: flex;
     flex-direction: column;
     padding: var(--space-5) var(--space-4);
@@ -895,7 +914,13 @@ main { animation: page-fade-in 240ms var(--ease); }
     border-radius: var(--radius-lg);
     padding: var(--space-6);
     box-shadow: var(--shadow-card);
-    transition: box-shadow 150ms ease, transform 150ms ease;
+    /* background-color/border-color added for the light/dark toggle
+       crossfade (see body's own rule) - merged into this existing
+       declaration rather than a separate rule, since a second `.card {
+       transition: ... }` elsewhere would replace this one wholesale
+       instead of adding to it (equal specificity, last-in-source wins
+       for the whole property, not per-value). */
+    transition: box-shadow 150ms ease, transform 150ms ease, background-color 220ms var(--ease), border-color 220ms var(--ease);
 }
 /* .card carries no margin of its own (so a single page-wrapping card, the
    common case, sits flush with main's own padding) - a page stacking more
@@ -2911,6 +2936,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
         position: sticky;
         top: 0;
         z-index: 30;
+        transition: background-color 220ms var(--ease), border-color 220ms var(--ease);
     }
     .mobile-menu-btn {
         background: none; border: none; padding: 0.3rem; margin: 0;
@@ -2933,7 +2959,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
         height: 100vh;
         max-height: 100vh;
         transform: translateX(-100%);
-        transition: transform 220ms ease;
+        transition: transform 220ms ease, background-color 220ms var(--ease), border-color 220ms var(--ease);
         z-index: 50;
         flex-direction: column;
         align-items: stretch;
@@ -3093,6 +3119,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     animation: scale-fade-in 220ms var(--ease-spring);
+    transition: background-color 220ms var(--ease), border-color 220ms var(--ease);
 }
 .modal-head {
     display: flex;
