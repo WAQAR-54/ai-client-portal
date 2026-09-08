@@ -2672,6 +2672,30 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     color: var(--color-text);
 }
 .msg-content-pending { white-space: pre-wrap; word-break: break-word; }
+/* Once the typing-dots hand off (above), nothing distinguished "still
+   streaming" from "finished" until the row gets replaced by the final
+   rendered bubble on sse:done - a reply that paused mid-sentence on a
+   slow model looked identical to one that had simply ended there. A
+   blinking cursor glued to whatever text is currently last, the same way
+   a terminal or ChatGPT/Claude's own UI does it. Pure CSS ::after on the
+   element htmx keeps appending tokens INTO (sse-swap="message" hx-swap=
+   "beforeend") - it's always rendered after the last text node with no
+   JS needed to reposition it. :not(:empty) keeps it from doubling up
+   with the typing-dots during the brief gap before the first token. */
+.msg-content-pending:not(:empty)::after {
+    content: "";
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background: currentColor;
+    animation: stream-cursor-blink 1s step-end infinite;
+}
+@keyframes stream-cursor-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    .msg-content-pending:not(:empty)::after { animation: none; opacity: 0.6; }
+}
 @keyframes chat-pulse {
     0%, 100% { opacity: 0.25; transform: scale(0.85); }
     50% { opacity: 0.8; transform: scale(1); }
