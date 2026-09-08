@@ -1,11 +1,13 @@
 {% load i18n %}
-{# Shared chrome for every transactional/notification email the app sends -
-   header, content slot, optional CTA button, footer slot. Reused by
-   notifications/email_generic.html (in-app notifications) and by
-   accounts/email_password_reset.html (not a Notification, so it supplies
-   its own footer_template instead of the preferences one). Context: accent,
-   accent_soft (colors), content_template (required), cta_url/cta_text
-   (button, omitted entirely when cta_url is falsy), footer_template. #}
+{% comment %}
+Shared chrome for every transactional/notification email the app sends -
+header, content slot, optional CTA button, footer slot. Reused by
+notifications/email_generic.html (in-app notifications) and by
+accounts/email_password_reset.html (not a Notification, so it supplies
+its own footer_template instead of the preferences one). Context: accent,
+accent_soft (colors), content_template (required), cta_url/cta_text
+(button, omitted entirely when cta_url is falsy), footer_template.
+{% endcomment %}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa; padding:32px 0;">
     <tr>
         <td align="center">

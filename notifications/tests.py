@@ -459,6 +459,20 @@ class NotificationEmailTemplateTests(TestCase):
         html_body = mail.outbox[0].alternatives[0][0]
         self.assertIn("Plain body text", html_body)
 
+    def test_shell_template_comment_never_leaks_into_a_real_email(self):
+        """Regression guard: Django's {# #} comment tag does NOT support
+        spanning multiple lines - a comment written across several lines
+        with that syntax is not recognized as a comment at all and renders
+        as literal visible text. _email_shell.html's own explanatory
+        comment did exactly this and was genuinely emailed to a real
+        recipient before being converted to {% comment %}...{% endcomment %}
+        (which does support multiple lines)."""
+        mail.outbox = []
+        notify(self.user, NotificationType.PLAN_CHANGE, title="Your plan has changed", body="...")
+        html_body = mail.outbox[0].alternatives[0][0]
+        self.assertNotIn("{#", html_body)
+        self.assertNotIn("Shared chrome for every transactional", html_body)
+
 
 class TrackEmailOpenViewTests(TestCase):
     def test_pixel_marks_opened_once(self):
