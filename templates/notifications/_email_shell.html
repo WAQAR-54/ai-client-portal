@@ -8,14 +8,30 @@ its own footer_template instead of the preferences one). Context: accent,
 accent_soft (colors), content_template (required), cta_url/cta_text
 (button, omitted entirely when cta_url is falsy), footer_template.
 {% endcomment %}
+{% comment %}
+The icon badge in the header below is a plain Unicode character styled
+with color/font-size, not an <svg> or <img>: desktop Outlook's Word
+rendering engine doesn't support inline SVG at all, and an <img> would
+need real hosting plus still show a broken-image glyph until images are
+allowed. Matched against the app's own fixed set of accent colors (see
+notifications/tasks.py's _EMAIL_TYPE_STYLE) rather than the notification
+type directly, since this shell doesn't receive the type itself.
+{% endcomment %}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa; padding:32px 0;">
     <tr>
         <td align="center">
             <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff; border:1px solid #dde2ea; border-radius:12px; overflow:hidden;">
                 <tr>
-                    <td style="padding:24px 32px; border-bottom:1px solid #dde2ea;">
-                        <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#00aef0; margin-right:8px;"></span>
-                        <span style="font-weight:700; font-size:16px; color:#12172b;">{% trans "AI Client Portal" %}</span>
+                    <td style="height:5px; line-height:5px; font-size:0; background:{{ accent }};">&nbsp;</td>
+                </tr>
+                <tr>
+                    <td style="padding:20px 32px; border-bottom:1px solid #dde2ea;">
+                        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                            <td style="width:32px; height:32px; border-radius:50%; background:{{ accent_soft }}; text-align:center; vertical-align:middle; font-size:15px; font-weight:700; color:{{ accent }}; line-height:32px;">
+                                {% if accent == "#c7443f" %}&#10005;{% elif accent == "#b5761e" %}!{% elif accent == "#1e9a6c" %}&#10003;{% else %}&#10022;{% endif %}
+                            </td>
+                            <td style="padding-left:10px; font-weight:700; font-size:16px; color:#12172b; vertical-align:middle;">{% trans "AI Client Portal" %}</td>
+                        </tr></table>
                     </td>
                 </tr>
                 <tr>
