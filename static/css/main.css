@@ -2912,6 +2912,23 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    the request, no JS needed here. */
 #composer-form.htmx-request .send-btn { opacity: 0.55; pointer-events: none; }
 
+/* Same idea as the composer's send button, generalized: every toggle
+   switch, region <select>, and one-off action button across the admin
+   console (Provider model enable/disable, "Resync", "Approve", the
+   MFA-required switch, ...) posts via htmx with no loading feedback at
+   all today - a click just silently waits until the response swaps in,
+   which reads as "did that register?" on anything slower than local dev.
+   htmx already adds .htmx-request to whichever element carries the hx-*
+   attributes (almost always the <form> here) for the duration of the
+   request, so this needs no per-instance wiring, just like the composer
+   above - #composer-form is excluded since its own rule dims only the
+   send button, not the textarea someone might still be reading/editing. */
+form.htmx-request:not(#composer-form) {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 120ms var(--ease);
+}
+
 /* ---------- Mobile top bar + hamburger (hidden on desktop) ---------- */
 .mobile-topbar { display: none; }
 .sidebar-backdrop { display: none; }
