@@ -351,6 +351,28 @@
 
 * { box-sizing: border-box; }
 
+/* Every scrollable area in the app - sidebar nav, conversation list, modal
+   bodies, dense tables - was rendering the raw OS scrollbar (chunky, grey,
+   never matching either theme) against an otherwise fully custom-designed
+   UI. Thin + token-colored instead, applied globally rather than per-
+   container so nothing scrollable gets missed. Firefox's standard
+   `scrollbar-width`/`scrollbar-color` plus WebKit/Chromium's older
+   `::-webkit-scrollbar` pseudo-elements together cover every browser this
+   app is actually tested in. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--color-text-faint); }
+
 html { color-scheme: light; }
 
 html[lang="ur"] body { font-family: "Noto Nastaliq Urdu", var(--font-sans); }
