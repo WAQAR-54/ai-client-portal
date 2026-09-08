@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n humanize %}
 {% block title %}{% blocktrans with email=target.email %}Overrides — {{ email }}{% endblocktrans %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width:720px;">
@@ -24,10 +24,10 @@
         </thead>
         <tbody>
             <tr>
-                <td>{{ overrides.usage_limit.daily_token_cap|default:"—" }}</td>
-                <td>{{ overrides.usage_limit.monthly_token_cap|default:"—" }}</td>
+                <td>{{ overrides.usage_limit.daily_token_cap|default:"—"|intcomma }}</td>
+                <td>{{ overrides.usage_limit.monthly_token_cap|default:"—"|intcomma }}</td>
                 <td>{{ overrides.usage_limit.session_limit|default:"—" }}</td>
-                <td>{% if overrides.usage_limit.budget_cap_currency %}${{ overrides.usage_limit.budget_cap_currency }}{% else %}—{% endif %}</td>
+                <td>{% if overrides.usage_limit.budget_cap_currency %}${{ overrides.usage_limit.budget_cap_currency|intcomma }}{% else %}—{% endif %}</td>
                 <td>{% if overrides.usage_limit.max_upload_size_mb %}{{ overrides.usage_limit.max_upload_size_mb }}MB{% else %}—{% endif %}</td>
                 <td class="text-muted">{{ overrides.usage_limit.allowed_file_extensions|default:"—" }}</td>
             </tr>

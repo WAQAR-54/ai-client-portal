@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n humanize %}
 {% if usage.has_limits %}
 <div class="usage-widget{% if usage.warn %} usage-widget-warn{% endif %}">
     <div class="usage-widget-head">
@@ -9,7 +9,7 @@
     <div class="usage-metric">
         <div class="usage-metric-row">
             <span>{{ m.label }}</span>
-            <span class="mono">{% if m.is_currency %}${{ m.used|floatformat:2 }} / ${{ m.cap|floatformat:2 }}{% else %}{{ m.used }} / {{ m.cap }}{% endif %}</span>
+            <span class="mono">{% if m.is_currency %}${{ m.used|floatformat:2 }} / ${{ m.cap|floatformat:2 }}{% else %}{{ m.used|intcomma }} / {{ m.cap|intcomma }}{% endif %}</span>
         </div>
         <div class="usage-bar"><div class="usage-bar-fill usage-bar-{{ m.level }}" style="width:{{ m.pct }}%;"></div></div>
         {% if m.level != "ok" %}

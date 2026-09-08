@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n humanize %}
 <div class="cache-stats-bar">
     <span>{% blocktrans %}Cache hit rate: <span class="mono">{{ cache_hit_rate }}%</span>{% endblocktrans %} ({% blocktrans count counter=cache_hits %}{{ counter }} cached reply{% plural %}{{ counter }} cached replies{% endblocktrans %})</span>
     <span>{% trans "Estimated cost saved:" %} <span class="mono">${{ cache_cost_saved|floatformat:4 }}</span></span>
@@ -12,8 +12,8 @@
         {% for row in per_user %}
         <tr>
             <td>{{ row.conversation__user__email }}</td>
-            <td class="mono">{{ row.requests }}</td>
-            <td class="mono">{{ row.tokens|default:0 }}</td>
+            <td class="mono">{{ row.requests|intcomma }}</td>
+            <td class="mono">{{ row.tokens|default:0|intcomma }}</td>
             <td class="mono">${{ row.cost|default:0|floatformat:4 }}</td>
         </tr>
         {% empty %}

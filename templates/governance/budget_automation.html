@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n humanize %}
 {% block title %}{% trans "Budget Automation" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
@@ -21,7 +21,7 @@
             {% for plan in plans %}
             <tr>
                 <td>{{ plan.name }}</td>
-                <td class="mono">{% if plan.monthly_budget_cap %}${{ plan.monthly_budget_cap }}{% else %}—{% endif %}</td>
+                <td class="mono">{% if plan.monthly_budget_cap %}${{ plan.monthly_budget_cap|intcomma }}{% else %}—{% endif %}</td>
                 {% if plan.monthly_budget_cap %}
                 <td>
                     <label class="toggle-switch" title="{% trans 'Auto-downgrade on high spend' %}">

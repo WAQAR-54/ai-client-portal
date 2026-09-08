@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n humanize %}
 {% block title %}{% trans "My Team" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 {% if not team %}
@@ -15,10 +15,10 @@
     </p>
     <div class="stat-grid mt-4">
         <div class="stat-tile"><div class="stat-label">{% trans "Team members" %}</div><div class="stat-value mono">{{ members|length }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (all time)" %}</div><div class="stat-value mono">{{ total_tokens_all_time }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Cost (all time)" %}</div><div class="stat-value mono">${{ total_cost_all_time|floatformat:2 }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (this month)" %}</div><div class="stat-value mono">{{ month_tokens }}</div></div>
-        <div class="stat-tile"><div class="stat-label">{% trans "Cost (this month)" %}</div><div class="stat-value mono">${{ month_cost|floatformat:2 }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (all time)" %}</div><div class="stat-value mono">{{ total_tokens_all_time|intcomma }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Cost (all time)" %}</div><div class="stat-value mono">${{ total_cost_all_time|floatformat:2|intcomma }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Tokens (this month)" %}</div><div class="stat-value mono">{{ month_tokens|intcomma }}</div></div>
+        <div class="stat-tile"><div class="stat-label">{% trans "Cost (this month)" %}</div><div class="stat-value mono">${{ month_cost|floatformat:2|intcomma }}</div></div>
     </div>
 </div>
 
@@ -35,8 +35,8 @@
         <div class="team-activity-row">
             <div class="team-activity-name">{{ row.user.email }}</div>
             <div class="team-activity-stats">
-                <span>{% trans "Tokens" %} <span class="mono">{{ row.tokens }}</span></span>
-                <span>{% trans "Cost" %} <span class="mono">${{ row.cost|floatformat:2 }}</span></span>
+                <span>{% trans "Tokens" %} <span class="mono">{{ row.tokens|intcomma }}</span></span>
+                <span>{% trans "Cost" %} <span class="mono">${{ row.cost|floatformat:2|intcomma }}</span></span>
                 <span>{% trans "Engagement" %} <span class="mono">{% if row.engagement %}{{ row.engagement }}x{% else %}—{% endif %}</span></span>
             </div>
             <div class="team-activity-actions">

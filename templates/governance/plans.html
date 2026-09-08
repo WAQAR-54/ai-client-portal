@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n humanize %}
 {% block title %}{% trans "Plans" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
@@ -25,9 +25,9 @@
                 {% if not p.is_visible_to_admins %}<span class="badge badge-muted">{% trans "Hidden" %}</span>{% endif %}
             </div>
             <div class="plan-row"><span>{% trans "Type" %}</span><span>{% if p.is_demo %}{% blocktrans with days=p.demo_duration_days %}Demo · {{ days }}d{% endblocktrans %}{% else %}{% trans "Ongoing" %}{% endif %}</span></div>
-            <div class="plan-row"><span>{% trans "Daily tokens" %}</span><span class="mono">{{ p.daily_token_limit|default:"—" }}</span></div>
-            <div class="plan-row"><span>{% trans "Per-request" %}</span><span class="mono">{% if p.max_requests_per_period %}{{ p.max_requests_per_period }}/{{ p.get_period_display }}{% else %}—{% endif %}</span></div>
-            <div class="plan-row"><span>{% trans "Monthly budget" %}</span><span class="mono">{% if p.monthly_budget_cap %}${{ p.monthly_budget_cap }}{% else %}—{% endif %}</span></div>
+            <div class="plan-row"><span>{% trans "Daily tokens" %}</span><span class="mono">{{ p.daily_token_limit|default:"—"|intcomma }}</span></div>
+            <div class="plan-row"><span>{% trans "Per-request" %}</span><span class="mono">{% if p.max_requests_per_period %}{{ p.max_requests_per_period|intcomma }}/{{ p.get_period_display }}{% else %}—{% endif %}</span></div>
+            <div class="plan-row"><span>{% trans "Monthly budget" %}</span><span class="mono">{% if p.monthly_budget_cap %}${{ p.monthly_budget_cap|intcomma }}{% else %}—{% endif %}</span></div>
             <div class="plan-row"><span>{% trans "Models" %}</span><span>{% blocktrans count counter=p.allowed_provider_models.count|add:p.allowed_models.count %}{{ counter }} model{% plural %}{{ counter }} models{% endblocktrans %}</span></div>
             <div class="feat-list">
                 {% for key, label in p.feature_flags.items %}
