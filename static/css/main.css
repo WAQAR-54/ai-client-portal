@@ -634,6 +634,12 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     box-shadow: var(--shadow-md);
     padding: 0.35rem;
     z-index: 60;
+    /* :empty -> non-empty (htmx innerHTML swap of the search results) is a
+       display:none -> block transition, so this replays fresh each time the
+       dropdown actually opens - same trick as .modal-overlay above - but
+       stays static while results are merely replaced by a later keystroke,
+       since display never toggles back to none in between. */
+    animation: scale-fade-in 150ms var(--ease-spring);
 }
 .admin-search-results:empty { display: none; }
 .profile-menu { position: relative; }
@@ -870,7 +876,9 @@ main { animation: page-fade-in 240ms var(--ease); }
     .model-select-panel,
     .usage-popover-panel,
     .export-menu-panel,
-    .template-picker-panel {
+    .template-picker-panel,
+    .alert,
+    .admin-search-results {
         animation: none;
     }
 }
@@ -1196,6 +1204,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     border-radius: var(--radius-md);
     margin-bottom: var(--space-4);
     font-size: 0.88rem;
+    animation: fade-in-up 200ms var(--ease);
 }
 .alert-danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .alert-warning { background: var(--warn-soft); color: var(--warn); }
@@ -2907,11 +2916,24 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     }
     .mobile-sidebar-close svg { width: 18px; height: 18px; }
 
-    body.sidebar-open .sidebar-backdrop {
+    /* Always present (at mobile widths) rather than display:none <-> block,
+       so opacity can actually transition - the sidebar drawer beside it
+       already slides via `transform`, and a backdrop that just snapped
+       in/out instead of fading stood out against that. pointer-events is
+       what actually keeps it non-interactive/invisible while closed, not
+       display. */
+    .sidebar-backdrop {
         display: block;
         position: fixed; inset: 0;
         background: rgba(17, 24, 39, 0.45);
         z-index: 45;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 220ms ease;
+    }
+    body.sidebar-open .sidebar-backdrop {
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .app-sidebar .app-sidebar-footer,
