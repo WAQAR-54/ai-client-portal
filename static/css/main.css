@@ -495,7 +495,7 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
    all three contexts (sidebar, mobile topbar, auth pages) without needing
    a per-context override. */
 .brand-logo-img {
-    height: 22px; width: auto; max-width: 140px;
+    height: 34px; width: auto; max-width: 140px;
     object-fit: contain; border-radius: 4px; flex-shrink: 0;
 }
 
