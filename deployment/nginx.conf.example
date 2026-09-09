@@ -23,6 +23,14 @@ server {
         expires 30d;
     }
 
+    # No /media/ location here on purpose - user-uploaded files (Branding's
+    # logo/favicon, chat attachments) are served by Django itself
+    # (config/urls.py's MEDIA_URL route), falling through to the proxy_pass
+    # below like any other app request. Fine at this app's current scale;
+    # add a location /media/ { alias ...; } block here instead (same
+    # pattern as /static/ above) only if that ever becomes a real
+    # bottleneck - it would need MEDIA_ROOT to be a bind mount Nginx can
+    # actually read, not just the Docker named volume it is today.
     location / {
         proxy_pass http://ai_client_portal;
         proxy_set_header Host $host;

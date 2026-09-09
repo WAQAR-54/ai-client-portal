@@ -2982,6 +2982,29 @@ class BrandingSettingsTests(TestCase):
         self.assertEqual(branding.tagline, "")
         self.assertFalse(branding.logo)
 
+    def test_uploaded_logo_url_actually_serves_the_file(self):
+        """Regression guard: uploading saved the file to disk correctly,
+        but nothing in config/urls.py (or deployment/nginx.conf.example)
+        had a route for MEDIA_URL at all, so the very URL SiteBranding.
+        logo.url points to - the one every <img> tag and <link rel=icon>
+        actually requests - 404'd. Fetches it with a fresh, LOGGED-OUT
+        client too, since the login page's own logo and any favicon must
+        load without authentication."""
+        from governance.models import SiteBranding
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:branding"),
+            {"site_name": "AI Client Portal", "tagline": "", "logo": self._make_image()},
+        )
+        branding = SiteBranding.load()
+        self.assertTrue(branding.logo)
+
+        self.client.logout()
+        response = self.client.get(branding.logo.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Type"].startswith("image/"))
+
 
 class CapabilityLimitsHelperTests(TestCase):
     """governance/plans.py's numeric per-action caps - distinct from the
