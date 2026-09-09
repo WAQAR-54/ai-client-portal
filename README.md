@@ -1,5 +1,10 @@
 # AI Client Portal
 
+Not sure what this app actually does or who can do what? See
+[`docs/FEATURE_GUIDE.html`](docs/FEATURE_GUIDE.html) — open it in a browser
+for a complete, plain-language walkthrough of every feature, organized by
+role (User/Manager/Admin/SuperAdmin), with exactly where to find each one.
+
 ## Running with Docker Compose
 
 Brings up the full stack: Django (via Gunicorn), PostgreSQL, Redis, a Celery
