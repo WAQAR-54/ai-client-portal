@@ -4,7 +4,11 @@ mobile topbar, auth pages) - included inside whatever wrapper element each
 context already uses (<a class="brand">, <div class="brand-mark">, etc.),
 never wraps its own element, so it drops into any of them unchanged. Reads
 `site_branding` from governance.context_processors.branding, available on
-every request. Falls back to the plain accent dot when no logo has been
-uploaded from Settings > Branding.
+every request. Falls back to the plain accent dot + site name when no
+logo has been uploaded from Settings > Branding - once a logo IS
+uploaded, it stands alone (most real logos already contain the brand
+name, like the "WHE AI" one this was written against - repeating the
+site name in plain text right beside it read as a duplicate/mistake,
+not as a caption).
 {% endcomment %}
-{% if site_branding.logo %}<img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img">{% else %}<span class="dot"></span>{% endif %}{{ site_branding.site_name }}
+{% if site_branding.logo %}<img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img">{% else %}<span class="dot"></span>{{ site_branding.site_name }}{% endif %}
