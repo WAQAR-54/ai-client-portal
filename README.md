@@ -1,9 +1,12 @@
 # AI Client Portal
 
-Not sure what this app actually does or who can do what? See
-[`docs/FEATURE_GUIDE.html`](docs/FEATURE_GUIDE.html) — open it in a browser
-for a complete, plain-language walkthrough of every feature, organized by
-role (User/Manager/Admin/SuperAdmin), with exactly where to find each one.
+Not sure what this app actually does or who can do what? Open
+[`docs/guides/index.html`](docs/guides/index.html) in a browser — a
+documentation hub linking to a separate, self-contained guide for each
+role (User, Manager, Admin, SuperAdmin), each covering everything
+relevant to that role with exactly where to find it and how to use it.
+Prefer one long document with every role in it instead? See
+[`docs/FEATURE_GUIDE.html`](docs/FEATURE_GUIDE.html).
 
 ## Running with Docker Compose
 

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Client Portal — Documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f1f0eb; --surface: #fdfcf9; --surface-2: #ece9e1;
+  --border: rgba(32,26,10,0.11); --border-strong: rgba(32,26,10,0.18);
+  --text: #201d17; --text-muted: #6f6c62; --text-faint: #9c988c;
+  --navy: #122268; --navy-ink: #c7d0f7;
+  --cyan: #0098d6; --cyan-soft: #e3f6fd;
+  --violet: #6d4fa8; --violet-soft: #ece6f7;
+  --warn: #a6660e; --warn-soft: #f7ecd9;
+  --font-display: "Space Grotesk", "Manrope", sans-serif;
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --shadow: 0 1px 2px rgba(32,26,10,0.06), 0 8px 24px -12px rgba(32,26,10,0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d14; --surface: #12151f; --surface-2: #191c28;
+    --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.16);
+    --text: #e9e8e3; --text-muted: #9b9a92; --text-faint: #6c6b64;
+    --navy: #1b2f7d; --navy-ink: #aab8f5;
+    --cyan: #3fc3ff; --cyan-soft: #0f2c3a;
+    --violet: #ab93df; --violet-soft: #2a2140;
+    --warn: #e0ac4f; --warn-soft: #3a2c12;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d14; --surface: #12151f; --surface-2: #191c28;
+  --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.16);
+  --text: #e9e8e3; --text-muted: #9b9a92; --text-faint: #6c6b64;
+  --navy: #1b2f7d; --navy-ink: #aab8f5;
+  --cyan: #3fc3ff; --cyan-soft: #0f2c3a;
+  --violet: #ab93df; --violet-soft: #2a2140;
+  --warn: #e0ac4f; --warn-soft: #3a2c12;
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font-sans); font-size: 15.5px; line-height: 1.6;
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  padding: 4.5rem 1.5rem 4rem;
+}
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+a { color: var(--cyan); }
+.brand { display: flex; align-items: center; gap: 0.5rem; font-family: var(--font-display); font-weight: 700; color: var(--text-muted); margin-bottom: 1.6rem; }
+.brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); }
+h1 { font-size: 2rem; font-weight: 700; text-align: center; margin-bottom: 0.6rem; }
+.lede { color: var(--text-muted); text-align: center; max-width: 46ch; margin-bottom: 3rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.1rem; width: 100%; max-width: 980px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 1.6rem; box-shadow: var(--shadow); text-decoration: none; color: var(--text);
+  display: flex; flex-direction: column; border-top: 3px solid var(--role-color, var(--border-strong));
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px -2px rgba(32,26,10,0.1), 0 16px 32px -12px rgba(32,26,10,0.18); }
+.card.user { --role-color: var(--text-faint); }
+.card.manager { --role-color: var(--cyan); }
+.card.admin { --role-color: var(--violet); }
+.card.superadmin { --role-color: var(--warn); }
+.card .eyebrow { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--role-color); margin-bottom: 0.5rem; }
+.card h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+.card p { color: var(--text-muted); font-size: 0.9rem; margin: 0; flex: 1; }
+.card .arrow { margin-top: 1rem; font-weight: 700; font-size: 0.85rem; color: var(--role-color); }
+.full-ref { margin-top: 2.5rem; font-size: 0.9rem; color: var(--text-muted); text-align: center; }
+</style>
+</head>
+<body>
+  <div class="brand"><span class="dot"></span>AI Client Portal</div>
+  <h1>Documentation</h1>
+  <p class="lede">Pick the guide for your role — each one is self-contained, covering everything relevant to you, with exactly where to find it and how to use it.</p>
+
+  <div class="grid">
+    <a class="card user" href="user.html">
+      <div class="eyebrow">User Guide</div>
+      <h2>Everyday chat &amp; usage</h2>
+      <p>Chatting with AI models, Compare mode, attachments, exports, templates, tracking your own usage, and your account settings.</p>
+      <div class="arrow">Open guide →</div>
+    </a>
+    <a class="card manager" href="manager.html">
+      <div class="eyebrow">Manager Guide</div>
+      <h2>Running a team</h2>
+      <p>Everything a User can do, plus the My Team dashboard, managing your team's model access, and team member handling.</p>
+      <div class="arrow">Open guide →</div>
+    </a>
+    <a class="card admin" href="admin.html">
+      <div class="eyebrow">Admin Guide</div>
+      <h2>Department administration</h2>
+      <p>Users, teams, spending limits, usage &amp; cost reporting, audit logs, and feedback — scoped to your own department.</p>
+      <div class="arrow">Open guide →</div>
+    </a>
+    <a class="card superadmin" href="superadmin.html">
+      <div class="eyebrow">SuperAdmin Guide</div>
+      <h2>Full organization control</h2>
+      <p>Everything, org-wide — connecting AI providers, plans, budgets, routing rules, compliance, data handling, and branding.</p>
+      <div class="arrow">Open guide →</div>
+    </a>
+  </div>
+
+  <p class="full-ref">Prefer one long document with every role in it? See the <a href="../FEATURE_GUIDE.html">complete reference guide</a>.</p>
+</body>
+</html>

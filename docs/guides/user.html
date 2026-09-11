@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Client Portal — User Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f1f0eb; --surface: #fdfcf9; --surface-2: #ece9e1;
+  --border: rgba(32,26,10,0.11); --border-strong: rgba(32,26,10,0.18);
+  --text: #201d17; --text-muted: #6f6c62; --text-faint: #9c988c;
+  --navy: #122268; --navy-ink: #c7d0f7; --navy-soft: #e3e7f3;
+  --cyan: #0098d6; --cyan-soft: #e3f6fd;
+  --success: #1e8a5f; --success-soft: #e1f2ea;
+  --danger: #b8403b; --danger-soft: #f7e6e4;
+  --warn: #a6660e; --warn-soft: #f7ecd9;
+  --violet: #6d4fa8; --violet-soft: #ece6f7;
+  --role-color: var(--text-faint); --role-soft: var(--surface-2);
+  --font-display: "Space Grotesk", "Manrope", sans-serif;
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --shadow: 0 1px 2px rgba(32,26,10,0.06), 0 8px 24px -12px rgba(32,26,10,0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d14; --surface: #12151f; --surface-2: #191c28;
+    --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.16);
+    --text: #e9e8e3; --text-muted: #9b9a92; --text-faint: #6c6b64;
+    --navy: #1b2f7d; --navy-ink: #aab8f5; --navy-soft: #1b2450;
+    --cyan: #3fc3ff; --cyan-soft: #0f2c3a;
+    --success: #3ecb8f; --success-soft: #143226;
+    --danger: #ef7d78; --danger-soft: #3a1e1c;
+    --warn: #e0ac4f; --warn-soft: #3a2c12;
+    --violet: #ab93df; --violet-soft: #2a2140;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d14; --surface: #12151f; --surface-2: #191c28;
+  --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.16);
+  --text: #e9e8e3; --text-muted: #9b9a92; --text-faint: #6c6b64;
+  --navy: #1b2f7d; --navy-ink: #aab8f5; --navy-soft: #1b2450;
+  --cyan: #3fc3ff; --cyan-soft: #0f2c3a;
+  --success: #3ecb8f; --success-soft: #143226;
+  --danger: #ef7d78; --danger-soft: #3a1e1c;
+  --warn: #e0ac4f; --warn-soft: #3a2c12;
+  --violet: #ab93df; --violet-soft: #2a2140;
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 15.5px; line-height: 1.62; }
+h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+p { margin: 0 0 0.9em; max-width: 68ch; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: var(--font-mono); }
+img { max-width: 100%; }
+.layout { display: flex; min-height: 100vh; }
+.toc { width: 250px; flex-shrink: 0; background: var(--navy); color: var(--navy-ink); padding: 1.5rem 1rem; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.toc-brand { display: flex; align-items: center; gap: 0.55rem; font-family: var(--font-display); font-weight: 700; font-size: 0.98rem; color: #fff; padding: 0 0.5rem; margin-bottom: 0.3rem; }
+.toc-brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); flex-shrink: 0; }
+.toc-back { display: block; font-size: 0.78rem; color: rgba(255,255,255,0.55); padding: 0 0.5rem; margin-bottom: 1.3rem; }
+.toc-back:hover { color: #fff; }
+.toc-role { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.2rem 0.55rem; border-radius: 999px; background: rgba(255,255,255,0.1); color: #fff; margin: 0 0.5rem 1.3rem; }
+.toc-group-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(255,255,255,0.4); padding: 0.9rem 0.5rem 0.3rem; }
+.toc a.navlink { display: block; padding: 0.4rem 0.5rem; border-radius: 7px; color: var(--navy-ink); font-size: 0.85rem; font-weight: 500; transition: background-color 150ms ease, color 150ms ease; }
+.toc a.navlink:hover { background: rgba(255,255,255,0.08); color: #fff; text-decoration: none; }
+.toc a.navlink.active { background: rgba(255,255,255,0.14); color: #fff; }
+.content { flex: 1; min-width: 0; padding: 3rem clamp(1.5rem, 5vw, 4.5rem) 6rem; max-width: 880px; }
+.doc-header { margin-bottom: 2.5rem; padding-bottom: 1.6rem; border-bottom: 1px solid var(--border); }
+.doc-eyebrow { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--role-color); margin-bottom: 0.6rem; }
+.doc-header h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 0.6rem; }
+.doc-header .lede { font-size: 1rem; color: var(--text-muted); max-width: 60ch; margin-bottom: 0; }
+section { margin-bottom: 3.2rem; scroll-margin-top: 1.5rem; }
+section > h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; }
+section > .section-intro { color: var(--text-muted); margin-bottom: 1.5rem; }
+h3.sub { font-size: 1.05rem; font-weight: 700; margin: 1.8rem 0 0.7rem; }
+h3.sub:first-of-type { margin-top: 0; }
+.path { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; font-weight: 600; font-family: var(--font-mono); color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0.22rem 0.7rem; margin-bottom: 0.7rem; }
+.path .sep { color: var(--text-faint); }
+.feature { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem 1.4rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
+.feature h4 { font-size: 0.98rem; font-weight: 700; margin-bottom: 0.5rem; }
+.feature p:last-child { margin-bottom: 0; }
+.feature .how { margin-top: 0.65rem; padding-top: 0.65rem; border-top: 1px dashed var(--border); font-size: 0.92rem; }
+.feature .how b { color: var(--text); font-weight: 700; }
+.callout { background: var(--role-soft); border: 1px solid var(--border); border-left: 3px solid var(--role-color); border-radius: 10px; padding: 0.9rem 1.1rem; font-size: 0.92rem; margin: 1rem 0; }
+.callout b { color: var(--text); }
+table.ref { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin: 0.5rem 0 1.5rem; }
+table.ref th { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); font-weight: 700; padding: 0 0.8rem 0.5rem 0; border-bottom: 1px solid var(--border-strong); }
+table.ref td { padding: 0.6rem 0.8rem 0.6rem 0; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-muted); }
+table.ref td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+.ref-wrap { overflow-x: auto; }
+.next-guide { margin-top: 3rem; padding: 1.2rem 1.4rem; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; font-size: 0.92rem; }
+.toolbar { position: fixed; top: 1.2rem; right: 1.2rem; display: flex; gap: 0.5rem; z-index: 20; }
+.toolbar button { font-family: var(--font-sans); font-size: 0.78rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer; box-shadow: var(--shadow); }
+.toolbar button:hover { background: var(--surface-2); }
+@media (max-width: 860px) {
+  .layout { flex-direction: column; }
+  .toc { width: 100%; height: auto; position: relative; }
+  .content { padding: 2rem 1.2rem 4rem; }
+  .toolbar { display: none; }
+}
+@media print { .toc, .toolbar { display: none; } .content { max-width: none; } }
+</style>
+</head>
+<body>
+
+<div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
+
+<div class="layout">
+  <nav class="toc" id="toc">
+    <div class="toc-brand"><span class="dot"></span>AI Client Portal</div>
+    <a class="toc-back" href="index.html">← All guides</a>
+    <div class="toc-role">User Guide</div>
+
+    <div class="toc-group-label">Start here</div>
+    <a class="navlink" href="#overview">Overview</a>
+
+    <div class="toc-group-label">Everyday use</div>
+    <a class="navlink" href="#chat">Chat</a>
+    <a class="navlink" href="#tools">Code Playground &amp; Domain Generator</a>
+
+    <div class="toc-group-label">Your account</div>
+    <a class="navlink" href="#security">Security &amp; login</a>
+    <a class="navlink" href="#notifications">Notifications</a>
+  </nav>
+
+  <main class="content">
+    <header class="doc-header">
+      <div class="doc-eyebrow">User Guide</div>
+      <h1>AI Client Portal — for Users</h1>
+      <p class="lede">Everything you can do with your account: chatting with AI models, comparing them, keeping track of your usage, and managing your own settings.</p>
+    </header>
+
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>AI Client Portal is your organization's single place to chat with AI models — OpenAI, Anthropic, Grok, Gemini, DeepSeek — through one account, instead of signing up for each provider separately.</p>
+      <p>Your organization's admin has already connected the models, set your plan (which decides how much you can use and which models you can access), and can tighten or loosen your access at any time. If you ever need more than your plan allows, you can request an upgrade directly from the chat screen — no need to email anyone.</p>
+      <div class="callout"><b>Not seeing a feature described here?</b> Every feature below can be individually switched on or off by your admin, so your organization may not have all of them turned on.</div>
+    </section>
+
+    <section id="chat">
+      <h2>Chat</h2>
+      <p class="section-intro">The main screen — this is where you'll spend almost all your time in the app.</p>
+
+      <h3 class="sub">Starting and managing conversations</h3>
+      <div class="feature">
+        <h4>New conversation, pin, search, delete</h4>
+        <p>The sidebar lists every past conversation, grouped by date, with the most recent at top. Pinned conversations get their own section above the rest so they never scroll out of reach.</p>
+        <div class="how"><b>How:</b> click <b>New conversation</b> to start fresh. Hover any conversation for the pin and delete icons. The search box above the list filters by title as you type. Deleting removes it from your view (your admin can still see it for audit purposes).</div>
+      </div>
+
+      <h3 class="sub">Choosing a model</h3>
+      <div class="feature">
+        <h4>Model picker &amp; Smart Routing</h4>
+        <p>By default the app picks a model automatically for every message, based on rules your admin set up (for example: code-related questions go to a coding-strong model). You can override this and pick a specific model instead.</p>
+        <div class="how"><b>How:</b> open the model dropdown at the top of the chat, or the quick-pick chips above the message box. A model your plan doesn't include shows a lock and which plan unlocks it — clicking it opens the upgrade-request flow instead of switching.</div>
+      </div>
+      <div class="feature">
+        <h4>Compare mode (Arena)</h4>
+        <p>Send one prompt to two different models at the same time and see both replies side by side — useful for genuinely comparing quality, tone, or speed before trusting one model with real work.</p>
+        <div class="how"><b>How:</b> use the Chat/Compare switch above the message list, pick two models, and send. A "pick a winner" control lets you note which reply was better, purely for your own reference. Your plan may cap how many Compare exchanges you can run per day.</div>
+      </div>
+
+      <h3 class="sub">Working with content</h3>
+      <div class="feature">
+        <h4>File attachments</h4>
+        <p>Attach a file to a message so the model can read it as context — PDFs, Word/Excel docs, plain text, CSV, Markdown, JSON, and images.</p>
+        <div class="how"><b>How:</b> the paperclip icon in the composer. Your admin may limit file size or which file types you can attach.</div>
+      </div>
+      <div class="feature">
+        <h4>Export a conversation</h4>
+        <p>Take a full conversation out of the app as a file — for sharing, archiving, or pasting into another document.</p>
+        <div class="how"><b>How:</b> the export menu on an open conversation offers <b>PDF</b>, <b>Markdown</b>, and <b>plain text</b>.</div>
+      </div>
+      <div class="feature">
+        <h4>Prompt templates</h4>
+        <p>Reusable starting points for the message box — save your own frequently-used prompts, and see any shared templates your admin has set up for your whole team or department.</p>
+        <div class="how"><b>How:</b> type <code>/</code> as the first character in the message box, or open the Templates panel from the composer, to insert one. Save the current draft as a new personal template from the same panel.</div>
+      </div>
+      <div class="feature">
+        <h4>Edit &amp; regenerate</h4>
+        <p>Editing an earlier message of yours re-sends it and regenerates everything that came after — for correcting a typo or steering the conversation differently without starting over. Regenerate replaces just one AI reply with a fresh attempt.</p>
+      </div>
+      <div class="feature">
+        <h4>Feedback (thumbs up/down)</h4>
+        <p>Rate any AI reply and optionally explain a thumbs-down. Your admin can see this feedback to understand how well the AI is actually working for your team.</p>
+      </div>
+
+      <h3 class="sub">Keeping track of usage</h3>
+      <div class="feature">
+        <h4>Usage widget &amp; upgrade requests</h4>
+        <p>A running total of how much of your plan's daily/monthly allowance you've used, plus your plan name and, on a trial, how many days are left.</p>
+        <div class="how"><b>How:</b> the <b>Usage</b> pill at the top of chat opens this. If you need more, <b>Request upgrade</b> sends the request straight to your admin — no need to email anyone.</div>
+      </div>
+
+      <h3 class="sub">Making it your own</h3>
+      <div class="feature">
+        <h4>Light/dark theme, language, and shortcuts</h4>
+        <p>A quick theme toggle sits in the chat header; a full Light / Dark / System picker and language choice (English, Urdu, Arabic) live in Settings. A quick-switcher (Ctrl/Cmd+K) jumps between conversations without touching the mouse.</p>
+      </div>
+      <div class="feature">
+        <h4>Guided tour</h4>
+        <p>A short first-login walkthrough points out New chat, the usage widget, and the model picker. It only shows once automatically, but you can replay it anytime from Settings.</p>
+      </div>
+    </section>
+
+    <section id="tools">
+      <h2>Code Playground &amp; Domain Generator</h2>
+      <p class="section-intro">Two focused, single-purpose tools, separate from chat. Both are reached by a direct link (your admin will share it) — there is no link to them in the main sidebar — and both may or may not be turned on for you.</p>
+      <div class="feature">
+        <h4>Code Playground</h4>
+        <p>Pick a model (grouped by provider, each labeled Fast / Balanced / Powerful), describe what the code should do, and run it in a simulated sandbox. Each run counts against a daily quota (20 by default).</p>
+      </div>
+      <div class="feature">
+        <h4>Domain Generator</h4>
+        <p>Describe a business idea, optionally filter by TLD (.com / .co / .pk / .uk), and get 5 AI-suggested brandable domain names — each one checked for live availability. Same daily-quota pattern as the Playground.</p>
+      </div>
+    </section>
+
+    <section id="security">
+      <h2>Security &amp; login</h2>
+      <p class="section-intro">What keeps your account safe, and what happens if a login attempt goes wrong.</p>
+      <div class="feature">
+        <h4>Password reset</h4>
+        <p>Forgot your password? Request a reset from the login screen, and follow the emailed link to set a new one.</p>
+      </div>
+      <div class="feature">
+        <h4>MFA (email one-time code) — optional for you</h4>
+        <p>You can turn on an extra login step: a 6-digit code emailed to you every time you log in, valid for 10 minutes.</p>
+        <div class="how"><b>How:</b> Settings → Security. It's entirely your choice — turn it on for extra safety, or leave it off. (Admins and SuperAdmins don't get this choice — it can be made mandatory for them.)</div>
+      </div>
+      <div class="feature">
+        <h4>Account lockout</h4>
+        <p>5 wrong password attempts locks your account for 20 minutes, with a dedicated "you're locked out" screen showing how long is left. One successful login resets this.</p>
+      </div>
+    </section>
+
+    <section id="notifications">
+      <h2>Notifications</h2>
+      <p class="section-intro">Everything below shows up in your in-app bell. It's also emailed to you, unless you've switched that type off in Settings → Notifications (email is on for everything by default).</p>
+      <div class="ref-wrap">
+        <table class="ref">
+          <thead><tr><th>Notification</th><th>You'll see this when</th></tr></thead>
+          <tbody>
+            <tr><td>Usage warning</td><td>A reply pushes you over 80% of a usage cap</td></tr>
+            <tr><td>Plan changed</td><td>Your admin changes your plan</td></tr>
+            <tr><td>Account setting changed</td><td>Your admin changes your role, or your limits</td></tr>
+            <tr><td>Account created</td><td>Your account is first set up by an admin</td></tr>
+            <tr><td>Trial expiring / expired</td><td>Your demo/trial plan is about to end, or has ended</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="next-guide">Manage a team? See the <a href="manager.html">Manager Guide</a> for the extra tools you have on top of everything above.</div>
+  </main>
+</div>
+
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a.navlink'));
+  var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  function onScroll() {
+    var current = sections[0];
+    sections.forEach(function (s) { if (s.getBoundingClientRect().top - 100 <= 0) current = s; });
+    links.forEach(function (a) { a.classList.toggle('active', current && a.getAttribute('href') === '#' + current.id); });
+  }
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+</body>
+</html>

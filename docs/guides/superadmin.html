@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Client Portal — SuperAdmin Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f1f0eb; --surface: #fdfcf9; --surface-2: #ece9e1;
+  --border: rgba(32,26,10,0.11); --border-strong: rgba(32,26,10,0.18);
+  --text: #201d17; --text-muted: #6f6c62; --text-faint: #9c988c;
+  --navy: #122268; --navy-ink: #c7d0f7; --navy-soft: #e3e7f3;
+  --cyan: #0098d6; --cyan-soft: #e3f6fd;
+  --success: #1e8a5f; --success-soft: #e1f2ea;
+  --danger: #b8403b; --danger-soft: #f7e6e4;
+  --warn: #a6660e; --warn-soft: #f7ecd9;
+  --violet: #6d4fa8; --violet-soft: #ece6f7;
+  --role-color: var(--warn); --role-soft: var(--warn-soft);
+  --font-display: "Space Grotesk", "Manrope", sans-serif;
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --shadow: 0 1px 2px rgba(32,26,10,0.06), 0 8px 24px -12px rgba(32,26,10,0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d14; --surface: #12151f; --surface-2: #191c28;
+    --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.16);
+    --text: #e9e8e3; --text-muted: #9b9a92; --text-faint: #6c6b64;
+    --navy: #1b2f7d; --navy-ink: #aab8f5; --navy-soft: #1b2450;
+    --cyan: #3fc3ff; --cyan-soft: #0f2c3a;
+    --success: #3ecb8f; --success-soft: #143226;
+    --danger: #ef7d78; --danger-soft: #3a1e1c;
+    --warn: #e0ac4f; --warn-soft: #3a2c12;
+    --violet: #ab93df; --violet-soft: #2a2140;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d14; --surface: #12151f; --surface-2: #191c28;
+  --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.16);
+  --text: #e9e8e3; --text-muted: #9b9a92; --text-faint: #6c6b64;
+  --navy: #1b2f7d; --navy-ink: #aab8f5; --navy-soft: #1b2450;
+  --cyan: #3fc3ff; --cyan-soft: #0f2c3a;
+  --success: #3ecb8f; --success-soft: #143226;
+  --danger: #ef7d78; --danger-soft: #3a1e1c;
+  --warn: #e0ac4f; --warn-soft: #3a2c12;
+  --violet: #ab93df; --violet-soft: #2a2140;
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 15.5px; line-height: 1.62; }
+h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+p { margin: 0 0 0.9em; max-width: 68ch; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: var(--font-mono); }
+img { max-width: 100%; }
+.layout { display: flex; min-height: 100vh; }
+.toc { width: 258px; flex-shrink: 0; background: var(--navy); color: var(--navy-ink); padding: 1.5rem 1rem; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.toc-brand { display: flex; align-items: center; gap: 0.55rem; font-family: var(--font-display); font-weight: 700; font-size: 0.98rem; color: #fff; padding: 0 0.5rem; margin-bottom: 0.3rem; }
+.toc-brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); flex-shrink: 0; }
+.toc-back { display: block; font-size: 0.78rem; color: rgba(255,255,255,0.55); padding: 0 0.5rem; margin-bottom: 1.3rem; }
+.toc-back:hover { color: #fff; }
+.toc-role { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.2rem 0.55rem; border-radius: 999px; background: rgba(255,255,255,0.1); color: #fff; margin: 0 0.5rem 1.3rem; }
+.toc-group-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(255,255,255,0.4); padding: 0.9rem 0.5rem 0.3rem; }
+.toc a.navlink { display: block; padding: 0.4rem 0.5rem; border-radius: 7px; color: var(--navy-ink); font-size: 0.85rem; font-weight: 500; transition: background-color 150ms ease, color 150ms ease; }
+.toc a.navlink:hover { background: rgba(255,255,255,0.08); color: #fff; text-decoration: none; }
+.toc a.navlink.active { background: rgba(255,255,255,0.14); color: #fff; }
+.content { flex: 1; min-width: 0; padding: 3rem clamp(1.5rem, 5vw, 4.5rem) 6rem; max-width: 900px; }
+.doc-header { margin-bottom: 2.5rem; padding-bottom: 1.6rem; border-bottom: 1px solid var(--border); }
+.doc-eyebrow { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--role-color); margin-bottom: 0.6rem; }
+.doc-header h1 { font-size: 1.95rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 0.6rem; }
+.doc-header .lede { font-size: 1rem; color: var(--text-muted); max-width: 62ch; margin-bottom: 0; }
+section { margin-bottom: 3.3rem; scroll-margin-top: 1.5rem; }
+section > h2 { font-size: 1.45rem; font-weight: 700; margin-bottom: 0.5rem; }
+section > .section-intro { color: var(--text-muted); margin-bottom: 1.5rem; }
+h3.sub { font-size: 1.05rem; font-weight: 700; margin: 1.8rem 0 0.7rem; }
+h3.sub:first-of-type { margin-top: 0; }
+.path { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; font-weight: 600; font-family: var(--font-mono); color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0.22rem 0.7rem; margin-bottom: 0.7rem; }
+.path .sep { color: var(--text-faint); }
+.feature { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem 1.4rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
+.feature h4 { font-size: 0.98rem; font-weight: 700; margin-bottom: 0.5rem; }
+.feature p:last-child { margin-bottom: 0; }
+.feature .how { margin-top: 0.65rem; padding-top: 0.65rem; border-top: 1px dashed var(--border); font-size: 0.92rem; }
+.feature .how b { color: var(--text); font-weight: 700; }
+.callout { background: var(--role-soft); border: 1px solid var(--border); border-left: 3px solid var(--role-color); border-radius: 10px; padding: 0.9rem 1.1rem; font-size: 0.92rem; margin: 1rem 0; }
+.callout b { color: var(--text); }
+table.ref { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin: 0.5rem 0 1.5rem; }
+table.ref th { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); font-weight: 700; padding: 0 0.8rem 0.5rem 0; border-bottom: 1px solid var(--border-strong); }
+table.ref td { padding: 0.6rem 0.8rem 0.6rem 0; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-muted); }
+table.ref td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+.ref-wrap { overflow-x: auto; }
+.next-guide { margin-top: 3rem; padding: 1.2rem 1.4rem; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; font-size: 0.92rem; }
+.toolbar { position: fixed; top: 1.2rem; right: 1.2rem; display: flex; gap: 0.5rem; z-index: 20; }
+.toolbar button { font-family: var(--font-sans); font-size: 0.78rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer; box-shadow: var(--shadow); }
+.toolbar button:hover { background: var(--surface-2); }
+@media (max-width: 860px) {
+  .layout { flex-direction: column; }
+  .toc { width: 100%; height: auto; position: relative; }
+  .content { padding: 2rem 1.2rem 4rem; }
+  .toolbar { display: none; }
+}
+@media print { .toc, .toolbar { display: none; } .content { max-width: none; } }
+</style>
+</head>
+<body>
+
+<div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
+
+<div class="layout">
+  <nav class="toc" id="toc">
+    <div class="toc-brand"><span class="dot"></span>AI Client Portal</div>
+    <a class="toc-back" href="index.html">← All guides</a>
+    <div class="toc-role">SuperAdmin Guide</div>
+
+    <div class="toc-group-label">Start here</div>
+    <a class="navlink" href="#overview">Overview</a>
+
+    <div class="toc-group-label">Admin console</div>
+    <a class="navlink" href="#admin-people">People &amp; access</a>
+    <a class="navlink" href="#admin-plans">Plans &amp; money</a>
+    <a class="navlink" href="#admin-automation">Automation &amp; routing</a>
+    <a class="navlink" href="#admin-compliance">Compliance &amp; data</a>
+    <a class="navlink" href="#admin-models">Models &amp; providers</a>
+    <a class="navlink" href="#admin-monitoring">Monitoring &amp; logs</a>
+    <a class="navlink" href="#branding">Branding &amp; feature visibility</a>
+
+    <div class="toc-group-label">Everyday use</div>
+    <a class="navlink" href="#chat">Chat</a>
+    <a class="navlink" href="#tools">Code Playground &amp; Domain Generator</a>
+
+    <div class="toc-group-label">Your account</div>
+    <a class="navlink" href="#security">Security &amp; login</a>
+    <a class="navlink" href="#notifications">Notifications</a>
+  </nav>
+
+  <main class="content">
+    <header class="doc-header">
+      <div class="doc-eyebrow">SuperAdmin Guide</div>
+      <h1>AI Client Portal — for SuperAdmins</h1>
+      <p class="lede">Full, unscoped control of the organization — connecting AI providers, defining plans and budgets, routing and compliance rules, and everything every other role can do too.</p>
+    </header>
+
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>As SuperAdmin, there is no boundary on what you can see or change — every department, every user, every setting. You're also the only role that can connect AI providers in the first place, which means nothing in the app runs at all until you've done that at least once.</p>
+      <div class="callout"><b>What's exclusive to you</b> (an Admin cannot do these, even for their own department): connecting/approving AI providers, Plan Management, Budget Automation, Smart Routing, Compliance Routing, Retention &amp; Provider Approval, Data Handling, Capability Limits, Models (legacy), Departments, Feature Visibility, Branding, and Email Logs/SMTP settings. MFA is also always mandatory for you — it can never be turned off.</div>
+    </section>
+
+    <section id="admin-people">
+      <h2>People &amp; access</h2>
+      <p class="section-intro">Unlike an Admin, you see and manage every department, and only you can create or remove departments themselves.</p>
+
+      <div class="path">Users</div>
+      <div class="feature">
+        <h4>Users</h4>
+        <p>The master roster across the whole organization. Add accounts, edit role/department/team/email, reset passwords directly, suspend/reactivate, and change plans (single or bulk) for anyone, in any department.</p>
+      </div>
+      <div class="path">Teams</div>
+      <div class="feature">
+        <h4>Teams</h4>
+        <p>Create or delete teams in any department.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Departments</div>
+      <div class="feature">
+        <h4>Departments</h4>
+        <p>The org-chart itself. Create, rename, or delete departments, and set each one's monthly budget cap. From here you can also open a department's own system prompt (instructions baked into every AI reply for that department) and its shared prompt-template library.</p>
+      </div>
+    </section>
+
+    <section id="admin-plans">
+      <h2>Plans &amp; money</h2>
+      <p class="section-intro">Where subscription tiers, spending, and requests-for-more all live.</p>
+
+      <div class="path">SuperAdmin only <span class="sep">→</span> Plan Management</div>
+      <div class="feature">
+        <h4>Plan Management</h4>
+        <p>Defines every subscription tier the organization offers — token/message/session/budget caps, which specific models the plan includes, which features it grants (file upload, export, priority routing, model selection, and more), demo/trial length, and which plan new signups land on by default.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Capability Limits</div>
+      <div class="feature">
+        <h4>Capability Limits</h4>
+        <p>Numeric caps on specific actions rather than overall volume: maximum message length, maximum Compare-mode uses per day, and per-plan overrides for the Code Playground and Domain Generator daily-run limits.</p>
+      </div>
+      <div class="path">Limits <span class="sep">·</span> Upgrade Requests</div>
+      <div class="feature">
+        <h4>Limits &amp; Upgrade Requests</h4>
+        <p>Same tools an Admin has — per-user/department overrides on top of the Plan, and the queue of upgrade requests — but across every department, not just one.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Budget Automation</div>
+      <div class="feature">
+        <h4>Budget Automation</h4>
+        <p>Once a user's month-to-date spend crosses a chosen percentage of their budget cap, new replies are automatically switched to a cheaper fallback model instead of being blocked outright — spend gets capped without anyone hitting a hard wall mid-conversation.</p>
+      </div>
+    </section>
+
+    <section id="admin-automation">
+      <h2>Automation &amp; routing</h2>
+      <p class="section-intro">How the app decides which model actually handles a message, before the user's own manual choice is even considered.</p>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Smart Routing</div>
+      <div class="feature">
+        <h4>Smart Routing rules</h4>
+        <p>"If the message looks like code / is a short casual question / has an image attached / has a long document attached, use model X" — a priority-ordered list of rules, checked before the app falls back to its own general complexity-based routing.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Compliance Routing</div>
+      <div class="feature">
+        <h4>Compliance Routing</h4>
+        <p>A per-department hard ceiling on where requests are allowed to go at all — currently either "no restriction" or "EU-hosted models only." Sits on top of everything else and can only narrow access, never widen it.</p>
+      </div>
+    </section>
+
+    <section id="admin-compliance">
+      <h2>Compliance &amp; data</h2>
+      <p class="section-intro">Controls for organizations with real data-handling obligations — none of this is on by default.</p>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Retention &amp; Approval</div>
+      <div class="feature">
+        <h4>Retention &amp; Provider Approval</h4>
+        <p>Two things live here: how long a department's conversations are kept before permanent deletion (30 days / 90 days / 7 years / forever), and the compliance sign-off every newly-connected AI provider must clear before any of its models can be enabled at all.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Data Handling</div>
+      <div class="feature">
+        <h4>Data Handling</h4>
+        <p>Org-wide switches: restrict chat to zero-data-retention models only, turn PII scanning of outgoing messages on or off, mark which connected providers train on customer data, and configure what happens when the three built-in PII checks (national ID numbers, credit card numbers, phone numbers) catch something — block it, redact it, or just warn.</p>
+      </div>
+    </section>
+
+    <section id="admin-models">
+      <h2>Models &amp; providers</h2>
+      <p class="section-intro">Connecting real AI providers and deciding exactly which of their models the organization actually uses — exclusively yours to do.</p>
+
+      <div class="path">SuperAdmin only <span class="sep">→</span> Providers</div>
+      <div class="feature">
+        <h4>Providers — the real workflow</h4>
+        <p>This is the only place API keys are ever entered.</p>
+        <p><b>1. Connect</b> — paste a provider's API key. It's tested live against the provider before anything is saved, so a bad key is never stored; a good one is encrypted, and only its last 4 characters are ever shown again.</p>
+        <p><b>2. Sync</b> — pulls that provider's current model list. Run it again anytime ("Resync") to pick up new models or catch retired ones.</p>
+        <p><b>3. Approve</b> — every newly-connected or freshly-synced provider sits in "Pending" on the Retention &amp; Approval page until you sign off. Nothing from a pending provider can be turned on for chat.</p>
+        <p><b>4. Enable models</b> — once approved, flip on the specific models that should actually be usable. A model can also be separately marked "manager-assignable," making it eligible for Managers to hand out individually via My Team.</p>
+        <p><b>5. Region</b> — record where a provider actually hosts requests; this is what Compliance Routing's EU-only rule checks against.</p>
+        <p>Disconnecting a provider clears its key and force-disables every model that came from it.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Models (legacy)</div>
+      <div class="feature">
+        <h4>Models (legacy)</h4>
+        <p>An older, simpler model registry kept for organizations that set models up before the Providers workflow existed. Enable/disable a model, edit its display name and per-1M-token pricing, delete one that's never been used, or open its per-user allow/deny list.</p>
+      </div>
+    </section>
+
+    <section id="admin-monitoring">
+      <h2>Monitoring &amp; logs</h2>
+      <p class="section-intro">Everything an Admin has, across every department, plus two screens exclusively yours.</p>
+
+      <div class="path">Usage &amp; Cost <span class="sep">·</span> Audit Logs <span class="sep">·</span> Feedback</div>
+      <div class="feature">
+        <h4>Usage &amp; Cost, Audit Logs, Feedback</h4>
+        <p>The same tools an Admin has — spend dashboards, the admin action trail, and reply feedback — but org-wide. You also get a cross-department monthly summary export built for chargeback (Usage &amp; Cost's export menu).</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Email Logs</div>
+      <div class="feature">
+        <h4>Email Logs</h4>
+        <p>Every email the app has actually sent — recipient, subject, whether it sent or failed, and whether it was opened — plus the SMTP connection settings that make outbound email work at all, and a "send test email" button to confirm they're actually correct before relying on them.</p>
+      </div>
+    </section>
+
+    <section id="branding">
+      <h2>Branding &amp; feature visibility</h2>
+      <p class="section-intro">Shaping how the app looks and which capabilities each role sees — org-wide, exclusively yours.</p>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Branding</div>
+      <div class="feature">
+        <h4>Branding</h4>
+        <p>Replace the default name, tagline, logo, and favicon with the organization's own, everywhere at once — the sidebar, the browser tab, and the login page all update immediately. A logo replaces the text name entirely rather than sitting next to it. Reset to defaults at any time.</p>
+      </div>
+      <div class="path">SuperAdmin only <span class="sep">→</span> Feature Visibility</div>
+      <div class="feature">
+        <h4>Feature Visibility</h4>
+        <p>Master on/off switches for whole app sections per role: which admin-nav sections an Admin sees at all (Teams, Upgrade Requests, Limits, Usage &amp; Cost, Audit Logs, Feedback), and which chat/Settings capabilities User/Manager/Admin see (templates, quick-switcher, pin/search, dark mode, notifications, upgrade requests, onboarding tour, the two standalone tools). This is also where the org-wide <b>"MFA required for Admins"</b> switch lives.</p>
+      </div>
+    </section>
+
+    <section id="chat">
+      <h2>Chat</h2>
+      <p class="section-intro">You use the same chat screen as everyone else.</p>
+      <div class="feature">
+        <h4>Model picker, Compare mode, attachments, export, templates, usage widget</h4>
+        <p>Everything a User has — pick a model or let Smart Routing choose, Compare two models side by side, attach files, export conversations, use prompt templates, and track your own usage via the Usage pill.</p>
+      </div>
+    </section>
+
+    <section id="tools">
+      <h2>Code Playground &amp; Domain Generator</h2>
+      <p class="section-intro">On by default for you. Reached by a direct link — not the main sidebar.</p>
+      <div class="feature">
+        <h4>Code Playground &amp; Domain Generator</h4>
+        <p>Playground: pick a model, describe the code, run it in a simulated sandbox. Domain Generator: describe a business idea, get AI-suggested domain names checked for real availability. Both count against a daily quota you control in Capability Limits.</p>
+      </div>
+    </section>
+
+    <section id="security">
+      <h2>Security &amp; login</h2>
+      <div class="feature">
+        <h4>MFA (email one-time code) — always mandatory for you</h4>
+        <p>A 6-digit code emailed at login, valid for 10 minutes, with a resend option and a 5-attempt limit before login starts over. Unlike every other role, this can never be turned off for SuperAdmin.</p>
+      </div>
+      <div class="feature">
+        <h4>Password reset &amp; account lockout</h4>
+        <p>Standard emailed reset-link flow. 5 wrong password attempts locks an account for 20 minutes; one successful login resets the counter.</p>
+      </div>
+    </section>
+
+    <section id="notifications">
+      <h2>Notifications</h2>
+      <p class="section-intro">Shows up in your in-app bell, and emailed too unless you turn that type off in Settings → Notifications. As SuperAdmin you also get one notification no one else does.</p>
+      <div class="ref-wrap">
+        <table class="ref">
+          <thead><tr><th>Notification</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td>New models available</td><td>Connecting or resyncing a provider turns up models nobody's seen yet (every active SuperAdmin is told, at most roughly once every 20 hours)</td></tr>
+            <tr><td>Usage warning</td><td>A reply pushes you over 80% of a usage cap</td></tr>
+            <tr><td>Account setting changed</td><td>Your own role or limits are changed</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a.navlink'));
+  var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  function onScroll() {
+    var current = sections[0];
+    sections.forEach(function (s) { if (s.getBoundingClientRect().top - 100 <= 0) current = s; });
+    links.forEach(function (a) { a.classList.toggle('active', current && a.getAttribute('href') === '#' + current.id); });
+  }
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+</body>
+</html>
