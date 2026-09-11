@@ -49,6 +49,27 @@ def _geoip():
     return GeoIP2Fast(verbose=False)
 
 
+def country_code_for_ip(ip_address):
+    """Best-effort ISO country code for an IP address, or None for
+    private/local/unresolvable addresses (e.g. every request in local
+    development, or anyone behind a VPN/proxy geoip can't place).
+
+    Shared lookup behind language_for_ip below and billing/regions.py's
+    region detection for the public pricing page - both need "what country
+    is this visitor in" and reuse this one cached GeoIP2Fast instance
+    rather than each doing their own lookup.
+    """
+    if not ip_address:
+        return None
+    try:
+        result = _geoip().lookup(ip_address)
+    except Exception:
+        return None
+    if result.is_private or not result.country_code:
+        return None
+    return result.country_code
+
+
 def language_for_ip(ip_address):
     """Best-effort language code ("en"/"ur"/"ar") for an IP address.
 
@@ -56,16 +77,11 @@ def language_for_ip(ip_address):
     request in local development, or anyone behind a VPN/proxy geoip can't
     place) rather than guessing.
     """
-    if not ip_address:
+    country_code = country_code_for_ip(ip_address)
+    if not country_code:
         return "en"
-    try:
-        result = _geoip().lookup(ip_address)
-    except Exception:
-        return "en"
-    if result.is_private or not result.country_code:
-        return "en"
-    if result.country_code in _ARABIC_COUNTRIES:
+    if country_code in _ARABIC_COUNTRIES:
         return "ar"
-    if result.country_code in _URDU_COUNTRIES:
+    if country_code in _URDU_COUNTRIES:
         return "ur"
     return "en"

@@ -48,6 +48,53 @@ class RegionalPricingViewTests(TestCase):
         self.assertNotContains(response, "won't be purchasable")
 
 
+class PublicPricingViewTests(TestCase):
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Public Plan", teams_included=3)
+        RegionalPrice.objects.create(plan=self.plan, region_code="PK", price=Decimal("8900"))
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("29"))
+
+    def test_no_login_required(self):
+        response = self.client.get(reverse("billing:public_pricing"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_detects_region_from_ip(self):
+        # Not asserting on the exact rendered number: the same Pakistani IP
+        # also trips GeoLanguageMiddleware into Urdu, whose locale-aware
+        # number formatting (via humanize's intcomma) may not use a plain
+        # ASCII comma - the region/plan selection is what this test cares
+        # about, not thousands-separator rendering.
+        response = self.client.get(reverse("billing:public_pricing"), REMOTE_ADDR="182.176.1.1")
+        self.assertContains(response, "Pakistan")
+        self.assertContains(response, "PKR")
+        self.assertContains(response, "Public Plan")
+
+    def test_unrecognized_region_falls_back_to_row(self):
+        response = self.client.get(reverse("billing:public_pricing"), REMOTE_ADDR="8.8.8.8")
+        self.assertContains(response, "Rest of world")
+        self.assertContains(response, "USD")
+
+    def test_region_query_param_overrides_ip_detection(self):
+        response = self.client.get(reverse("billing:public_pricing"), {"region": "PK"}, REMOTE_ADDR="8.8.8.8")
+        self.assertContains(response, "Pakistan")
+
+    def test_invalid_region_query_param_falls_back_to_ip_detection(self):
+        response = self.client.get(reverse("billing:public_pricing"), {"region": "ZZ"}, REMOTE_ADDR="182.176.1.1")
+        self.assertContains(response, "Pakistan")
+
+    def test_missing_price_shows_contact_us(self):
+        Plan.objects.create(name="Unpriced Plan")
+        response = self.client.get(reverse("billing:public_pricing"), REMOTE_ADDR="182.176.1.1")
+        self.assertContains(response, "Contact us")
+
+    def test_inactive_and_demo_plans_excluded(self):
+        Plan.objects.create(name="Inactive Plan", is_active=False)
+        Plan.objects.create(name="Demo Plan", is_demo=True)
+        response = self.client.get(reverse("billing:public_pricing"), REMOTE_ADDR="182.176.1.1")
+        self.assertNotContains(response, "Inactive Plan")
+        self.assertNotContains(response, "Demo Plan")
+
+
 class UpdatePlanRegionalPricingTests(TestCase):
     def setUp(self):
         self.superadmin = User.objects.create_user(

@@ -5,6 +5,7 @@ from billing import views
 app_name = "billing"
 
 urlpatterns = [
+    path("pricing/", views.PublicPricingView.as_view(), name="public_pricing"),
     path("regional-pricing/", views.RegionalPricingView.as_view(), name="regional_pricing"),
     path(
         "regional-pricing/<int:plan_id>/update/",

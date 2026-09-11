@@ -6,7 +6,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone, translation
 
-from accounts.geo import language_for_ip
+from accounts.geo import country_code_for_ip, language_for_ip
 from accounts.models import Department, User
 
 
@@ -357,6 +357,19 @@ class LanguageForIPTests(TestCase):
     def test_missing_ip_falls_back_to_english(self):
         self.assertEqual(language_for_ip(""), "en")
         self.assertEqual(language_for_ip(None), "en")
+
+
+class CountryCodeForIPTests(TestCase):
+    def test_pakistani_ip_maps_to_pk(self):
+        self.assertEqual(country_code_for_ip("182.176.1.1"), "PK")
+
+    def test_uae_ip_maps_to_ae(self):
+        self.assertEqual(country_code_for_ip("213.42.1.1"), "AE")
+
+    def test_private_or_missing_ip_returns_none(self):
+        self.assertIsNone(country_code_for_ip("127.0.0.1"))
+        self.assertIsNone(country_code_for_ip(""))
+        self.assertIsNone(country_code_for_ip(None))
 
 
 class GeoLanguageMiddlewareTests(TestCase):

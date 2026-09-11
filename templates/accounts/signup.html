@@ -27,6 +27,7 @@
                 <button type="submit">{% trans "Sign up" %}</button>
             </form>
             <p class="auth-footer">{% trans "Already have an account?" %} <a href="{% url 'accounts:login' %}">{% trans "Log in" %}</a></p>
+            <p class="auth-footer"><a href="{% url 'billing:public_pricing' %}">{% trans "View pricing" %}</a></p>
         </div>
     </div>
 </div>

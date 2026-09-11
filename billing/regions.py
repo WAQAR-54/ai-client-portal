@@ -34,3 +34,16 @@ def region_choices():
 def currency_for_region(region_code):
     entry = REGION_BY_CODE.get(region_code)
     return entry[2] if entry else "USD"
+
+
+def region_for_country(country_code, active_codes):
+    """Every region code in this registry (PK/SA/AE/GB/QA/KW) happens to
+    already be the real ISO country code for that region, so detection is
+    just "is this visitor's country one of the regions a SuperAdmin has
+    actually priced" - active_codes (see billing/views.py's
+    _active_region_codes) rather than ALL_REGIONS, so a visitor from a
+    country whose region was never priced still gets a purchasable page
+    (ROW) instead of silently landing on all-missing prices."""
+    if country_code and country_code in active_codes:
+        return country_code
+    return "ROW"

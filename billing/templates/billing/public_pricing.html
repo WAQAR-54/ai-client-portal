@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load i18n humanize %}
+{% block title %}{% trans "Pricing" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.5rem;">
+        <h1 style="margin-bottom:0;">{% trans "Pricing" %}</h1>
+        <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.9rem;">
+            <span class="text-muted">{{ region.flag }} {{ region.label }} ({{ region.currency }})</span>
+            {% if other_regions %}
+            <span class="text-faint">{% trans "Not your region?" %}</span>
+            {% for r in other_regions %}
+            <a href="?region={{ r.code }}" class="btn-small btn-ghost">{{ r.flag }} {{ r.currency }}</a>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    <p>{% trans "Prices are set directly for each region — there's no automatic currency conversion." %}</p>
+
+    <div class="plan-grid mt-4" data-stagger data-stagger-items=".plan-card">
+        {% for row in rows %}
+        <div class="plan-card">
+            <div class="plan-card-head">
+                <div class="plan-card-title">{{ row.plan.name }}</div>
+                {% if row.plan.is_default %}<span class="badge">{% trans "Popular" %}</span>{% endif %}
+            </div>
+            <div class="plan-row">
+                <span>{% trans "Price" %}</span>
+                <span class="mono">
+                    {% if row.price_row.price %}{{ region.currency }} {{ row.price_row.price|floatformat:0|intcomma }}/mo{% else %}{% trans "Contact us" %}{% endif %}
+                </span>
+            </div>
+            <div class="plan-row">
+                <span>{% trans "Teams included" %}</span>
+                <span class="mono">{{ row.plan.teams_included|default:"Unlimited" }}</span>
+            </div>
+            {% if row.price_row.extra_team_price %}
+            <div class="plan-row">
+                <span>{% trans "Extra team" %}</span>
+                <span class="mono">+{{ region.currency }} {{ row.price_row.extra_team_price|floatformat:0|intcomma }}/mo</span>
+            </div>
+            {% endif %}
+            {% if row.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem;">{{ row.plan.description }}</p>{% endif %}
+            <a href="{% url 'accounts:signup' %}" class="btn mt-3" style="width:100%; text-align:center;">{% trans "Get started" %}</a>
+        </div>
+        {% empty %}
+        <p class="text-faint">{% trans "No plans available yet." %}</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

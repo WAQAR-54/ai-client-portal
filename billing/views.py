@@ -4,10 +4,11 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
+from accounts.geo import country_code_for_ip
 from accounts.models import User
 from accounts.permissions import SuperAdminRequiredMixin, role_required
 from billing.models import RegionalPrice
-from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS
+from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS, region_for_country
 from governance.audit import log_action
 from governance.models import Plan
 
@@ -94,6 +95,47 @@ class RegionalPricingView(SuperAdminRequiredMixin, TemplateView):
             "available_extra_regions": available_extra_regions,
             "any_missing": any(r["missing"] for r in rows),
         }
+
+
+class PublicPricingView(TemplateView):
+    """Unauthenticated pricing page - someone deciding whether to sign up,
+    or a teammate sharing a link, should be able to see prices without an
+    account (same reasoning as the /docs/ guides route in config/urls.py).
+
+    Region defaults to a GeoIP guess from the visitor's IP (reuses
+    accounts.geo's cached lookup - see billing.regions.region_for_country),
+    but a `?region=<code>` query param always wins - that's what this
+    page's own "switch to ROW/USD" link uses, and it makes the switched
+    view a plain shareable/bookmarkable URL instead of hidden session
+    state."""
+
+    template_name = "billing/public_pricing.html"
+
+    def get_context_data(self, **kwargs):
+        active_codes = _active_region_codes()
+        requested_region = self.request.GET.get("region", "").strip().upper()
+        if requested_region in active_codes:
+            region_code = requested_region
+        else:
+            ip_address = self.request.META.get("REMOTE_ADDR")
+            region_code = region_for_country(country_code_for_ip(ip_address), active_codes)
+
+        plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
+        prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
+        rows = [{"plan": plan, "price_row": prices.get(plan.id)} for plan in plans]
+
+        other_regions = [_region_dict(code) for code in active_codes if code != region_code]
+
+        return super().get_context_data(**kwargs) | {
+            "region": _region_dict(region_code),
+            "rows": rows,
+            "other_regions": other_regions,
+        }
+
+
+def _region_dict(region_code):
+    code, label, currency, flag = REGION_BY_CODE[region_code]
+    return {"code": code, "label": label, "currency": currency, "flag": flag}
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)
