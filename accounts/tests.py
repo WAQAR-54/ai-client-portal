@@ -632,6 +632,39 @@ class ErrorPageTests(TestCase):
         self.assertIn("Something went wrong", html)
 
 
+class DocsServingTests(TestCase):
+    """config/urls.py's /docs/ route (serve_docs) - the plain-language
+    guides in docs/ only lived as files in the repo until this route gave
+    them a real, shareable URL. Deliberately public (no login needed) -
+    someone deciding whether to use the app, or a teammate without an
+    account yet, should be able to read these."""
+
+    def test_bare_docs_redirects_to_hub(self):
+        response = self.client.get("/docs/")
+        self.assertRedirects(response, "/docs/guides/index.html", fetch_redirect_response=False)
+
+    def test_bare_guides_redirects_to_hub(self):
+        response = self.client.get("/docs/guides/")
+        self.assertRedirects(response, "/docs/guides/index.html", fetch_redirect_response=False)
+
+    def test_hub_and_every_role_guide_serve_without_login(self):
+        for path in (
+            "/docs/guides/index.html",
+            "/docs/guides/user.html",
+            "/docs/guides/manager.html",
+            "/docs/guides/admin.html",
+            "/docs/guides/superadmin.html",
+            "/docs/FEATURE_GUIDE.html",
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, f"{path} did not serve")
+            self.assertEqual(response["Content-Type"], "text/html")
+
+    def test_nonexistent_doc_404s_rather_than_crashing(self):
+        response = self.client.get("/docs/guides/does-not-exist.html")
+        self.assertEqual(response.status_code, 404)
+
+
 class TemplateHygieneTests(TestCase):
     """Static scans across every template file - catch a whole bug class at
     once instead of one regression test per file it happens to bite next."""
