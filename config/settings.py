@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "axes",
     "django_celery_beat",
     "accounts",
+    "billing",
     "chat",
     "domaingen",
     "governance",

@@ -206,6 +206,19 @@ class Plan(models.Model):
     )
     monthly_budget_cap = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    # Team-based billing (billing app): how many accounts.Team rows a
+    # Department on this plan gets before paying extra per additional
+    # team - see billing.models.RegionalPrice.extra_team_price for what
+    # that extra team actually costs (region-specific, lives there since
+    # it's a currency amount; this is just the plan-level included count).
+    # Null = unlimited teams included, never billed for extras.
+    teams_included = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=1,
+        help_text="Teams a department gets before being billed per extra team. Blank = unlimited.",
+    )
+
     # Request-COUNT cap, independent of the token-volume caps above (a user
     # could send many short messages without tripping daily_token_limit, or
     # few very long ones without tripping this) - both are enforced.

@@ -160,6 +160,14 @@
                     {% endif %}
 
                     {% if user.is_superadmin %}
+                    <div class="nav-group-label">{% trans "Billing" %}</div>
+                    <a href="{% url 'billing:regional_pricing' %}" class="{% if request.resolver_match.app_name == "billing" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        {% trans "Regional Pricing" %}
+                    </a>
+                    {% endif %}
+
+                    {% if user.is_superadmin %}
                     <div class="nav-group-label">{% trans "Models" %}</div>
                     <a href="{% url 'providers:list' %}" class="{% if request.resolver_match.app_name == "providers" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V7a2 2 0 0 1 2-2h6l2 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M12 11v4"/><path d="M10 13h4"/></svg>

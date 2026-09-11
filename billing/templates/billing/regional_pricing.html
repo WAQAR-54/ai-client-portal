@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Regional Pricing" %} — {{ site_branding.site_name }}{% endblock %}
+{% block admin_page_title %}{% trans "Regional Pricing" %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Regional Pricing" %}</h1>
+    <p>{% trans "Set the exact price per plan for each region yourself — no auto-conversion. The public pricing page and invoices use these numbers directly." %}</p>
+
+    {% if any_missing %}
+    <div class="alert alert-warning" style="margin-bottom:1rem;">
+        {% trans "One or more plans are missing a price in at least one region — that plan won't be purchasable there until filled in." %}
+    </div>
+    {% endif %}
+
+    <div class="scroll-shadow" style="overflow-x:auto;">
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>{% trans "Plan" %}</th>
+                    {% for code, label, currency, flag in region_labels %}
+                    <th>{{ flag }} {{ label }} ({{ currency }})</th>
+                    {% endfor %}
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td class="name">
+                        {{ row.plan.name }}
+                        {% if row.missing %}<span class="badge badge-danger">{% trans "Missing price" %}</span>{% endif %}
+                    </td>
+                    {% for cell in row.cells %}
+                    <td>
+                        <input class="input mono" type="text"
+                               name="price_{{ cell.region_code }}" form="regional-form-{{ row.plan.id }}"
+                               value="{{ cell.price|default_if_none:'' }}" placeholder="{% trans 'Not set' %}"
+                               style="width:6.5rem; margin:0;">
+                    </td>
+                    {% endfor %}
+                    <td><button type="submit" form="regional-form-{{ row.plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
+                </tr>
+                {% empty %}
+                <tr class="empty-state-row"><td colspan="6">{% trans "No plans yet." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if available_extra_regions %}
+    <form method="post" action="{% url 'billing:add_region' %}" style="display:flex; gap:0.6rem; margin-top:1rem;">
+        {% csrf_token %}
+        <select class="input" name="region_code" style="margin:0; width:auto;">
+            {% for code, label, currency, flag in available_extra_regions %}
+            <option value="{{ code }}">{{ flag }} {{ label }} ({{ currency }})</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn-small btn-ghost">{% trans "+ Add region" %}</button>
+    </form>
+    {% endif %}
+
+    <p class="text-faint" style="font-size:0.82rem; margin-top:1rem;">
+        {% trans "Regions without a set price simply aren't purchasable there yet — there is no automatic fallback or conversion." %}
+    </p>
+</div>
+
+<div class="card mt-5">
+    <h2>{% trans "Team-Based Billing" %}</h2>
+    <p class="text-muted">{% trans "Each plan includes a set number of teams. A department with more teams than that gets billed extra per additional team, automatically, on its invoice." %}</p>
+
+    <div class="scroll-shadow" style="overflow-x:auto;">
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>{% trans "Plan" %}</th>
+                    <th>{% trans "Teams included" %}</th>
+                    {% for code, label, currency, flag in region_labels %}
+                    <th>{{ flag }} {% trans "Extra / team" %} ({{ currency }})</th>
+                    {% endfor %}
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td class="name">{{ row.plan.name }}</td>
+                    <td>
+                        <input class="input mono" type="number" min="0" name="teams_included" form="regional-form-{{ row.plan.id }}"
+                               value="{{ row.plan.teams_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}"
+                               style="width:6rem; margin:0;">
+                    </td>
+                    {% for cell in row.cells %}
+                    <td>
+                        <input class="input mono" type="text"
+                               name="extra_team_price_{{ cell.region_code }}" form="regional-form-{{ row.plan.id }}"
+                               value="{{ cell.extra_team_price|default_if_none:'' }}" placeholder="{% trans 'none' %}"
+                               style="width:6.5rem; margin:0;">
+                    </td>
+                    {% endfor %}
+                    <td><button type="submit" form="regional-form-{{ row.plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
+                </tr>
+                {% empty %}
+                <tr class="empty-state-row"><td colspan="7">{% trans "No plans yet." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <p class="text-faint" style="font-size:0.82rem; margin-top:1rem;">
+        {% blocktrans %}Example: a department on a plan with 3 teams included that actually has 5 teams gets billed for 2 extra teams on its next invoice. Leave the extra-team price blank to never charge for extra teams in that region.{% endblocktrans %}
+    </p>
+</div>
+
+{% for row in rows %}
+<form id="regional-form-{{ row.plan.id }}" method="post" action="{% url 'billing:update_plan_regional_pricing' plan_id=row.plan.id %}">{% csrf_token %}</form>
+{% endfor %}
+{% endblock %}
