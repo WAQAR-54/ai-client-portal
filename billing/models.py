@@ -155,6 +155,14 @@ class Invoice(models.Model):
     # page always matches exactly what subtotal was computed from,
     # regardless of any later RegionalPrice/Plan change.
     line_items = models.JSONField(default=list, blank=True)
+    # The headcount this invoice was actually billed against (department.
+    # users.count() at generation time, or an explicit override - see
+    # billing.invoicing.generate_invoice_for_department) - snapshotted
+    # like everything else here so it always matches what line_items says,
+    # regardless of the department's headcount changing later. Null only
+    # for a plan with unlimited seats (seats_included=None), where no
+    # headcount was ever consulted.
+    seats_billed = models.PositiveIntegerField(null=True, blank=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))

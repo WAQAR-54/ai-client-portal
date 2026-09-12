@@ -6,6 +6,7 @@ from django.urls import reverse
 from accounts.models import Department, User
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
 from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
+from billing.pdf import render_invoice_pdf
 from billing.regions import REGIONS
 from billing.tax_rules import tax_rule_for_country
 from governance.models import Plan
@@ -962,3 +963,68 @@ class InvoiceAutomationSettingsTests(TestCase):
             {"auto_generate_invoices": "on"},
         )
         self.assertEqual(response.status_code, 403)
+
+
+class InvoicePdfTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.plan = Plan.objects.create(name="Growth", seats_included=2)
+        RegionalPrice.objects.create(
+            plan=self.plan, region_code="ROW", price=Decimal("100"), extra_seat_price=Decimal("20")
+        )
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(
+            department=self.department, is_tax_exempt=True, company_name="Acme Corp"
+        )
+        OrganizationBillingProfile.objects.create(pk=1, bank_name="Meezan Bank")
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.other_department,
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self._add_users(4)
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+
+    def _add_users(self, count):
+        for i in range(count):
+            User.objects.create_user(email=f"seat{i}@example.com", password="pw12345!", department=self.department)
+
+    def test_seats_billed_is_recorded(self):
+        # recipient + 4 extra users = 5 in the department.
+        self.assertEqual(self.invoice.seats_billed, 5)
+
+    def test_render_invoice_pdf_returns_pdf_bytes(self):
+        pdf_bytes = render_invoice_pdf(self.invoice)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+
+    def test_recipient_can_download_pdf(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn(self.invoice.invoice_number, response["Content-Disposition"])
+
+    def test_superadmin_can_download_pdf(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(response.status_code, 200)
+
+    def test_unrelated_admin_cannot_download_pdf(self):
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_anonymous_redirected_to_login(self):
+        response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(response.status_code, 302)

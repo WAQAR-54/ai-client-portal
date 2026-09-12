@@ -37,6 +37,7 @@ urlpatterns = [
         name="update_invoice_automation",
     ),
     path("invoices/<int:invoice_id>/", views.InvoiceDetailView.as_view(), name="invoice_detail"),
+    path("invoices/<int:invoice_id>/pdf/", views.download_invoice_pdf, name="download_invoice_pdf"),
     path("invoices/<int:invoice_id>/toggle-status/", views.toggle_invoice_status, name="toggle_invoice_status"),
     path("invoices/<int:invoice_id>/verify/", views.verify_invoice_payment, name="verify_invoice_payment"),
     path("invoices/<int:invoice_id>/reject/", views.reject_invoice_payment, name="reject_invoice_payment"),

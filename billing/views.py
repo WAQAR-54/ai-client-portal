@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages as django_messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -13,6 +14,7 @@ from accounts.models import Department, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
 from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
+from billing.pdf import render_invoice_pdf
 from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS, region_for_country
 from billing.tax_rules import country_choices, tax_rule_for_country
 from governance.audit import log_action
@@ -528,3 +530,16 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
             and self.request.user.role in (User.Role.ADMIN, User.Role.SUPERADMIN),
             "organization_profile": OrganizationBillingProfile.load(),
         }
+
+
+@require_http_methods(["GET"])
+def download_invoice_pdf(request, invoice_id):
+    if not request.user.is_authenticated:
+        return redirect("accounts:login")
+    invoice = get_object_or_404(Invoice.objects.select_related("department", "plan", "recipient_user"), id=invoice_id)
+    if not _can_view_invoice(request.user, invoice):
+        raise PermissionDenied("You don't have access to this invoice.")
+    pdf_bytes = render_invoice_pdf(invoice)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{invoice.invoice_number}.pdf"'
+    return response

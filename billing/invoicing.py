@@ -62,6 +62,7 @@ def generate_invoice_for_department(
     # region has an extra-seat price configured. seat_count defaults to
     # actual accounts.User rows in the department (real seats/people, not
     # accounts.Team rows) but the caller may override it.
+    actual_seats = None
     if plan.seats_included is not None:
         actual_seats = department.users.count() if seat_count is None else seat_count
         extra_seats = max(0, actual_seats - plan.seats_included)
@@ -91,6 +92,7 @@ def generate_invoice_for_department(
         due_date=issue_date + timedelta(days=due_in_days),
         currency=currency_for_region(region_code),
         line_items=line_items,
+        seats_billed=actual_seats,
         subtotal=subtotal,
         tax_rate=tax_rate,
         tax_amount=tax_amount,
