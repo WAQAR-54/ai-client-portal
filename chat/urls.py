@@ -18,7 +18,7 @@ urlpatterns = [
         name="pick_arena_winner",
     ),
     path(
-        "conversations/<int:conversation_id>/messages/<int:message_id>/stream/",
+        "conversations/<int:conversation_id>/messages/<int:message_id>/stream/<str:token>/",
         views.stream_message,
         name="stream_message",
     ),

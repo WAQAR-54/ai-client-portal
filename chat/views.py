@@ -820,7 +820,14 @@ def _strip_images(history):
 
 @login_required
 @require_GET
-def stream_message(request, conversation_id, message_id):
+def stream_message(request, conversation_id, message_id, token):
+    """GET-based (SSE requires it) and therefore CSRF-exempt by design -
+    the ownership check below alone would still leave a real, predictable
+    integer id as the only thing standing between "my own pending
+    message" and "a guessed one". `token` (Message.stream_token, a random
+    per-message credential set on creation) closes that gap: even
+    knowing/guessing a valid conversation_id/message_id pair isn't enough
+    without also knowing this."""
     conversation = _owned_conversation_or_404(request, conversation_id)
     message = get_object_or_404(
         Message,
@@ -828,6 +835,7 @@ def stream_message(request, conversation_id, message_id):
         conversation=conversation,
         role=Message.Role.ASSISTANT,
         content="",
+        stream_token=token,
     )
 
     history = _history_with_attachments(conversation, exclude_message_id=message.id)

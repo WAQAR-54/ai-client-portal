@@ -129,6 +129,28 @@ class VisionMessageFormattingTests(TestCase):
         self.assertEqual(parts[1], {"inline_data": {"mime_type": "image/png", "data": self.image["data"]}})
 
 
+class MessageStreamTokenTests(TestCase):
+    """Message.stream_token - the unguessable per-message credential
+    chat:stream_message requires alongside ownership (see that view's own
+    docstring for why: GET-based SSE is CSRF-exempt by design, so a
+    predictable integer id alone wasn't enough)."""
+
+    def test_stream_token_is_generated_on_creation(self):
+        conversation = Conversation.objects.create(
+            user=User.objects.create_user(email="u@example.com", password="pw12345!")
+        )
+        message = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        self.assertTrue(message.stream_token)
+
+    def test_stream_tokens_are_unique(self):
+        conversation = Conversation.objects.create(
+            user=User.objects.create_user(email="u2@example.com", password="pw12345!")
+        )
+        m1 = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        m2 = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        self.assertNotEqual(m1.stream_token, m2.stream_token)
+
+
 class UserModelPermissionTests(TestCase):
     """model_config and provider_model are two parallel targets on the same
     row (the ModelConfig -> ProviderModel migration's per-user-override
@@ -435,6 +457,7 @@ class ChatViewTests(TestCase):
                 kwargs={
                     "conversation_id": conversation.id,
                     "message_id": pending.id,
+                    "token": pending.stream_token,
                 },
             )
         )
@@ -446,6 +469,24 @@ class ChatViewTests(TestCase):
         self.assertEqual(pending.input_tokens, 10)
         self.assertEqual(pending.output_tokens, 5)
         self.assertEqual(pending.estimated_cost, self.model.estimate_cost(10, 5))
+
+    def test_stream_message_rejects_wrong_token(self):
+        """The narrow, documented gap this token closes: GET-based SSE is
+        CSRF-exempt by design, so ownership of the conversation alone
+        would leave a predictable, sequential message_id as the only
+        thing standing between "my own pending message" and a guess at
+        someone else's. A mismatched token 404s even though conversation_
+        id/message_id both belong to this same user's own conversation."""
+        conversation = Conversation.objects.create(user=self.user)
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": "not-the-real-token"},
+            )
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_stream_message_escapes_html_in_chunks(self):
         with patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT), patch(
@@ -466,6 +507,7 @@ class ChatViewTests(TestCase):
                     kwargs={
                         "conversation_id": conversation.id,
                         "message_id": pending.id,
+                        "token": pending.stream_token,
                     },
                 )
             )
@@ -511,6 +553,7 @@ class ChatViewTests(TestCase):
                 kwargs={
                     "conversation_id": conversation.id,
                     "message_id": pending.id,
+                    "token": pending.stream_token,
                 },
             )
         )
@@ -547,6 +590,7 @@ class ChatViewTests(TestCase):
                 kwargs={
                     "conversation_id": conversation.id,
                     "message_id": pending.id,
+                    "token": pending.stream_token,
                 },
             )
         )
@@ -596,7 +640,7 @@ class ChatViewTests(TestCase):
         response = self.client.get(
             reverse(
                 "chat:stream_message",
-                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
             )
             + f"?model_id={self.model.id}"  # explicitly ask for the (non-fallback) default model
         )
@@ -629,7 +673,7 @@ class ChatViewTests(TestCase):
         response = self.client.get(
             reverse(
                 "chat:stream_message",
-                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
             )
         )
         b"".join(response.streaming_content)
@@ -658,7 +702,7 @@ class ChatViewTests(TestCase):
         response = self.client.get(
             reverse(
                 "chat:stream_message",
-                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
             )
         )
         b"".join(response.streaming_content)
@@ -938,6 +982,7 @@ class ModelSelectionTests(TestCase):
                 kwargs={
                     "conversation_id": self.conversation.id,
                     "message_id": pending.id,
+                    "token": pending.stream_token,
                 },
             )
             + f"?model_id={self.allowed_model.id}"
@@ -1402,7 +1447,10 @@ class ResponseCacheTests(TestCase):
     def _stream(self, client, conversation, prompt_text, mock_text):
         Message.objects.create(conversation=conversation, role=Message.Role.USER, content=prompt_text)
         pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
-        url = reverse("chat:stream_message", kwargs={"conversation_id": conversation.id, "message_id": pending.id})
+        url = reverse(
+            "chat:stream_message",
+            kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+        )
         with patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT), patch(
             "chat.views.get_provider"
         ) as mock_get_provider:
@@ -1733,7 +1781,7 @@ class AttachmentContextInPromptTests(TestCase):
         response = self.client.get(
             reverse(
                 "chat:stream_message",
-                kwargs={"conversation_id": conversation.id, "message_id": pending.id},
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
             )
         )
         b"".join(response.streaming_content)
@@ -1777,7 +1825,10 @@ class VisionAttachmentIntegrationTests(TestCase):
             [StreamChunk(text="A cat."), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
         )
         response = self.client.get(
-            reverse("chat:stream_message", kwargs={"conversation_id": conversation.id, "message_id": pending.id}),
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            ),
             {"model_id": model.id},
         )
         b"".join(response.streaming_content)

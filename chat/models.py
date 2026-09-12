@@ -1,3 +1,4 @@
+import secrets
 from decimal import Decimal
 
 from django.conf import settings
@@ -182,12 +183,27 @@ class Message(models.Model):
         "this flag is what the admin cost-saved metric sums over.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # An unguessable per-message credential required by chat:stream_message
+    # (see chat/views.py) alongside the existing ownership check - closes
+    # the narrow gap flagged early in this project: that endpoint is GET-
+    # based (SSE requires it) and therefore CSRF-exempt by design, so
+    # ownership alone left a real ID (predictable, sequential) as the only
+    # thing standing between "this is my own pending message" and "I
+    # guessed someone else's". Generated for every Message, not just
+    # pending assistant ones, so nothing has to special-case which rows
+    # need it - same reasoning as billing.models.Invoice.share_token.
+    stream_token = models.CharField(max_length=48, unique=True, null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["created_at"]
 
     def __str__(self):
         return f"{self.role}: {self.content[:40]}"
+
+    def save(self, *args, **kwargs):
+        if not self.stream_token:
+            self.stream_token = secrets.token_urlsafe(24)
+        super().save(*args, **kwargs)
 
     @property
     def model_label(self):
