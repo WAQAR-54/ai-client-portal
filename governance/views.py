@@ -858,6 +858,33 @@ def change_user_department(request, user_id):
     return redirect("governance:users")
 
 
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def delete_user(request, user_id):
+    """Permanently deletes the account and everything that CASCADEs from
+    it - chat history (Conversation/Message/MessageFeedback), usage
+    limits, plan assignment, upgrade requests, playground/domain-gen
+    runs, and notifications/preferences. Billing invoices and AuditLog
+    entries survive (recipient_user/actor are SET_NULL, not CASCADE - see
+    billing/models.py's own Invoice.recipient_user comment), same as they
+    already do when a user is only suspended instead.
+
+    That CASCADE blast radius is materially bigger than delete_department
+    (which only cascades system-prompt history), which is why this is
+    SuperAdmin-only - same tier as change_user_department's own
+    department-structure reasoning - with its own stronger confirm
+    dialog, rather than the looser @role_required(User.Role.ADMIN) most
+    per-user edits here use."""
+    target = get_object_or_404(User, id=user_id)
+    if target.id == request.user.id:
+        django_messages.error(request, "You can't delete your own account.")
+        return redirect("governance:users")
+    log_action(request.user, "user.delete", target, old_value=target.email)
+    target.delete()
+    django_messages.success(request, f"{target.email} was permanently deleted.")
+    return redirect("governance:users")
+
+
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def change_user_team(request, user_id):

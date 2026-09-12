@@ -69,3 +69,13 @@
         {% if u.is_active %}{% trans "Suspend user" %}{% else %}{% trans "Activate user" %}{% endif %}
     </button>
 </form>
+
+{% if request.user.is_superadmin and u.id != request.user.id %}
+<div style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px solid var(--color-border);">
+    <form method="post" action="{% url 'governance:delete_user' user_id=u.id %}"
+          onsubmit="return portalConfirmSubmit(event, '{% blocktrans with email=u.email %}Permanently delete {{ email }}? This also deletes their chat history, usage limits, plan assignment, upgrade requests, and playground/domain-gen activity — this cannot be undone. If you just want to remove their access, use Suspend instead.{% endblocktrans %}');">
+        {% csrf_token %}
+        <button type="submit" class="btn-small btn-danger" style="width:100%;">{% trans "Delete user permanently" %}</button>
+    </form>
+</div>
+{% endif %}

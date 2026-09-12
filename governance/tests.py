@@ -614,6 +614,52 @@ class GovernanceRBACAndAuditTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_superadmin_can_delete_user(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        user_id = self.user.id
+        response = self.client.post(reverse("governance:delete_user", kwargs={"user_id": user_id}))
+        self.assertRedirects(response, reverse("governance:users"))
+        self.assertFalse(User.objects.filter(id=user_id).exists())
+        log = AuditLog.objects.get(action_type="user.delete")
+        self.assertEqual(log.actor, self.superadmin)
+        self.assertEqual(log.target_id, str(user_id))
+
+    def test_scoped_admin_cannot_delete_user(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:delete_user", kwargs={"user_id": self.user.id}))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(User.objects.filter(id=self.user.id).exists())
+
+    def test_superadmin_cannot_delete_own_account(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:delete_user", kwargs={"user_id": self.superadmin.id}), follow=True
+        )
+        self.assertTrue(User.objects.filter(id=self.superadmin.id).exists())
+        messages = list(response.context["messages"])
+        self.assertTrue(any("own account" in str(m) for m in messages))
+
+    def test_deleting_user_cascades_their_chat_history(self):
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        self.client.post(reverse("governance:delete_user", kwargs={"user_id": self.user.id}))
+        self.assertFalse(Conversation.objects.filter(id=conversation.id).exists())
+
+    def test_deleting_user_leaves_their_invoices_with_a_null_recipient(self):
+        from decimal import Decimal
+
+        from billing.invoicing import generate_invoice_for_user
+        from billing.models import Invoice, RegionalPrice
+
+        plan = Plan.objects.create(name="Advanced")
+        RegionalPrice.objects.create(plan=plan, region_code="ROW", price=Decimal("300"))
+        invoice = generate_invoice_for_user(self.user, plan=plan)
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        self.client.post(reverse("governance:delete_user", kwargs={"user_id": self.user.id}))
+        invoice.refresh_from_db()
+        self.assertIsNone(invoice.recipient_user_id)
+        self.assertTrue(Invoice.objects.filter(id=invoice.id).exists())
+
     def test_toggle_model_enabled_writes_audit_log(self):
         model_config = ModelConfig.objects.create(
             provider=ModelConfig.Provider.OPENAI,
