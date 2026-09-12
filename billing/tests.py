@@ -1613,3 +1613,110 @@ class EmailInvoiceToClientTests(TestCase):
         self.client.login(email="otheradmin@example.com", password="pw12345!")
         response = self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
         self.assertEqual(response.status_code, 403)
+
+
+class GenerateInvoiceForDepartmentLessUserViewTests(TestCase):
+    """The manual "Generate invoice" admin form used to reject any
+    recipient without a department outright - a leftover from before
+    Milestone 6 made invoicing department-optional. It now delegates to
+    generate_invoice_for_user, same as the welcome-invoice signal and the
+    recurring sweep."""
+
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Advanced")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("300"))
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.department = Department.objects.create(name="Sales")
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.lone_user = User.objects.create_user(email="lone@example.com", password="pw12345!")
+
+    def test_superadmin_can_generate_for_a_department_less_user(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:generate_invoice"), {"recipient_user_id": self.lone_user.id, "plan_id": self.plan.id}
+        )
+        self.assertRedirects(response, reverse("billing:invoices"))
+        invoice = Invoice.objects.get(recipient_user=self.lone_user)
+        self.assertIsNone(invoice.department)
+        self.assertEqual(invoice.plan, self.plan)
+
+    def test_scoped_admin_cannot_generate_for_a_department_less_user(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:generate_invoice"), {"recipient_user_id": self.lone_user.id, "plan_id": self.plan.id}
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.lone_user).exists())
+
+    def test_department_less_user_appears_in_generate_invoice_form(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, "lone@example.com")
+
+    def test_scoped_admin_does_not_see_department_less_users_in_form(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertNotContains(response, "lone@example.com")
+
+
+class DeleteInvoiceTests(TestCase):
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Advanced")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("300"))
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.department = Department.objects.create(name="Sales")
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.user = User.objects.create_user(email="user@example.com", password="pw12345!")
+        self.invoice = generate_invoice_for_user(self.user, plan=self.plan)
+
+    def _url(self):
+        return reverse("billing:delete_invoice", kwargs={"invoice_id": self.invoice.id})
+
+    def test_superadmin_can_delete(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(self._url())
+        self.assertRedirects(response, reverse("billing:invoices"))
+        self.assertFalse(Invoice.objects.filter(id=self.invoice.id).exists())
+
+    def test_admin_cannot_delete(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(self._url())
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Invoice.objects.filter(id=self.invoice.id).exists())
+
+    def test_htmx_delete_returns_table_fragment(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(self._url(), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Invoice.objects.filter(id=self.invoice.id).exists())
+
+    def test_delete_button_only_shown_to_superadmin(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, "Delete invoice")
+
+        self.client.logout()
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertNotContains(response, "Delete invoice")
+
+    def test_email_button_shown_on_list_for_invoice_with_recipient(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, reverse("billing:email_invoice", kwargs={"invoice_id": self.invoice.id}))

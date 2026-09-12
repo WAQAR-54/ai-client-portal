@@ -3,7 +3,6 @@
     <thead>
         <tr>
             <th>{% trans "Invoice #" %}</th>
-            {% if departments is not None %}<th>{% trans "Department" %}</th>{% endif %}
             <th>{% trans "Billed to" %}</th>
             <th>{% trans "Plan" %}</th>
             <th>{% trans "Due date" %}</th>
@@ -17,8 +16,10 @@
         {% for invoice in invoices %}
         <tr>
             <td class="mono"><a href="{% url 'billing:invoice_detail' invoice_id=invoice.id %}">{{ invoice.invoice_number }}</a></td>
-            {% if departments is not None %}<td>{{ invoice.department.name|default:"—" }}</td>{% endif %}
-            <td>{{ invoice.recipient_user.email|default:"—" }}</td>
+            <td>
+                {{ invoice.recipient_user.email|default:"—" }}
+                {% if invoice.department %}<div class="text-faint" style="font-size:0.78rem;">{{ invoice.department.name }}</div>{% endif %}
+            </td>
             <td>{{ invoice.plan.name }}</td>
             <td class="text-muted">{{ invoice.due_date|date:"Y-m-d" }}</td>
             <td class="mono">{{ invoice.currency }} {{ invoice.total }}</td>
@@ -54,10 +55,26 @@
                 </div>
                 {% endif %}
             </td>
-            <td><a href="{% url 'billing:invoice_detail' invoice_id=invoice.id %}" class="btn-small btn-ghost">{% trans "View" %}</a></td>
+            <td style="white-space:nowrap;">
+                <a href="{% url 'billing:invoice_detail' invoice_id=invoice.id %}" class="btn-small btn-ghost">{% trans "View" %}</a>
+                {% if invoice.recipient_user %}
+                <form method="post" action="{% url 'billing:email_invoice' invoice_id=invoice.id %}" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-small btn-ghost">{% trans "Email" %}</button>
+                </form>
+                {% endif %}
+                {% if can_delete_invoices %}
+                <form method="post" action="{% url 'billing:delete_invoice' invoice_id=invoice.id %}"
+                      hx-post="{% url 'billing:delete_invoice' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML"
+                      style="display:inline;" onsubmit="return portalConfirmSubmit(event, '{% blocktrans with number=invoice.invoice_number %}Delete invoice {{ number }}? This cannot be undone.{% endblocktrans %}');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-small btn-ghost">{% trans "Delete" %}</button>
+                </form>
+                {% endif %}
+            </td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="{% if departments is not None %}9{% else %}8{% endif %}">{% trans "No invoices yet." %}</td></tr>
+        <tr class="empty-state-row"><td colspan="8">{% trans "No invoices yet." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

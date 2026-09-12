@@ -13,7 +13,7 @@ from django.views.generic import TemplateView
 from accounts.geo import country_code_for_ip
 from accounts.models import Department, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
-from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
+from billing.invoicing import InvoiceGenerationError, generate_invoice_for_user
 from billing.models import (
     DepartmentBillingProfile,
     Invoice,
@@ -314,13 +314,15 @@ def _is_scoped_admin(user):
 
 
 def _eligible_recipients(request):
-    """Every user who could be billed - any user with a department (an
-    invoice always belongs to a department), regardless of whether that
-    department already has a plan assigned: the plan is chosen per-invoice
-    at generation time (see generate_invoice below), not required
-    up front. Scoped the same way as every other per-department admin
-    action - a plain Admin only sees their own department's users."""
-    qs = User.objects.filter(department__isnull=False).select_related("department", "department__plan")
+    """Every user who could be billed - department-optional (Milestone 6:
+    billing.invoicing.generate_invoice_for_user bills a department-less
+    user directly), so this is no longer filtered to only users who
+    happen to have one. Scoped the same way as every other per-department
+    admin action: a plain Admin only sees their own department's users -
+    a department-less user isn't within any Admin's authority, only
+    SuperAdmin's, same reasoning as _get_scoped_invoice_or_403's explicit
+    None-never-matches guard."""
+    qs = User.objects.select_related("department", "department__plan")
     if _is_scoped_admin(request.user):
         qs = qs.filter(department_id=request.user.department_id)
     return qs.order_by("department__name", "email")
@@ -347,6 +349,10 @@ def _invoices_context(request):
         "eligible_recipients": _eligible_recipients(request),
         "billable_plans": Plan.objects.filter(is_active=True).order_by("-is_default", "name"),
         "billable_regions": [REGION_BY_CODE[code] for code in _active_region_codes()],
+        # Deleting an invoice is SuperAdmin-only (see delete_invoice) -
+        # passed down so the table's Delete button only renders for
+        # someone who can actually use it.
+        "can_delete_invoices": request.user.role == User.Role.SUPERADMIN,
     }
 
 
@@ -393,11 +399,15 @@ class InvoiceListView(AdminRequiredMixin, TemplateView):
 @require_http_methods(["POST"])
 def generate_invoice(request):
     recipient = get_object_or_404(User, id=request.POST.get("recipient_user_id"))
-    if _is_scoped_admin(request.user) and recipient.department_id != request.user.department_id:
+    # A department-less recipient isn't within any scoped Admin's
+    # authority (only SuperAdmin's) - explicit `is None` guard so this
+    # never lets a department-less Admin match a department-less
+    # recipient via `None == None`, same pattern as
+    # _get_scoped_invoice_or_403.
+    if _is_scoped_admin(request.user) and (
+        recipient.department_id is None or recipient.department_id != request.user.department_id
+    ):
         raise PermissionDenied("That user is outside your department.")
-    if recipient.department_id is None:
-        django_messages.error(request, "This user has no department, so they can't be billed.")
-        return redirect("billing:invoices")
 
     plan_id = request.POST.get("plan_id", "").strip()
     plan = get_object_or_404(Plan, id=plan_id) if plan_id else None
@@ -405,13 +415,27 @@ def generate_invoice(request):
     region_code = request.POST.get("region_code", "").strip() or None
 
     try:
-        invoice = generate_invoice_for_department(
-            recipient.department, recipient_user=recipient, plan=plan, seat_count=seat_count, region_code=region_code
-        )
+        # generate_invoice_for_user bills the department's subscription
+        # when the recipient has one with a plan assigned, and the
+        # recipient directly otherwise - the exact same choice the
+        # automatic welcome-invoice signal and recurring sweep already
+        # make, so a manually-generated invoice is never a special case.
+        invoice = generate_invoice_for_user(recipient, plan=plan, seat_count=seat_count, region_code=region_code)
     except InvoiceGenerationError as exc:
         django_messages.error(request, str(exc))
     else:
         log_action(request.user, "billing.invoice_generate", invoice, new_value=invoice.invoice_number)
+    return redirect("billing:invoices")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def delete_invoice(request, invoice_id):
+    invoice = get_object_or_404(Invoice, id=invoice_id)
+    log_action(request.user, "billing.invoice_delete", invoice, old_value=invoice.invoice_number)
+    invoice.delete()
+    if request.headers.get("HX-Request"):
+        return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect("billing:invoices")
 
 
@@ -639,7 +663,11 @@ def email_invoice_to_client(request, invoice_id):
         User.Role.SUPERADMIN,
     ):
         raise PermissionDenied("You don't have access to this invoice.")
-    default_redirect = _safe_next_url(request, reverse("billing:invoice_detail", kwargs={"invoice_id": invoice.id}))
+    # Same convention as toggle/verify/reject: stays on the invoices LIST
+    # by default (the new per-row "Email" button there never passes
+    # next_invoice_id), but goes back to the detail page when it does
+    # (the detail page's own "Email to client" button always passes it).
+    default_redirect = _safe_next_url(request, reverse("billing:invoices"))
     if invoice.recipient_user_id is None or not invoice.recipient_user.email:
         django_messages.error(request, "This invoice has no recipient email to send to.")
         return redirect(default_redirect)

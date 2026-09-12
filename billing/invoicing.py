@@ -123,7 +123,7 @@ def _effective_due_in_days(plan, due_in_days):
     return DEFAULT_DUE_IN_DAYS
 
 
-def generate_invoice_for_user(user, *, plan=None, due_in_days=None, region_code=None):
+def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=None, region_code=None):
     """Build and save one Invoice billed directly to `user` - the
     department-optional counterpart to generate_invoice_for_department.
     Department assignment is a separate, optional, admin-driven action in
@@ -139,6 +139,10 @@ def generate_invoice_for_user(user, *, plan=None, due_in_days=None, region_code=
     - see governance.plans.assign_default_plan_if_missing, always the
     seeded "Demo" plan by default). Raises InvoiceGenerationError if none
     of those resolve to a plan.
+
+    `seat_count` is passed straight through to generate_invoice_for_department
+    when delegating (see below) - it's a no-op otherwise, since a
+    department-less individual always bills exactly one seat regardless.
 
     When the user's department has its own configured plan, this simply
     delegates to generate_invoice_for_department (recipient_user=user) -
@@ -177,6 +181,7 @@ def generate_invoice_for_user(user, *, plan=None, due_in_days=None, region_code=
             user.department,
             recipient_user=user,
             plan=resolved_plan,
+            seat_count=seat_count,
             region_code=region_code,
             due_in_days=resolved_due_in_days,
         )

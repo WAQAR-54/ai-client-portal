@@ -43,6 +43,7 @@ urlpatterns = [
     path("invoices/<int:invoice_id>/verify/", views.verify_invoice_payment, name="verify_invoice_payment"),
     path("invoices/<int:invoice_id>/reject/", views.reject_invoice_payment, name="reject_invoice_payment"),
     path("invoices/<int:invoice_id>/email/", views.email_invoice_to_client, name="email_invoice"),
+    path("invoices/<int:invoice_id>/delete/", views.delete_invoice, name="delete_invoice"),
     path("share/<str:token>/", views.public_invoice_view, name="public_invoice"),
     path("my-invoices/", views.MyInvoicesView.as_view(), name="my_invoices"),
     path("my-invoices/<int:invoice_id>/submit-proof/", views.submit_payment_proof, name="submit_payment_proof"),

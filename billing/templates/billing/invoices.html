@@ -4,16 +4,18 @@
 {% block content %}
 <div class="card" style="margin-bottom:1.5rem;">
     <h2>{% trans "Generate an invoice" %}</h2>
-    <p>{% trans "Creates one invoice now, billed to the selected person, for the plan and team-member count you choose here. Automatic monthly generation lands in a later update." %}</p>
+    <p>{% trans "Creates one invoice now, billed to the selected person, for the plan and team-member count you choose here. Any user can be billed, not just ones with a department." %}</p>
     <form method="post" action="{% url 'billing:generate_invoice' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
         {% csrf_token %}
         <div style="flex:2; min-width:240px;">
             <label for="recipient_user_id">{% trans "Bill to" %}</label>
             <select class="input" name="recipient_user_id" id="recipient_user_id" style="margin:0;">
                 {% for u in eligible_recipients %}
-                <option value="{{ u.id }}">{{ u.email }} — {{ u.department.name }}{% if u.department.plan %} ({{ u.department.plan.name }} currently){% endif %}</option>
+                <option value="{{ u.id }}">
+                    {{ u.email }}{% if u.department %} — {{ u.department.name }}{% if u.department.plan %} ({{ u.department.plan.name }} currently){% endif %}{% endif %}
+                </option>
                 {% empty %}
-                <option value="" disabled>{% trans "No users with a department yet" %}</option>
+                <option value="" disabled>{% trans "No users yet" %}</option>
                 {% endfor %}
             </select>
         </div>
@@ -42,7 +44,7 @@
         <button type="submit" {% if not eligible_recipients %}disabled{% endif %}>{% trans "Generate invoice" %}</button>
     </form>
     <p class="text-faint" style="font-size:0.82rem; margin-top:0.6rem;">
-        {% trans "Leave \"Plan to bill\" on the default to use the department's assigned subscription plan, \"Team members\" blank to bill for the department's actual current headcount, and \"Region\" on auto-detect to use the department's own billing country." %}
+        {% trans "For a user with a department that has its own plan: leave \"Plan to bill\" on the default to use that plan, \"Team members\" blank for the department's actual headcount, and \"Region\" on auto-detect for the department's billing country. For anyone else, this bills the person directly - \"Team members\" is always 1 and \"Region\" defaults to the rest-of-world rate." %}
     </p>
 </div>
 
