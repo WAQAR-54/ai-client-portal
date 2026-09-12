@@ -279,6 +279,7 @@
                         <div class="profile-dropdown">
                             <div class="profile-dropdown-email">{{ user.email }}<span class="badge">{{ user.get_role_display }}</span></div>
                             <a href="{% url 'accounts:profile' %}">{% trans "Profile settings" %}</a>
+                            <a href="{% url 'billing:my_invoices' %}">{% trans "My Invoices" %}</a>
                             <form method="post" action="{% url 'accounts:logout' %}">
                                 {% csrf_token %}
                                 <button type="submit">{% trans "Log out" %}</button>

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "My Invoices" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "My Invoices" %}</h1>
+    <p>{% trans "Invoices billed to you. Submit a transaction ID and/or a payment screenshot against an unpaid invoice — an admin will verify it and mark it paid." %}</p>
+
+    {% for invoice in invoices %}
+    <div class="card" style="margin-top:1rem; border:1px solid var(--color-border);">
+        <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
+            <div>
+                <h2 style="margin-bottom:0.25rem;">{{ invoice.invoice_number }}</h2>
+                <p class="text-muted" style="margin:0;">{{ invoice.plan.name }} — {{ invoice.currency }} {{ invoice.total }}</p>
+                <p class="text-faint" style="margin:0.2rem 0 0; font-size:0.85rem;">{% blocktrans with issue=invoice.issue_date|date:"Y-m-d" due=invoice.due_date|date:"Y-m-d" %}Issued {{ issue }} — due {{ due }}{% endblocktrans %}</p>
+            </div>
+            <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}">
+                {{ invoice.get_status_display }}
+            </span>
+        </div>
+
+        {% if invoice.status == 'unpaid' %}
+        <form method="post" action="{% url 'billing:submit_payment_proof' invoice_id=invoice.id %}" enctype="multipart/form-data" class="mt-3" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
+            {% csrf_token %}
+            <div style="flex:1; min-width:220px;">
+                <label for="transaction_id_{{ invoice.id }}">{% trans "Transaction ID" %}</label>
+                <input class="input" type="text" name="transaction_id" id="transaction_id_{{ invoice.id }}" style="margin:0;" placeholder="{% trans 'optional if you attach a screenshot' %}">
+            </div>
+            <div style="flex:1; min-width:220px;">
+                <label for="proof_image_{{ invoice.id }}">{% trans "Payment screenshot" %}</label>
+                <input class="input" type="file" name="proof_image" id="proof_image_{{ invoice.id }}" accept="image/*" style="margin:0;">
+            </div>
+            <button type="submit">{% trans "Submit payment" %}</button>
+        </form>
+        {% elif invoice.status == 'pending_verification' %}
+        <div class="alert alert-warning mt-3" style="margin-bottom:0;">
+            {% trans "Submitted — waiting for an admin to verify your payment." %}
+            {% if invoice.submitted_transaction_id %}<br>{% blocktrans with txn=invoice.submitted_transaction_id %}Transaction ID: {{ txn }}{% endblocktrans %}{% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% empty %}
+    <p class="text-faint mt-3">{% trans "No invoices yet." %}</p>
+    {% endfor %}
+</div>
+{% endblock %}

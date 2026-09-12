@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -16,10 +17,10 @@ class RegionalPrice(models.Model):
     (not a DB-level choices= constraint, so a region can be added to the
     registry without a migration).
 
-    extra_team_price lives on this same row (not a separate per-team
+    extra_seat_price lives on this same row (not a separate per-seat
     model) because it's denominated in the same region/currency as
-    `price` - a department billed in PKR pays its extra-team fee in PKR
-    too. Null means "no extra-team charge configured for this region" -
+    `price` - a department billed in PKR pays its extra-seat fee in PKR
+    too. Null means "no extra-seat charge configured for this region" -
     an over-the-included-count department simply isn't charged for it
     yet, rather than the invoice sweep guessing a number.
     """
@@ -27,7 +28,7 @@ class RegionalPrice(models.Model):
     plan = models.ForeignKey(Plan, on_delete=models.CASCADE, related_name="regional_prices")
     region_code = models.CharField(max_length=10)
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    extra_team_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    extra_seat_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -127,9 +128,21 @@ class Invoice(models.Model):
 
     class Status(models.TextChoices):
         UNPAID = "unpaid", "Unpaid"
+        # A user submitted a transaction ID and/or a screenshot (see
+        # submit_payment_proof below) and it's waiting on an Admin/
+        # SuperAdmin to check it - distinct from PAID so "the money's in"
+        # is always a human decision, never the user's own claim.
+        PENDING_VERIFICATION = "pending_verification", "Pending verification"
         PAID = "paid", "Paid"
 
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name="invoices")
+    # Who this invoice is actually billed to and who sees it under "My
+    # Invoices" - SET_NULL (not CASCADE) so deleting a user account never
+    # deletes billing history; a null recipient just means the invoice was
+    # created before this field existed, or the recipient was since removed.
+    recipient_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoices"
+    )
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="invoices")
     invoice_number = models.CharField(max_length=30, unique=True, editable=False)
     issue_date = models.DateField(default=timezone.localdate)
@@ -139,8 +152,23 @@ class Invoice(models.Model):
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
     total = models.DecimalField(max_digits=10, decimal_places=2)
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.UNPAID)
+    status = models.CharField(max_length=25, choices=Status.choices, default=Status.UNPAID)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Proof of payment, submitted by recipient_user against their own
+    # unpaid invoice (billing.views.submit_payment_proof) - both optional
+    # individually, but the view requires at least one of the two.
+    submitted_transaction_id = models.CharField(max_length=200, blank=True)
+    submitted_proof_image = models.ImageField(upload_to="invoice_proofs/", null=True, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    # Who verified the submission (Approve -> PAID, or Reject -> UNPAID so
+    # the recipient can resubmit) and when - billing.views.verify_invoice_
+    # payment/reject_invoice_payment.
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-issue_date", "-id"]
@@ -163,3 +191,30 @@ class Invoice(models.Model):
         last = cls.objects.filter(invoice_number__startswith=prefix).order_by("-id").first()
         next_seq = int(last.invoice_number.rsplit("-", 1)[-1]) + 1 if last else 1
         return f"{prefix}{next_seq:04d}"
+
+    def submit_payment_proof(self, *, transaction_id="", proof_image=None):
+        """Recipient claims they've paid - moves to PENDING_VERIFICATION,
+        never straight to PAID (billing.views.submit_payment_proof already
+        validates at least one of transaction_id/proof_image is given and
+        that this invoice is actually UNPAID before calling this)."""
+        self.submitted_transaction_id = transaction_id
+        if proof_image is not None:
+            self.submitted_proof_image = proof_image
+        self.submitted_at = timezone.now()
+        self.status = self.Status.PENDING_VERIFICATION
+        self.save(update_fields=["submitted_transaction_id", "submitted_proof_image", "submitted_at", "status"])
+
+    def verify_payment(self, verifier):
+        self.status = self.Status.PAID
+        self.verified_by = verifier
+        self.verified_at = timezone.now()
+        self.save(update_fields=["status", "verified_by", "verified_at"])
+
+    def reject_payment(self, verifier):
+        # Back to UNPAID (not left at PENDING_VERIFICATION) so the
+        # recipient can see the rejection and resubmit - verified_by/
+        # verified_at still record who reviewed it and when.
+        self.status = self.Status.UNPAID
+        self.verified_by = verifier
+        self.verified_at = timezone.now()
+        self.save(update_fields=["status", "verified_by", "verified_at"])

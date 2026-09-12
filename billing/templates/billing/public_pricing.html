@@ -31,13 +31,13 @@
                 </span>
             </div>
             <div class="plan-row">
-                <span>{% trans "Teams included" %}</span>
-                <span class="mono">{{ row.plan.teams_included|default:"Unlimited" }}</span>
+                <span>{% trans "Seats included" %}</span>
+                <span class="mono">{{ row.plan.seats_included|default:"Unlimited" }}</span>
             </div>
-            {% if row.price_row.extra_team_price %}
+            {% if row.price_row.extra_seat_price %}
             <div class="plan-row">
-                <span>{% trans "Extra team" %}</span>
-                <span class="mono">+{{ region.currency }} {{ row.price_row.extra_team_price|floatformat:0|intcomma }}/mo</span>
+                <span>{% trans "Extra seat" %}</span>
+                <span class="mono">+{{ region.currency }} {{ row.price_row.extra_seat_price|floatformat:0|intcomma }}/mo</span>
             </div>
             {% endif %}
             {% if row.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem;">{{ row.plan.description }}</p>{% endif %}

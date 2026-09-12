@@ -66,17 +66,17 @@
 </div>
 
 <div class="card mt-5">
-    <h2>{% trans "Team-Based Billing" %}</h2>
-    <p class="text-muted">{% trans "Each plan includes a set number of teams. A department with more teams than that gets billed extra per additional team, automatically, on its invoice." %}</p>
+    <h2>{% trans "Per-Seat Billing" %}</h2>
+    <p class="text-muted">{% trans "Each plan includes a set number of seats (users). A department with more people than that gets billed extra per additional person, automatically, on its invoice." %}</p>
 
     <div class="scroll-shadow" style="overflow-x:auto;">
         <table class="data">
             <thead>
                 <tr>
                     <th>{% trans "Plan" %}</th>
-                    <th>{% trans "Teams included" %}</th>
+                    <th>{% trans "Seats included" %}</th>
                     {% for code, label, currency, flag in region_labels %}
-                    <th>{{ flag }} {% trans "Extra / team" %} ({{ currency }})</th>
+                    <th>{{ flag }} {% trans "Extra / seat" %} ({{ currency }})</th>
                     {% endfor %}
                     <th></th>
                 </tr>
@@ -86,15 +86,15 @@
                 <tr>
                     <td class="name">{{ row.plan.name }}</td>
                     <td>
-                        <input class="input mono" type="number" min="0" name="teams_included" form="regional-form-{{ row.plan.id }}"
-                               value="{{ row.plan.teams_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}"
+                        <input class="input mono" type="number" min="0" name="seats_included" form="regional-form-{{ row.plan.id }}"
+                               value="{{ row.plan.seats_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}"
                                style="width:6rem; margin:0;">
                     </td>
                     {% for cell in row.cells %}
                     <td>
                         <input class="input mono" type="text"
-                               name="extra_team_price_{{ cell.region_code }}" form="regional-form-{{ row.plan.id }}"
-                               value="{{ cell.extra_team_price|default_if_none:'' }}" placeholder="{% trans 'none' %}"
+                               name="extra_seat_price_{{ cell.region_code }}" form="regional-form-{{ row.plan.id }}"
+                               value="{{ cell.extra_seat_price|default_if_none:'' }}" placeholder="{% trans 'none' %}"
                                style="width:6.5rem; margin:0;">
                     </td>
                     {% endfor %}
@@ -108,7 +108,7 @@
     </div>
 
     <p class="text-faint" style="font-size:0.82rem; margin-top:1rem;">
-        {% blocktrans %}Example: a department on a plan with 3 teams included that actually has 5 teams gets billed for 2 extra teams on its next invoice. Leave the extra-team price blank to never charge for extra teams in that region.{% endblocktrans %}
+        {% blocktrans %}Example: a department on a plan with 3 seats included that actually has 5 people gets billed for 2 extra seats on its next invoice. Leave the extra-seat price blank to never charge for extra seats in that region.{% endblocktrans %}
     </p>
 </div>
 

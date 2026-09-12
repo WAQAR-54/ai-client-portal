@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages as django_messages
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
@@ -52,11 +53,11 @@ def _active_region_codes():
 
 
 class RegionalPricingView(SuperAdminRequiredMixin, TemplateView):
-    """SuperAdmin sets the exact price (and, per region, the extra-per-team
+    """SuperAdmin sets the exact price (and, per region, the extra-per-seat
     fee) for every Plan - no auto-conversion between regions, matching the
     explicit product decision behind this whole feature. See billing app
-    docstrings in models.py/regions.py for why extra_team_price lives on
-    RegionalPrice (region-currency-specific) while teams_included lives on
+    docstrings in models.py/regions.py for why extra_seat_price lives on
+    RegionalPrice (region-currency-specific) while seats_included lives on
     Plan (a plan-level policy, not currency-specific)."""
 
     template_name = "billing/regional_pricing.html"
@@ -236,16 +237,16 @@ def update_department_billing_profile(request, department_id):
 @require_http_methods(["POST"])
 def update_plan_regional_pricing(request, plan_id):
     plan = get_object_or_404(Plan, id=plan_id)
-    plan.teams_included = _int_or_none(request.POST.get("teams_included"))
-    plan.save(update_fields=["teams_included"])
+    plan.seats_included = _int_or_none(request.POST.get("seats_included"))
+    plan.save(update_fields=["seats_included"])
 
-    updated = {"teams_included": plan.teams_included}
+    updated = {"seats_included": plan.seats_included}
     for code in _active_region_codes():
         rp, _created = RegionalPrice.objects.get_or_create(plan=plan, region_code=code)
         rp.price = _decimal_or_none(request.POST.get(f"price_{code}"))
-        rp.extra_team_price = _decimal_or_none(request.POST.get(f"extra_team_price_{code}"))
-        rp.save(update_fields=["price", "extra_team_price"])
-        updated[code] = {"price": str(rp.price), "extra_team_price": str(rp.extra_team_price)}
+        rp.extra_seat_price = _decimal_or_none(request.POST.get(f"extra_seat_price_{code}"))
+        rp.save(update_fields=["price", "extra_seat_price"])
+        updated[code] = {"price": str(rp.price), "extra_seat_price": str(rp.extra_seat_price)}
 
     log_action(request.user, "billing.regional_pricing_update", plan, new_value=str(updated))
     return redirect("billing:regional_pricing")
@@ -274,17 +275,27 @@ def add_region(request):
 
 def _is_scoped_admin(user):
     """Same rule as governance/views.py's own _is_scoped_admin - a plain
-    Admin only ever sees their own department's invoices; SuperAdmin is
-    unscoped."""
+    Admin only ever sees/manages their own department's invoices;
+    SuperAdmin is unscoped."""
     return user.role == User.Role.ADMIN
 
 
+def _eligible_recipients(request):
+    """Users who can actually be billed: their department has a plan
+    assigned (billing.invoicing.generate_invoice_for_department requires
+    it). Scoped the same way as every other per-department admin action -
+    a plain Admin only sees their own department's users."""
+    qs = User.objects.filter(department__plan__isnull=False).select_related("department", "department__plan")
+    if _is_scoped_admin(request.user):
+        qs = qs.filter(department_id=request.user.department_id)
+    return qs.order_by("department__name", "email")
+
+
 def _invoices_context(request):
-    """Shared by InvoiceListView and toggle_invoice_status's htmx
-    re-render, same reasoning as governance's _models_table_context: the
-    toggle should respect whatever department filter the SuperAdmin was
-    already looking at."""
-    qs = Invoice.objects.select_related("department", "plan").order_by("-issue_date", "-id")
+    """Shared by InvoiceListView and the htmx re-render after a toggle/
+    verify/reject, same reasoning as governance's _models_table_context:
+    every action respects whatever department filter was already showing."""
+    qs = Invoice.objects.select_related("department", "plan", "recipient_user").order_by("-issue_date", "-id")
     departments = None
     selected_department = ""
     if _is_scoped_admin(request.user):
@@ -298,17 +309,14 @@ def _invoices_context(request):
         "invoices": qs,
         "departments": departments,
         "selected_department": selected_department,
-        "billable_departments": Department.objects.filter(plan__isnull=False).order_by("name"),
+        "eligible_recipients": _eligible_recipients(request),
     }
 
 
 class InvoiceListView(AdminRequiredMixin, TemplateView):
-    """Admin sees only their own department's invoices; SuperAdmin sees
-    every department's, filterable by ?department=<id>. Only a SuperAdmin
-    can generate a new invoice or flip Paid/Unpaid (see generate_invoice/
-    toggle_invoice_status below) - the template hides both controls for a
-    plain Admin, same as this app hides every other SuperAdmin-only
-    control from a scoped Admin."""
+    """Admin manages only their own department's invoices (generate, mark
+    paid, verify/reject a submission); SuperAdmin manages every
+    department's, filterable by ?department=<id>."""
 
     template_name = "billing/invoices.html"
 
@@ -316,12 +324,17 @@ class InvoiceListView(AdminRequiredMixin, TemplateView):
         return super().get_context_data(**kwargs) | _invoices_context(self.request)
 
 
-@role_required(User.Role.SUPERADMIN, exact=True)
+@role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def generate_invoice(request):
-    department = get_object_or_404(Department, id=request.POST.get("department_id"))
+    recipient = get_object_or_404(User, id=request.POST.get("recipient_user_id"))
+    if _is_scoped_admin(request.user) and recipient.department_id != request.user.department_id:
+        raise PermissionDenied("That user is outside your department.")
+    if recipient.department_id is None:
+        return redirect("billing:invoices")
+
     try:
-        invoice = generate_invoice_for_department(department)
+        invoice = generate_invoice_for_department(recipient.department, recipient_user=recipient)
     except InvoiceGenerationError as exc:
         django_messages.error(request, str(exc))
     else:
@@ -329,10 +342,21 @@ def generate_invoice(request):
     return redirect("billing:invoices")
 
 
-@role_required(User.Role.SUPERADMIN, exact=True)
+def _get_scoped_invoice_or_403(request, invoice_id):
+    invoice = get_object_or_404(Invoice, id=invoice_id)
+    if _is_scoped_admin(request.user) and invoice.department_id != request.user.department_id:
+        raise PermissionDenied("That invoice is outside your scope.")
+    return invoice
+
+
+@role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def toggle_invoice_status(request, invoice_id):
-    invoice = get_object_or_404(Invoice, id=invoice_id)
+    """A plain manual override (e.g. payment confirmed some other way) -
+    separate from verify_invoice_payment/reject_invoice_payment below,
+    which specifically resolve a user's submitted proof and record who
+    reviewed it."""
+    invoice = _get_scoped_invoice_or_403(request, invoice_id)
     old_status = invoice.status
     invoice.status = Invoice.Status.UNPAID if invoice.status == Invoice.Status.PAID else Invoice.Status.PAID
     invoice.save(update_fields=["status"])
@@ -340,3 +364,59 @@ def toggle_invoice_status(request, invoice_id):
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect("billing:invoices")
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def verify_invoice_payment(request, invoice_id):
+    invoice = _get_scoped_invoice_or_403(request, invoice_id)
+    invoice.verify_payment(request.user)
+    log_action(request.user, "billing.invoice_payment_verified", invoice, new_value=invoice.status)
+    if request.headers.get("HX-Request"):
+        return render(request, "billing/_invoices_table.html", _invoices_context(request))
+    return redirect("billing:invoices")
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def reject_invoice_payment(request, invoice_id):
+    invoice = _get_scoped_invoice_or_403(request, invoice_id)
+    invoice.reject_payment(request.user)
+    log_action(request.user, "billing.invoice_payment_rejected", invoice, new_value=invoice.status)
+    if request.headers.get("HX-Request"):
+        return render(request, "billing/_invoices_table.html", _invoices_context(request))
+    return redirect("billing:invoices")
+
+
+class MyInvoicesView(LoginRequiredMixin, TemplateView):
+    """Any authenticated user's own invoices - visible regardless of role,
+    since who gets billed (recipient_user) is chosen independently of
+    Admin/SuperAdmin/Manager/User (see generate_invoice above)."""
+
+    template_name = "billing/my_invoices.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | {
+            "invoices": Invoice.objects.filter(recipient_user=self.request.user)
+            .select_related("plan", "department")
+            .order_by("-issue_date", "-id"),
+        }
+
+
+@require_http_methods(["POST"])
+def submit_payment_proof(request, invoice_id):
+    if not request.user.is_authenticated:
+        return redirect("accounts:login")
+    invoice = get_object_or_404(Invoice, id=invoice_id, recipient_user=request.user)
+    if invoice.status != Invoice.Status.UNPAID:
+        return redirect("billing:my_invoices")
+
+    transaction_id = request.POST.get("transaction_id", "").strip()
+    proof_image = request.FILES.get("proof_image")
+    if not transaction_id and not proof_image:
+        django_messages.error(request, "Provide a transaction ID or a payment screenshot.")
+        return redirect("billing:my_invoices")
+
+    invoice.submit_payment_proof(transaction_id=transaction_id, proof_image=proof_image)
+    log_action(request.user, "billing.invoice_payment_submitted", invoice, new_value=invoice.status)
+    return redirect("billing:my_invoices")

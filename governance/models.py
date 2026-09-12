@@ -206,17 +206,19 @@ class Plan(models.Model):
     )
     monthly_budget_cap = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    # Team-based billing (billing app): how many accounts.Team rows a
+    # Per-seat billing (billing app): how many accounts.User rows (seats) a
     # Department on this plan gets before paying extra per additional
-    # team - see billing.models.RegionalPrice.extra_team_price for what
-    # that extra team actually costs (region-specific, lives there since
+    # person - see billing.models.RegionalPrice.extra_seat_price for what
+    # that extra seat actually costs (region-specific, lives there since
     # it's a currency amount; this is just the plan-level included count).
-    # Null = unlimited teams included, never billed for extras.
-    teams_included = models.PositiveIntegerField(
+    # Null = unlimited seats included, never billed for extras. Named
+    # seats_included (not teams_included, its original name) - it counts
+    # people in the department, not accounts.Team rows.
+    seats_included = models.PositiveIntegerField(
         null=True,
         blank=True,
         default=1,
-        help_text="Teams a department gets before being billed per extra team. Blank = unlimited.",
+        help_text="Seats (users) a department gets before being billed per extra person. Blank = unlimited.",
     )
 
     # Request-COUNT cap, independent of the token-volume caps above (a user

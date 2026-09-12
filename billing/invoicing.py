@@ -25,8 +25,10 @@ def _quantize(amount):
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def generate_invoice_for_department(department, *, due_in_days=DEFAULT_DUE_IN_DAYS):
-    """Build and save one Invoice for `department`'s current plan. Raises
+def generate_invoice_for_department(department, recipient_user=None, *, due_in_days=DEFAULT_DUE_IN_DAYS):
+    """Build and save one Invoice for `department`'s current plan, billed
+    to `recipient_user` (the person who sees it under "My Invoices" and
+    submits payment proof - see billing.views.generate_invoice). Raises
     InvoiceGenerationError if the department has no plan assigned or that
     plan has no price set for the department's billing region."""
     plan = department.plan
@@ -42,14 +44,15 @@ def generate_invoice_for_department(department, *, due_in_days=DEFAULT_DUE_IN_DA
 
     subtotal = regional_price.price
 
-    # Team-based billing (see governance.models.Plan.teams_included /
-    # RegionalPrice.extra_team_price): a department with more teams than
+    # Per-seat billing (see governance.models.Plan.seats_included /
+    # RegionalPrice.extra_seat_price): a department with more people than
     # its plan includes is charged for each extra one, only if this
-    # region has an extra-team price configured.
-    if plan.teams_included is not None:
-        extra_teams = max(0, department.teams.count() - plan.teams_included)
-        if extra_teams > 0 and regional_price.extra_team_price is not None:
-            subtotal += extra_teams * regional_price.extra_team_price
+    # region has an extra-seat price configured. Counts accounts.User rows
+    # in the department (actual seats/people), not accounts.Team rows.
+    if plan.seats_included is not None:
+        extra_seats = max(0, department.users.count() - plan.seats_included)
+        if extra_seats > 0 and regional_price.extra_seat_price is not None:
+            subtotal += extra_seats * regional_price.extra_seat_price
 
     tax_rate = billing_profile.effective_tax_rate()
     tax_amount = _quantize(subtotal * tax_rate / Decimal("100"))
@@ -58,6 +61,7 @@ def generate_invoice_for_department(department, *, due_in_days=DEFAULT_DUE_IN_DA
     issue_date = timezone.localdate()
     return Invoice.objects.create(
         department=department,
+        recipient_user=recipient_user,
         plan=plan,
         issue_date=issue_date,
         due_date=issue_date + timedelta(days=due_in_days),

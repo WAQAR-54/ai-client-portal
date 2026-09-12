@@ -4,11 +4,12 @@
         <tr>
             <th>{% trans "Invoice #" %}</th>
             {% if departments is not None %}<th>{% trans "Department" %}</th>{% endif %}
+            <th>{% trans "Billed to" %}</th>
             <th>{% trans "Plan" %}</th>
-            <th>{% trans "Issue date" %}</th>
             <th>{% trans "Due date" %}</th>
             <th>{% trans "Total" %}</th>
             <th>{% trans "Status" %}</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -16,26 +17,40 @@
         <tr>
             <td class="mono">{{ invoice.invoice_number }}</td>
             {% if departments is not None %}<td>{{ invoice.department.name }}</td>{% endif %}
+            <td>{{ invoice.recipient_user.email|default:"—" }}</td>
             <td>{{ invoice.plan.name }}</td>
-            <td class="text-muted">{{ invoice.issue_date|date:"Y-m-d" }}</td>
             <td class="text-muted">{{ invoice.due_date|date:"Y-m-d" }}</td>
             <td class="mono">{{ invoice.currency }} {{ invoice.total }}</td>
             <td>
-                {% if departments is not None %}
                 <form method="post" action="{% url 'billing:toggle_invoice_status' invoice_id=invoice.id %}"
                       hx-post="{% url 'billing:toggle_invoice_status' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML">
                     {% csrf_token %}
-                    <button type="submit" class="badge {% if invoice.status == 'paid' %}badge-success{% else %}badge-danger{% endif %}" style="border:none; cursor:pointer;">
+                    <button type="submit" class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="border:none; cursor:pointer;">
                         {{ invoice.get_status_display }}
                     </button>
                 </form>
-                {% else %}
-                <span class="badge {% if invoice.status == 'paid' %}badge-success{% else %}badge-danger{% endif %}">{{ invoice.get_status_display }}</span>
+            </td>
+            <td style="white-space:nowrap;">
+                {% if invoice.status == 'pending_verification' %}
+                {% if invoice.submitted_transaction_id %}<div class="mono text-faint" style="font-size:0.78rem;">{{ invoice.submitted_transaction_id }}</div>{% endif %}
+                {% if invoice.submitted_proof_image %}<a href="{{ invoice.submitted_proof_image.url }}" target="_blank" rel="noopener" style="font-size:0.78rem;">{% trans "View proof" %}</a>{% endif %}
+                <div style="margin-top:0.3rem;">
+                    <form method="post" action="{% url 'billing:verify_invoice_payment' invoice_id=invoice.id %}"
+                          hx-post="{% url 'billing:verify_invoice_payment' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small">{% trans "Approve" %}</button>
+                    </form>
+                    <form method="post" action="{% url 'billing:reject_invoice_payment' invoice_id=invoice.id %}"
+                          hx-post="{% url 'billing:reject_invoice_payment' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-small btn-ghost">{% trans "Reject" %}</button>
+                    </form>
+                </div>
                 {% endif %}
             </td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="{% if departments is not None %}7{% else %}6{% endif %}">{% trans "No invoices yet." %}</td></tr>
+        <tr class="empty-state-row"><td colspan="{% if departments is not None %}8{% else %}7{% endif %}">{% trans "No invoices yet." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

@@ -2,30 +2,28 @@
 {% load i18n %}
 {% block title %}{% trans "Invoices" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
-{% if departments is not None %}
 <div class="card" style="margin-bottom:1.5rem;">
     <h2>{% trans "Generate an invoice" %}</h2>
-    <p>{% trans "Creates one invoice now for the selected department, using its assigned plan and billing region. Automatic monthly generation lands in a later update." %}</p>
+    <p>{% trans "Creates one invoice now for the selected person, using their department's assigned plan and billing region. Automatic monthly generation lands in a later update." %}</p>
     <form method="post" action="{% url 'billing:generate_invoice' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
         {% csrf_token %}
-        <div style="flex:1; min-width:220px;">
-            <label for="department_id">{% trans "Department" %}</label>
-            <select class="input" name="department_id" id="department_id" style="margin:0;">
-                {% for d in billable_departments %}
-                <option value="{{ d.id }}">{{ d.name }} — {{ d.plan.name }}</option>
+        <div style="flex:1; min-width:260px;">
+            <label for="recipient_user_id">{% trans "Bill to" %}</label>
+            <select class="input" name="recipient_user_id" id="recipient_user_id" style="margin:0;">
+                {% for u in eligible_recipients %}
+                <option value="{{ u.id }}">{{ u.email }} — {{ u.department.name }} ({{ u.department.plan.name }})</option>
                 {% empty %}
-                <option value="" disabled>{% trans "No department has a plan assigned yet" %}</option>
+                <option value="" disabled>{% trans "No one in a plan-assigned department yet" %}</option>
                 {% endfor %}
             </select>
         </div>
-        <button type="submit" {% if not billable_departments %}disabled{% endif %}>{% trans "Generate invoice" %}</button>
+        <button type="submit" {% if not eligible_recipients %}disabled{% endif %}>{% trans "Generate invoice" %}</button>
     </form>
 </div>
-{% endif %}
 
 <div class="card scroll-shadow" style="overflow-x:auto;">
     <h1>{% trans "Invoices" %}</h1>
-    <p>{% trans "One row per invoice. Click a status badge to toggle Paid/Unpaid." %}</p>
+    <p>{% trans "One row per invoice. Click a status badge to toggle Paid/Unpaid. Pending submissions get an Approve/Reject action." %}</p>
 
     {% if departments is not None %}
     {% url 'billing:invoices' as filter_url %}

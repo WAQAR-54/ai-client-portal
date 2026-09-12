@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
-from accounts.models import Department, Team, User
+from accounts.models import Department, User
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
 from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
 from billing.regions import REGIONS
@@ -52,7 +52,7 @@ class RegionalPricingViewTests(TestCase):
 
 class PublicPricingViewTests(TestCase):
     def setUp(self):
-        self.plan = Plan.objects.create(name="Public Plan", teams_included=3)
+        self.plan = Plan.objects.create(name="Public Plan", seats_included=3)
         RegionalPrice.objects.create(plan=self.plan, region_code="PK", price=Decimal("8900"))
         RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("29"))
 
@@ -105,15 +105,15 @@ class UpdatePlanRegionalPricingTests(TestCase):
         self.plan = Plan.objects.create(name="Test Plan")
         self.client.login(email="super@example.com", password="pw12345!")
 
-    def test_saves_price_with_comma_stripped_and_teams_included(self):
+    def test_saves_price_with_comma_stripped_and_seats_included(self):
         response = self.client.post(
             reverse("billing:update_plan_regional_pricing", kwargs={"plan_id": self.plan.id}),
-            {"teams_included": "3", "price_PK": "8,900", "price_SA": "299", "price_AE": "299", "price_ROW": "32"},
+            {"seats_included": "3", "price_PK": "8,900", "price_SA": "299", "price_AE": "299", "price_ROW": "32"},
         )
         self.assertRedirects(response, reverse("billing:regional_pricing"))
 
         self.plan.refresh_from_db()
-        self.assertEqual(self.plan.teams_included, 3)
+        self.assertEqual(self.plan.seats_included, 3)
         pk_price = RegionalPrice.objects.get(plan=self.plan, region_code="PK")
         self.assertEqual(pk_price.price, Decimal("8900"))
 
@@ -121,20 +121,20 @@ class UpdatePlanRegionalPricingTests(TestCase):
         RegionalPrice.objects.create(plan=self.plan, region_code="PK", price=Decimal("100"))
         self.client.post(
             reverse("billing:update_plan_regional_pricing", kwargs={"plan_id": self.plan.id}),
-            {"price_PK": "", "teams_included": ""},
+            {"price_PK": "", "seats_included": ""},
         )
         pk_price = RegionalPrice.objects.get(plan=self.plan, region_code="PK")
         self.assertIsNone(pk_price.price)
         self.plan.refresh_from_db()
-        self.assertIsNone(self.plan.teams_included)
+        self.assertIsNone(self.plan.seats_included)
 
-    def test_saves_extra_team_price(self):
+    def test_saves_extra_seat_price(self):
         self.client.post(
             reverse("billing:update_plan_regional_pricing", kwargs={"plan_id": self.plan.id}),
-            {"teams_included": "3", "extra_team_price_PK": "2,500"},
+            {"seats_included": "3", "extra_seat_price_PK": "2,500"},
         )
         pk_price = RegionalPrice.objects.get(plan=self.plan, region_code="PK")
-        self.assertEqual(pk_price.extra_team_price, Decimal("2500"))
+        self.assertEqual(pk_price.extra_seat_price, Decimal("2500"))
 
     def test_non_superadmin_cannot_update(self):
         self.client.logout()
@@ -330,17 +330,21 @@ class EffectiveTaxRateTests(TestCase):
 
 class GenerateInvoiceForDepartmentTests(TestCase):
     """Money math must never be "probably right" - dedicated cases for
-    plan pricing, tax, and the team-based-billing extra-teams line item."""
+    plan pricing, tax, and the per-seat-billing extra-seats line item."""
 
     def setUp(self):
         self.department = Department.objects.create(name="Sales")
-        self.plan = Plan.objects.create(name="Growth", teams_included=2)
+        self.plan = Plan.objects.create(name="Growth", seats_included=2)
         RegionalPrice.objects.create(
-            plan=self.plan, region_code="AE", price=Decimal("100"), extra_team_price=Decimal("20")
+            plan=self.plan, region_code="AE", price=Decimal("100"), extra_seat_price=Decimal("20")
         )
         self.department.plan = self.plan
         self.department.save(update_fields=["plan"])
         DepartmentBillingProfile.objects.create(department=self.department, country="AE")
+
+    def _add_users(self, count):
+        for i in range(count):
+            User.objects.create_user(email=f"seat{i}@example.com", password="pw12345!", department=self.department)
 
     def test_raises_when_no_plan_assigned(self):
         self.department.plan = None
@@ -353,7 +357,7 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         with self.assertRaises(InvoiceGenerationError):
             generate_invoice_for_department(self.department)
 
-    def test_basic_invoice_with_no_tax_no_extra_teams(self):
+    def test_basic_invoice_with_no_tax_no_extra_seats(self):
         DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
         invoice = generate_invoice_for_department(self.department)
         self.assertEqual(invoice.subtotal, Decimal("100"))
@@ -363,6 +367,13 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         self.assertEqual(invoice.status, Invoice.Status.UNPAID)
         self.assertTrue(invoice.invoice_number.startswith("INV-"))
 
+    def test_generated_invoice_is_linked_to_recipient(self):
+        recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        invoice = generate_invoice_for_department(self.department, recipient_user=recipient)
+        self.assertEqual(invoice.recipient_user, recipient)
+
     def test_applies_country_default_tax_rate(self):
         invoice = generate_invoice_for_department(self.department)
         # AE's default rate is 5% (billing/tax_rules.py) on a 100 subtotal.
@@ -370,28 +381,25 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         self.assertEqual(invoice.tax_amount, Decimal("5.00"))
         self.assertEqual(invoice.total, Decimal("105.00"))
 
-    def test_extra_teams_beyond_included_count_are_billed(self):
-        for i in range(4):
-            Team.objects.create(name=f"Team {i}", department=self.department)
+    def test_extra_seats_beyond_included_count_are_billed(self):
+        self._add_users(4)
         DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
         invoice = generate_invoice_for_department(self.department)
-        # 4 teams, 2 included -> 2 extra x 20/team = 40 on top of the 100 base.
+        # 4 people, 2 included -> 2 extra x 20/seat = 40 on top of the 100 base.
         self.assertEqual(invoice.subtotal, Decimal("140"))
         self.assertEqual(invoice.total, Decimal("140"))
 
-    def test_extra_teams_not_billed_when_extra_team_price_unset(self):
-        RegionalPrice.objects.filter(plan=self.plan, region_code="AE").update(extra_team_price=None)
-        for i in range(4):
-            Team.objects.create(name=f"Team {i}", department=self.department)
+    def test_extra_seats_not_billed_when_extra_seat_price_unset(self):
+        RegionalPrice.objects.filter(plan=self.plan, region_code="AE").update(extra_seat_price=None)
+        self._add_users(4)
         DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
         invoice = generate_invoice_for_department(self.department)
         self.assertEqual(invoice.subtotal, Decimal("100"))
 
-    def test_unlimited_teams_included_never_bills_extra(self):
-        self.plan.teams_included = None
-        self.plan.save(update_fields=["teams_included"])
-        for i in range(10):
-            Team.objects.create(name=f"Team {i}", department=self.department)
+    def test_unlimited_seats_included_never_bills_extra(self):
+        self.plan.seats_included = None
+        self.plan.save(update_fields=["seats_included"])
+        self._add_users(10)
         DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
         invoice = generate_invoice_for_department(self.department)
         self.assertEqual(invoice.subtotal, Decimal("100"))
@@ -417,7 +425,7 @@ class InvoiceListViewTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Sales")
         self.other_department = Department.objects.create(name="Support")
-        self.plan = Plan.objects.create(name="Growth", teams_included=None)
+        self.plan = Plan.objects.create(name="Growth", seats_included=None)
         RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
 
         self.superadmin = User.objects.create_user(
@@ -430,16 +438,22 @@ class InvoiceListViewTests(TestCase):
             is_staff=True,
             department=self.department,
         )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.other_recipient = User.objects.create_user(
+            email="otherrecipient@example.com", password="pw12345!", department=self.other_department
+        )
 
         self.department.plan = self.plan
         self.department.save(update_fields=["plan"])
         DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
-        self.invoice = generate_invoice_for_department(self.department)
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
 
         self.other_department.plan = self.plan
         self.other_department.save(update_fields=["plan"])
         DepartmentBillingProfile.objects.create(department=self.other_department, is_tax_exempt=True)
-        self.other_invoice = generate_invoice_for_department(self.other_department)
+        self.other_invoice = generate_invoice_for_department(self.other_department, recipient_user=self.other_recipient)
 
     def test_admin_sees_only_own_department_invoices(self):
         self.client.login(email="admin@example.com", password="pw12345!")
@@ -459,9 +473,18 @@ class InvoiceListViewTests(TestCase):
         self.assertContains(response, self.invoice.invoice_number)
         self.assertNotContains(response, self.other_invoice.invoice_number)
 
-    def test_plain_admin_cannot_toggle_status(self):
+    def test_admin_can_toggle_own_department_invoice_status(self):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id}))
+        self.assertRedirects(response, reverse("billing:invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+
+    def test_admin_cannot_toggle_other_departments_invoice_status(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.other_invoice.id})
+        )
         self.assertEqual(response.status_code, 403)
 
     def test_superadmin_can_toggle_status_plain_post(self):
@@ -494,6 +517,72 @@ class InvoiceListViewTests(TestCase):
 class GenerateInvoiceViewTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        self.other_department.plan = self.plan
+        self.other_department.save(update_fields=["plan"])
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.other_recipient = User.objects.create_user(
+            email="otherrecipient@example.com", password="pw12345!", department=self.other_department
+        )
+
+    def test_superadmin_generates_invoice_for_any_recipient(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:generate_invoice"), {"recipient_user_id": self.other_recipient.id})
+        self.assertRedirects(response, reverse("billing:invoices"))
+        invoice = Invoice.objects.get(department=self.other_department)
+        self.assertEqual(invoice.recipient_user, self.other_recipient)
+
+    def test_admin_generates_invoice_for_own_department_recipient(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:generate_invoice"), {"recipient_user_id": self.recipient.id})
+        self.assertRedirects(response, reverse("billing:invoices"))
+        invoice = Invoice.objects.get(department=self.department)
+        self.assertEqual(invoice.recipient_user, self.recipient)
+
+    def test_admin_cannot_generate_for_other_departments_recipient(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:generate_invoice"), {"recipient_user_id": self.other_recipient.id})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Invoice.objects.filter(department=self.other_department).exists())
+
+    def test_plain_user_cannot_generate(self):
+        User.objects.create_user(email="plain@example.com", password="pw12345!", department=self.department)
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:generate_invoice"), {"recipient_user_id": self.recipient.id})
+        self.assertEqual(response.status_code, 403)
+
+    def test_missing_price_shows_error_message_and_creates_nothing(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        RegionalPrice.objects.filter(plan=self.plan, region_code="ROW").update(price=None)
+        response = self.client.post(
+            reverse("billing:generate_invoice"), {"recipient_user_id": self.recipient.id}, follow=True
+        )
+        self.assertFalse(Invoice.objects.filter(department=self.department).exists())
+        messages = list(response.context["messages"])
+        self.assertTrue(any("no price" in str(m) for m in messages))
+
+
+class InvoicePaymentVerificationTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
         self.plan = Plan.objects.create(name="Growth")
         RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
         self.department.plan = self.plan
@@ -503,27 +592,143 @@ class GenerateInvoiceViewTests(TestCase):
             email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
         )
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
         )
-        self.client.login(email="super@example.com", password="pw12345!")
+        self.other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.other_department,
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+        self.invoice.submit_payment_proof(transaction_id="TXN123")
 
-    def test_generates_invoice_for_department(self):
-        response = self.client.post(reverse("billing:generate_invoice"), {"department_id": self.department.id})
-        self.assertRedirects(response, reverse("billing:invoices"))
-        self.assertTrue(Invoice.objects.filter(department=self.department).exists())
-
-    def test_non_superadmin_cannot_generate(self):
-        self.client.logout()
+    def test_admin_can_approve_own_department_invoice(self):
         self.client.login(email="admin@example.com", password="pw12345!")
-        response = self.client.post(reverse("billing:generate_invoice"), {"department_id": self.department.id})
+        response = self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
+        self.assertRedirects(response, reverse("billing:invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.assertEqual(self.invoice.verified_by, self.admin)
+        self.assertIsNotNone(self.invoice.verified_at)
+
+    def test_admin_can_reject_own_department_invoice(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:reject_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
+        self.assertRedirects(response, reverse("billing:invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.UNPAID)
+        self.assertEqual(self.invoice.verified_by, self.admin)
+
+    def test_admin_cannot_verify_other_departments_invoice(self):
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
         self.assertEqual(response.status_code, 403)
 
-    def test_missing_price_shows_error_message_and_creates_nothing(self):
-        other_department = Department.objects.create(name="No Price Dept", plan=self.plan)
-        RegionalPrice.objects.filter(plan=self.plan, region_code="ROW").update(price=None)
+    def test_superadmin_can_verify_any_invoice_htmx(self):
+        self.client.login(email="super@example.com", password="pw12345!")
         response = self.client.post(
-            reverse("billing:generate_invoice"), {"department_id": other_department.id}, follow=True
+            reverse("billing:verify_invoice_payment", kwargs={"invoice_id": self.invoice.id}),
+            HTTP_HX_REQUEST="true",
         )
-        self.assertFalse(Invoice.objects.filter(department=other_department).exists())
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+
+
+class SubmitPaymentProofTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.other_user = User.objects.create_user(
+            email="other@example.com", password="pw12345!", department=self.department
+        )
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+
+    def test_recipient_can_submit_transaction_id_only(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-999"},
+        )
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PENDING_VERIFICATION)
+        self.assertEqual(self.invoice.submitted_transaction_id, "TXN-999")
+
+    def test_submission_requires_at_least_one_of_transaction_id_or_image(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}), {}, follow=True
+        )
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.UNPAID)
         messages = list(response.context["messages"])
-        self.assertTrue(any("no price" in str(m) for m in messages))
+        self.assertTrue(any("transaction ID" in str(m) for m in messages))
+
+    def test_other_user_cannot_submit_proof_for_someone_elses_invoice(self):
+        self.client.login(email="other@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-999"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_cannot_resubmit_once_pending_verification(self):
+        self.invoice.submit_payment_proof(transaction_id="TXN-FIRST")
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-SECOND"},
+        )
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.submitted_transaction_id, "TXN-FIRST")
+
+
+class MyInvoicesViewTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.other_user = User.objects.create_user(
+            email="other@example.com", password="pw12345!", department=self.department
+        )
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+
+    def test_login_required(self):
+        response = self.client.get(reverse("billing:my_invoices"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_recipient_sees_own_invoice(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:my_invoices"))
+        self.assertContains(response, self.invoice.invoice_number)
+
+    def test_other_user_does_not_see_someone_elses_invoice(self):
+        self.client.login(email="other@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:my_invoices"))
+        self.assertNotContains(response, self.invoice.invoice_number)
