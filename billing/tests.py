@@ -3,9 +3,10 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
-from accounts.models import User
-from billing.models import RegionalPrice
+from accounts.models import Department, User
+from billing.models import DepartmentBillingProfile, OrganizationBillingProfile, RegionalPrice
 from billing.regions import REGIONS
+from billing.tax_rules import tax_rule_for_country
 from governance.models import Plan
 
 
@@ -167,3 +168,160 @@ class AddRegionTests(TestCase):
         response = self.client.post(reverse("billing:add_region"), {"region_code": "ZZ"})
         self.assertRedirects(response, reverse("billing:regional_pricing"))
         self.assertFalse(RegionalPrice.objects.filter(region_code="ZZ").exists())
+
+
+class OrganizationBillingSettingsViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+
+    def test_non_superadmin_cannot_access(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:organization_billing"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_view_and_update(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:organization_billing"))
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            reverse("billing:update_organization_billing"),
+            {
+                "bank_name": "Meezan Bank",
+                "account_title": "AI Client Portal Pvt Ltd",
+                "account_number": "PK00MEZN0000000000000000",
+                "swift_code": "MEZNPKKA",
+                "payment_note": "Include invoice number as reference.",
+            },
+        )
+        self.assertRedirects(response, reverse("billing:organization_billing"))
+        profile = OrganizationBillingProfile.load()
+        self.assertEqual(profile.bank_name, "Meezan Bank")
+        self.assertEqual(profile.swift_code, "MEZNPKKA")
+
+    def test_non_superadmin_cannot_update(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:update_organization_billing"), {"bank_name": "Hacked Bank"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(OrganizationBillingProfile.load().bank_name, "")
+
+
+class DepartmentBillingProfileViewTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.other_department,
+        )
+        self.plain_user = User.objects.create_user(
+            email="user@example.com", password="pw12345!", department=self.department
+        )
+
+    def _url(self, department=None):
+        return reverse(
+            "billing:department_billing_profile", kwargs={"department_id": (department or self.department).id}
+        )
+
+    def test_admin_can_view_own_department(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_cannot_view_other_department(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(self._url(self.other_department))
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_view_any_department(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(self._url()).status_code, 200)
+        self.assertEqual(self.client.get(self._url(self.other_department)).status_code, 200)
+
+    def test_plain_user_cannot_access(self):
+        self.client.login(email="user@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 403)
+
+    def test_visiting_the_page_creates_a_profile_row(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.get(self._url())
+        self.assertTrue(DepartmentBillingProfile.objects.filter(department=self.department).exists())
+
+    def test_update_saves_fields(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        update_url = reverse("billing:update_department_billing_profile", kwargs={"department_id": self.department.id})
+        response = self.client.post(
+            update_url,
+            {
+                "company_name": "Sales Co",
+                "country": "AE",
+                "billing_address": "Dubai, UAE",
+                "tax_id": "TRN-12345",
+                "custom_tax_rate": "",
+                "auto_generate_invoices": "on",
+                "reminder_days_after_due": "7",
+            },
+        )
+        self.assertRedirects(response, self._url())
+        profile = DepartmentBillingProfile.objects.get(department=self.department)
+        self.assertEqual(profile.company_name, "Sales Co")
+        self.assertEqual(profile.country, "AE")
+        self.assertFalse(profile.is_tax_exempt)
+        self.assertEqual(profile.reminder_days_after_due, 7)
+
+    def test_admin_cannot_update_other_department(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        update_url = reverse(
+            "billing:update_department_billing_profile", kwargs={"department_id": self.other_department.id}
+        )
+        response = self.client.post(update_url, {"company_name": "Hijacked"})
+        self.assertEqual(response.status_code, 403)
+
+
+class EffectiveTaxRateTests(TestCase):
+    """Money math must never be "probably right" - dedicated cases for
+    exempt, custom-override, and country-default precedence."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+
+    def test_default_rate_comes_from_country(self):
+        profile = DepartmentBillingProfile.objects.create(department=self.department, country="AE")
+        self.assertEqual(profile.effective_tax_rate(), tax_rule_for_country("AE")["tax_rate"])
+        self.assertEqual(profile.effective_tax_rate(), Decimal("5"))
+
+    def test_unknown_country_falls_back_to_zero(self):
+        profile = DepartmentBillingProfile.objects.create(department=self.department, country="OTHER")
+        self.assertEqual(profile.effective_tax_rate(), Decimal("0"))
+
+    def test_custom_rate_overrides_country_default(self):
+        profile = DepartmentBillingProfile.objects.create(
+            department=self.department, country="AE", custom_tax_rate=Decimal("8.5")
+        )
+        self.assertEqual(profile.effective_tax_rate(), Decimal("8.5"))
+
+    def test_exempt_overrides_everything(self):
+        profile = DepartmentBillingProfile.objects.create(
+            department=self.department, country="AE", custom_tax_rate=Decimal("8.5"), is_tax_exempt=True
+        )
+        self.assertEqual(profile.effective_tax_rate(), Decimal("0"))

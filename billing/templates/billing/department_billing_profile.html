@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% blocktrans with name=department.name %}Billing Profile — {{ name }}{% endblocktrans %}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% blocktrans with name=department.name %}Billing Profile — {{ name }}{% endblocktrans %}</h1>
+    <p>{% trans "Used on this department's invoices — its billing address, tax details, and invoice automation preferences." %}</p>
+
+    <form method="post" action="{% url 'billing:update_department_billing_profile' department_id=department.id %}" class="mt-4">
+        {% csrf_token %}
+        <label for="company_name">{% trans "Company name" %}</label>
+        <input class="input" type="text" name="company_name" id="company_name" value="{{ profile.company_name }}">
+
+        <label for="country">{% trans "Billing country" %}</label>
+        <select class="input" name="country" id="country">
+            <option value="">{% trans "— Select —" %}</option>
+            {% for code, label in country_choices %}
+            <option value="{{ code }}" {% if profile.country == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="billing_address">{% trans "Billing address" %}</label>
+        <textarea class="input" name="billing_address" id="billing_address" rows="3">{{ profile.billing_address }}</textarea>
+
+        <label for="tax_id">{% if tax_rule.tax_id_label != "Tax ID" %}{% blocktrans with label=tax_rule.tax_id_label %}Tax ID ({{ label }}){% endblocktrans %}{% else %}{% trans "Tax ID" %}{% endif %}</label>
+        <input class="input" type="text" name="tax_id" id="tax_id" value="{{ profile.tax_id }}">
+
+        <div class="mt-3" style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="checkbox" name="is_tax_exempt" id="is_tax_exempt" {% if profile.is_tax_exempt %}checked{% endif %}>
+            <label for="is_tax_exempt" style="margin:0;">{% trans "Tax exempt" %}</label>
+        </div>
+
+        <label for="custom_tax_rate">
+            {% if profile.country %}{% blocktrans with label=tax_rule.tax_label rate=tax_rule.tax_rate %}Custom tax rate % (overrides the {{ label }} default of {{ rate }}%){% endblocktrans %}{% else %}{% trans "Custom tax rate % (select a billing country to see its default)" %}{% endif %}
+        </label>
+        <input class="input" type="text" name="custom_tax_rate" id="custom_tax_rate" value="{{ profile.custom_tax_rate|default_if_none:'' }}" placeholder="{% trans 'use country default' %}" style="width:10rem;">
+
+        <div class="mt-3" style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="checkbox" name="auto_generate_invoices" id="auto_generate_invoices" {% if profile.auto_generate_invoices %}checked{% endif %}>
+            <label for="auto_generate_invoices" style="margin:0;">{% trans "Automatically generate monthly invoices" %}</label>
+        </div>
+
+        <label for="reminder_days_after_due">{% trans "Overdue reminder" %}</label>
+        <select class="input" name="reminder_days_after_due" id="reminder_days_after_due">
+            {% for value, label in reminder_choices %}
+            <option value="{{ value }}" {% if profile.reminder_days_after_due == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <button type="submit" class="mt-3">{% trans "Save" %}</button>
+    </form>
+
+    <p class="text-faint mt-4" style="font-size:0.85rem;">
+        {% blocktrans with rate=profile.effective_tax_rate %}Effective tax rate applied to this department's invoices: {{ rate }}%.{% endblocktrans %}
+    </p>
+</div>
+{% endblock %}

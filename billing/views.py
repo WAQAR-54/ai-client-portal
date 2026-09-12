@@ -1,15 +1,18 @@
 from decimal import Decimal, InvalidOperation
 
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
 from accounts.geo import country_code_for_ip
-from accounts.models import User
-from accounts.permissions import SuperAdminRequiredMixin, role_required
-from billing.models import RegionalPrice
+from accounts.models import Department, User
+from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
+from billing.models import DepartmentBillingProfile, OrganizationBillingProfile, RegionalPrice
 from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS, region_for_country
+from billing.tax_rules import country_choices, tax_rule_for_country
 from governance.audit import log_action
+from governance.features import RequireFeatureMixin, require_feature
 from governance.models import Plan
 
 
@@ -136,6 +139,95 @@ class PublicPricingView(TemplateView):
 def _region_dict(region_code):
     code, label, currency, flag = REGION_BY_CODE[region_code]
     return {"code": code, "label": label, "currency": currency, "flag": flag}
+
+
+def _get_scoped_department_or_403(request, department_id):
+    """Same rule as governance/views.py's own _get_scoped_department_or_403
+    (not imported directly - that one is private to that module, and this
+    app already reimplements its small POST-parsing helpers locally rather
+    than reaching across an app boundary for _-prefixed functions): a
+    department's billing profile is content an Admin operates within their
+    own department, not SuperAdmin-only structure."""
+    department = get_object_or_404(Department, id=department_id)
+    if request.user.role == User.Role.ADMIN and department.id != request.user.department_id:
+        raise PermissionDenied("That department is outside your scope.")
+    return department
+
+
+class OrganizationBillingSettingsView(SuperAdminRequiredMixin, TemplateView):
+    """SuperAdmin-only: the operator's own payment/account details, shown
+    on every invoice footer (Milestone 5) - a singleton, same pattern as
+    governance's SecuritySettings/ComplianceSettings pages."""
+
+    template_name = "billing/organization_billing.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | {"profile": OrganizationBillingProfile.load()}
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def update_organization_billing_profile(request):
+    profile = OrganizationBillingProfile.load()
+    profile.bank_name = request.POST.get("bank_name", "").strip()
+    profile.account_title = request.POST.get("account_title", "").strip()
+    profile.account_number = request.POST.get("account_number", "").strip()
+    profile.swift_code = request.POST.get("swift_code", "").strip()
+    profile.payment_note = request.POST.get("payment_note", "").strip()
+    profile.save(update_fields=["bank_name", "account_title", "account_number", "swift_code", "payment_note"])
+    log_action(request.user, "billing.organization_billing_update", profile)
+    return redirect("billing:organization_billing")
+
+
+class DepartmentBillingProfileView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    """A department's own billing/tax profile - reachable by that
+    department's scoped Admin, or by a SuperAdmin for any department (same
+    scoping as governance's SystemPromptView, which this mirrors)."""
+
+    feature_key = "department_settings"
+    template_name = "billing/department_billing_profile.html"
+
+    def get_context_data(self, **kwargs):
+        department = _get_scoped_department_or_403(self.request, kwargs["department_id"])
+        profile, _created = DepartmentBillingProfile.objects.get_or_create(department=department)
+        return super().get_context_data(**kwargs) | {
+            "department": department,
+            "profile": profile,
+            "country_choices": country_choices(),
+            "reminder_choices": DepartmentBillingProfile.ReminderSchedule.choices,
+            "tax_rule": tax_rule_for_country(profile.country),
+        }
+
+
+@role_required(User.Role.ADMIN)
+@require_feature("department_settings")
+@require_http_methods(["POST"])
+def update_department_billing_profile(request, department_id):
+    department = _get_scoped_department_or_403(request, department_id)
+    profile, _created = DepartmentBillingProfile.objects.get_or_create(department=department)
+
+    profile.company_name = request.POST.get("company_name", "").strip()
+    profile.country = request.POST.get("country", "").strip()
+    profile.billing_address = request.POST.get("billing_address", "").strip()
+    profile.tax_id = request.POST.get("tax_id", "").strip()
+    profile.is_tax_exempt = request.POST.get("is_tax_exempt") == "on"
+    profile.custom_tax_rate = _decimal_or_none(request.POST.get("custom_tax_rate"))
+    profile.auto_generate_invoices = request.POST.get("auto_generate_invoices") == "on"
+    profile.reminder_days_after_due = _int_or_none(request.POST.get("reminder_days_after_due")) or 0
+    profile.save(
+        update_fields=[
+            "company_name",
+            "country",
+            "billing_address",
+            "tax_id",
+            "is_tax_exempt",
+            "custom_tax_rate",
+            "auto_generate_invoices",
+            "reminder_days_after_due",
+        ]
+    )
+    log_action(request.user, "billing.department_billing_profile_update", profile)
+    return redirect("billing:department_billing_profile", department_id=department.id)
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)

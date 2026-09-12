@@ -93,10 +93,14 @@
                         {% trans "Departments" %}
                     </a>
                     {% elif user.department_id and user|has_feature:"department_settings" %}
-                    {# A scoped Admin can't see the Departments list (SuperAdmin-only structure management), but still needs to reach their OWN department's content - system prompt and team templates. #}
+                    {# A scoped Admin can't see the Departments list (SuperAdmin-only structure management), but still needs to reach their OWN department's content - system prompt, team templates, and its billing profile. #}
                     <a href="{% url 'governance:system_prompt' department_id=user.department_id %}" class="{% if request.resolver_match.url_name == "system_prompt" or request.resolver_match.url_name == "department_templates" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
                         {% trans "Department settings" %}
+                    </a>
+                    <a href="{% url 'billing:department_billing_profile' department_id=user.department_id %}" class="{% if request.resolver_match.url_name == "department_billing_profile" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        {% trans "Billing profile" %}
                     </a>
                     {% endif %}
 
@@ -161,9 +165,13 @@
 
                     {% if user.is_superadmin %}
                     <div class="nav-group-label">{% trans "Billing" %}</div>
-                    <a href="{% url 'billing:regional_pricing' %}" class="{% if request.resolver_match.app_name == "billing" %}active{% endif %}">
+                    <a href="{% url 'billing:regional_pricing' %}" class="{% if request.resolver_match.url_name == "regional_pricing" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                         {% trans "Regional Pricing" %}
+                    </a>
+                    <a href="{% url 'billing:organization_billing' %}" class="{% if request.resolver_match.url_name == "organization_billing" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        {% trans "Payment Details" %}
                     </a>
                     {% endif %}
 

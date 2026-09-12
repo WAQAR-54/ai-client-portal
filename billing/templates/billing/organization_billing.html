@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Payment Details" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>{% trans "Payment Details" %}</h1>
+    <p>{% trans "Shown on the footer of every invoice sent to a client department — this is your own organization's account information, not a client's." %}</p>
+
+    <form method="post" action="{% url 'billing:update_organization_billing' %}" class="mt-4">
+        {% csrf_token %}
+        <label for="bank_name">{% trans "Bank name" %}</label>
+        <input class="input" type="text" name="bank_name" id="bank_name" value="{{ profile.bank_name }}">
+
+        <label for="account_title">{% trans "Account title" %}</label>
+        <input class="input" type="text" name="account_title" id="account_title" value="{{ profile.account_title }}">
+
+        <label for="account_number">{% trans "Account number / IBAN" %}</label>
+        <input class="input" type="text" name="account_number" id="account_number" value="{{ profile.account_number }}">
+
+        <label for="swift_code">{% trans "SWIFT / BIC code" %}</label>
+        <input class="input" type="text" name="swift_code" id="swift_code" value="{{ profile.swift_code }}">
+
+        <label for="payment_note">{% trans "Payment note" %}</label>
+        <textarea class="input" name="payment_note" id="payment_note" rows="3" placeholder="{% trans 'e.g. Please include the invoice number as payment reference.' %}">{{ profile.payment_note }}</textarea>
+
+        <button type="submit" class="mt-3">{% trans "Save" %}</button>
+    </form>
+</div>
+{% endblock %}
