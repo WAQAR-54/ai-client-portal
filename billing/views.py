@@ -1,12 +1,10 @@
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.contrib import messages as django_messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
@@ -14,6 +12,7 @@ from django.views.generic import TemplateView
 from accounts.geo import country_code_for_ip
 from accounts.models import Department, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
+from billing.emails import send_invoice_email, share_url_for_invoice
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_user
 from billing.models import (
     DepartmentBillingProfile,
@@ -29,7 +28,6 @@ from billing.tax_rules import country_choices, tax_rule_for_country
 from governance.audit import log_action
 from governance.features import RequireFeatureMixin, require_feature
 from governance.models import Plan, SiteBranding
-from notifications.emailing import send_tracked_email
 
 
 def _decimal_or_none(raw):
@@ -314,6 +312,19 @@ def _is_scoped_admin(user):
     return user.role == User.Role.ADMIN
 
 
+def _invoice_managers(invoice):
+    """Everyone who can actually act on this invoice (approve/reject a
+    submission, mark it paid) - every SuperAdmin, plus the invoice's own
+    department's Admin(s) if it has one. A department-less invoice is
+    SuperAdmin-only territory (see generate_invoice's own scoping), so no
+    Admin is added for those. Used to notify the right people when a
+    client submits payment proof (see submit_payment_proof below)."""
+    managers = list(User.objects.filter(role=User.Role.SUPERADMIN, is_active=True))
+    if invoice.department_id is not None:
+        managers += list(User.objects.filter(role=User.Role.ADMIN, department_id=invoice.department_id, is_active=True))
+    return managers
+
+
 def _eligible_recipients(request):
     """Every user who could be billed - department-optional (Milestone 6:
     billing.invoicing.generate_invoice_for_user bills a department-less
@@ -469,16 +480,6 @@ def _get_scoped_invoice_or_403(request, invoice_id):
     return invoice
 
 
-def _share_url(invoice):
-    """Absolute URL for the no-login public invoice view - built from
-    settings.SITE_URL (same convention as notifications/emailing.py's own
-    tracking-pixel URL) rather than request.build_absolute_uri(), which
-    depends on the request's Host header passing ALLOWED_HOSTS validation.
-    SITE_URL is one fixed, explicitly-configured value, so this can never
-    fail from a request-side quirk (a proxy, a bare IP, a missing header)."""
-    return settings.SITE_URL.rstrip("/") + reverse("billing:public_invoice", kwargs={"token": invoice.share_token})
-
-
 def _safe_next_url(request, default):
     """`next` is only ever one of this app's own invoice URLs (the detail
     page posting back to itself) - never taken as an open redirect target,
@@ -563,6 +564,21 @@ def submit_payment_proof(request, invoice_id):
 
     invoice.submit_payment_proof(transaction_id=transaction_id, proof_image=proof_image)
     log_action(request.user, "billing.invoice_payment_submitted", invoice, new_value=invoice.status)
+
+    from notifications.models import NotificationType
+    from notifications.notify import notify
+
+    for manager in _invoice_managers(invoice):
+        notify(
+            manager,
+            NotificationType.INVOICE_PAYMENT_SUBMITTED,
+            title=f"Payment submitted for invoice {invoice.invoice_number}",
+            body=(
+                f"{request.user.email} submitted payment proof for {invoice.currency} {invoice.total} "
+                f"- review it in Billing, Invoices."
+            ),
+            metadata={"invoice_id": invoice.id},
+        )
     return redirect(default_redirect)
 
 
@@ -608,7 +624,7 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
             "can_manage": invoice.recipient_user_id != self.request.user.id
             and self.request.user.role in (User.Role.ADMIN, User.Role.SUPERADMIN),
             "organization_profile": OrganizationBillingProfile.load(),
-            "share_url": _share_url(invoice),
+            "share_url": share_url_for_invoice(invoice),
         }
 
 
@@ -672,10 +688,10 @@ def public_invoice_view(request, token):
 @require_http_methods(["POST"])
 def email_invoice_to_client(request, invoice_id):
     """Emails the recipient the same no-login share link a SuperAdmin/Admin
-    can also copy manually from the invoice detail page - reuses the
-    established send_tracked_email path (notifications/emailing.py) so
-    this shows up in the admin Email Logs page like every other email the
-    app sends."""
+    can also copy manually from the invoice detail page - reuses
+    billing.emails.send_invoice_email, the same builder billing.tasks'
+    overdue-reminder sweep uses for its own email, so there is exactly
+    one implementation of "the invoice email" either way."""
     if not request.user.is_authenticated:
         return redirect("accounts:login")
     invoice = get_object_or_404(Invoice.objects.select_related("recipient_user"), id=invoice_id)
@@ -689,31 +705,8 @@ def email_invoice_to_client(request, invoice_id):
     # next_invoice_id), but goes back to the detail page when it does
     # (the detail page's own "Email to client" button always passes it).
     default_redirect = _safe_next_url(request, reverse("billing:invoices"))
-    if invoice.recipient_user_id is None or not invoice.recipient_user.email:
-        django_messages.error(request, "This invoice has no recipient email to send to.")
-        return redirect(default_redirect)
 
-    share_url = _share_url(invoice)
-    site_branding = SiteBranding.load()
-    subject = f"{site_branding.site_name}: Invoice {invoice.invoice_number}"
-    text_body = (
-        f"Your invoice {invoice.invoice_number} ({invoice.currency} {invoice.total}), due {invoice.due_date}, "
-        f"is attached as a PDF.\n\nView it online (no login needed): {share_url}"
-    )
-    html_body = render_to_string(
-        "billing/email_invoice.html",
-        {
-            "invoice": invoice,
-            "site_branding": site_branding,
-            "logo_url": settings.SITE_URL.rstrip("/") + site_branding.logo.url if site_branding.logo else None,
-            "share_url": share_url,
-        },
-    )
-    pdf_bytes = render_invoice_pdf(invoice)
-    attachments = [(f"{invoice.invoice_number}.pdf", pdf_bytes, "application/pdf")]
-    success, error = send_tracked_email(
-        invoice.recipient_user.email, subject, text_body, html_body=html_body, attachments=attachments
-    )
+    success, error = send_invoice_email(invoice)
     if success:
         django_messages.success(request, f"Invoice emailed to {invoice.recipient_user.email}.")
         log_action(request.user, "billing.invoice_emailed", invoice, new_value=invoice.recipient_user.email)

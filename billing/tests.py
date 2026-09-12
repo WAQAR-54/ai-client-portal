@@ -18,7 +18,7 @@ from billing.models import (
 )
 from billing.pdf import render_invoice_pdf
 from billing.regions import REGIONS
-from billing.tasks import sweep_due_invoices
+from billing.tasks import send_overdue_reminders, sweep_due_invoices
 from billing.tax_rules import tax_rule_for_country
 from governance.models import Plan
 
@@ -948,6 +948,70 @@ class SubmitPaymentProofTests(TestCase):
         self.assertEqual(self.invoice.submitted_transaction_id, "TXN-FIRST")
 
 
+class PaymentSubmittedNotificationTests(TestCase):
+    """submit_payment_proof notifies whoever can actually act on the
+    invoice (billing.views._invoice_managers) - every SuperAdmin, plus
+    the invoice's own department's Admin(s) if it has one."""
+
+    def setUp(self):
+        from notifications.models import Notification, NotificationType
+
+        self.Notification = Notification
+        self.NotificationType = NotificationType
+
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.own_admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.other_department,
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+
+    def test_notifies_superadmin_and_own_department_admin_not_others(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-1"},
+        )
+        notified_users = set(self.Notification.objects.values_list("user_id", flat=True))
+        self.assertIn(self.superadmin.id, notified_users)
+        self.assertIn(self.own_admin.id, notified_users)
+        self.assertNotIn(self.other_admin.id, notified_users)
+
+    def test_department_less_invoice_notifies_only_superadmins(self):
+        lone_user = User.objects.create_user(email="lone@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(lone_user, plan=self.plan)
+        self.client.login(email="lone@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": invoice.id}), {"transaction_id": "TXN-2"}
+        )
+        notified_users = set(self.Notification.objects.values_list("user_id", flat=True))
+        self.assertIn(self.superadmin.id, notified_users)
+        self.assertNotIn(self.own_admin.id, notified_users)
+
+
 class MyInvoicesViewTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Sales")
@@ -1374,6 +1438,90 @@ class SweepDueInvoicesTests(TestCase):
         result = sweep_due_invoices()
         self.assertEqual(result["generated"], 1)
         self.assertEqual(result["no_price"], 1)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class SendOverdueRemindersTests(TestCase):
+    """billing.tasks.send_overdue_reminders - the once-per-invoice dunning
+    nudge, independent of (and never a precondition for) the actual
+    chat-access block in billing.access.has_overdue_unpaid_invoice."""
+
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Growth")
+        self.user = User.objects.create_user(email="client@example.com", password="pw12345!")
+        mail.outbox = []
+
+    def _make_invoice(self, due_date, department=None, status=Invoice.Status.UNPAID):
+        return Invoice.objects.create(
+            department=department,
+            recipient_user=self.user,
+            plan=self.plan,
+            issue_date=due_date - timedelta(days=14),
+            due_date=due_date,
+            currency="USD",
+            subtotal=Decimal("50"),
+            tax_rate=Decimal("0"),
+            tax_amount=Decimal("0"),
+            total=Decimal("50"),
+            status=status,
+        )
+
+    def test_department_less_invoice_reminded_after_default_3_days(self):
+        today = timezone.localdate()
+        invoice = self._make_invoice(due_date=today - timedelta(days=3))
+        result = send_overdue_reminders()
+        self.assertEqual(result["sent"], 1)
+        invoice.refresh_from_db()
+        self.assertIsNotNone(invoice.reminder_sent_at)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(invoice.invoice_number, mail.outbox[0].subject)
+
+    def test_not_yet_reminded_before_the_threshold(self):
+        today = timezone.localdate()
+        self._make_invoice(due_date=today - timedelta(days=2))
+        result = send_overdue_reminders()
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_never_reminds_twice_for_the_same_invoice(self):
+        today = timezone.localdate()
+        self._make_invoice(due_date=today - timedelta(days=3))
+        send_overdue_reminders()
+        result2 = send_overdue_reminders()
+        self.assertEqual(result2["sent"], 0)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_paid_invoice_is_never_reminded(self):
+        today = timezone.localdate()
+        self._make_invoice(due_date=today - timedelta(days=5), status=Invoice.Status.PAID)
+        result = send_overdue_reminders()
+        self.assertEqual(result["sent"], 0)
+
+    def test_department_with_no_reminder_configured_is_skipped(self):
+        department = Department.objects.create(name="Sales")
+        self.user.department = department
+        self.user.save(update_fields=["department"])
+        # DepartmentBillingProfile.reminder_days_after_due defaults to
+        # NONE (0) - most departments are opted out until an Admin turns
+        # this on from the Automated Invoicing card.
+        DepartmentBillingProfile.objects.create(department=department)
+        today = timezone.localdate()
+        self._make_invoice(due_date=today - timedelta(days=10), department=department)
+        result = send_overdue_reminders()
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["skipped_no_reminder"], 1)
+
+    def test_department_with_reminder_configured_is_reminded(self):
+        department = Department.objects.create(name="Sales")
+        self.user.department = department
+        self.user.save(update_fields=["department"])
+        DepartmentBillingProfile.objects.create(
+            department=department, reminder_days_after_due=DepartmentBillingProfile.ReminderSchedule.DAYS_7
+        )
+        today = timezone.localdate()
+        self._make_invoice(due_date=today - timedelta(days=7), department=department)
+        result = send_overdue_reminders()
+        self.assertEqual(result["sent"], 1)
 
 
 class OverdueChatAccessTests(TestCase):

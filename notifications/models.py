@@ -22,6 +22,7 @@ class NotificationType(models.TextChoices):
     ADMIN_CHANGE = "admin_change", "Admin changed your account"
     MODEL_SYNC_AVAILABLE = "model_sync_available", "New models available to sync"
     ACCOUNT_CREATED = "account_created", "Account created"
+    INVOICE_PAYMENT_SUBMITTED = "invoice_payment_submitted", "Invoice payment submitted"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see
@@ -36,6 +37,7 @@ EMAIL_TOGGLE_LABELS = [
     (NotificationType.ADMIN_CHANGE, "An admin changed your role/limits"),
     (NotificationType.MODEL_SYNC_AVAILABLE, "New AI models are available to sync"),
     (NotificationType.ACCOUNT_CREATED, "Your account was created"),
+    (NotificationType.INVOICE_PAYMENT_SUBMITTED, "A client submitted invoice payment proof"),
 ]
 
 
@@ -79,6 +81,7 @@ class NotificationPreference(models.Model):
     email_admin_change = models.BooleanField(default=True)
     email_model_sync_available = models.BooleanField(default=True)
     email_account_created = models.BooleanField(default=True)
+    email_invoice_payment_submitted = models.BooleanField(default=True)
 
     def wants_email(self, notification_type):
         return getattr(self, f"email_{notification_type}", True)

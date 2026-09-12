@@ -219,6 +219,13 @@ class Invoice(models.Model):
     # save() below guarantees every invoice has one from here on.
     share_token = models.CharField(max_length=48, unique=True, null=True, blank=True, editable=False)
 
+    # Set once billing.tasks.send_overdue_reminders has emailed the
+    # recipient about this invoice being overdue - the guard against
+    # re-sending the same reminder on a later (or rerun) sweep. A one-shot
+    # nudge, not a full dunning sequence: a since-rejected submission
+    # doesn't get reminded again even if still overdue afterward.
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-issue_date", "-id"]
 
