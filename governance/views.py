@@ -2165,6 +2165,7 @@ class DepartmentListView(FilterableListMixin, SuperAdminRequiredMixin, ListView)
         return super().get_context_data(**kwargs) | {
             "search": self.request.GET.get("search", ""),
             "total_count": Department.objects.count(),
+            "plans": Plan.objects.order_by("-is_default", "name"),
         }
 
 
@@ -2188,19 +2189,21 @@ def add_department(request):
 @require_http_methods(["POST"])
 def update_department(request, department_id):
     department = get_object_or_404(Department, id=department_id)
-    old_value = f"name={department.name} cap={department.monthly_budget_cap}"
+    old_value = f"name={department.name} cap={department.monthly_budget_cap} plan={department.plan_id}"
     new_name = request.POST.get("name", "").strip()
     if not new_name:
         return HttpResponseBadRequest("Name is required")
     department.name = new_name
     department.monthly_budget_cap = _parse_decimal(request.POST.get("monthly_budget_cap"))
-    department.save(update_fields=["name", "monthly_budget_cap"])
+    plan_id = request.POST.get("plan_id", "").strip()
+    department.plan_id = int(plan_id) if plan_id.isdigit() else None
+    department.save(update_fields=["name", "monthly_budget_cap", "plan_id"])
     log_action(
         request.user,
         "department.update",
         department,
         old_value=old_value,
-        new_value=f"name={department.name} cap={department.monthly_budget_cap}",
+        new_value=f"name={department.name} cap={department.monthly_budget_cap} plan={department.plan_id}",
     )
     return redirect("governance:departments")
 

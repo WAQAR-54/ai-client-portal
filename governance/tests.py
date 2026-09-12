@@ -883,6 +883,24 @@ class DepartmentManagementTests(TestCase):
         self.assertEqual(department.name, "New Name")
         self.assertEqual(str(department.monthly_budget_cap), "250.50")
 
+    def test_update_department_sets_and_clears_subscription_plan(self):
+        department = Department.objects.create(name="Sales")
+        plan = Plan.objects.create(name="Enterprise")
+
+        self.client.post(
+            reverse("governance:update_department", kwargs={"department_id": department.id}),
+            {"name": "Sales", "plan_id": str(plan.id)},
+        )
+        department.refresh_from_db()
+        self.assertEqual(department.plan_id, plan.id)
+
+        self.client.post(
+            reverse("governance:update_department", kwargs={"department_id": department.id}),
+            {"name": "Sales", "plan_id": ""},
+        )
+        department.refresh_from_db()
+        self.assertIsNone(department.plan_id)
+
     def test_delete_department(self):
         department = Department.objects.create(name="Temp")
         response = self.client.post(reverse("governance:delete_department", kwargs={"department_id": department.id}))

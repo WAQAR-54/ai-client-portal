@@ -42,6 +42,20 @@ class Department(models.Model):
     retention_period = models.CharField(max_length=10, choices=RetentionPeriod.choices, default=RetentionPeriod.FOREVER)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # The subscription tier this department AS A WHOLE is billed for (see
+    # the billing app) - deliberately separate from an individual User's
+    # own governance.PlanAssignment, which governs that one person's
+    # AI-usage limits and can differ from teammates in the same department.
+    # String reference ("governance.Plan") avoids a circular import:
+    # governance/models.py already imports Department from here.
+    plan = models.ForeignKey(
+        "governance.Plan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="departments",
+    )
+
     class Meta:
         ordering = ["name"]
 

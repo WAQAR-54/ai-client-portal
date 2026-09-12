@@ -29,4 +29,7 @@ urlpatterns = [
         views.update_department_billing_profile,
         name="update_department_billing_profile",
     ),
+    path("invoices/", views.InvoiceListView.as_view(), name="invoices"),
+    path("invoices/generate/", views.generate_invoice, name="generate_invoice"),
+    path("invoices/<int:invoice_id>/toggle-status/", views.toggle_invoice_status, name="toggle_invoice_status"),
 ]

@@ -1,14 +1,16 @@
 from decimal import Decimal, InvalidOperation
 
+from django.contrib import messages as django_messages
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
 from accounts.geo import country_code_for_ip
 from accounts.models import Department, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
-from billing.models import DepartmentBillingProfile, OrganizationBillingProfile, RegionalPrice
+from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
+from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
 from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS, region_for_country
 from billing.tax_rules import country_choices, tax_rule_for_country
 from governance.audit import log_action
@@ -268,3 +270,73 @@ def add_region(request):
             ]
         )
     return redirect("billing:regional_pricing")
+
+
+def _is_scoped_admin(user):
+    """Same rule as governance/views.py's own _is_scoped_admin - a plain
+    Admin only ever sees their own department's invoices; SuperAdmin is
+    unscoped."""
+    return user.role == User.Role.ADMIN
+
+
+def _invoices_context(request):
+    """Shared by InvoiceListView and toggle_invoice_status's htmx
+    re-render, same reasoning as governance's _models_table_context: the
+    toggle should respect whatever department filter the SuperAdmin was
+    already looking at."""
+    qs = Invoice.objects.select_related("department", "plan").order_by("-issue_date", "-id")
+    departments = None
+    selected_department = ""
+    if _is_scoped_admin(request.user):
+        qs = qs.filter(department_id=request.user.department_id)
+    else:
+        departments = Department.objects.order_by("name")
+        selected_department = request.GET.get("department", "").strip()
+        if selected_department.isdigit():
+            qs = qs.filter(department_id=int(selected_department))
+    return {
+        "invoices": qs,
+        "departments": departments,
+        "selected_department": selected_department,
+        "billable_departments": Department.objects.filter(plan__isnull=False).order_by("name"),
+    }
+
+
+class InvoiceListView(AdminRequiredMixin, TemplateView):
+    """Admin sees only their own department's invoices; SuperAdmin sees
+    every department's, filterable by ?department=<id>. Only a SuperAdmin
+    can generate a new invoice or flip Paid/Unpaid (see generate_invoice/
+    toggle_invoice_status below) - the template hides both controls for a
+    plain Admin, same as this app hides every other SuperAdmin-only
+    control from a scoped Admin."""
+
+    template_name = "billing/invoices.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | _invoices_context(self.request)
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def generate_invoice(request):
+    department = get_object_or_404(Department, id=request.POST.get("department_id"))
+    try:
+        invoice = generate_invoice_for_department(department)
+    except InvoiceGenerationError as exc:
+        django_messages.error(request, str(exc))
+    else:
+        log_action(request.user, "billing.invoice_generate", invoice, new_value=invoice.invoice_number)
+    return redirect("billing:invoices")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def toggle_invoice_status(request, invoice_id):
+    invoice = get_object_or_404(Invoice, id=invoice_id)
+    old_status = invoice.status
+    invoice.status = Invoice.Status.UNPAID if invoice.status == Invoice.Status.PAID else Invoice.Status.PAID
+    invoice.save(update_fields=["status"])
+    log_action(request.user, "billing.invoice_status_toggle", invoice, old_value=old_status, new_value=invoice.status)
+    if request.headers.get("HX-Request"):
+        return render(request, "billing/_invoices_table.html", _invoices_context(request))
+    return redirect("billing:invoices")

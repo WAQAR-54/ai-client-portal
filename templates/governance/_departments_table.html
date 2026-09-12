@@ -1,7 +1,7 @@
 {% load i18n %}
 <div class="filter-result-count">{% blocktrans count counter=departments|length %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> department{% plural %}Showing <span class="mono">{{ counter }}</span> of <span class="mono">{{ total_count }}</span> departments{% endblocktrans %}</div>
 <table class="data">
-    <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Monthly budget cap" %}</th><th></th></tr></thead>
+    <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Monthly budget cap" %}</th><th>{% trans "Subscription plan" %}</th><th></th></tr></thead>
     <tbody>
         {% for d in departments %}
         <tr>
@@ -10,6 +10,14 @@
             </td>
             <td>
                 <input class="input" style="margin:0; width:130px;" type="number" step="0.01" name="monthly_budget_cap" value="{{ d.monthly_budget_cap|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" form="dept-form-{{ d.id }}">
+            </td>
+            <td>
+                <select class="input" style="margin:0;" name="plan_id" form="dept-form-{{ d.id }}">
+                    <option value="">{% trans "— None —" %}</option>
+                    {% for p in plans %}
+                    <option value="{{ p.id }}" {% if d.plan_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
             </td>
             <td style="white-space:nowrap;">
                 <form id="dept-form-{{ d.id }}" method="post" action="{% url 'governance:update_department' department_id=d.id %}" style="display:none;">{% csrf_token %}</form>
@@ -24,7 +32,7 @@
             </td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="3">{% trans "No departments match your search." %}</td></tr>
+        <tr class="empty-state-row"><td colspan="4">{% trans "No departments match your search." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

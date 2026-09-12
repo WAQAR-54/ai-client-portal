@@ -3,8 +3,9 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
-from accounts.models import Department, User
-from billing.models import DepartmentBillingProfile, OrganizationBillingProfile, RegionalPrice
+from accounts.models import Department, Team, User
+from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
+from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
 from billing.regions import REGIONS
 from billing.tax_rules import tax_rule_for_country
 from governance.models import Plan
@@ -325,3 +326,204 @@ class EffectiveTaxRateTests(TestCase):
             department=self.department, country="AE", custom_tax_rate=Decimal("8.5"), is_tax_exempt=True
         )
         self.assertEqual(profile.effective_tax_rate(), Decimal("0"))
+
+
+class GenerateInvoiceForDepartmentTests(TestCase):
+    """Money math must never be "probably right" - dedicated cases for
+    plan pricing, tax, and the team-based-billing extra-teams line item."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth", teams_included=2)
+        RegionalPrice.objects.create(
+            plan=self.plan, region_code="AE", price=Decimal("100"), extra_team_price=Decimal("20")
+        )
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, country="AE")
+
+    def test_raises_when_no_plan_assigned(self):
+        self.department.plan = None
+        self.department.save(update_fields=["plan"])
+        with self.assertRaises(InvoiceGenerationError):
+            generate_invoice_for_department(self.department)
+
+    def test_raises_when_plan_has_no_price_for_region(self):
+        RegionalPrice.objects.filter(plan=self.plan, region_code="AE").update(price=None)
+        with self.assertRaises(InvoiceGenerationError):
+            generate_invoice_for_department(self.department)
+
+    def test_basic_invoice_with_no_tax_no_extra_teams(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department)
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+        self.assertEqual(invoice.tax_amount, Decimal("0.00"))
+        self.assertEqual(invoice.total, Decimal("100"))
+        self.assertEqual(invoice.currency, "AED")
+        self.assertEqual(invoice.status, Invoice.Status.UNPAID)
+        self.assertTrue(invoice.invoice_number.startswith("INV-"))
+
+    def test_applies_country_default_tax_rate(self):
+        invoice = generate_invoice_for_department(self.department)
+        # AE's default rate is 5% (billing/tax_rules.py) on a 100 subtotal.
+        self.assertEqual(invoice.tax_rate, Decimal("5"))
+        self.assertEqual(invoice.tax_amount, Decimal("5.00"))
+        self.assertEqual(invoice.total, Decimal("105.00"))
+
+    def test_extra_teams_beyond_included_count_are_billed(self):
+        for i in range(4):
+            Team.objects.create(name=f"Team {i}", department=self.department)
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department)
+        # 4 teams, 2 included -> 2 extra x 20/team = 40 on top of the 100 base.
+        self.assertEqual(invoice.subtotal, Decimal("140"))
+        self.assertEqual(invoice.total, Decimal("140"))
+
+    def test_extra_teams_not_billed_when_extra_team_price_unset(self):
+        RegionalPrice.objects.filter(plan=self.plan, region_code="AE").update(extra_team_price=None)
+        for i in range(4):
+            Team.objects.create(name=f"Team {i}", department=self.department)
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department)
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+
+    def test_unlimited_teams_included_never_bills_extra(self):
+        self.plan.teams_included = None
+        self.plan.save(update_fields=["teams_included"])
+        for i in range(10):
+            Team.objects.create(name=f"Team {i}", department=self.department)
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department)
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+
+    def test_invoice_numbers_increment_per_year(self):
+        first = generate_invoice_for_department(self.department)
+        second_department = Department.objects.create(name="Support", plan=self.plan)
+        DepartmentBillingProfile.objects.create(department=second_department, country="AE")
+        second = generate_invoice_for_department(second_department)
+        first_seq = int(first.invoice_number.rsplit("-", 1)[-1])
+        second_seq = int(second.invoice_number.rsplit("-", 1)[-1])
+        self.assertEqual(second_seq, first_seq + 1)
+
+    def test_falls_back_to_row_when_no_billing_country_set(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(country="")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("30"))
+        invoice = generate_invoice_for_department(self.department)
+        self.assertEqual(invoice.currency, "USD")
+        self.assertEqual(invoice.subtotal, Decimal("30"))
+
+
+class InvoiceListViewTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.plan = Plan.objects.create(name="Growth", teams_included=None)
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+        self.invoice = generate_invoice_for_department(self.department)
+
+        self.other_department.plan = self.plan
+        self.other_department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.other_department, is_tax_exempt=True)
+        self.other_invoice = generate_invoice_for_department(self.other_department)
+
+    def test_admin_sees_only_own_department_invoices(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, self.invoice.invoice_number)
+        self.assertNotContains(response, self.other_invoice.invoice_number)
+
+    def test_superadmin_sees_all_invoices(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, self.invoice.invoice_number)
+        self.assertContains(response, self.other_invoice.invoice_number)
+
+    def test_superadmin_can_filter_by_department(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"), {"department": self.department.id})
+        self.assertContains(response, self.invoice.invoice_number)
+        self.assertNotContains(response, self.other_invoice.invoice_number)
+
+    def test_plain_admin_cannot_toggle_status(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_toggle_status_plain_post(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id}))
+        self.assertRedirects(response, reverse("billing:invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+
+    def test_superadmin_can_toggle_status_htmx(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id}),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.assertContains(response, self.invoice.invoice_number)
+
+    def test_toggle_flips_back_to_unpaid(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        url = reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id})
+        self.client.post(url)
+        self.client.post(url)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.UNPAID)
+
+
+class GenerateInvoiceViewTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+
+    def test_generates_invoice_for_department(self):
+        response = self.client.post(reverse("billing:generate_invoice"), {"department_id": self.department.id})
+        self.assertRedirects(response, reverse("billing:invoices"))
+        self.assertTrue(Invoice.objects.filter(department=self.department).exists())
+
+    def test_non_superadmin_cannot_generate(self):
+        self.client.logout()
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:generate_invoice"), {"department_id": self.department.id})
+        self.assertEqual(response.status_code, 403)
+
+    def test_missing_price_shows_error_message_and_creates_nothing(self):
+        other_department = Department.objects.create(name="No Price Dept", plan=self.plan)
+        RegionalPrice.objects.filter(plan=self.plan, region_code="ROW").update(price=None)
+        response = self.client.post(
+            reverse("billing:generate_invoice"), {"department_id": other_department.id}, follow=True
+        )
+        self.assertFalse(Invoice.objects.filter(department=other_department).exists())
+        messages = list(response.context["messages"])
+        self.assertTrue(any("no price" in str(m) for m in messages))
