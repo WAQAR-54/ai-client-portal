@@ -21,7 +21,7 @@
     <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="font-size:0.85rem;">
         {{ invoice.get_status_display }}
     </span>
-    <button type="button" class="btn-small btn-ghost" onclick="window.print()">{% trans "Print" %}</button>
+    <a href="{% url 'billing:public_invoice_pdf' token=invoice.share_token %}" target="_blank" rel="noopener" class="btn-small btn-ghost">{% trans "Print" %}</a>
 </div>
 
 {% include "billing/_invoice_document.html" %}

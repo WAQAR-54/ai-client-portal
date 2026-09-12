@@ -1204,6 +1204,28 @@ class InvoicePdfTests(TestCase):
         response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
         self.assertEqual(response.status_code, 403)
 
+    def test_inline_param_opens_in_browser_instead_of_downloading(self):
+        # The "Print" button opens this in a new tab so the browser's own
+        # PDF viewer (and its Print icon) is what actually prints - never
+        # window.print() on the HTML page, which always carries a browser-
+        # injected date/title/URL header no page CSS can suppress.
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.get(
+            reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}), {"inline": "1"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Disposition"].startswith("inline"))
+
+    def test_public_share_pdf_accessible_without_login(self):
+        response = self.client.get(reverse("billing:public_invoice_pdf", kwargs={"token": self.invoice.share_token}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response["Content-Disposition"].startswith("inline"))
+
+    def test_public_share_pdf_wrong_token_404s(self):
+        response = self.client.get(reverse("billing:public_invoice_pdf", kwargs={"token": "not-a-real-token"}))
+        self.assertEqual(response.status_code, 404)
+
     def test_anonymous_redirected_to_login(self):
         response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
         self.assertEqual(response.status_code, 302)

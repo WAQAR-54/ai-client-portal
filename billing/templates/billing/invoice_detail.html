@@ -23,7 +23,7 @@
     </span>
     <div style="display:flex; gap:0.5rem;">
         <a href="{% url 'billing:download_invoice_pdf' invoice_id=invoice.id %}" class="btn-small btn-ghost">{% trans "Download PDF" %}</a>
-        <button type="button" class="btn-small btn-ghost" onclick="window.print()">{% trans "Print" %}</button>
+        <a href="{% url 'billing:download_invoice_pdf' invoice_id=invoice.id %}?inline=1" target="_blank" rel="noopener" class="btn-small btn-ghost">{% trans "Print" %}</a>
     </div>
 </div>
 

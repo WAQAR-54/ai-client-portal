@@ -611,6 +611,18 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
         }
 
 
+def _pdf_response(pdf_bytes, filename, inline):
+    """`inline` opens the PDF in the browser's own PDF viewer (its Print
+    icon there prints the actual PDF bytes - no browser-injected date/
+    title/URL header, unlike window.print() on an HTML page); the default
+    forces a save-as download. Same bytes either way - only the
+    Content-Disposition differs."""
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    disposition = "inline" if inline else "attachment"
+    response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+    return response
+
+
 @require_http_methods(["GET"])
 def download_invoice_pdf(request, invoice_id):
     if not request.user.is_authenticated:
@@ -619,9 +631,17 @@ def download_invoice_pdf(request, invoice_id):
     if not _can_view_invoice(request.user, invoice):
         raise PermissionDenied("You don't have access to this invoice.")
     pdf_bytes = render_invoice_pdf(invoice)
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{invoice.invoice_number}.pdf"'
-    return response
+    return _pdf_response(pdf_bytes, f"{invoice.invoice_number}.pdf", inline=request.GET.get("inline") == "1")
+
+
+@require_http_methods(["GET"])
+def public_invoice_pdf_view(request, token):
+    """No-login PDF for the public share link's own Print button - same
+    reasoning as public_invoice_view, just the PDF instead of the HTML
+    document."""
+    invoice = get_object_or_404(Invoice, share_token=token)
+    pdf_bytes = render_invoice_pdf(invoice)
+    return _pdf_response(pdf_bytes, f"{invoice.invoice_number}.pdf", inline=True)
 
 
 @require_http_methods(["GET"])
