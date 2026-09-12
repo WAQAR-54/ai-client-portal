@@ -9,28 +9,29 @@
     .mono { font-family: Courier, monospace; }
     .right { text-align: right; }
     table.layout { width: 100%; border-collapse: collapse; }
-    table.layout td { vertical-align: top; padding: 12px 14px; background-color: #f9f8f4; }
-    table.layout td.spacer { padding: 0 7px; background-color: #fff; }
-    .label { font-size: 8pt; text-transform: uppercase; color: #9c988c; margin-bottom: 4px; }
+    table.layout td { vertical-align: top; padding: 12px 14px; background-color: #f9f8f4; border: 1px solid #ebe8dd; }
+    table.layout td.spacer { padding: 0 7px; background-color: #fff; border: none; }
+    .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #9c988c; margin-bottom: 5px; }
     table.topbar { width: 100%; border-collapse: collapse; }
     table.topbar td { padding: 0; height: 4px; background-color: #00aef0; font-size: 1px; line-height: 1px; }
     table.header-bar { width: 100%; border-collapse: collapse; }
-    table.header-bar td { padding: 16px 20px; vertical-align: middle; }
-    .header-sub { color: #6f6c62; }
+    table.header-bar td { padding: 18px 20px; vertical-align: middle; }
+    .header-sub { color: #6f6c62; line-height: 1.5; }
     table.number-row { width: 100%; border-collapse: collapse; background-color: #e3f6fd; }
-    table.number-row td { padding: 8px 20px; font-weight: bold; color: #122268; }
-    table.items { width: 100%; border-collapse: collapse; margin-top: 18px; }
-    table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; color: #122268; border-bottom: 2px solid #00aef0; padding-bottom: 6px; }
+    table.number-row td { padding: 9px 20px; font-weight: bold; color: #122268; font-size: 11pt; }
+    table.items { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #122268; border-bottom: 2px solid #00aef0; padding-bottom: 7px; }
     table.items th.right, table.items td.right { text-align: right; }
-    table.items td { padding: 8px 0; border-bottom: 1px solid #eee; }
-    table.totals { width: 260px; margin-top: 12px; margin-left: auto; border-collapse: collapse; }
-    table.totals td { padding: 3px 6px; font-size: 10pt; color: #6f6c62; }
+    table.items td { padding: 9px 0; border-bottom: 1px solid #eee; }
+    table.totals { width: 270px; margin-top: 14px; margin-left: auto; border-collapse: collapse; }
+    table.totals td { padding: 4px 6px; font-size: 10pt; color: #6f6c62; }
     table.totals td.right { text-align: right; }
-    table.totals tr.total td { padding: 10px 6px; font-weight: bold; font-size: 12pt; color: #122268; background-color: #e3f6fd; }
-    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; font-size: 9pt; color: #6f6c62; }
-    .content { padding: 20px 4px 0; }
-    table.planteam { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    table.planteam td { padding: 10px 14px; background-color: #f9f8f4; }
+    table.totals tr.total td { padding: 11px 6px; font-weight: bold; font-size: 12pt; color: #122268; background-color: #e3f6fd; }
+    .footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid #eee; font-size: 9pt; color: #6f6c62; }
+    .thanks { margin-top: 26px; padding-top: 14px; border-top: 1px solid #eee; font-size: 10pt; color: #122268; font-weight: bold; }
+    .content { padding: 22px 4px 0; }
+    table.planteam { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    table.planteam td { padding: 10px 14px; background-color: #f9f8f4; border: 1px solid #ebe8dd; }
 </style>
 </head>
 <body>
@@ -54,7 +55,7 @@
     <table class="number-row"><tr><td>{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</td></tr></table>
     <div class="content">
 
-    <table class="layout" style="margin-top:18px;">
+    <table class="layout">
         <tr>
             <td width="47%">
                 <div class="label">{% trans "Bill to" %}</div>
@@ -114,6 +115,8 @@
     {% if organization_profile.payment_note %}
     <div class="footer">{{ organization_profile.payment_note }}</div>
     {% endif %}
+
+    <div class="thanks">{% blocktrans with name=site_branding.site_name %}Thank you for your business with {{ name }}.{% endblocktrans %}</div>
     </div>
 </body>
 </html>
