@@ -10,6 +10,7 @@
             <th>{% trans "Total" %}</th>
             <th>{% trans "Status" %}</th>
             <th></th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -22,13 +23,18 @@
             <td class="text-muted">{{ invoice.due_date|date:"Y-m-d" }}</td>
             <td class="mono">{{ invoice.currency }} {{ invoice.total }}</td>
             <td>
+                {% if invoice.status == 'pending_verification' %}
+                <span class="badge badge-muted">{{ invoice.get_status_display }}</span>
+                {% else %}
                 <form method="post" action="{% url 'billing:toggle_invoice_status' invoice_id=invoice.id %}"
                       hx-post="{% url 'billing:toggle_invoice_status' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML">
                     {% csrf_token %}
-                    <button type="submit" class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="border:none; cursor:pointer;">
-                        {{ invoice.get_status_display }}
-                    </button>
+                    <select class="input" style="margin:0; width:auto;" onchange="this.form.requestSubmit()">
+                        <option value="unpaid" {% if invoice.status == 'unpaid' %}selected{% endif %}>{% trans "Unpaid" %}</option>
+                        <option value="paid" {% if invoice.status == 'paid' %}selected{% endif %}>{% trans "Paid" %}</option>
+                    </select>
                 </form>
+                {% endif %}
             </td>
             <td style="white-space:nowrap;">
                 {% if invoice.status == 'pending_verification' %}
@@ -48,9 +54,10 @@
                 </div>
                 {% endif %}
             </td>
+            <td><a href="{% url 'billing:invoice_detail' invoice_id=invoice.id %}" class="btn-small btn-ghost">{% trans "View" %}</a></td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="{% if departments is not None %}8{% else %}7{% endif %}">{% trans "No invoices yet." %}</td></tr>
+        <tr class="empty-state-row"><td colspan="{% if departments is not None %}9{% else %}8{% endif %}">{% trans "No invoices yet." %}</td></tr>
         {% endfor %}
     </tbody>
 </table>

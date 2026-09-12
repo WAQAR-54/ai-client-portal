@@ -148,6 +148,13 @@ class Invoice(models.Model):
     issue_date = models.DateField(default=timezone.localdate)
     due_date = models.DateField()
     currency = models.CharField(max_length=10)
+    # [{"description": str, "amount": str}, ...] - e.g. the base plan
+    # charge plus, when relevant, a separate "Extra members - N x price
+    # (X total, Y included)" line - built once at generation time in
+    # billing.invoicing so the itemized breakdown on the invoice detail
+    # page always matches exactly what subtotal was computed from,
+    # regardless of any later RegionalPrice/Plan change.
+    line_items = models.JSONField(default=list, blank=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))

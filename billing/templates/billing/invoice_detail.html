@@ -2,7 +2,18 @@
 {% load i18n %}
 {% block title %}{{ invoice.invoice_number }} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
+<style>
+    @media print {
+        .app-sidebar, .mobile-topbar, .topbar-mini, .app-switch, .no-print { display: none !important; }
+        .app-main { margin: 0 !important; }
+        .main-bleed, main { padding: 0 !important; }
+    }
+</style>
 <div class="card">
+    <div class="page-head-row no-print" style="display:flex; justify-content:flex-end; gap:0.5rem; margin-bottom:1rem;">
+        <button type="button" class="btn-small btn-ghost" onclick="window.print()">{% trans "Print" %}</button>
+    </div>
+
     <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
         <div>
             <h1 style="margin-bottom:0.25rem;">{{ invoice.invoice_number }}</h1>
@@ -13,15 +24,38 @@
         </span>
     </div>
 
+    {% if billing_profile.company_name or billing_profile.billing_address or billing_profile.tax_id %}
+    <div class="mt-4">
+        <div class="form-section-label">{% trans "Bill to" %}</div>
+        {% if billing_profile.company_name %}<p style="margin:0; font-weight:600;">{{ billing_profile.company_name }}</p>{% endif %}
+        {% if billing_profile.billing_address %}<p class="text-muted" style="margin:0; white-space:pre-line;">{{ billing_profile.billing_address }}</p>{% endif %}
+        {% if billing_profile.tax_id %}<p class="text-faint" style="margin:0; font-size:0.85rem;">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</p>{% endif %}
+    </div>
+    {% endif %}
+
     <div class="scroll-shadow mt-4" style="overflow-x:auto;">
         <table class="data">
+            <thead>
+                <tr><th>{% trans "Description" %}</th><th>{% trans "Amount" %}</th></tr>
+            </thead>
             <tbody>
-                <tr><td>{% trans "Plan" %}</td><td class="mono">{{ invoice.plan.name }}</td></tr>
-                <tr><td>{% trans "Issue date" %}</td><td class="mono">{{ invoice.issue_date|date:"Y-m-d" }}</td></tr>
-                <tr><td>{% trans "Due date" %}</td><td class="mono">{{ invoice.due_date|date:"Y-m-d" }}</td></tr>
-                <tr><td>{% trans "Subtotal" %}</td><td class="mono">{{ invoice.currency }} {{ invoice.subtotal }}</td></tr>
+                {% for item in invoice.line_items %}
+                <tr><td>{{ item.description }}</td><td class="mono">{{ invoice.currency }} {{ item.amount }}</td></tr>
+                {% empty %}
+                <tr><td>{{ invoice.plan.name }}</td><td class="mono">{{ invoice.currency }} {{ invoice.subtotal }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="scroll-shadow mt-3" style="overflow-x:auto;">
+        <table class="data">
+            <tbody>
+                <tr><td>{% trans "Subtotal (plan + extra seats)" %}</td><td class="mono">{{ invoice.currency }} {{ invoice.subtotal }}</td></tr>
                 <tr><td>{% blocktrans with rate=invoice.tax_rate %}Tax ({{ rate }}%){% endblocktrans %}</td><td class="mono">{{ invoice.currency }} {{ invoice.tax_amount }}</td></tr>
                 <tr><td><strong>{% trans "Total" %}</strong></td><td class="mono"><strong>{{ invoice.currency }} {{ invoice.total }}</strong></td></tr>
+                <tr><td>{% trans "Issue date" %}</td><td class="mono">{{ invoice.issue_date|date:"Y-m-d" }}</td></tr>
+                <tr><td>{% trans "Due date" %}</td><td class="mono">{{ invoice.due_date|date:"Y-m-d" }}</td></tr>
             </tbody>
         </table>
     </div>
@@ -38,7 +72,7 @@
     {% endif %}
 
     {% if invoice.status == 'pending_verification' %}
-    <div class="card mt-4">
+    <div class="card mt-4 no-print">
         <h2 style="margin-bottom:0.5rem;">{% trans "Submitted payment proof" %}</h2>
         {% if invoice.submitted_transaction_id %}<p>{% blocktrans with txn=invoice.submitted_transaction_id %}Transaction ID: {{ txn }}{% endblocktrans %}</p>{% endif %}
         {% if invoice.submitted_proof_image %}
@@ -49,13 +83,13 @@
         <p class="text-faint" style="font-size:0.85rem; margin-top:0.5rem;">{% blocktrans with submitted=invoice.submitted_at|date:"Y-m-d H:i" %}Submitted {{ submitted }}{% endblocktrans %}</p>
     </div>
     {% elif invoice.status == 'paid' and invoice.verified_by %}
-    <div class="card mt-4">
+    <div class="card mt-4 no-print">
         <p class="text-muted" style="margin:0;">{% blocktrans with who=invoice.verified_by.email when=invoice.verified_at|date:"Y-m-d H:i" %}Verified paid by {{ who }} on {{ when }}.{% endblocktrans %}</p>
     </div>
     {% endif %}
 
     {% if is_recipient and invoice.status == 'unpaid' %}
-    <div class="card mt-4">
+    <div class="card mt-4 no-print">
         <h2 style="margin-bottom:0.5rem;">{% trans "Submit payment" %}</h2>
         <form method="post" action="{% url 'billing:submit_payment_proof' invoice_id=invoice.id %}" enctype="multipart/form-data" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
             {% csrf_token %}
@@ -74,7 +108,7 @@
     {% endif %}
 
     {% if can_manage %}
-    <div class="card mt-4">
+    <div class="card mt-4 no-print">
         <h2 style="margin-bottom:0.5rem;">{% trans "Manage" %}</h2>
         <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
             {% if invoice.status == 'pending_verification' %}
@@ -101,6 +135,6 @@
     </div>
     {% endif %}
 
-    <p class="mt-4"><a href="{% if is_recipient %}{% url 'billing:my_invoices' %}{% else %}{% url 'billing:invoices' %}{% endif %}">{% trans "← Back to invoices" %}</a></p>
+    <p class="mt-4 no-print"><a href="{% if is_recipient %}{% url 'billing:my_invoices' %}{% else %}{% url 'billing:invoices' %}{% endif %}">{% trans "← Back to invoices" %}</a></p>
 </div>
 {% endblock %}

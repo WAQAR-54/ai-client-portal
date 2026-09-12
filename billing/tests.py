@@ -366,6 +366,17 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         self.assertEqual(invoice.currency, "AED")
         self.assertEqual(invoice.status, Invoice.Status.UNPAID)
         self.assertTrue(invoice.invoice_number.startswith("INV-"))
+        self.assertEqual(len(invoice.line_items), 1)
+        self.assertEqual(invoice.line_items[0]["amount"], "100.00")
+
+    def test_extra_seats_get_their_own_line_item(self):
+        self._add_users(4)
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department)
+        self.assertEqual(len(invoice.line_items), 2)
+        self.assertIn("Extra members", invoice.line_items[1]["description"])
+        self.assertIn("4 total, 2 included", invoice.line_items[1]["description"])
+        self.assertEqual(invoice.line_items[1]["amount"], "40.00")
 
     def test_generated_invoice_is_linked_to_recipient(self):
         recipient = User.objects.create_user(
@@ -857,6 +868,22 @@ class InvoiceDetailViewTests(TestCase):
         response = self.client.get(self._url())
         self.assertEqual(response.status_code, 403)
 
+    def test_shows_line_items(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertContains(response, "Growth")
+        self.assertContains(response, "50.00")
+
+    def test_shows_bill_to_block_from_billing_profile(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(
+            company_name="Acme Corp", billing_address="123 Business Road, Karachi", tax_id="NTN-1234567-8"
+        )
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertContains(response, "Acme Corp")
+        self.assertContains(response, "123 Business Road, Karachi")
+        self.assertContains(response, "NTN-1234567-8")
+
     def test_toggle_from_detail_page_redirects_back_to_detail_page(self):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.post(
@@ -872,3 +899,66 @@ class InvoiceDetailViewTests(TestCase):
             {"transaction_id": "TXN-1", "next_invoice_id": self.invoice.id},
         )
         self.assertRedirects(response, self._url())
+
+
+class InvoiceAutomationSettingsTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+
+    def test_scoped_admin_always_sees_their_own_departments_automation_card(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertEqual(response.context["automation_department"], self.department)
+        self.assertContains(response, "Automated Invoicing")
+
+    def test_superadmin_sees_no_automation_card_without_a_department_filter(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertIsNone(response.context["automation_department"])
+        self.assertContains(response, "Select a department above")
+
+    def test_superadmin_sees_automation_card_for_filtered_department(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"), {"department": self.department.id})
+        self.assertEqual(response.context["automation_department"], self.department)
+
+    def test_admin_can_update_own_departments_automation_settings(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:update_invoice_automation", kwargs={"department_id": self.department.id}),
+            {"auto_generate_invoices": "on", "reminder_days_after_due": "7"},
+        )
+        self.assertRedirects(response, reverse("billing:invoices"))
+        profile = DepartmentBillingProfile.objects.get(department=self.department)
+        self.assertTrue(profile.auto_generate_invoices)
+        self.assertEqual(profile.reminder_days_after_due, 7)
+
+    def test_update_does_not_touch_other_billing_profile_fields(self):
+        DepartmentBillingProfile.objects.create(department=self.department, company_name="Acme Corp")
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:update_invoice_automation", kwargs={"department_id": self.department.id}),
+            {"auto_generate_invoices": "on", "reminder_days_after_due": "3"},
+        )
+        profile = DepartmentBillingProfile.objects.get(department=self.department)
+        self.assertEqual(profile.company_name, "Acme Corp")
+
+    def test_admin_cannot_update_other_departments_automation_settings(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:update_invoice_automation", kwargs={"department_id": self.other_department.id}),
+            {"auto_generate_invoices": "on"},
+        )
+        self.assertEqual(response.status_code, 403)

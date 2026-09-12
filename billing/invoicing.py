@@ -54,6 +54,7 @@ def generate_invoice_for_department(
         raise InvoiceGenerationError(f"{plan.name} has no price set for {region_code} yet.")
 
     subtotal = regional_price.price
+    line_items = [{"description": f"{plan.name} — {department.name}", "amount": str(regional_price.price)}]
 
     # Per-seat billing (see governance.models.Plan.seats_included /
     # RegionalPrice.extra_seat_price): a department with more people than
@@ -65,7 +66,17 @@ def generate_invoice_for_department(
         actual_seats = department.users.count() if seat_count is None else seat_count
         extra_seats = max(0, actual_seats - plan.seats_included)
         if extra_seats > 0 and regional_price.extra_seat_price is not None:
-            subtotal += extra_seats * regional_price.extra_seat_price
+            extra_amount = extra_seats * regional_price.extra_seat_price
+            subtotal += extra_amount
+            line_items.append(
+                {
+                    "description": (
+                        f"Extra members — {extra_seats} × {regional_price.extra_seat_price} "
+                        f"({actual_seats} total, {plan.seats_included} included)"
+                    ),
+                    "amount": str(extra_amount),
+                }
+            )
 
     tax_rate = billing_profile.effective_tax_rate()
     tax_amount = _quantize(subtotal * tax_rate / Decimal("100"))
@@ -79,6 +90,7 @@ def generate_invoice_for_department(
         issue_date=issue_date,
         due_date=issue_date + timedelta(days=due_in_days),
         currency=currency_for_region(region_code),
+        line_items=line_items,
         subtotal=subtotal,
         tax_rate=tax_rate,
         tax_amount=tax_amount,

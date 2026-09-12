@@ -317,6 +317,31 @@ def _invoices_context(request):
     }
 
 
+def _automation_context(request, invoices_context):
+    """The "Automated Invoicing" card only makes sense pinned to one
+    department (auto_generate_invoices/reminder_days_after_due are
+    per-department fields) - a scoped Admin's own department, or whatever
+    department a SuperAdmin has filtered the list to. Kept separate from
+    _invoices_context (rather than folded into it) so the htmx re-render
+    after a toggle/verify/reject doesn't pay for this extra lookup on
+    every click - only the full page load needs it."""
+    if _is_scoped_admin(request.user):
+        automation_department = Department.objects.filter(id=request.user.department_id).first()
+    else:
+        selected_department = invoices_context["selected_department"]
+        automation_department = (
+            Department.objects.filter(id=int(selected_department)).first() if selected_department.isdigit() else None
+        )
+    automation_profile = None
+    if automation_department is not None:
+        automation_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=automation_department)
+    return {
+        "automation_department": automation_department,
+        "automation_profile": automation_profile,
+        "reminder_choices": DepartmentBillingProfile.ReminderSchedule.choices,
+    }
+
+
 class InvoiceListView(AdminRequiredMixin, TemplateView):
     """Admin manages only their own department's invoices (generate, mark
     paid, verify/reject a submission); SuperAdmin manages every
@@ -325,7 +350,10 @@ class InvoiceListView(AdminRequiredMixin, TemplateView):
     template_name = "billing/invoices.html"
 
     def get_context_data(self, **kwargs):
-        return super().get_context_data(**kwargs) | _invoices_context(self.request)
+        invoices_context = _invoices_context(self.request)
+        return (
+            super().get_context_data(**kwargs) | invoices_context | _automation_context(self.request, invoices_context)
+        )
 
 
 @role_required(User.Role.ADMIN)
@@ -350,6 +378,22 @@ def generate_invoice(request):
         django_messages.error(request, str(exc))
     else:
         log_action(request.user, "billing.invoice_generate", invoice, new_value=invoice.invoice_number)
+    return redirect("billing:invoices")
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def update_invoice_automation_settings(request, department_id):
+    """Only touches auto_generate_invoices/reminder_days_after_due - unlike
+    update_department_billing_profile (the full billing-profile form),
+    which would blank out company_name/country/etc. if posted from here
+    with just these two fields."""
+    department = _get_scoped_department_or_403(request, department_id)
+    profile, _created = DepartmentBillingProfile.objects.get_or_create(department=department)
+    profile.auto_generate_invoices = request.POST.get("auto_generate_invoices") == "on"
+    profile.reminder_days_after_due = _int_or_none(request.POST.get("reminder_days_after_due")) or 0
+    profile.save(update_fields=["auto_generate_invoices", "reminder_days_after_due"])
+    log_action(request.user, "billing.invoice_automation_update", profile)
     return redirect("billing:invoices")
 
 
@@ -472,8 +516,13 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
         )
         if not _can_view_invoice(self.request.user, invoice):
             raise PermissionDenied("You don't have access to this invoice.")
+        # get_or_create rather than a plain fetch: every invoice generated
+        # through generate_invoice_for_department already created one, but
+        # this stays safe for any invoice that predates that guarantee.
+        billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
         return super().get_context_data(**kwargs) | {
             "invoice": invoice,
+            "billing_profile": billing_profile,
             "is_recipient": invoice.recipient_user_id == self.request.user.id,
             "can_manage": invoice.recipient_user_id != self.request.user.id
             and self.request.user.role in (User.Role.ADMIN, User.Role.SUPERADMIN),

@@ -39,19 +39,77 @@
 
 <div class="card scroll-shadow" style="overflow-x:auto;">
     <h1>{% trans "Invoices" %}</h1>
-    <p>{% trans "One row per invoice. Click a status badge to toggle Paid/Unpaid. Pending submissions get an Approve/Reject action." %}</p>
+    <p>{% trans "One row per invoice. Change the status dropdown to mark Paid/Unpaid manually. A pending submission gets an Approve/Reject action instead." %}</p>
 
     {% if departments is not None %}
-    {% url 'billing:invoices' as filter_url %}
-    <form class="filter-toolbar">
-        <select class="input" name="department" style="max-width:260px;"
-                hx-get="{{ filter_url }}" hx-target="#invoices-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+    {% comment %}
+    A plain full-page GET, not htmx - the Automated Invoicing card below
+    is keyed to this same department filter, and an htmx swap that only
+    refreshes the table would leave that card showing the PREVIOUS
+    department's settings.
+    {% endcomment %}
+    <form class="filter-toolbar" method="get">
+        <select class="input" name="department" style="max-width:260px;" onchange="this.form.submit()">
             <option value="">{% trans "All departments" %}</option>
             {% for d in departments %}
             <option value="{{ d.id }}" {% if selected_department == d.id|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>
             {% endfor %}
         </select>
     </form>
+    {% endif %}
+
+    {% if automation_department %}
+    <div class="card mt-4">
+        <h2 style="margin-bottom:0.25rem;">{% trans "Automated Invoicing" %}</h2>
+        <p class="text-muted" style="margin:0 0 1rem;">{% blocktrans with name=automation_department.name %}Settings for {{ name }}.{% endblocktrans %}</p>
+
+        <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+            <div>
+                <strong>{% trans "Auto-generate invoice each billing cycle" %}</strong>
+                <p class="text-faint" style="margin:0.15rem 0 0; font-size:0.85rem;">{% trans "Created automatically on this department's renewal date once the automation runs (coming in a later update)." %}</p>
+            </div>
+            <form method="post" action="{% url 'billing:update_invoice_automation' department_id=automation_department.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="reminder_days_after_due" value="{{ automation_profile.reminder_days_after_due }}">
+                <label class="toggle-switch">
+                    <input type="checkbox" name="auto_generate_invoices" onchange="this.closest('form').requestSubmit()" {% if automation_profile.auto_generate_invoices %}checked{% endif %}>
+                    <span class="toggle"><span class="toggle-knob"></span></span>
+                </label>
+            </form>
+        </div>
+
+        <div class="page-head-row mt-3" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+            <div>
+                <strong>{% trans "Send payment reminder" %}</strong>
+                <p class="text-faint" style="margin:0.15rem 0 0; font-size:0.85rem;">{% trans "If still unpaid after the due date." %}</p>
+            </div>
+            <form method="post" action="{% url 'billing:update_invoice_automation' department_id=automation_department.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="auto_generate_invoices" value="{% if automation_profile.auto_generate_invoices %}on{% endif %}">
+                <select class="input" name="reminder_days_after_due" style="margin:0; width:auto;" onchange="this.form.requestSubmit()">
+                    {% for value, label in reminder_choices %}
+                    <option value="{{ value }}" {% if automation_profile.reminder_days_after_due == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+
+        <div class="page-head-row mt-3" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+            <div>
+                <strong>{% trans "Auto-mark paid on successful payment" %}</strong>
+                <p class="text-faint" style="margin:0.15rem 0 0; font-size:0.85rem;">{% trans "Needs a connected payment gateway — not set up yet." %}</p>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <span class="badge badge-muted">{% trans "Coming soon" %}</span>
+                <label class="toggle-switch" style="opacity:0.5;" title="{% trans 'Needs a connected payment gateway' %}">
+                    <input type="checkbox" disabled>
+                    <span class="toggle"><span class="toggle-knob"></span></span>
+                </label>
+            </div>
+        </div>
+    </div>
+    {% elif departments is not None %}
+    <p class="text-faint mt-4" style="font-size:0.85rem;">{% trans "Select a department above to manage its invoice automation settings." %}</p>
     {% endif %}
 
     <div id="invoices-table">
