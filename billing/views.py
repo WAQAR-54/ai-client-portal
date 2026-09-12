@@ -6,6 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
@@ -693,13 +694,26 @@ def email_invoice_to_client(request, invoice_id):
         return redirect(default_redirect)
 
     share_url = _share_url(invoice)
-    site_name = SiteBranding.load().site_name
-    subject = f"{site_name}: Invoice {invoice.invoice_number}"
+    site_branding = SiteBranding.load()
+    subject = f"{site_branding.site_name}: Invoice {invoice.invoice_number}"
     text_body = (
-        f"Your invoice {invoice.invoice_number} ({invoice.currency} {invoice.total}) is ready.\n\n"
-        f"View it here: {share_url}"
+        f"Your invoice {invoice.invoice_number} ({invoice.currency} {invoice.total}), due {invoice.due_date}, "
+        f"is attached as a PDF.\n\nView it online (no login needed): {share_url}"
     )
-    success, error = send_tracked_email(invoice.recipient_user.email, subject, text_body)
+    html_body = render_to_string(
+        "billing/email_invoice.html",
+        {
+            "invoice": invoice,
+            "site_branding": site_branding,
+            "logo_url": settings.SITE_URL.rstrip("/") + site_branding.logo.url if site_branding.logo else None,
+            "share_url": share_url,
+        },
+    )
+    pdf_bytes = render_invoice_pdf(invoice)
+    attachments = [(f"{invoice.invoice_number}.pdf", pdf_bytes, "application/pdf")]
+    success, error = send_tracked_email(
+        invoice.recipient_user.email, subject, text_body, html_body=html_body, attachments=attachments
+    )
     if success:
         django_messages.success(request, f"Invoice emailed to {invoice.recipient_user.email}.")
         log_action(request.user, "billing.invoice_emailed", invoice, new_value=invoice.recipient_user.email)

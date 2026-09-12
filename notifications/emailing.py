@@ -35,11 +35,15 @@ def _tracking_pixel_html(tracking_token):
     return f'<img src="{url}" width="1" height="1" alt="" style="display:none;">'
 
 
-def send_via_connection(connection, from_email, to_email, subject, text_body, html_body=None):
+def send_via_connection(connection, from_email, to_email, subject, text_body, html_body=None, attachments=None):
     """Sends one email over an already-built connection, always logging an
     EmailLog row first so a send that raises mid-flight still leaves a
     FAILED row behind rather than no record at all. Never raises - returns
-    (success: bool, error_message: str | None)."""
+    (success: bool, error_message: str | None).
+
+    `attachments` is a list of (filename, content_bytes, mimetype) tuples -
+    e.g. billing.views.email_invoice_to_client attaching the actual
+    invoice PDF, not just a link to it."""
     from notifications.models import EmailLog
 
     log = EmailLog.objects.create(recipient=to_email, subject=subject, status=EmailLog.Status.FAILED)
@@ -49,6 +53,8 @@ def send_via_connection(connection, from_email, to_email, subject, text_body, ht
         )
         if html_body:
             message.attach_alternative(html_body + _tracking_pixel_html(log.tracking_token), "text/html")
+        for filename, content, mimetype in attachments or []:
+            message.attach(filename, content, mimetype)
         message.send()
     except Exception as exc:  # noqa: BLE001 - any SMTP/connection failure is a normal, reportable outcome here
         log.error_message = str(exc)
@@ -61,7 +67,7 @@ def send_via_connection(connection, from_email, to_email, subject, text_body, ht
     return True, None
 
 
-def send_tracked_email(to_email, subject, text_body, html_body=None):
+def send_tracked_email(to_email, subject, text_body, html_body=None, attachments=None):
     """Sends using the saved EmailSettings row (the normal, non-test case -
     see notifications/tasks.py::send_notification_email). Falls back to
     Django's own EMAIL_BACKEND/settings.py EMAIL_* config (the console
@@ -87,4 +93,4 @@ def send_tracked_email(to_email, subject, text_body, html_body=None):
     else:
         connection = get_connection(fail_silently=False)
         from_email = django_settings.DEFAULT_FROM_EMAIL
-    return send_via_connection(connection, from_email, to_email, subject, text_body, html_body)
+    return send_via_connection(connection, from_email, to_email, subject, text_body, html_body, attachments)

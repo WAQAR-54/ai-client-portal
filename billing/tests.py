@@ -1621,6 +1621,26 @@ class EmailInvoiceToClientTests(TestCase):
         self.assertIn(self.invoice.invoice_number, mail.outbox[0].subject)
         self.assertIn(self.invoice.share_token, mail.outbox[0].body)
 
+    def test_email_attaches_the_real_pdf(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(len(mail.outbox[0].attachments), 1)
+        filename, content, mimetype = mail.outbox[0].attachments[0]
+        self.assertEqual(filename, f"{self.invoice.invoice_number}.pdf")
+        self.assertEqual(mimetype, "application/pdf")
+        self.assertTrue(content.startswith(b"%PDF"))
+
+    def test_email_has_styled_html_alternative_with_invoice_details(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
+        self.assertEqual(len(mail.outbox), 1)
+        html_bodies = [content for content, mimetype in mail.outbox[0].alternatives if mimetype == "text/html"]
+        self.assertEqual(len(html_bodies), 1)
+        self.assertIn(self.invoice.invoice_number, html_bodies[0])
+        self.assertIn(str(self.invoice.total), html_bodies[0])
+        self.assertIn(self.invoice.share_token, html_bodies[0])
+
     def test_recipient_cannot_email_their_own_invoice(self):
         self.client.login(email="recipient@example.com", password="pw12345!")
         response = self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
