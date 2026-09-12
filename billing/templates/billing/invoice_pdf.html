@@ -3,17 +3,22 @@
 <head>
 <style>
     body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #232019; }
-    h1 { font-size: 14pt; margin: 0 0 2px 0; color: #fff; }
+    h1 { font-size: 14pt; margin: 0 0 2px 0; color: #232019; }
     .muted { color: #6f6c62; }
     .faint { color: #9c988c; font-size: 8pt; }
     .mono { font-family: Courier, monospace; }
     .right { text-align: right; }
     table.layout { width: 100%; border-collapse: collapse; }
-    table.layout td { vertical-align: top; padding: 0; }
+    table.layout td { vertical-align: top; padding: 12px 14px; background-color: #f9f8f4; }
+    table.layout td.spacer { padding: 0 7px; background-color: #fff; }
     .label { font-size: 8pt; text-transform: uppercase; color: #9c988c; margin-bottom: 4px; }
-    table.header-bar { width: 100%; border-collapse: collapse; background-color: #122268; }
-    table.header-bar td { padding: 16px 20px; color: #fff; }
-    .header-sub { color: #c7cdf2; }
+    table.topbar { width: 100%; border-collapse: collapse; }
+    table.topbar td { padding: 0; height: 4px; background-color: #00aef0; font-size: 1px; line-height: 1px; }
+    table.header-bar { width: 100%; border-collapse: collapse; }
+    table.header-bar td { padding: 16px 20px; vertical-align: middle; }
+    .header-sub { color: #6f6c62; }
+    table.number-row { width: 100%; border-collapse: collapse; background-color: #e3f6fd; }
+    table.number-row td { padding: 8px 20px; font-weight: bold; color: #122268; }
     table.items { width: 100%; border-collapse: collapse; margin-top: 18px; }
     table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; color: #122268; border-bottom: 2px solid #00aef0; padding-bottom: 6px; }
     table.items th.right, table.items td.right { text-align: right; }
@@ -24,16 +29,20 @@
     table.totals tr.total td { padding: 10px 6px; font-weight: bold; font-size: 12pt; color: #122268; background-color: #e3f6fd; }
     .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; font-size: 9pt; color: #6f6c62; }
     .content { padding: 20px 4px 0; }
-    table.planteam { width: 100%; border-collapse: collapse; margin-top: 14px; background-color: #f9f8f4; }
-    table.planteam td { padding: 10px 14px; }
+    table.planteam { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    table.planteam td { padding: 10px 14px; background-color: #f9f8f4; }
 </style>
 </head>
 <body>
+    <table class="topbar"><tr><td>&nbsp;</td></tr></table>
     <table class="header-bar">
         <tr>
             <td>
+                {% if site_branding.logo %}
+                <img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" height="34">
+                {% else %}
                 <h1>{{ site_branding.site_name }}</h1>
-                <div class="header-sub">{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</div>
+                {% endif %}
             </td>
             <td class="right header-sub">
                 {% blocktrans with date=invoice.issue_date|date:"Y-m-d" %}Issued: {{ date }}{% endblocktrans %}<br>
@@ -42,18 +51,20 @@
             </td>
         </tr>
     </table>
+    <table class="number-row"><tr><td>{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</td></tr></table>
     <div class="content">
 
     <table class="layout" style="margin-top:18px;">
         <tr>
-            <td width="50%">
+            <td width="47%">
                 <div class="label">{% trans "Bill to" %}</div>
                 {% if billing_profile.company_name %}<div><strong>{{ billing_profile.company_name }}</strong></div>
                 {% elif invoice.recipient_user %}<div><strong>{{ invoice.recipient_user.email }}</strong></div>{% endif %}
                 {% if billing_profile.billing_address %}<div class="muted">{{ billing_profile.billing_address }}</div>{% endif %}
                 {% if billing_profile.tax_id %}<div class="faint">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</div>{% endif %}
             </td>
-            <td width="50%">
+            <td class="spacer" width="6%">&nbsp;</td>
+            <td width="47%">
                 {% if organization_profile.bank_name or organization_profile.account_number %}
                 <div class="label">{% trans "Payment details" %}</div>
                 {% if organization_profile.bank_name %}<div>{% trans "Bank" %}: {{ organization_profile.bank_name }}</div>{% endif %}

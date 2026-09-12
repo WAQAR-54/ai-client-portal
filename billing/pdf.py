@@ -7,13 +7,29 @@ grid) that the PDF needs its own table-based layout distinct from the
 on-screen invoice_detail.html.
 """
 
+import os
 from io import BytesIO
 
+from django.conf import settings
 from django.template.loader import render_to_string
 from xhtml2pdf import pisa
 
 from billing.models import DepartmentBillingProfile, OrganizationBillingProfile
 from governance.models import SiteBranding
+
+
+def _resolve_pdf_uri(uri, _rel):
+    """xhtml2pdf can't fetch MEDIA_URL/STATIC_URL paths itself - it needs a
+    real filesystem path for every <img src>, which is why the uploaded
+    SiteBranding logo silently failed to render (only a stderr warning,
+    no exception) before this callback existed."""
+    if uri.startswith(settings.MEDIA_URL):
+        path = os.path.join(settings.MEDIA_ROOT, uri[len(settings.MEDIA_URL) :])
+    elif uri.startswith(settings.STATIC_URL):
+        path = os.path.join(settings.STATIC_ROOT or "", uri[len(settings.STATIC_URL) :])
+    else:
+        return uri
+    return path if os.path.isfile(path) else uri
 
 
 def render_invoice_pdf(invoice) -> bytes:
@@ -38,7 +54,7 @@ def render_invoice_pdf(invoice) -> bytes:
         },
     )
     buffer = BytesIO()
-    status = pisa.CreatePDF(html, dest=buffer)
+    status = pisa.CreatePDF(html, dest=buffer, link_callback=_resolve_pdf_uri)
     if status.err:
         raise ValueError(f"PDF generation failed for invoice {invoice.id}")
     return buffer.getvalue()

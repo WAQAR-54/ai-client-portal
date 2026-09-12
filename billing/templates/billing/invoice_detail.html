@@ -16,20 +16,28 @@
         a { text-decoration: none !important; color: inherit !important; }
     }
     .invoice-doc-top {
-        display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-5); flex-wrap: wrap;
-        margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) var(--space-6);
+        display: flex; justify-content: space-between; align-items: center; gap: var(--space-5); flex-wrap: wrap;
+        margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) 0;
         padding: var(--space-6);
-        background: var(--brand-navy); color: #fff;
+        background: var(--color-surface);
+        border-top: 4px solid var(--accent);
         border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-        border-bottom: 4px solid var(--accent);
     }
     .invoice-doc-brand { display: flex; align-items: center; gap: var(--space-3); }
-    .invoice-doc-avatar { width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--accent); color: var(--brand-navy); display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display); flex-shrink: 0; }
-    .invoice-doc-meta { text-align: right; font-size: 0.85rem; color: rgba(255, 255, 255, 0.75); }
+    .invoice-doc-logo { max-height: 40px; max-width: 170px; object-fit: contain; }
+    .invoice-doc-avatar { width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--accent-soft); color: var(--brand-navy); display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display); flex-shrink: 0; }
+    .invoice-doc-meta { text-align: right; font-size: 0.85rem; color: var(--color-text-muted); }
     .invoice-doc-meta > div { margin-bottom: 0.15rem; }
+    .invoice-doc-number-row {
+        margin: 0 calc(-1 * var(--space-6)) var(--space-6);
+        padding: var(--space-3) var(--space-6);
+        background: var(--accent-soft);
+        border-bottom: 1px solid var(--color-border);
+        font-weight: 700; color: var(--brand-navy);
+    }
     @media print {
-        .invoice-doc-top { background: var(--brand-navy) !important; color: #fff !important; }
-        .invoice-doc-avatar { background: var(--accent) !important; color: var(--brand-navy) !important; }
+        .invoice-doc-top, .invoice-doc-number-row { background: var(--color-surface) !important; }
+        .invoice-doc-number-row { background: var(--accent-soft) !important; }
     }
     .invoice-doc-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-faint); margin-bottom: 0.4rem; }
     .invoice-doc-items table { width: 100%; border-collapse: collapse; }
@@ -39,11 +47,11 @@
     .invoice-doc-totals { margin-left: auto; width: min(320px, 100%); margin-top: var(--space-4); }
     .invoice-doc-totals-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: 0.3rem 0; font-size: 0.9rem; color: var(--color-text-muted); }
     .invoice-doc-totals-row.is-total { margin-top: 0.5rem; padding: 0.7rem var(--space-4); font-weight: 700; font-size: 1.1rem; color: var(--brand-navy); background: var(--accent-soft); border-radius: var(--radius-md); }
-    .invoice-doc-parties { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-bottom: var(--space-5); }
-    .invoice-doc-parties > div { flex: 0 1 300px; }
+    .invoice-doc-parties { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-5); }
+    .invoice-doc-parties > div { flex: 1 1 280px; background: var(--color-surface-muted); border-radius: var(--radius-md); padding: var(--space-4); }
     .invoice-doc-parties p { margin: 0 0 0.15rem; font-size: 0.9rem; color: var(--color-text-muted); }
-    .invoice-doc-planteam { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-bottom: var(--space-5); padding: var(--space-3) 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
-    .invoice-doc-planteam > div { flex: 0 1 300px; }
+    .invoice-doc-planteam { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-5); }
+    .invoice-doc-planteam > div { flex: 1 1 280px; background: var(--color-surface-muted); border-radius: var(--radius-md); padding: var(--space-4); }
     .invoice-doc-planteam .invoice-doc-label { margin-bottom: 0.15rem; }
 </style>
 
@@ -60,11 +68,12 @@
 <div class="card">
     <div class="invoice-doc-top">
         <div class="invoice-doc-brand">
+            {% if site_branding.logo %}
+            <img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="invoice-doc-logo">
+            {% else %}
             <div class="invoice-doc-avatar">{{ site_branding.site_name|slice:":2"|upper }}</div>
-            <div>
-                <div style="font-weight:700; font-size:1.05rem;">{{ site_branding.site_name }}</div>
-                <div style="color:rgba(255,255,255,0.75);">{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</div>
-            </div>
+            <div style="font-weight:700; font-size:1.05rem;">{{ site_branding.site_name }}</div>
+            {% endif %}
         </div>
         <div class="invoice-doc-meta">
             <div>{% blocktrans with date=invoice.issue_date|date:"Y-m-d" %}Issued: {{ date }}{% endblocktrans %}</div>
@@ -72,6 +81,7 @@
             <div>{% blocktrans with currency=invoice.currency %}Currency: {{ currency }}{% endblocktrans %}</div>
         </div>
     </div>
+    <div class="invoice-doc-number-row">{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</div>
 
     <div class="invoice-doc-parties">
         <div>
