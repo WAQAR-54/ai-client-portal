@@ -18,8 +18,18 @@
             <thead>
                 <tr>
                     <th>{% trans "Plan" %}</th>
-                    {% for code, label, currency, flag in region_labels %}
-                    <th>{{ flag }} {{ label }} ({{ currency }})</th>
+                    {% for region in region_labels %}
+                    <th>
+                        {{ region.flag }} {{ region.label }} ({{ region.currency }})
+                        {% if region.removable %}
+                        <form method="post" action="{% url 'billing:remove_region' %}" style="display:inline;"
+                              onsubmit="return portalConfirmSubmit(event, '{% blocktrans with label=region.label %}Remove {{ label }}? This deletes its price for every plan.{% endblocktrans %}');">
+                            {% csrf_token %}
+                            <input type="hidden" name="region_code" value="{{ region.code }}">
+                            <button type="submit" class="link-btn" style="font-size:0.75rem; font-weight:400; text-transform:none; letter-spacing:normal;" title="{% trans 'Remove region' %}">✕</button>
+                        </form>
+                        {% endif %}
+                    </th>
                     {% endfor %}
                     <th></th>
                 </tr>
@@ -75,8 +85,8 @@
                 <tr>
                     <th>{% trans "Plan" %}</th>
                     <th>{% trans "Seats included" %}</th>
-                    {% for code, label, currency, flag in region_labels %}
-                    <th>{{ flag }} {% trans "Extra / seat" %} ({{ currency }})</th>
+                    {% for region in region_labels %}
+                    <th>{{ region.flag }} {% trans "Extra / seat" %} ({{ region.currency }})</th>
                     {% endfor %}
                     <th></th>
                 </tr>

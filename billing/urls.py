@@ -13,6 +13,7 @@ urlpatterns = [
         name="update_plan_regional_pricing",
     ),
     path("regional-pricing/add-region/", views.add_region, name="add_region"),
+    path("regional-pricing/remove-region/", views.remove_region, name="remove_region"),
     path("organization-billing/", views.OrganizationBillingSettingsView.as_view(), name="organization_billing"),
     path(
         "organization-billing/update/",

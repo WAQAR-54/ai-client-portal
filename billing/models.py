@@ -135,7 +135,14 @@ class Invoice(models.Model):
         PENDING_VERIFICATION = "pending_verification", "Pending verification"
         PAID = "paid", "Paid"
 
-    department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name="invoices")
+    # Nullable: a department-less user (see billing.invoicing.
+    # generate_invoice_for_user) is still billable directly - invoicing
+    # doesn't require a Department, only a recipient_user. SET_NULL (not
+    # CASCADE) for the same reason as recipient_user/verified_by below -
+    # billing history must outlive a deleted Department.
+    department = models.ForeignKey(
+        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoices"
+    )
     # Who this invoice is actually billed to and who sees it under "My
     # Invoices" - SET_NULL (not CASCADE) so deleting a user account never
     # deletes billing history; a null recipient just means the invoice was

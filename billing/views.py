@@ -89,13 +89,18 @@ class RegionalPricingView(SuperAdminRequiredMixin, TemplateView):
                 for rp in RegionalPrice.objects.filter(plan__in=plans, region_code__in=active_codes)
             }
 
-        region_labels = [REGION_BY_CODE[code] for code in active_codes]
+        added_codes = {code for code, *_ in EXTRA_REGIONS} & set(active_codes)
+        region_labels = []
+        for code in active_codes:
+            _code, label, currency, flag = REGION_BY_CODE[code]
+            region_labels.append(
+                {"code": code, "label": label, "currency": currency, "flag": flag, "removable": code in added_codes}
+            )
         rows = []
         for plan in plans:
             cells = [existing[(plan.id, code)] for code in active_codes]
             rows.append({"plan": plan, "cells": cells, "missing": any(c.price is None for c in cells)})
 
-        added_codes = {code for code, *_ in EXTRA_REGIONS} & set(active_codes)
         available_extra_regions = [r for r in EXTRA_REGIONS if r[0] not in added_codes]
 
         return super().get_context_data(**kwargs) | {
@@ -276,6 +281,22 @@ def add_region(request):
     return redirect("billing:regional_pricing")
 
 
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def remove_region(request):
+    # Mirrors add_region: only ever an EXTRA_REGIONS code (never one of the
+    # four always-on REGIONS), no log_action for the same reason add_region
+    # has none - deleting every RegionalPrice row for this code is exactly
+    # what makes it vanish from _active_region_codes() (that function
+    # detects "active" purely by row existence), so it reappears in
+    # "+ Add region" with no separate removed-flag to maintain.
+    region_code = request.POST.get("region_code", "").strip()
+    valid_codes = {code for code, *_ in EXTRA_REGIONS}
+    if region_code in valid_codes:
+        RegionalPrice.objects.filter(region_code=region_code).delete()
+    return redirect("billing:regional_pricing")
+
+
 def _is_scoped_admin(user):
     """Same rule as governance/views.py's own _is_scoped_admin - a plain
     Admin only ever sees/manages their own department's invoices;
@@ -316,6 +337,7 @@ def _invoices_context(request):
         "selected_department": selected_department,
         "eligible_recipients": _eligible_recipients(request),
         "billable_plans": Plan.objects.filter(is_active=True).order_by("-is_default", "name"),
+        "billable_regions": [REGION_BY_CODE[code] for code in _active_region_codes()],
     }
 
 
@@ -371,10 +393,11 @@ def generate_invoice(request):
     plan_id = request.POST.get("plan_id", "").strip()
     plan = get_object_or_404(Plan, id=plan_id) if plan_id else None
     seat_count = _int_or_none(request.POST.get("seat_count"))
+    region_code = request.POST.get("region_code", "").strip() or None
 
     try:
         invoice = generate_invoice_for_department(
-            recipient.department, recipient_user=recipient, plan=plan, seat_count=seat_count
+            recipient.department, recipient_user=recipient, plan=plan, seat_count=seat_count, region_code=region_code
         )
     except InvoiceGenerationError as exc:
         django_messages.error(request, str(exc))
@@ -401,7 +424,13 @@ def update_invoice_automation_settings(request, department_id):
 
 def _get_scoped_invoice_or_403(request, invoice_id):
     invoice = get_object_or_404(Invoice, id=invoice_id)
-    if _is_scoped_admin(request.user) and invoice.department_id != request.user.department_id:
+    # invoice.department_id can be None (department-less recipient) - a
+    # scoped Admin never manages a department-less invoice regardless of
+    # their own department_id, so None is treated as "never matches" on
+    # both sides rather than letting two Nones compare equal.
+    if _is_scoped_admin(request.user) and (
+        invoice.department_id is None or invoice.department_id != request.user.department_id
+    ):
         raise PermissionDenied("That invoice is outside your scope.")
     return invoice
 
@@ -499,7 +528,15 @@ def _can_view_invoice(user, invoice):
         return True
     if user.role == User.Role.SUPERADMIN:
         return True
-    return user.role == User.Role.ADMIN and invoice.department_id == user.department_id
+    # invoice.department_id can be None (a department-less recipient - see
+    # generate_invoice_for_user) - explicit `is not None` guard so a
+    # department-less Admin (an edge case, but a real one) can never match
+    # a department-less invoice that isn't theirs via `None == None`.
+    return (
+        user.role == User.Role.ADMIN
+        and invoice.department_id is not None
+        and invoice.department_id == user.department_id
+    )
 
 
 class InvoiceDetailView(LoginRequiredMixin, TemplateView):
@@ -521,7 +558,12 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
         # get_or_create rather than a plain fetch: every invoice generated
         # through generate_invoice_for_department already created one, but
         # this stays safe for any invoice that predates that guarantee.
-        billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
+        # None for a department-less invoice (generate_invoice_for_user) -
+        # DepartmentBillingProfile is a OneToOneField to Department, so
+        # get_or_create(department=None) would violate its NOT NULL column.
+        billing_profile = None
+        if invoice.department_id is not None:
+            billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
         return super().get_context_data(**kwargs) | {
             "invoice": invoice,
             "billing_profile": billing_profile,

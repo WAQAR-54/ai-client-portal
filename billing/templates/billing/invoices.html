@@ -30,10 +30,19 @@
             <label for="seat_count">{% trans "Team members" %}</label>
             <input class="input" type="number" min="0" name="seat_count" id="seat_count" style="margin:0;" placeholder="{% trans 'auto' %}">
         </div>
+        <div style="flex:1; min-width:180px;">
+            <label for="region_code">{% trans "Region" %}</label>
+            <select class="input" name="region_code" id="region_code" style="margin:0;">
+                <option value="">{% trans "Auto-detect (department's billing country)" %}</option>
+                {% for code, label, currency, flag in billable_regions %}
+                <option value="{{ code }}">{{ flag }} {{ label }} ({{ currency }})</option>
+                {% endfor %}
+            </select>
+        </div>
         <button type="submit" {% if not eligible_recipients %}disabled{% endif %}>{% trans "Generate invoice" %}</button>
     </form>
     <p class="text-faint" style="font-size:0.82rem; margin-top:0.6rem;">
-        {% trans "Leave \"Plan to bill\" on the default to use the department's assigned subscription plan, and leave \"Team members\" blank to bill for the department's actual current headcount." %}
+        {% trans "Leave \"Plan to bill\" on the default to use the department's assigned subscription plan, \"Team members\" blank to bill for the department's actual current headcount, and \"Region\" on auto-detect to use the department's own billing country." %}
     </p>
 </div>
 

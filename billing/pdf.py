@@ -22,7 +22,12 @@ def render_invoice_pdf(invoice) -> bytes:
     # will eventually be called from a request-less context too (the
     # Celery Beat sweep task planned for later) - so site_branding is
     # fetched and passed explicitly rather than relied on implicitly.
-    billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
+    # None for a department-less invoice (generate_invoice_for_user) -
+    # DepartmentBillingProfile is a OneToOneField to Department, so
+    # get_or_create(department=None) would violate its NOT NULL column.
+    billing_profile = None
+    if invoice.department_id is not None:
+        billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
     html = render_to_string(
         "billing/invoice_pdf.html",
         {

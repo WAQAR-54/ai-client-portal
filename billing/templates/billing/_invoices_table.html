@@ -17,7 +17,7 @@
         {% for invoice in invoices %}
         <tr>
             <td class="mono"><a href="{% url 'billing:invoice_detail' invoice_id=invoice.id %}">{{ invoice.invoice_number }}</a></td>
-            {% if departments is not None %}<td>{{ invoice.department.name }}</td>{% endif %}
+            {% if departments is not None %}<td>{{ invoice.department.name|default:"—" }}</td>{% endif %}
             <td>{{ invoice.recipient_user.email|default:"—" }}</td>
             <td>{{ invoice.plan.name }}</td>
             <td class="text-muted">{{ invoice.due_date|date:"Y-m-d" }}</td>

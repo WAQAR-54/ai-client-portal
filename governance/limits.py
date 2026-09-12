@@ -60,6 +60,13 @@ def check_usage_limits(user, conversation):
     or if their Plan has expired past its grace window."""
     from governance.plans import check_request_count_limit, get_plan_status
 
+    # Lazy import: billing imports governance.models.Plan at module level,
+    # so a module-level import here would be circular.
+    from billing.access import OVERDUE_INVOICE_MESSAGE, has_overdue_unpaid_invoice
+
+    if has_overdue_unpaid_invoice(user):
+        raise UsageLimitExceeded(OVERDUE_INVOICE_MESSAGE)
+
     plan_state = get_plan_status(user)["state"]
     if plan_state == "expired":
         raise UsageLimitExceeded(_("Your trial has ended — contact your administrator."))

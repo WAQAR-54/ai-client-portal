@@ -1,13 +1,17 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import Department, User
-from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
+from billing.access import has_overdue_unpaid_invoice
+from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department, generate_invoice_for_user
 from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
 from billing.pdf import render_invoice_pdf
 from billing.regions import REGIONS
+from billing.tasks import sweep_due_invoices
 from billing.tax_rules import tax_rule_for_country
 from governance.models import Plan
 
@@ -170,6 +174,43 @@ class AddRegionTests(TestCase):
         response = self.client.post(reverse("billing:add_region"), {"region_code": "ZZ"})
         self.assertRedirects(response, reverse("billing:regional_pricing"))
         self.assertFalse(RegionalPrice.objects.filter(region_code="ZZ").exists())
+
+
+class RemoveRegionTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+        self.plan_a = Plan.objects.create(name="Plan A")
+        self.plan_b = Plan.objects.create(name="Plan B")
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(reverse("billing:add_region"), {"region_code": "GB"})
+        self.client.get(reverse("billing:regional_pricing"))  # lazily creates rows for every active region
+
+    def test_removing_deletes_every_plans_price_row(self):
+        self.client.post(reverse("billing:remove_region"), {"region_code": "GB"})
+        self.assertFalse(RegionalPrice.objects.filter(region_code="GB").exists())
+
+    def test_removed_region_reappears_in_available_extra_regions(self):
+        self.client.post(reverse("billing:remove_region"), {"region_code": "GB"})
+        response = self.client.get(reverse("billing:regional_pricing"))
+        self.assertContains(response, "+ Add region")
+        self.assertContains(response, "United Kingdom")
+
+    def test_default_region_code_is_ignored(self):
+        response = self.client.post(reverse("billing:remove_region"), {"region_code": "PK"})
+        self.assertRedirects(response, reverse("billing:regional_pricing"))
+        self.assertTrue(RegionalPrice.objects.filter(region_code="PK").exists())
+
+    def test_non_superadmin_cannot_remove(self):
+        self.client.logout()
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:remove_region"), {"region_code": "GB"})
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(RegionalPrice.objects.filter(region_code="GB").exists())
 
 
 class OrganizationBillingSettingsViewTests(TestCase):
@@ -448,6 +489,116 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         self.assertEqual(invoice.currency, "USD")
         self.assertEqual(invoice.subtotal, Decimal("30"))
 
+    def test_explicit_region_code_overrides_departments_configured_country(self):
+        # self.department's DepartmentBillingProfile has country="AE" and is
+        # tax-exempt (from setUp) - forcing region_code="ROW" here should
+        # use ROW's price/currency, and (since exempt still wins regardless
+        # of region) stay at 0% tax rather than picking up ROW's own rate.
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("30"))
+        invoice = generate_invoice_for_department(self.department, region_code="ROW")
+        self.assertEqual(invoice.currency, "USD")
+        self.assertEqual(invoice.subtotal, Decimal("30"))
+        self.assertEqual(invoice.tax_rate, Decimal("0"))
+
+    def test_explicit_region_code_still_applies_countrys_default_tax_when_not_exempt(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=False)
+        RegionalPrice.objects.create(plan=self.plan, region_code="SA", price=Decimal("50"))
+        invoice = generate_invoice_for_department(self.department, region_code="SA")
+        # SA's default rate is 15% (billing/tax_rules.py), not AE's 5%.
+        self.assertEqual(invoice.tax_rate, Decimal("15"))
+
+
+class GenerateInvoiceForUserTests(TestCase):
+    """Money math must never be "probably right" - covers both the
+    has-a-department delegation path and the genuinely new department-less
+    path (billing.invoicing.generate_invoice_for_user)."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth", seats_included=2)
+        RegionalPrice.objects.create(
+            plan=self.plan, region_code="AE", price=Decimal("100"), extra_seat_price=Decimal("20")
+        )
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("40"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, country="AE", is_tax_exempt=True)
+
+    def test_department_user_delegates_to_department_billing_profile(self):
+        user = User.objects.create_user(email="dept@example.com", password="pw12345!", department=self.department)
+        invoice = generate_invoice_for_user(user)
+        self.assertEqual(invoice.department, self.department)
+        self.assertEqual(invoice.currency, "AED")
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+        self.assertEqual(invoice.tax_amount, Decimal("0.00"))  # department is_tax_exempt=True
+
+    def test_department_less_user_defaults_to_row_and_one_seat(self):
+        user = User.objects.create_user(email="solo@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(user, plan=self.plan)
+        self.assertIsNone(invoice.department)
+        self.assertEqual(invoice.currency, "USD")
+        self.assertEqual(invoice.subtotal, Decimal("40"))
+        self.assertEqual(invoice.tax_rate, Decimal("0"))  # ROW isn't in TAX_RULES -> DEFAULT_TAX_RULE
+        self.assertEqual(invoice.seats_billed, 1)
+
+    def test_explicit_plan_overrides_department_plan(self):
+        other_plan = Plan.objects.create(name="Enterprise")
+        RegionalPrice.objects.create(plan=other_plan, region_code="AE", price=Decimal("999"))
+        user = User.objects.create_user(email="dept2@example.com", password="pw12345!", department=self.department)
+        invoice = generate_invoice_for_user(user, plan=other_plan)
+        self.assertEqual(invoice.plan, other_plan)
+        self.assertEqual(invoice.subtotal, Decimal("999"))
+
+    def test_falls_back_to_users_own_plan_assignment_when_no_department_plan(self):
+        no_plan_department = Department.objects.create(name="No Plan Dept")
+        user = User.objects.create_user(email="noplan@example.com", password="pw12345!", department=no_plan_department)
+        demo_plan = user.plan_assignment.plan  # assigned automatically on creation
+        RegionalPrice.objects.create(plan=demo_plan, region_code="ROW", price=Decimal("5"))
+        invoice = generate_invoice_for_user(user)
+        self.assertEqual(invoice.plan, demo_plan)
+        # The department has no plan of its own, so this personal invoice
+        # is deliberately NOT attached to it (no DepartmentBillingProfile
+        # side-effect on a department that was never set up for billing).
+        self.assertIsNone(invoice.department)
+
+    def test_raises_when_no_plan_resolvable(self):
+        user = User.objects.create_user(email="noplanatall@example.com", password="pw12345!")
+        user.plan_assignment.delete()
+        user = User.objects.get(pk=user.pk)  # fresh instance - no stale reverse-relation cache
+        with self.assertRaises(InvoiceGenerationError):
+            generate_invoice_for_user(user)
+
+    def test_raises_when_no_row_price_for_department_less_user(self):
+        unpriced_plan = Plan.objects.create(name="Unpriced")
+        user = User.objects.create_user(email="unpriced@example.com", password="pw12345!")
+        with self.assertRaises(InvoiceGenerationError):
+            generate_invoice_for_user(user, plan=unpriced_plan)
+
+    def test_due_in_days_defaults_to_demo_duration_for_demo_plan(self):
+        demo_plan = Plan.objects.create(name="Trial Demo", is_demo=True, demo_duration_days=7)
+        RegionalPrice.objects.create(plan=demo_plan, region_code="ROW", price=Decimal("0"))
+        user = User.objects.create_user(email="trial@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(user, plan=demo_plan)
+        self.assertEqual(invoice.due_date, invoice.issue_date + timedelta(days=7))
+
+    def test_due_in_days_defaults_to_14_for_regular_plan(self):
+        user = User.objects.create_user(email="regular@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(user, plan=self.plan, region_code="ROW")
+        self.assertEqual(invoice.due_date, invoice.issue_date + timedelta(days=14))
+
+    def test_explicit_due_in_days_always_wins(self):
+        demo_plan = Plan.objects.create(name="Trial Demo 2", is_demo=True, demo_duration_days=7)
+        RegionalPrice.objects.create(plan=demo_plan, region_code="ROW", price=Decimal("0"))
+        user = User.objects.create_user(email="trial2@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(user, plan=demo_plan, due_in_days=3)
+        self.assertEqual(invoice.due_date, invoice.issue_date + timedelta(days=3))
+
+    def test_explicit_region_code_overrides_row_default(self):
+        user = User.objects.create_user(email="regionpick@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(user, plan=self.plan, region_code="AE")
+        self.assertEqual(invoice.currency, "AED")
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+
 
 class InvoiceListViewTests(TestCase):
     def setUp(self):
@@ -547,11 +698,6 @@ class GenerateInvoiceViewTests(TestCase):
         self.department = Department.objects.create(name="Sales")
         self.other_department = Department.objects.create(name="Support")
         self.plan = Plan.objects.create(name="Growth")
-        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
-        self.department.plan = self.plan
-        self.department.save(update_fields=["plan"])
-        self.other_department.plan = self.plan
-        self.other_department.save(update_fields=["plan"])
 
         self.superadmin = User.objects.create_user(
             email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
@@ -569,6 +715,18 @@ class GenerateInvoiceViewTests(TestCase):
         self.other_recipient = User.objects.create_user(
             email="otherrecipient@example.com", password="pw12345!", department=self.other_department
         )
+
+        # Deliberately priced/assigned AFTER every fixture user is created:
+        # generate_welcome_invoice_on_creation (accounts/signals.py) would
+        # otherwise give each of them their own extra welcome invoice the
+        # moment their department has both a plan and a price, muddying
+        # exactly the single invoice each test below expects from its own
+        # POST.
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        self.other_department.plan = self.plan
+        self.other_department.save(update_fields=["plan"])
 
     def test_superadmin_generates_invoice_for_any_recipient(self):
         self.client.login(email="super@example.com", password="pw12345!")
@@ -605,6 +763,17 @@ class GenerateInvoiceViewTests(TestCase):
         self.assertFalse(Invoice.objects.filter(department=self.department).exists())
         messages = list(response.context["messages"])
         self.assertTrue(any("no price" in str(m) for m in messages))
+
+    def test_explicit_region_code_overrides_auto_detected_region(self):
+        RegionalPrice.objects.create(plan=self.plan, region_code="PK", price=Decimal("8900"))
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:generate_invoice"),
+            {"recipient_user_id": self.recipient.id, "region_code": "PK"},
+        )
+        invoice = Invoice.objects.get(department=self.department)
+        self.assertEqual(invoice.currency, "PKR")
+        self.assertEqual(invoice.subtotal, Decimal("8900"))
 
     def test_recipient_in_department_without_a_plan_is_still_eligible(self):
         # "Bill to" should list everyone with a department, not just
@@ -651,9 +820,6 @@ class InvoicePaymentVerificationTests(TestCase):
         self.department = Department.objects.create(name="Sales")
         self.other_department = Department.objects.create(name="Support")
         self.plan = Plan.objects.create(name="Growth")
-        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
-        self.department.plan = self.plan
-        self.department.save(update_fields=["plan"])
 
         self.superadmin = User.objects.create_user(
             email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
@@ -675,6 +841,12 @@ class InvoicePaymentVerificationTests(TestCase):
         self.recipient = User.objects.create_user(
             email="recipient@example.com", password="pw12345!", department=self.department
         )
+
+        # Priced/assigned/profiled AFTER every fixture user - see the
+        # identical comment in GenerateInvoiceViewTests.setUp.
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
         DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
         self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
         self.invoice.submit_payment_proof(transaction_id="TXN123")
@@ -1028,3 +1200,256 @@ class InvoicePdfTests(TestCase):
     def test_anonymous_redirected_to_login(self):
         response = self.client.get(reverse("billing:download_invoice_pdf", kwargs={"invoice_id": self.invoice.id}))
         self.assertEqual(response.status_code, 302)
+
+
+class WelcomeInvoiceSignalTests(TestCase):
+    """accounts.signals.generate_welcome_invoice_on_creation - fires for
+    every new User row (self-signup or admin-created, department or not),
+    must never raise even when nothing is priced yet."""
+
+    def test_new_user_gets_a_welcome_invoice_when_row_priced(self):
+        user = User.objects.create_user(email="new@example.com", password="pw12345!")
+        demo_plan = user.plan_assignment.plan
+        RegionalPrice.objects.create(plan=demo_plan, region_code="ROW", price=Decimal("0"))
+        # The RegionalPrice above didn't exist yet at creation time, so the
+        # first attempt silently failed - create a second user now that
+        # it's priced to see the success path.
+        second_user = User.objects.create_user(email="new2@example.com", password="pw12345!")
+        self.assertTrue(Invoice.objects.filter(recipient_user=second_user, plan=demo_plan).exists())
+
+    def test_new_user_creation_never_raises_when_nothing_priced(self):
+        # No RegionalPrice seeded anywhere - must not raise or roll back.
+        user = User.objects.create_user(email="unpriced@example.com", password="pw12345!")
+        self.assertTrue(User.objects.filter(pk=user.pk).exists())
+        self.assertFalse(Invoice.objects.filter(recipient_user=user).exists())
+
+    def test_admin_created_user_inside_a_priced_department_gets_departmental_invoice(self):
+        department = Department.objects.create(name="Sales")
+        plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=plan, region_code="ROW", price=Decimal("50"))
+        department.plan = plan
+        department.save(update_fields=["plan"])
+
+        user = User.objects.create_user(email="deptuser@example.com", password="pw12345!", department=department)
+        invoice = Invoice.objects.get(recipient_user=user)
+        self.assertEqual(invoice.department, department)
+        self.assertEqual(invoice.plan, plan)
+
+    def test_does_not_fire_on_plain_save_update(self):
+        user = User.objects.create_user(email="existing@example.com", password="pw12345!")
+        Invoice.objects.filter(recipient_user=user).delete()
+        user.first_name = "Changed"
+        user.save()
+        self.assertFalse(Invoice.objects.filter(recipient_user=user).exists())
+
+
+class SweepDueInvoicesTests(TestCase):
+    """billing.tasks.sweep_due_invoices - the recurring monthly generation
+    task. Demo/plan_assignment plans are deliberately never priced in this
+    class, so accounts.signals.generate_welcome_invoice_on_creation always
+    fails silently for every user created here and never pollutes these
+    hand-built fixtures with an extra invoice."""
+
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.user = User.objects.create_user(email="user@example.com", password="pw12345!")
+
+    def _make_invoice(self, user, plan, due_date):
+        return Invoice.objects.create(
+            department=None,
+            recipient_user=user,
+            plan=plan,
+            issue_date=due_date - timedelta(days=14),
+            due_date=due_date,
+            currency="USD",
+            subtotal=Decimal("50"),
+            tax_rate=Decimal("0"),
+            tax_amount=Decimal("0"),
+            total=Decimal("50"),
+            status=Invoice.Status.PAID,
+        )
+
+    def test_user_with_zero_invoices_is_skipped(self):
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 0)
+
+    def test_generates_next_invoice_exactly_3_days_before_due(self):
+        today = timezone.localdate()
+        self._make_invoice(self.user, self.plan, due_date=today - timedelta(days=27))  # +30 = today+3
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 1)
+        new_invoice = Invoice.objects.filter(recipient_user=self.user).order_by("-id").first()
+        self.assertEqual(new_invoice.due_date, today + timedelta(days=3))
+
+    def test_does_not_generate_before_the_3_day_window(self):
+        today = timezone.localdate()
+        self._make_invoice(self.user, self.plan, due_date=today - timedelta(days=26))  # +30 = today+4
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 0)
+
+    def test_does_not_double_generate_if_run_twice(self):
+        today = timezone.localdate()
+        self._make_invoice(self.user, self.plan, due_date=today - timedelta(days=27))
+        sweep_due_invoices()
+        result2 = sweep_due_invoices()
+        self.assertEqual(result2["generated"], 0)
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user).count(), 2)
+
+    def test_generates_late_if_sweep_missed_earlier_days(self):
+        today = timezone.localdate()
+        self._make_invoice(self.user, self.plan, due_date=today - timedelta(days=29))  # +30 = today+1, past window
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 1)
+        new_invoice = Invoice.objects.filter(recipient_user=self.user).order_by("-id").first()
+        self.assertEqual(new_invoice.due_date, today + timedelta(days=1))
+
+    def test_skips_departmental_user_with_auto_generate_invoices_off(self):
+        department = Department.objects.create(name="Support")
+        dept_user = User.objects.create_user(email="deptuser@example.com", password="pw12345!", department=department)
+        department.plan = self.plan
+        department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=department, auto_generate_invoices=False)
+        today = timezone.localdate()
+        self._make_invoice(dept_user, self.plan, due_date=today - timedelta(days=27))
+
+        result = sweep_due_invoices()
+        self.assertEqual(result["skipped_auto_generate_off"], 1)
+        self.assertEqual(Invoice.objects.filter(recipient_user=dept_user).count(), 1)
+
+    def test_departmental_user_with_auto_generate_invoices_on_is_generated(self):
+        department = Department.objects.create(name="Support2")
+        dept_user = User.objects.create_user(email="deptuser2@example.com", password="pw12345!", department=department)
+        department.plan = self.plan
+        department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=department, auto_generate_invoices=True)
+        today = timezone.localdate()
+        self._make_invoice(dept_user, self.plan, due_date=today - timedelta(days=27))
+
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 1)
+
+    def test_department_less_user_always_eligible(self):
+        today = timezone.localdate()
+        self._make_invoice(self.user, self.plan, due_date=today - timedelta(days=27))
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 1)
+
+    def test_one_users_price_error_does_not_abort_the_whole_sweep(self):
+        unpriced_plan = Plan.objects.create(name="Unpriced")
+        bad_user = User.objects.create_user(email="bad@example.com", password="pw12345!")
+        today = timezone.localdate()
+        self._make_invoice(bad_user, unpriced_plan, due_date=today - timedelta(days=27))
+        self._make_invoice(self.user, self.plan, due_date=today - timedelta(days=27))
+
+        result = sweep_due_invoices()
+        self.assertEqual(result["generated"], 1)
+        self.assertEqual(result["no_price"], 1)
+
+
+class OverdueChatAccessTests(TestCase):
+    """billing.access.has_overdue_unpaid_invoice and its two insertion
+    points (governance/limits.py::check_usage_limits, governance/plans.py
+    ::check_session_creation_limit) - the block must never touch
+    billing:my_invoices/submit_payment_proof or the admin/governance
+    panel, and must lift the instant an Admin/SuperAdmin marks the
+    invoice paid."""
+
+    def setUp(self):
+        from chat.models import Conversation
+
+        self.Conversation = Conversation
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth")
+        self.user = User.objects.create_user(email="user@example.com", password="pw12345!")
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.client.login(email="user@example.com", password="pw12345!")
+
+    def _make_invoice(self, user, due_date, status=Invoice.Status.UNPAID):
+        return Invoice.objects.create(
+            department=None,
+            recipient_user=user,
+            plan=self.plan,
+            issue_date=due_date - timedelta(days=14),
+            due_date=due_date,
+            currency="USD",
+            subtotal=Decimal("50"),
+            tax_rate=Decimal("0"),
+            tax_amount=Decimal("0"),
+            total=Decimal("50"),
+            status=status,
+        )
+
+    def test_true_for_overdue_unpaid(self):
+        self._make_invoice(self.user, timezone.localdate() - timedelta(days=1), Invoice.Status.UNPAID)
+        self.assertTrue(has_overdue_unpaid_invoice(self.user))
+
+    def test_true_for_overdue_pending_verification(self):
+        self._make_invoice(self.user, timezone.localdate() - timedelta(days=1), Invoice.Status.PENDING_VERIFICATION)
+        self.assertTrue(has_overdue_unpaid_invoice(self.user))
+
+    def test_false_for_overdue_paid(self):
+        self._make_invoice(self.user, timezone.localdate() - timedelta(days=1), Invoice.Status.PAID)
+        self.assertFalse(has_overdue_unpaid_invoice(self.user))
+
+    def test_false_for_not_yet_due(self):
+        self._make_invoice(self.user, timezone.localdate() + timedelta(days=1))
+        self.assertFalse(has_overdue_unpaid_invoice(self.user))
+
+    def test_false_for_due_today(self):
+        self._make_invoice(self.user, timezone.localdate())
+        self.assertFalse(has_overdue_unpaid_invoice(self.user))
+
+    def test_false_for_user_with_no_invoices(self):
+        self.assertFalse(has_overdue_unpaid_invoice(self.user))
+
+    def test_create_conversation_blocked_when_overdue(self):
+        self._make_invoice(self.user, timezone.localdate() - timedelta(days=1))
+        response = self.client.post(reverse("chat:create_conversation"), follow=True)
+        self.assertRedirects(response, reverse("chat:chat_home"))
+        messages_list = list(response.context["messages"])
+        self.assertTrue(any("overdue" in str(m) for m in messages_list))
+        self.assertFalse(self.Conversation.objects.filter(user=self.user).exists())
+
+    def test_message_send_blocked_when_overdue(self):
+        conversation = self.Conversation.objects.create(user=self.user)
+        self._make_invoice(self.user, timezone.localdate() - timedelta(days=1))
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}), {"content": "hello"}
+        )
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("overdue", response.content.decode().lower())
+
+    def test_chat_access_restored_after_admin_marks_paid(self):
+        invoice = self._make_invoice(self.user, timezone.localdate() - timedelta(days=1))
+        invoice.verify_payment(self.admin)
+        response = self.client.post(reverse("chat:create_conversation"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(self.Conversation.objects.filter(user=self.user).exists())
+
+    def test_my_invoices_accessible_while_blocked(self):
+        self._make_invoice(self.user, timezone.localdate() - timedelta(days=1))
+        response = self.client.get(reverse("billing:my_invoices"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_submit_payment_proof_accessible_while_blocked(self):
+        invoice = self._make_invoice(self.user, timezone.localdate() - timedelta(days=1))
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": invoice.id}), {"transaction_id": "TXN1"}
+        )
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.PENDING_VERIFICATION)
+
+    def test_admin_own_governance_panel_accessible_despite_own_overdue_invoice(self):
+        self._make_invoice(self.admin, timezone.localdate() - timedelta(days=1))
+        self.client.logout()
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertEqual(response.status_code, 200)

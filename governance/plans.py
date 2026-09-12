@@ -375,6 +375,15 @@ def check_session_creation_limit(user):
     lives here rather than being bolted onto the UsageLimit-based checks."""
     from governance.limits import UsageLimitExceeded
 
+    # Checked before the sessions_per_day_limit early-return below (an
+    # unlimited-sessions plan must still be gated on an overdue invoice) -
+    # lazy import since billing imports governance.models.Plan at module
+    # level, so a module-level import here would be circular.
+    from billing.access import OVERDUE_INVOICE_MESSAGE, has_overdue_unpaid_invoice
+
+    if has_overdue_unpaid_invoice(user):
+        raise UsageLimitExceeded(OVERDUE_INVOICE_MESSAGE)
+
     status = get_plan_status(user)
     plan = status["plan"]
     if plan is None or plan.sessions_per_day_limit is None:

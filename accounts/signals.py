@@ -1,7 +1,11 @@
+import logging
+
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from accounts.models import User
+
+logger = logging.getLogger(__name__)
 
 
 @receiver(post_save, sender=User)
@@ -11,6 +15,30 @@ def assign_default_plan_on_creation(sender, instance, created, **kwargs):
     from governance.plans import assign_default_plan_if_missing
 
     assign_default_plan_if_missing(instance)
+
+
+@receiver(post_save, sender=User)
+def generate_welcome_invoice_on_creation(sender, instance, created, **kwargs):
+    """Every new account - self-signup or admin-created, department
+    assigned or not - gets an invoice for whatever plan it starts on
+    (always the seeded "Demo" plan by default, via the receiver above,
+    which Django guarantees runs first since it's connected first for
+    this same signal+sender). A separate receiver rather than folding
+    into assign_default_plan_on_creation so a bug in one can never stop
+    the other from running."""
+    if not created:
+        return
+    from billing.invoicing import InvoiceGenerationError, generate_invoice_for_user
+
+    try:
+        generate_invoice_for_user(instance)
+    except InvoiceGenerationError:
+        # No RegionalPrice configured yet for this plan/region on a fresh
+        # install - the welcome invoice simply doesn't exist until a
+        # SuperAdmin prices it. Never blocks account creation.
+        pass
+    except Exception:
+        logger.exception("Failed to generate welcome invoice for user %s", instance.pk)
 
 
 class _UnresolvedLoginTarget:
