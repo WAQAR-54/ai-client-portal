@@ -11,7 +11,9 @@
     table.layout { width: 100%; border-collapse: collapse; }
     table.layout td { vertical-align: top; padding: 12px 14px; background-color: #f9f8f4; border: 1px solid #ebe8dd; }
     table.layout td.spacer { padding: 0 7px; background-color: #fff; border: none; }
-    .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #9c988c; margin-bottom: 5px; }
+    .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #9c988c; margin-bottom: 7px; }
+    .field { margin: 0 0 4px 0; line-height: 1.3; }
+    .field-label { color: #9c988c; }
     table.topbar { width: 100%; border-collapse: collapse; }
     table.topbar td { padding: 0; height: 4px; background-color: #00aef0; font-size: 1px; line-height: 1px; }
     table.header-bar { width: 100%; border-collapse: collapse; }
@@ -61,24 +63,24 @@
                 <div class="label">{% trans "Bill to" %}</div>
                 {% with display_name=billing_profile.company_name|default:invoice.recipient_user.get_full_name %}
                 {% if display_name %}
-                <div><strong>{{ display_name }}</strong></div>
-                {% if invoice.recipient_user %}<div>{{ invoice.recipient_user.email }}</div>{% endif %}
+                <div class="field"><strong>{{ display_name }}</strong></div>
+                {% if invoice.recipient_user %}<div class="field">{{ invoice.recipient_user.email }}</div>{% endif %}
                 {% elif invoice.recipient_user %}
-                <div><strong>{{ invoice.recipient_user.email }}</strong></div>
+                <div class="field"><strong>{{ invoice.recipient_user.email }}</strong></div>
                 {% endif %}
                 {% endwith %}
-                {% if billing_profile.phone_number %}<div>{{ billing_profile.phone_number }}</div>{% endif %}
-                {% if billing_profile.billing_address %}<div class="muted">{{ billing_profile.billing_address }}</div>{% endif %}
-                {% if billing_profile.tax_id %}<div class="faint">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</div>{% endif %}
+                {% if billing_profile.phone_number %}<div class="field">{{ billing_profile.phone_number }}</div>{% endif %}
+                {% if billing_profile.billing_address %}<div class="field muted">{{ billing_profile.billing_address }}</div>{% endif %}
+                {% if billing_profile.tax_id %}<div class="field faint">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</div>{% endif %}
             </td>
             <td class="spacer" width="6%">&nbsp;</td>
             <td width="47%">
                 {% if organization_profile.bank_name or organization_profile.account_number %}
                 <div class="label">{% trans "Payment details" %}</div>
-                {% if organization_profile.bank_name %}<div>{% trans "Bank" %}: {{ organization_profile.bank_name }}</div>{% endif %}
-                {% if organization_profile.account_number %}<div>{% trans "Account / IBAN" %}: <span class="mono">{{ organization_profile.account_number }}</span></div>{% endif %}
-                {% if organization_profile.account_title %}<div>{% trans "Account title" %}: {{ organization_profile.account_title }}</div>{% endif %}
-                {% if organization_profile.swift_code %}<div>{% trans "SWIFT" %}: <span class="mono">{{ organization_profile.swift_code }}</span></div>{% endif %}
+                {% if organization_profile.bank_name %}<div class="field"><span class="field-label">{% trans "Bank" %}</span> {{ organization_profile.bank_name }}</div>{% endif %}
+                {% if organization_profile.account_number %}<div class="field"><span class="field-label">{% trans "Account / IBAN" %}</span> <span class="mono">{{ organization_profile.account_number }}</span></div>{% endif %}
+                {% if organization_profile.account_title %}<div class="field"><span class="field-label">{% trans "Account title" %}</span> {{ organization_profile.account_title }}</div>{% endif %}
+                {% if organization_profile.swift_code %}<div class="field"><span class="field-label">{% trans "SWIFT" %}</span> <span class="mono">{{ organization_profile.swift_code }}</span></div>{% endif %}
                 {% endif %}
             </td>
         </tr>
@@ -88,11 +90,11 @@
         <tr>
             <td width="50%">
                 <div class="label">{% trans "Plan" %}</div>
-                <div>{{ invoice.plan.name }}</div>
+                <div class="field">{{ invoice.plan.name }}</div>
             </td>
             <td width="50%">
                 <div class="label">{% trans "Team members" %}</div>
-                <div>{{ invoice.seats_billed|default:"—" }}</div>
+                <div class="field">{{ invoice.seats_billed|default:"—" }}</div>
             </td>
         </tr>
     </table>
