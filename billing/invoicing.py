@@ -188,7 +188,10 @@ def generate_invoice_for_user(user, *, plan=None, due_in_days=None, region_code=
 
     subtotal = regional_price.price
     line_items = [{"description": f"{resolved_plan.name} — {user.email}", "amount": str(regional_price.price)}]
-    seats_billed = 1 if resolved_plan.seats_included is not None else None
+    # A department-less invoice always bills exactly one person - unlike
+    # generate_invoice_for_department's actual_seats, there's no team to
+    # count here, so this is never conditional on plan.seats_included.
+    seats_billed = 1
 
     tax_rate = tax_rule_for_country(resolved_region_code)["tax_rate"]
     tax_amount = _quantize(subtotal * tax_rate / Decimal("100"))

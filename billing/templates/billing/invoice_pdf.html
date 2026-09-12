@@ -3,7 +3,7 @@
 <head>
 <style>
     body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #232019; }
-    h1 { font-size: 14pt; margin: 0 0 2px 0; }
+    h1 { font-size: 14pt; margin: 0 0 2px 0; color: #fff; }
     .muted { color: #6f6c62; }
     .faint { color: #9c988c; font-size: 8pt; }
     .mono { font-family: Courier, monospace; }
@@ -11,31 +11,38 @@
     table.layout { width: 100%; border-collapse: collapse; }
     table.layout td { vertical-align: top; padding: 0; }
     .label { font-size: 8pt; text-transform: uppercase; color: #9c988c; margin-bottom: 4px; }
+    table.header-bar { width: 100%; border-collapse: collapse; background-color: #122268; }
+    table.header-bar td { padding: 16px 20px; color: #fff; }
+    .header-sub { color: #c7cdf2; }
     table.items { width: 100%; border-collapse: collapse; margin-top: 18px; }
-    table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; color: #9c988c; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
+    table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; color: #122268; border-bottom: 2px solid #00aef0; padding-bottom: 6px; }
     table.items th.right, table.items td.right { text-align: right; }
     table.items td { padding: 8px 0; border-bottom: 1px solid #eee; }
     table.totals { width: 260px; margin-top: 12px; margin-left: auto; border-collapse: collapse; }
-    table.totals td { padding: 3px 0; font-size: 10pt; color: #6f6c62; }
+    table.totals td { padding: 3px 6px; font-size: 10pt; color: #6f6c62; }
     table.totals td.right { text-align: right; }
-    table.totals tr.total td { border-top: 1px solid #ccc; padding-top: 8px; font-weight: bold; font-size: 12pt; color: #232019; }
+    table.totals tr.total td { padding: 10px 6px; font-weight: bold; font-size: 12pt; color: #122268; background-color: #e3f6fd; }
     .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; font-size: 9pt; color: #6f6c62; }
+    .content { padding: 20px 4px 0; }
+    table.planteam { width: 100%; border-collapse: collapse; margin-top: 14px; background-color: #f9f8f4; }
+    table.planteam td { padding: 10px 14px; }
 </style>
 </head>
 <body>
-    <table class="layout">
+    <table class="header-bar">
         <tr>
             <td>
                 <h1>{{ site_branding.site_name }}</h1>
-                <div class="muted">{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</div>
+                <div class="header-sub">{% blocktrans with number=invoice.invoice_number %}Invoice {{ number }}{% endblocktrans %}</div>
             </td>
-            <td class="right muted">
+            <td class="right header-sub">
                 {% blocktrans with date=invoice.issue_date|date:"Y-m-d" %}Issued: {{ date }}{% endblocktrans %}<br>
                 {% blocktrans with date=invoice.due_date|date:"Y-m-d" %}Due: {{ date }}{% endblocktrans %}<br>
                 {% blocktrans with currency=invoice.currency %}Currency: {{ currency }}{% endblocktrans %}
             </td>
         </tr>
     </table>
+    <div class="content">
 
     <table class="layout" style="margin-top:18px;">
         <tr>
@@ -58,7 +65,7 @@
         </tr>
     </table>
 
-    <table class="layout" style="margin-top:14px;">
+    <table class="planteam">
         <tr>
             <td width="50%">
                 <div class="label">{% trans "Plan" %}</div>
@@ -89,5 +96,6 @@
     {% if organization_profile.payment_note %}
     <div class="footer">{{ organization_profile.payment_note }}</div>
     {% endif %}
+    </div>
 </body>
 </html>
