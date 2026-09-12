@@ -787,3 +787,88 @@ class MyInvoicesViewTests(TestCase):
         self.client.login(email="other@example.com", password="pw12345!")
         response = self.client.get(reverse("billing:my_invoices"))
         self.assertNotContains(response, self.invoice.invoice_number)
+
+
+class InvoiceDetailViewTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.other_department,
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.stranger = User.objects.create_user(
+            email="stranger@example.com", password="pw12345!", department=self.other_department
+        )
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+
+    def _url(self):
+        return reverse("billing:invoice_detail", kwargs={"invoice_id": self.invoice.id})
+
+    def test_recipient_can_view_and_cannot_manage(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_recipient"])
+        self.assertFalse(response.context["can_manage"])
+
+    def test_own_department_admin_can_view_and_manage(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["is_recipient"])
+        self.assertTrue(response.context["can_manage"])
+
+    def test_other_department_admin_cannot_view(self):
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_view_and_manage(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_manage"])
+
+    def test_unrelated_user_cannot_view(self):
+        self.client.login(email="stranger@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 403)
+
+    def test_toggle_from_detail_page_redirects_back_to_detail_page(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id}),
+            {"next_invoice_id": self.invoice.id},
+        )
+        self.assertRedirects(response, self._url())
+
+    def test_submit_proof_from_detail_page_redirects_back_to_detail_page(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-1", "next_invoice_id": self.invoice.id},
+        )
+        self.assertRedirects(response, self._url())

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{{ invoice.invoice_number }} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
+        <div>
+            <h1 style="margin-bottom:0.25rem;">{{ invoice.invoice_number }}</h1>
+            <p class="text-muted" style="margin:0;">{{ invoice.department.name }}{% if invoice.recipient_user %} — {{ invoice.recipient_user.email }}{% endif %}</p>
+        </div>
+        <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="font-size:0.85rem;">
+            {{ invoice.get_status_display }}
+        </span>
+    </div>
+
+    <div class="scroll-shadow mt-4" style="overflow-x:auto;">
+        <table class="data">
+            <tbody>
+                <tr><td>{% trans "Plan" %}</td><td class="mono">{{ invoice.plan.name }}</td></tr>
+                <tr><td>{% trans "Issue date" %}</td><td class="mono">{{ invoice.issue_date|date:"Y-m-d" }}</td></tr>
+                <tr><td>{% trans "Due date" %}</td><td class="mono">{{ invoice.due_date|date:"Y-m-d" }}</td></tr>
+                <tr><td>{% trans "Subtotal" %}</td><td class="mono">{{ invoice.currency }} {{ invoice.subtotal }}</td></tr>
+                <tr><td>{% blocktrans with rate=invoice.tax_rate %}Tax ({{ rate }}%){% endblocktrans %}</td><td class="mono">{{ invoice.currency }} {{ invoice.tax_amount }}</td></tr>
+                <tr><td><strong>{% trans "Total" %}</strong></td><td class="mono"><strong>{{ invoice.currency }} {{ invoice.total }}</strong></td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    {% if organization_profile.bank_name or organization_profile.account_number %}
+    <div class="card mt-4" style="background:var(--color-surface-muted);">
+        <h2 style="margin-bottom:0.5rem;">{% trans "Payment details" %}</h2>
+        {% if organization_profile.bank_name %}<p style="margin:0;">{% trans "Bank" %}: {{ organization_profile.bank_name }}</p>{% endif %}
+        {% if organization_profile.account_title %}<p style="margin:0;">{% trans "Account title" %}: {{ organization_profile.account_title }}</p>{% endif %}
+        {% if organization_profile.account_number %}<p style="margin:0;">{% trans "Account number" %}: {{ organization_profile.account_number }}</p>{% endif %}
+        {% if organization_profile.swift_code %}<p style="margin:0;">{% trans "SWIFT/BIC" %}: {{ organization_profile.swift_code }}</p>{% endif %}
+        {% if organization_profile.payment_note %}<p class="text-faint mt-2" style="margin:0;">{{ organization_profile.payment_note }}</p>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if invoice.status == 'pending_verification' %}
+    <div class="card mt-4">
+        <h2 style="margin-bottom:0.5rem;">{% trans "Submitted payment proof" %}</h2>
+        {% if invoice.submitted_transaction_id %}<p>{% blocktrans with txn=invoice.submitted_transaction_id %}Transaction ID: {{ txn }}{% endblocktrans %}</p>{% endif %}
+        {% if invoice.submitted_proof_image %}
+        <a href="{{ invoice.submitted_proof_image.url }}" target="_blank" rel="noopener">
+            <img src="{{ invoice.submitted_proof_image.url }}" alt="{% trans 'Payment screenshot' %}" style="max-width:320px; border-radius:var(--radius-md); border:1px solid var(--color-border); display:block; margin-top:0.5rem;">
+        </a>
+        {% endif %}
+        <p class="text-faint" style="font-size:0.85rem; margin-top:0.5rem;">{% blocktrans with submitted=invoice.submitted_at|date:"Y-m-d H:i" %}Submitted {{ submitted }}{% endblocktrans %}</p>
+    </div>
+    {% elif invoice.status == 'paid' and invoice.verified_by %}
+    <div class="card mt-4">
+        <p class="text-muted" style="margin:0;">{% blocktrans with who=invoice.verified_by.email when=invoice.verified_at|date:"Y-m-d H:i" %}Verified paid by {{ who }} on {{ when }}.{% endblocktrans %}</p>
+    </div>
+    {% endif %}
+
+    {% if is_recipient and invoice.status == 'unpaid' %}
+    <div class="card mt-4">
+        <h2 style="margin-bottom:0.5rem;">{% trans "Submit payment" %}</h2>
+        <form method="post" action="{% url 'billing:submit_payment_proof' invoice_id=invoice.id %}" enctype="multipart/form-data" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
+            {% csrf_token %}
+            <input type="hidden" name="next_invoice_id" value="{{ invoice.id }}">
+            <div style="flex:1; min-width:220px;">
+                <label for="transaction_id">{% trans "Transaction ID" %}</label>
+                <input class="input" type="text" name="transaction_id" id="transaction_id" style="margin:0;" placeholder="{% trans 'optional if you attach a screenshot' %}">
+            </div>
+            <div style="flex:1; min-width:220px;">
+                <label for="proof_image">{% trans "Payment screenshot" %}</label>
+                <input class="input" type="file" name="proof_image" id="proof_image" accept="image/*" style="margin:0;">
+            </div>
+            <button type="submit">{% trans "Submit payment" %}</button>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if can_manage %}
+    <div class="card mt-4">
+        <h2 style="margin-bottom:0.5rem;">{% trans "Manage" %}</h2>
+        <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+            {% if invoice.status == 'pending_verification' %}
+            <form method="post" action="{% url 'billing:verify_invoice_payment' invoice_id=invoice.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next_invoice_id" value="{{ invoice.id }}">
+                <button type="submit">{% trans "Approve — mark paid" %}</button>
+            </form>
+            <form method="post" action="{% url 'billing:reject_invoice_payment' invoice_id=invoice.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next_invoice_id" value="{{ invoice.id }}">
+                <button type="submit" class="btn-ghost">{% trans "Reject" %}</button>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'billing:toggle_invoice_status' invoice_id=invoice.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next_invoice_id" value="{{ invoice.id }}">
+                <button type="submit" class="btn-ghost">
+                    {% if invoice.status == 'paid' %}{% trans "Mark unpaid" %}{% else %}{% trans "Mark paid manually" %}{% endif %}
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <p class="mt-4"><a href="{% if is_recipient %}{% url 'billing:my_invoices' %}{% else %}{% url 'billing:invoices' %}{% endif %}">{% trans "← Back to invoices" %}</a></p>
+</div>
+{% endblock %}

@@ -4,6 +4,7 @@ from django.contrib import messages as django_messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
@@ -359,6 +360,17 @@ def _get_scoped_invoice_or_403(request, invoice_id):
     return invoice
 
 
+def _safe_next_url(request, default):
+    """`next` is only ever one of this app's own invoice URLs (the detail
+    page posting back to itself) - never taken as an open redirect target,
+    hence the reverse() re-derivation rather than trusting the raw POST
+    value directly."""
+    invoice_id = request.POST.get("next_invoice_id", "").strip()
+    if invoice_id.isdigit() and Invoice.objects.filter(id=invoice_id).exists():
+        return reverse("billing:invoice_detail", kwargs={"invoice_id": int(invoice_id)})
+    return default
+
+
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def toggle_invoice_status(request, invoice_id):
@@ -373,7 +385,7 @@ def toggle_invoice_status(request, invoice_id):
     log_action(request.user, "billing.invoice_status_toggle", invoice, old_value=old_status, new_value=invoice.status)
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
-    return redirect("billing:invoices")
+    return redirect(_safe_next_url(request, reverse("billing:invoices")))
 
 
 @role_required(User.Role.ADMIN)
@@ -384,7 +396,7 @@ def verify_invoice_payment(request, invoice_id):
     log_action(request.user, "billing.invoice_payment_verified", invoice, new_value=invoice.status)
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
-    return redirect("billing:invoices")
+    return redirect(_safe_next_url(request, reverse("billing:invoices")))
 
 
 @role_required(User.Role.ADMIN)
@@ -395,7 +407,7 @@ def reject_invoice_payment(request, invoice_id):
     log_action(request.user, "billing.invoice_payment_rejected", invoice, new_value=invoice.status)
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
-    return redirect("billing:invoices")
+    return redirect(_safe_next_url(request, reverse("billing:invoices")))
 
 
 class MyInvoicesView(LoginRequiredMixin, TemplateView):
@@ -418,15 +430,52 @@ def submit_payment_proof(request, invoice_id):
     if not request.user.is_authenticated:
         return redirect("accounts:login")
     invoice = get_object_or_404(Invoice, id=invoice_id, recipient_user=request.user)
+    default_redirect = _safe_next_url(request, reverse("billing:my_invoices"))
     if invoice.status != Invoice.Status.UNPAID:
-        return redirect("billing:my_invoices")
+        return redirect(default_redirect)
 
     transaction_id = request.POST.get("transaction_id", "").strip()
     proof_image = request.FILES.get("proof_image")
     if not transaction_id and not proof_image:
         django_messages.error(request, "Provide a transaction ID or a payment screenshot.")
-        return redirect("billing:my_invoices")
+        return redirect(default_redirect)
 
     invoice.submit_payment_proof(transaction_id=transaction_id, proof_image=proof_image)
     log_action(request.user, "billing.invoice_payment_submitted", invoice, new_value=invoice.status)
-    return redirect("billing:my_invoices")
+    return redirect(default_redirect)
+
+
+def _can_view_invoice(user, invoice):
+    """Who's allowed to open one invoice's detail page: the person it's
+    billed to, always; otherwise the same Admin(-own-department)/
+    SuperAdmin(-any) scoping as every management action above."""
+    if invoice.recipient_user_id == user.id:
+        return True
+    if user.role == User.Role.SUPERADMIN:
+        return True
+    return user.role == User.Role.ADMIN and invoice.department_id == user.department_id
+
+
+class InvoiceDetailView(LoginRequiredMixin, TemplateView):
+    """One invoice, fully expanded - amounts, the recipient's submitted
+    payment proof (if any), and the payment/verification actions relevant
+    to whoever's looking (submit-proof for the recipient, approve/reject/
+    toggle for whoever manages this department's billing). Reachable from
+    both the admin Invoices list and a recipient's own My Invoices page,
+    which is why access is checked here rather than via a role mixin."""
+
+    template_name = "billing/invoice_detail.html"
+
+    def get_context_data(self, **kwargs):
+        invoice = get_object_or_404(
+            Invoice.objects.select_related("department", "plan", "recipient_user"), id=kwargs["invoice_id"]
+        )
+        if not _can_view_invoice(self.request.user, invoice):
+            raise PermissionDenied("You don't have access to this invoice.")
+        return super().get_context_data(**kwargs) | {
+            "invoice": invoice,
+            "is_recipient": invoice.recipient_user_id == self.request.user.id,
+            "can_manage": invoice.recipient_user_id != self.request.user.id
+            and self.request.user.role in (User.Role.ADMIN, User.Role.SUPERADMIN),
+            "organization_profile": OrganizationBillingProfile.load(),
+        }

@@ -10,7 +10,7 @@
     <div class="card" style="margin-top:1rem; border:1px solid var(--color-border);">
         <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
             <div>
-                <h2 style="margin-bottom:0.25rem;">{{ invoice.invoice_number }}</h2>
+                <h2 style="margin-bottom:0.25rem;"><a href="{% url 'billing:invoice_detail' invoice_id=invoice.id %}">{{ invoice.invoice_number }}</a></h2>
                 <p class="text-muted" style="margin:0;">{{ invoice.plan.name }} — {{ invoice.currency }} {{ invoice.total }}</p>
                 <p class="text-faint" style="margin:0.2rem 0 0; font-size:0.85rem;">{% blocktrans with issue=invoice.issue_date|date:"Y-m-d" due=invoice.due_date|date:"Y-m-d" %}Issued {{ issue }} — due {{ due }}{% endblocktrans %}</p>
             </div>
