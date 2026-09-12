@@ -15,8 +15,18 @@
         .invoice-doc-items td, .invoice-doc-items th { padding: 0.4rem 0 !important; }
         a { text-decoration: none !important; color: inherit !important; }
     }
+    /* Same reasoning as invoice_detail.html's own .invoice-page-frame: a
+       fixed, centered reading width for this document + its actions,
+       and self-sufficient padding since an anonymous visitor always gets
+       the zero-padding main-bleed layout regardless of this being a
+       billing-app page. */
+    .invoice-page-frame { max-width: 820px; margin: 0 auto; padding: var(--space-6) var(--space-5); }
+    @media print {
+        .invoice-page-frame { max-width: none; margin: 0; padding: 0; }
+    }
 </style>
 
+<div class="invoice-page-frame">
 <div class="card no-print" style="margin-bottom:var(--space-4); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
     <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="font-size:0.85rem;">
         {{ invoice.get_status_display }}
@@ -27,4 +37,5 @@
 {% include "billing/_invoice_document.html" %}
 
 <p class="text-faint mt-4 no-print" style="font-size:0.85rem;">{% trans "This is a shared view-only copy of this invoice." %}</p>
+</div>
 {% endblock %}
