@@ -374,6 +374,22 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         invoice = generate_invoice_for_department(self.department, recipient_user=recipient)
         self.assertEqual(invoice.recipient_user, recipient)
 
+    def test_explicit_plan_argument_overrides_department_plan(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        other_plan = Plan.objects.create(name="Enterprise")
+        RegionalPrice.objects.create(plan=other_plan, region_code="AE", price=Decimal("999"))
+        invoice = generate_invoice_for_department(self.department, plan=other_plan)
+        self.assertEqual(invoice.plan, other_plan)
+        self.assertEqual(invoice.subtotal, Decimal("999"))
+
+    def test_explicit_seat_count_argument_overrides_actual_headcount(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        # No real users added to the department at all - seat_count is
+        # taken purely from the explicit argument, not department.users.
+        invoice = generate_invoice_for_department(self.department, seat_count=7)
+        # 7 given, 2 included -> 5 extra x 20/seat = 100 on top of the 100 base.
+        self.assertEqual(invoice.subtotal, Decimal("200"))
+
     def test_applies_country_default_tax_rate(self):
         invoice = generate_invoice_for_department(self.department)
         # AE's default rate is 5% (billing/tax_rules.py) on a 100 subtotal.
@@ -577,6 +593,45 @@ class GenerateInvoiceViewTests(TestCase):
         self.assertFalse(Invoice.objects.filter(department=self.department).exists())
         messages = list(response.context["messages"])
         self.assertTrue(any("no price" in str(m) for m in messages))
+
+    def test_recipient_in_department_without_a_plan_is_still_eligible(self):
+        # "Bill to" should list everyone with a department, not just
+        # departments that already carry a subscription - the plan is
+        # chosen per-invoice below, not required up front.
+        no_plan_department = Department.objects.create(name="No Plan Dept")
+        User.objects.create_user(email="noplan@example.com", password="pw12345!", department=no_plan_department)
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, "noplan@example.com")
+
+    def test_explicit_plan_id_overrides_departments_assigned_plan(self):
+        other_plan = Plan.objects.create(name="Enterprise")
+        RegionalPrice.objects.create(plan=other_plan, region_code="ROW", price=Decimal("500"))
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:generate_invoice"),
+            {"recipient_user_id": self.recipient.id, "plan_id": other_plan.id},
+        )
+        invoice = Invoice.objects.get(department=self.department)
+        self.assertEqual(invoice.plan, other_plan)
+        self.assertEqual(invoice.subtotal, Decimal("500"))
+        # The department's own subscription is untouched by a one-off
+        # invoice for a different plan.
+        self.department.refresh_from_db()
+        self.assertEqual(self.department.plan, self.plan)
+
+    def test_explicit_seat_count_overrides_actual_headcount(self):
+        self.plan.seats_included = 1
+        self.plan.save(update_fields=["seats_included"])
+        RegionalPrice.objects.filter(plan=self.plan, region_code="ROW").update(extra_seat_price=Decimal("10"))
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:generate_invoice"),
+            {"recipient_user_id": self.recipient.id, "seat_count": "6"},
+        )
+        invoice = Invoice.objects.get(department=self.department)
+        # 6 entered manually, 1 included -> 5 extra x 10 = 50 on top of 50 base.
+        self.assertEqual(invoice.subtotal, Decimal("100"))
 
 
 class InvoicePaymentVerificationTests(TestCase):

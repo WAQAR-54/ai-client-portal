@@ -281,11 +281,13 @@ def _is_scoped_admin(user):
 
 
 def _eligible_recipients(request):
-    """Users who can actually be billed: their department has a plan
-    assigned (billing.invoicing.generate_invoice_for_department requires
-    it). Scoped the same way as every other per-department admin action -
-    a plain Admin only sees their own department's users."""
-    qs = User.objects.filter(department__plan__isnull=False).select_related("department", "department__plan")
+    """Every user who could be billed - any user with a department (an
+    invoice always belongs to a department), regardless of whether that
+    department already has a plan assigned: the plan is chosen per-invoice
+    at generation time (see generate_invoice below), not required
+    up front. Scoped the same way as every other per-department admin
+    action - a plain Admin only sees their own department's users."""
+    qs = User.objects.filter(department__isnull=False).select_related("department", "department__plan")
     if _is_scoped_admin(request.user):
         qs = qs.filter(department_id=request.user.department_id)
     return qs.order_by("department__name", "email")
@@ -310,6 +312,7 @@ def _invoices_context(request):
         "departments": departments,
         "selected_department": selected_department,
         "eligible_recipients": _eligible_recipients(request),
+        "billable_plans": Plan.objects.filter(is_active=True).order_by("-is_default", "name"),
     }
 
 
@@ -331,10 +334,17 @@ def generate_invoice(request):
     if _is_scoped_admin(request.user) and recipient.department_id != request.user.department_id:
         raise PermissionDenied("That user is outside your department.")
     if recipient.department_id is None:
+        django_messages.error(request, "This user has no department, so they can't be billed.")
         return redirect("billing:invoices")
 
+    plan_id = request.POST.get("plan_id", "").strip()
+    plan = get_object_or_404(Plan, id=plan_id) if plan_id else None
+    seat_count = _int_or_none(request.POST.get("seat_count"))
+
     try:
-        invoice = generate_invoice_for_department(recipient.department, recipient_user=recipient)
+        invoice = generate_invoice_for_department(
+            recipient.department, recipient_user=recipient, plan=plan, seat_count=seat_count
+        )
     except InvoiceGenerationError as exc:
         django_messages.error(request, str(exc))
     else:

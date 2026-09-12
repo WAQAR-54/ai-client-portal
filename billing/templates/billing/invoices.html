@@ -4,21 +4,37 @@
 {% block content %}
 <div class="card" style="margin-bottom:1.5rem;">
     <h2>{% trans "Generate an invoice" %}</h2>
-    <p>{% trans "Creates one invoice now for the selected person, using their department's assigned plan and billing region. Automatic monthly generation lands in a later update." %}</p>
+    <p>{% trans "Creates one invoice now, billed to the selected person, for the plan and team-member count you choose here. Automatic monthly generation lands in a later update." %}</p>
     <form method="post" action="{% url 'billing:generate_invoice' %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
         {% csrf_token %}
-        <div style="flex:1; min-width:260px;">
+        <div style="flex:2; min-width:240px;">
             <label for="recipient_user_id">{% trans "Bill to" %}</label>
             <select class="input" name="recipient_user_id" id="recipient_user_id" style="margin:0;">
                 {% for u in eligible_recipients %}
-                <option value="{{ u.id }}">{{ u.email }} — {{ u.department.name }} ({{ u.department.plan.name }})</option>
+                <option value="{{ u.id }}">{{ u.email }} — {{ u.department.name }}{% if u.department.plan %} ({{ u.department.plan.name }} currently){% endif %}</option>
                 {% empty %}
-                <option value="" disabled>{% trans "No one in a plan-assigned department yet" %}</option>
+                <option value="" disabled>{% trans "No users with a department yet" %}</option>
                 {% endfor %}
             </select>
         </div>
+        <div style="flex:1; min-width:180px;">
+            <label for="plan_id">{% trans "Plan to bill" %}</label>
+            <select class="input" name="plan_id" id="plan_id" style="margin:0;">
+                <option value="">{% trans "Use department's current plan" %}</option>
+                {% for p in billable_plans %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="flex:0 0 140px; min-width:120px;">
+            <label for="seat_count">{% trans "Team members" %}</label>
+            <input class="input" type="number" min="0" name="seat_count" id="seat_count" style="margin:0;" placeholder="{% trans 'auto' %}">
+        </div>
         <button type="submit" {% if not eligible_recipients %}disabled{% endif %}>{% trans "Generate invoice" %}</button>
     </form>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:0.6rem;">
+        {% trans "Leave \"Plan to bill\" on the default to use the department's assigned subscription plan, and leave \"Team members\" blank to bill for the department's actual current headcount." %}
+    </p>
 </div>
 
 <div class="card scroll-shadow" style="overflow-x:auto;">

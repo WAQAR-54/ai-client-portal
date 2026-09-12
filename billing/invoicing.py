@@ -25,13 +25,24 @@ def _quantize(amount):
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def generate_invoice_for_department(department, recipient_user=None, *, due_in_days=DEFAULT_DUE_IN_DAYS):
-    """Build and save one Invoice for `department`'s current plan, billed
-    to `recipient_user` (the person who sees it under "My Invoices" and
-    submits payment proof - see billing.views.generate_invoice). Raises
-    InvoiceGenerationError if the department has no plan assigned or that
-    plan has no price set for the department's billing region."""
-    plan = department.plan
+def generate_invoice_for_department(
+    department, recipient_user=None, *, plan=None, seat_count=None, due_in_days=DEFAULT_DUE_IN_DAYS
+):
+    """Build and save one Invoice, billed to `recipient_user` (the person
+    who sees it under "My Invoices" and submits payment proof - see
+    billing.views.generate_invoice).
+
+    `plan` defaults to `department.plan` but can be overridden per-invoice
+    (a SuperAdmin/Admin explicitly billing this person for a different
+    plan than the department's ongoing subscription - doesn't change
+    department.plan itself). `seat_count` defaults to the department's
+    actual current headcount (department.users.count()) but can likewise
+    be overridden - e.g. invoicing ahead of new hires actually joining.
+
+    Raises InvoiceGenerationError if there's no plan to bill (neither
+    given nor on the department) or that plan has no price set for the
+    department's billing region."""
+    plan = plan or department.plan
     if plan is None:
         raise InvoiceGenerationError(f"{department.name} has no subscription plan assigned.")
 
@@ -47,10 +58,12 @@ def generate_invoice_for_department(department, recipient_user=None, *, due_in_d
     # Per-seat billing (see governance.models.Plan.seats_included /
     # RegionalPrice.extra_seat_price): a department with more people than
     # its plan includes is charged for each extra one, only if this
-    # region has an extra-seat price configured. Counts accounts.User rows
-    # in the department (actual seats/people), not accounts.Team rows.
+    # region has an extra-seat price configured. seat_count defaults to
+    # actual accounts.User rows in the department (real seats/people, not
+    # accounts.Team rows) but the caller may override it.
     if plan.seats_included is not None:
-        extra_seats = max(0, department.users.count() - plan.seats_included)
+        actual_seats = department.users.count() if seat_count is None else seat_count
+        extra_seats = max(0, actual_seats - plan.seats_included)
         if extra_seats > 0 and regional_price.extra_seat_price is not None:
             subtotal += extra_seats * regional_price.extra_seat_price
 
