@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.contrib import messages as django_messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
@@ -443,6 +444,16 @@ def _get_scoped_invoice_or_403(request, invoice_id):
     return invoice
 
 
+def _share_url(invoice):
+    """Absolute URL for the no-login public invoice view - built from
+    settings.SITE_URL (same convention as notifications/emailing.py's own
+    tracking-pixel URL) rather than request.build_absolute_uri(), which
+    depends on the request's Host header passing ALLOWED_HOSTS validation.
+    SITE_URL is one fixed, explicitly-configured value, so this can never
+    fail from a request-side quirk (a proxy, a bare IP, a missing header)."""
+    return settings.SITE_URL.rstrip("/") + reverse("billing:public_invoice", kwargs={"token": invoice.share_token})
+
+
 def _safe_next_url(request, default):
     """`next` is only ever one of this app's own invoice URLs (the detail
     page posting back to itself) - never taken as an open redirect target,
@@ -572,9 +583,7 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
             "can_manage": invoice.recipient_user_id != self.request.user.id
             and self.request.user.role in (User.Role.ADMIN, User.Role.SUPERADMIN),
             "organization_profile": OrganizationBillingProfile.load(),
-            "share_url": self.request.build_absolute_uri(
-                reverse("billing:public_invoice", kwargs={"token": invoice.share_token})
-            ),
+            "share_url": _share_url(invoice),
         }
 
 
@@ -635,7 +644,7 @@ def email_invoice_to_client(request, invoice_id):
         django_messages.error(request, "This invoice has no recipient email to send to.")
         return redirect(default_redirect)
 
-    share_url = request.build_absolute_uri(reverse("billing:public_invoice", kwargs={"token": invoice.share_token}))
+    share_url = _share_url(invoice)
     site_name = SiteBranding.load().site_name
     subject = f"{site_name}: Invoice {invoice.invoice_number}"
     text_body = (

@@ -75,7 +75,7 @@
         <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
             <div>
                 <strong>{% trans "Auto-generate invoice each billing cycle" %}</strong>
-                <p class="text-faint" style="margin:0.15rem 0 0; font-size:0.85rem;">{% trans "Created automatically on this department's renewal date once the automation runs (coming in a later update)." %}</p>
+                <p class="text-faint" style="margin:0.15rem 0 0; font-size:0.85rem;">{% trans "The next invoice is generated automatically 3 days before its due date, every billing cycle." %}</p>
             </div>
             <form method="post" action="{% url 'billing:update_invoice_automation' department_id=automation_department.id %}">
                 {% csrf_token %}
