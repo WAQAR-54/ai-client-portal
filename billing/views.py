@@ -6,6 +6,8 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import translation
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
@@ -569,14 +571,20 @@ def submit_payment_proof(request, invoice_id):
     from notifications.notify import notify
 
     for manager in _invoice_managers(invoice):
+        with translation.override(manager.preferred_language):
+            title = _("Payment submitted for invoice %(number)s") % {"number": invoice.invoice_number}
+            body = _(
+                "%(email)s submitted payment proof for %(currency)s %(total)s - review it in Billing, Invoices."
+            ) % {
+                "email": request.user.email,
+                "currency": invoice.currency,
+                "total": invoice.total,
+            }
         notify(
             manager,
             NotificationType.INVOICE_PAYMENT_SUBMITTED,
-            title=f"Payment submitted for invoice {invoice.invoice_number}",
-            body=(
-                f"{request.user.email} submitted payment proof for {invoice.currency} {invoice.total} "
-                f"- review it in Billing, Invoices."
-            ),
+            title=title,
+            body=body,
             metadata={"invoice_id": invoice.id},
         )
     return redirect(default_redirect)

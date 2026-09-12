@@ -11,7 +11,7 @@ from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods
@@ -837,7 +837,9 @@ def change_user_role(request, user_id):
         target.save()
 
     log_action(request.user, "user.role_change", target, old_value=old_value, new_value=new_role)
-    _notify_admin_change(target, f"Your role was changed to {target.get_role_display()}.")
+    with translation.override(target.preferred_language):
+        role_change_body = _("Your role was changed to %(role)s.") % {"role": target.get_role_display()}
+    _notify_admin_change(target, role_change_body)
     return redirect("governance:users")
 
 
@@ -938,20 +940,19 @@ def _notify_admin_change(user, body):
     from notifications.models import NotificationType
     from notifications.notify import notify
 
-    notify(user, NotificationType.ADMIN_CHANGE, title="An admin updated your account", body=body)
+    with translation.override(user.preferred_language):
+        title = _("An admin updated your account")
+    notify(user, NotificationType.ADMIN_CHANGE, title=title, body=body)
 
 
 def _notify_plan_change(user, plan):
     from notifications.models import NotificationType
     from notifications.notify import notify
 
-    notify(
-        user,
-        NotificationType.PLAN_CHANGE,
-        title="Your plan has changed",
-        body=f"You're now on the {plan.name} plan.",
-        metadata={"plan_name": plan.name},
-    )
+    with translation.override(user.preferred_language):
+        title = _("Your plan has changed")
+        body = _("You're now on the %(plan)s plan.") % {"plan": plan.name}
+    notify(user, NotificationType.PLAN_CHANGE, title=title, body=body, metadata={"plan_name": plan.name})
 
 
 def _notify_account_created(user):
@@ -963,13 +964,13 @@ def _notify_account_created(user):
     from notifications.models import NotificationType
     from notifications.notify import notify
 
-    notify(
-        user,
-        NotificationType.ACCOUNT_CREATED,
-        title="Your account is ready",
-        body=f"An administrator created a {user.get_role_display()} account for you on AI Client Portal. "
-        f"Log in with {user.email} and the password your administrator gave you.",
-    )
+    with translation.override(user.preferred_language):
+        title = _("Your account is ready")
+        body = _(
+            "An administrator created a %(role)s account for you on AI Client Portal. "
+            "Log in with %(email)s and the password your administrator gave you."
+        ) % {"role": user.get_role_display(), "email": user.email}
+    notify(user, NotificationType.ACCOUNT_CREATED, title=title, body=body)
 
 
 def _usage_exceeds_plan(user, plan):
@@ -2418,7 +2419,9 @@ class LimitFormView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
             new_value=f"user={limit.user_id} dept={limit.department_id}",
         )
         if limit.user_id:
-            _notify_admin_change(limit.user, "An administrator updated your usage limits.")
+            with translation.override(limit.user.preferred_language):
+                limit_change_body = _("An administrator updated your usage limits.")
+            _notify_admin_change(limit.user, limit_change_body)
         return redirect("governance:limits")
 
 

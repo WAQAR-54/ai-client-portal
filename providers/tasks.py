@@ -1,7 +1,8 @@
 from datetime import timedelta
 
 from celery import shared_task
-from django.utils import timezone
+from django.utils import timezone, translation
+from django.utils.translation import gettext as _
 
 
 @shared_task
@@ -33,10 +34,16 @@ def sync_all_connected_providers():
     for admin in User.objects.filter(role=User.Role.SUPERADMIN, is_active=True):
         if recently_notified(admin, NotificationType.MODEL_SYNC_AVAILABLE, since=timezone.now() - timedelta(hours=20)):
             continue
+        with translation.override(admin.preferred_language):
+            title = _("New AI models available to sync")
+            body = _("%(count)s new model(s) found: %(preview)s. Visit Admin, Providers to review.") % {
+                "count": total_new,
+                "preview": preview,
+            }
         notify(
             admin,
             NotificationType.MODEL_SYNC_AVAILABLE,
-            title="New AI models available to sync",
-            body=f"{total_new} new model(s) found: {preview}. Visit Admin, Providers to review.",
+            title=title,
+            body=body,
             metadata={"total_new": total_new, "preview": preview},
         )

@@ -167,6 +167,28 @@ class AdminChangeNotificationTests(TestCase):
         self.assertIn("Manager", notification.body)
         self.assertEqual(len(mail.outbox), 1)
 
+    def test_role_change_notification_renders_in_targets_preferred_language(self):
+        """The notification is built in the TARGET's language, not the
+        acting Admin's - the Admin's own request has English active, but
+        the target here prefers Urdu, and the stored title/body must
+        reflect that (see governance/views.py's `with translation.
+        override(target.preferred_language):` around this notify() call)."""
+        self.target.preferred_language = "ur"
+        self.target.save(update_fields=["preferred_language"])
+        team = Team.objects.create(name="Alpha", department=self.department)
+        response = self.client.post(
+            reverse("governance:change_user_role", kwargs={"user_id": self.target.id}),
+            {"role": User.Role.MANAGER, "team_id": team.id, "confirmed": "1"},
+        )
+        self.assertEqual(response.status_code, 302)
+
+        notification = Notification.objects.filter(
+            user=self.target, notification_type=NotificationType.ADMIN_CHANGE
+        ).first()
+        self.assertIsNotNone(notification)
+        self.assertIn("ایک ایڈمن نے آپ کا اکاؤنٹ اپ ڈیٹ کیا", notification.title)
+        self.assertIn("منیجر", notification.body)
+
     def test_plan_change_fires_plan_change_notification(self):
         plan = Plan.objects.create(name="NotifyTestPlan", is_active=True)
         mail.outbox = []

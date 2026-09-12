@@ -1839,3 +1839,83 @@ msgstr "مستخدَم"
 #: templates/governance/_users_table.html:43
 msgid "— none —"
 msgstr "— لا شيء —"
+
+#: notifications:0
+msgid "An admin updated your account"
+msgstr "قام مسؤول بتحديث حسابك"
+
+#: notifications:0
+msgid "Your role was changed to %(role)s."
+msgstr "تم تغيير دورك إلى %(role)s."
+
+#: notifications:0
+msgid "An administrator updated your usage limits."
+msgstr "قام المسؤول بتحديث حدود استخدامك."
+
+#: notifications:0
+msgid "Your plan has changed"
+msgstr "تم تغيير خطتك"
+
+#: notifications:0
+msgid "You're now on the %(plan)s plan."
+msgstr "أنت الآن على خطة %(plan)s."
+
+#: notifications:0
+msgid "Your account is ready"
+msgstr "حسابك جاهز"
+
+#: notifications:0
+msgid ""
+"An administrator created a %(role)s account for you on AI Client Portal. Log"
+" in with %(email)s and the password your administrator gave you."
+msgstr ""
+"أنشأ المسؤول حساب %(role)s لك على AI Client Portal. سجّل الدخول باستخدام "
+"%(email)s وكلمة المرور التي أعطاك إياها المسؤول."
+
+#: notifications:0
+msgid "You're approaching a usage limit"
+msgstr "أنت تقترب من حد الاستخدام"
+
+#: notifications:0
+msgid ""
+"%(label)s: %(pct)s%% used. Contact your administrator if you need more."
+msgstr "%(label)s: تم استخدام %(pct)s%%. تواصل مع المسؤول إذا احتجت المزيد."
+
+#: notifications:0
+msgid "New AI models available to sync"
+msgstr "نماذج ذكاء اصطناعي جديدة متاحة للمزامنة"
+
+#: notifications:0
+msgid ""
+"%(count)s new model(s) found: %(preview)s. Visit Admin, Providers to review."
+msgstr ""
+"تم العثور على %(count)s نموذج جديد: %(preview)s. راجعها من الإدارة، مزودو "
+"الخدمة."
+
+#: notifications:0
+msgid "Your trial is ending soon"
+msgstr "فترتك التجريبية توشك على الانتهاء"
+
+#: notifications:0
+msgid ""
+"Your %(plan)s trial ends in about %(days)s day(s). Contact your "
+"administrator if you'd like to keep full access."
+msgstr ""
+"تنتهي فترتك التجريبية لخطة %(plan)s خلال %(days)s يوم تقريبًا. تواصل مع "
+"المسؤول إذا كنت ترغب في الاحتفاظ بالوصول الكامل."
+
+#: notifications:0
+msgid "Your trial has ended"
+msgstr "انتهت فترتك التجريبية"
+
+#: notifications:0
+msgid "Payment submitted for invoice %(number)s"
+msgstr "تم إرسال الدفع للفاتورة %(number)s"
+
+#: notifications:0
+msgid ""
+"%(email)s submitted payment proof for %(currency)s %(total)s - review it in "
+"Billing, Invoices."
+msgstr ""
+"أرسل %(email)s إثبات دفع بقيمة %(currency)s %(total)s - راجعه في الفوترة، "
+"الفواتير."

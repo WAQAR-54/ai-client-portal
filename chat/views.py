@@ -7,7 +7,7 @@ from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
@@ -752,11 +752,17 @@ def _notify_if_usage_warning(user):
         return
 
     worst = max(usage["metrics"], key=lambda m: m["pct"])
+    with translation.override(user.preferred_language):
+        title = _("You're approaching a usage limit")
+        body = _("%(label)s: %(pct)s%% used. Contact your administrator if you need more.") % {
+            "label": worst["label"],
+            "pct": worst["pct"],
+        }
     notify(
         user,
         NotificationType.USAGE_WARNING,
-        title="You're approaching a usage limit",
-        body=f"{worst['label']}: {worst['pct']}% used. Contact your administrator if you need more.",
+        title=title,
+        body=body,
         metadata={"metric_label": worst["label"], "metric_pct": worst["pct"]},
     )
 

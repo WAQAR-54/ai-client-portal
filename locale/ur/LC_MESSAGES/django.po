@@ -1852,3 +1852,85 @@ msgstr "استعمال شدہ"
 #: templates/governance/_users_table.html:43
 msgid "— none —"
 msgstr "— کوئی نہیں —"
+
+#: notifications:0
+msgid "An admin updated your account"
+msgstr "ایک ایڈمن نے آپ کا اکاؤنٹ اپ ڈیٹ کیا"
+
+#: notifications:0
+msgid "Your role was changed to %(role)s."
+msgstr "آپ کا کردار تبدیل کر کے %(role)s کر دیا گیا ہے۔"
+
+#: notifications:0
+msgid "An administrator updated your usage limits."
+msgstr "ایڈمنسٹریٹر نے آپ کی استعمال کی حدیں اپ ڈیٹ کر دی ہیں۔"
+
+#: notifications:0
+msgid "Your plan has changed"
+msgstr "آپ کا پلان تبدیل ہو گیا ہے"
+
+#: notifications:0
+msgid "You're now on the %(plan)s plan."
+msgstr "اب آپ %(plan)s پلان پر ہیں۔"
+
+#: notifications:0
+msgid "Your account is ready"
+msgstr "آپ کا اکاؤنٹ تیار ہے"
+
+#: notifications:0
+msgid ""
+"An administrator created a %(role)s account for you on AI Client Portal. Log"
+" in with %(email)s and the password your administrator gave you."
+msgstr ""
+"ایڈمنسٹریٹر نے AI Client Portal پر آپ کے لیے %(role)s اکاؤنٹ بنایا ہے۔ "
+"%(email)s اور اپنے ایڈمنسٹریٹر کے دیے گئے پاس ورڈ سے لاگ ان کریں۔"
+
+#: notifications:0
+msgid "You're approaching a usage limit"
+msgstr "آپ استعمال کی حد کے قریب پہنچ رہے ہیں"
+
+#: notifications:0
+msgid ""
+"%(label)s: %(pct)s%% used. Contact your administrator if you need more."
+msgstr ""
+"%(label)s: %(pct)s%% استعمال ہو چکا ہے۔ مزید کی ضرورت ہو تو اپنے ایڈمنسٹریٹر"
+" سے رابطہ کریں۔"
+
+#: notifications:0
+msgid "New AI models available to sync"
+msgstr "سنک کرنے کے لیے نئے AI ماڈلز دستیاب ہیں"
+
+#: notifications:0
+msgid ""
+"%(count)s new model(s) found: %(preview)s. Visit Admin, Providers to review."
+msgstr ""
+"%(count)s نئے ماڈل ملے: %(preview)s۔ جائزہ لینے کے لیے ایڈمن، پرووائیڈرز میں"
+" جائیں۔"
+
+#: notifications:0
+msgid "Your trial is ending soon"
+msgstr "آپ کا ٹرائل جلد ختم ہونے والا ہے"
+
+#: notifications:0
+msgid ""
+"Your %(plan)s trial ends in about %(days)s day(s). Contact your "
+"administrator if you'd like to keep full access."
+msgstr ""
+"آپ کا %(plan)s ٹرائل تقریباً %(days)s دن میں ختم ہو جائے گا۔ مکمل رسائی "
+"برقرار رکھنے کے لیے اپنے ایڈمنسٹریٹر سے رابطہ کریں۔"
+
+#: notifications:0
+msgid "Your trial has ended"
+msgstr "آپ کا ٹرائل ختم ہو چکا ہے"
+
+#: notifications:0
+msgid "Payment submitted for invoice %(number)s"
+msgstr "انوائس %(number)s کے لیے ادائیگی جمع کروائی گئی"
+
+#: notifications:0
+msgid ""
+"%(email)s submitted payment proof for %(currency)s %(total)s - review it in "
+"Billing, Invoices."
+msgstr ""
+"%(email)s نے %(currency)s %(total)s کی ادائیگی کا ثبوت جمع کروایا ہے - بلنگ،"
+" انوائسز میں جائزہ لیں۔"

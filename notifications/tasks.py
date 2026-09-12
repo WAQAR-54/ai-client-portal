@@ -7,6 +7,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.utils.translation import gettext as _
 from django.utils.translation import override as translation_override
 
 logger = logging.getLogger(__name__)
@@ -37,11 +38,12 @@ def send_notification_email(notification_id):
     if not notification or not notification.user.email:
         return
 
-    # Only the email's own chrome (button/footer text) follows the
-    # recipient's language preference - notification.title/body are
-    # written in English at the many notify() call sites throughout the
-    # codebase and aren't translated in this pass (see AI_Client_Portal
-    # notes on B5 scope).
+    # notification.title/body were already rendered in the recipient's
+    # language at the notify() call site (every call site wraps its own
+    # title/body construction in `with translation.override(user.
+    # preferred_language):` before calling notify() - see e.g.
+    # governance/views.py's _notify_plan_change) - the override here is
+    # only for this email's own chrome (button/footer text) around them.
     from notifications.emailing import send_tracked_email
 
     accent, accent_soft, content_template = _EMAIL_TYPE_STYLE.get(notification.notification_type, _DEFAULT_EMAIL_STYLE)
@@ -100,22 +102,30 @@ def sweep_expiring_demo_plans():
                 since=assignment.assigned_at,
             ):
                 days_left = max(1, (assignment.expires_at - now).days)
+                with translation_override(assignment.user.preferred_language):
+                    title = _("Your trial is ending soon")
+                    body = _(
+                        "Your %(plan)s trial ends in about %(days)s day(s). "
+                        "Contact your administrator if you'd like to keep full access."
+                    ) % {"plan": assignment.plan.name, "days": days_left}
                 notify(
                     assignment.user,
                     NotificationType.TRIAL_EXPIRING,
-                    title="Your trial is ending soon",
-                    body=f"Your {assignment.plan.name} trial ends in about {days_left} day(s). "
-                    "Contact your administrator if you'd like to keep full access.",
+                    title=title,
+                    body=body,
                     metadata={"days_left": days_left, "plan_name": assignment.plan.name},
                 )
                 expiring_count += 1
         else:
             if not recently_notified(assignment.user, NotificationType.TRIAL_EXPIRED, since=assignment.assigned_at):
+                with translation_override(assignment.user.preferred_language):
+                    title = _("Your trial has ended")
+                    body = _("Your trial has ended — contact your administrator to continue.")
                 notify(
                     assignment.user,
                     NotificationType.TRIAL_EXPIRED,
-                    title="Your trial has ended",
-                    body="Your trial has ended — contact your administrator to continue.",
+                    title=title,
+                    body=body,
                     metadata={"plan_name": assignment.plan.name},
                 )
                 expired_count += 1
