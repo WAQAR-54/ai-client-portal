@@ -18,4 +18,5 @@ urlpatterns = [
         views.toggle_provider_model_manager_assignable,
         name="toggle_model_manager_assignable",
     ),
+    path("models/<int:model_id>/toggle-vision/", views.toggle_provider_model_vision, name="toggle_model_vision"),
 ]

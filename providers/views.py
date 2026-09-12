@@ -287,3 +287,27 @@ def toggle_provider_model_manager_assignable(request, model_id):
     if request.headers.get("HX-Request"):
         return render(request, "providers/_provider_card.html", _provider_row(provider_model.provider))
     return redirect("providers:list")
+
+
+@role_required(User.Role.SUPERADMIN, exact=True)
+@require_http_methods(["POST"])
+def toggle_provider_model_vision(request, model_id):
+    """Flips supports_vision - see ProviderModel.supports_vision's own
+    docstring for why this needs an explicit admin confirmation rather
+    than being inferred. Only a currently chat-enabled model can be
+    marked vision-capable, same boundary as manager-assignable."""
+    provider_model = get_object_or_404(ProviderModel, id=model_id, is_enabled=True)
+    old_value = provider_model.supports_vision
+    provider_model.supports_vision = not provider_model.supports_vision
+    provider_model.save(update_fields=["supports_vision"])
+    log_action(
+        request.user,
+        "providermodel.vision_enable" if provider_model.supports_vision else "providermodel.vision_disable",
+        provider_model,
+        old_value=old_value,
+        new_value=provider_model.supports_vision,
+    )
+
+    if request.headers.get("HX-Request"):
+        return render(request, "providers/_provider_card.html", _provider_row(provider_model.provider))
+    return redirect("providers:list")

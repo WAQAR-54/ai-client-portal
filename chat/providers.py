@@ -76,7 +76,21 @@ class OpenAICompatibleProvider(AIProvider):
         formatted = []
         if system_prompt:
             formatted.append({"role": "system", "content": system_prompt})
-        formatted.extend(messages)
+        for m in messages:
+            images = m.get("images")
+            if not images:
+                formatted.append({"role": m["role"], "content": m["content"]})
+                continue
+            # OpenAI's vision format: content becomes a list of typed
+            # parts instead of a plain string, one part per image plus
+            # one for the text (data URIs, so no publicly-reachable URL
+            # is ever needed for our own-hosted attachments).
+            parts = [{"type": "text", "text": m["content"]}] if m["content"] else []
+            for image in images:
+                parts.append(
+                    {"type": "image_url", "image_url": {"url": f"data:{image['mime_type']};base64,{image['data']}"}}
+                )
+            formatted.append({"role": m["role"], "content": parts})
         return formatted
 
     def stream_chat(self, messages, model_name, system_prompt=""):
@@ -121,13 +135,32 @@ class AnthropicProvider(AIProvider):
 
         return anthropic.Anthropic(api_key=self._api_key(), max_retries=5, timeout=60.0)
 
+    def _format_messages(self, messages):
+        formatted = []
+        for m in messages:
+            images = m.get("images")
+            if not images:
+                formatted.append({"role": m["role"], "content": m["content"]})
+                continue
+            # Anthropic's vision format: content becomes a list of typed
+            # blocks - image blocks first, then text, matching Anthropic's
+            # own documented recommendation for image-then-text ordering.
+            parts = [
+                {"type": "image", "source": {"type": "base64", "media_type": image["mime_type"], "data": image["data"]}}
+                for image in images
+            ]
+            if m["content"]:
+                parts.append({"type": "text", "text": m["content"]})
+            formatted.append({"role": m["role"], "content": parts})
+        return formatted
+
     def stream_chat(self, messages, model_name, system_prompt=""):
         try:
             kwargs = {"system": system_prompt} if system_prompt else {}
             with self._client().messages.stream(
                 model=model_name,
                 max_tokens=4096,
-                messages=messages,
+                messages=self._format_messages(messages),
                 **kwargs,
             ) as stream:
                 for text in stream.text_stream:
@@ -147,7 +180,7 @@ class AnthropicProvider(AIProvider):
             response = self._client().messages.create(
                 model=model_name,
                 max_tokens=1024,
-                messages=messages,
+                messages=self._format_messages(messages),
                 **kwargs,
             )
             return "".join(block.text for block in response.content if block.type == "text")
@@ -181,11 +214,15 @@ class GeminiProvider(AIProvider):
         # {"role": "user"|"assistant", "content": str} -> Gemini's
         # {"role": "user"|"model", "parts": [{"text": str}]} - "assistant"
         # is "model" in Gemini's vocabulary, everything else (only "user"
-        # is ever sent by this app) passes through unchanged.
+        # is ever sent by this app) passes through unchanged. An "images"
+        # key adds one inline_data part per image alongside the text part.
         contents = []
         for m in messages:
             role = "model" if m["role"] == "assistant" else "user"
-            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+            parts = [{"text": m["content"]}] if m["content"] else []
+            for image in m.get("images") or []:
+                parts.append({"inline_data": {"mime_type": image["mime_type"], "data": image["data"]}})
+            contents.append({"role": role, "parts": parts})
         return contents
 
     def _body(self, messages, system_prompt):

@@ -16,7 +16,13 @@ from sentry_sdk import capture_exception
 from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
-from chat.document_extraction import EXTRACTABLE_EXTENSIONS, extract_text, wrap_for_prompt
+from chat.document_extraction import (
+    EXTRACTABLE_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    extract_image,
+    extract_text,
+    wrap_for_prompt,
+)
 from chat.export import render_conversation_markdown, render_conversation_pdf, render_conversation_text
 from chat.response_cache import get_cached_response, store_cached_response
 from chat.router import (
@@ -761,23 +767,49 @@ def _history_with_attachments(conversation, exclude_message_id):
     appended inline, delimited via document_extraction.wrap_for_prompt()
     so the model treats it as reference material, never instructions (see
     that module's docstring and the system prompt in chat/prompts.py -
-    this is the other required half of the same defense). Other file
-    types (images) are stored and shown in the UI but not read by the
-    model yet."""
+    this is the other required half of the same defense).
+
+    An image attachment instead gets an "images" key - [{"data": base64,
+    "mime_type": ...}] - built here regardless of which model will
+    ultimately handle it. The vision-capability gate (ProviderModel.
+    supports_vision) is applied later in stream_message, per candidate
+    model, via _strip_images() - not here, since the history built once
+    per request may end up tried against several fallback candidates
+    that don't all support vision the same way. chat/providers.py turns
+    this generic "images" key into each provider's own wire format."""
     history = []
     messages = conversation.messages.exclude(id=exclude_message_id).order_by("created_at")
     for msg in messages:
         content = msg.content
+        images = None
         if msg.attachment:
             name = msg.attachment_original_name
             extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-            extracted = extract_text(msg.attachment, extension) if extension in EXTRACTABLE_EXTENSIONS else None
-            if extracted is not None:
-                content = f"{content}\n\n{wrap_for_prompt(name, extracted)}"
+            if extension in IMAGE_EXTENSIONS:
+                image = extract_image(msg.attachment, extension)
+                if image is not None:
+                    images = [image]
+                else:
+                    content = f"{content}\n\n[Attached image: {name} (couldn't be read)]"
             else:
-                content = f"{content}\n\n[Attached file: {name} (not readable by the assistant yet)]"
-        history.append({"role": msg.role, "content": content})
+                extracted = extract_text(msg.attachment, extension) if extension in EXTRACTABLE_EXTENSIONS else None
+                if extracted is not None:
+                    content = f"{content}\n\n{wrap_for_prompt(name, extracted)}"
+                else:
+                    content = f"{content}\n\n[Attached file: {name} (not readable by the assistant yet)]"
+        turn = {"role": msg.role, "content": content}
+        if images:
+            turn["images"] = images
+        history.append(turn)
     return history
+
+
+def _strip_images(history):
+    """Drops the "images" key before sending history to a candidate model
+    whose ProviderModel.supports_vision is False - see
+    _history_with_attachments's own docstring for why this gate lives
+    here instead of at history-build time."""
+    return [{k: v for k, v in turn.items() if k != "images"} for turn in history]
 
 
 @login_required
@@ -887,9 +919,12 @@ def stream_message(request, conversation_id, message_id):
             full_text = ""
             input_tokens = output_tokens = None
             is_last_candidate = attempt_index == len(candidates) - 1
+            history_for_model = history if model_config.supports_vision else _strip_images(history)
 
             try:
-                for chunk in provider.stream_chat(history, model_config.model_id, system_prompt=system_prompt):
+                for chunk in provider.stream_chat(
+                    history_for_model, model_config.model_id, system_prompt=system_prompt
+                ):
                     if chunk.text:
                         full_text += chunk.text
                         yield _sse_event("message", chunk.text)

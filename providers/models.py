@@ -158,6 +158,17 @@ class ProviderModel(models.Model):
     # model fit for chat/code isn't necessarily one an admin wants spending
     # real tokens on domain-name brainstorming.
     is_domain_generator_enabled = models.BooleanField(default=False)
+    # A fifth, independent gate: whether chat/views.py::_history_with_
+    # attachments is allowed to send an uploaded image's actual bytes to
+    # this model, instead of just noting "an image was attached" as text.
+    # No provider API reports this - a genuinely vision-capable model
+    # would still reject/ignore image content silently or with an
+    # unhelpful error if this weren't gated at all, since not every
+    # enabled model on a provider actually supports it. Off by default,
+    # same opt-in philosophy as every other gate here - a SuperAdmin
+    # confirms a specific model handles vision before this app sends it
+    # image bytes.
+    supports_vision = models.BooleanField(default=False)
     # True until an admin has reviewed (i.e. explicitly toggled, in either
     # direction) this model at least once - lets the Providers UI badge
     # "3 new models pending review" after a background resync finds

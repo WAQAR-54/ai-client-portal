@@ -11,6 +11,7 @@ told to treat delimited content as reference material, never instructions,
 so a document containing "ignore previous instructions" doesn't work).
 """
 
+import base64
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,12 @@ PDF_EXTENSIONS = {"pdf"}
 DOCX_EXTENSIONS = {"docx"}
 XLSX_EXTENSIONS = {"xlsx"}
 EXTRACTABLE_EXTENSIONS = TEXT_EXTENSIONS | PDF_EXTENSIONS | DOCX_EXTENSIONS | XLSX_EXTENSIONS
+
+# Kept separate from EXTRACTABLE_EXTENSIONS above: these go to a
+# vision-capable model as actual image bytes (see extract_image below),
+# never through extract_text/wrap_for_prompt's text-delimiting path.
+IMAGE_MIME_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+IMAGE_EXTENSIONS = set(IMAGE_MIME_TYPES)
 
 MAX_CHARS = 8000
 
@@ -90,6 +97,27 @@ def extract_text(file_field, extension):
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + "\n[...truncated...]"
     return text
+
+
+def extract_image(file_field, extension):
+    """Returns {"data": <base64 str>, "mime_type": ...} for a vision-
+    capable model to see, or None if this extension isn't a supported
+    image type or the file couldn't be read. Callers must only attach
+    this to a message sent to a model whose ProviderModel.supports_vision
+    is True (see chat/views.py::_history_with_attachments and
+    chat/providers.py, which build the actual provider-specific wire
+    format from it) - sending image content to a model that doesn't
+    support it isn't validated here, that gate lives one level up."""
+    mime_type = IMAGE_MIME_TYPES.get(extension.lower())
+    if mime_type is None:
+        return None
+    try:
+        with file_field.open("rb") as f:
+            raw = f.read()
+    except Exception:
+        logger.exception("Failed to read image attachment (extension=%s)", extension)
+        return None
+    return {"data": base64.b64encode(raw).decode("ascii"), "mime_type": mime_type}
 
 
 def wrap_for_prompt(filename, text):

@@ -92,8 +92,18 @@
                         </label>
                         <span class="provider-model-toggle-label">{% trans "Manager-assignable" %}</span>
                     </form>
+                    <form method="post" action="{% url 'providers:toggle_model_vision' model_id=m.id %}"
+                          hx-post="{% url 'providers:toggle_model_vision' model_id=m.id %}"
+                          hx-target="#provider-card-{{ provider.id }}" hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <label class="toggle-switch" title="{% if m.supports_vision %}{% trans 'Stop sending this model uploaded images' %}{% else %}{% trans 'Let this model see uploaded images (confirm it actually supports vision first)' %}{% endif %}">
+                            <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.supports_vision %}checked{% endif %}>
+                            <span class="toggle"><span class="toggle-knob"></span></span>
+                        </label>
+                        <span class="provider-model-toggle-label">{% trans "Vision" %}</span>
+                    </form>
                     {% else %}
-                    <span class="text-faint" style="font-size:0.75rem;">{% trans "Enable first for manager-assignable" %}</span>
+                    <span class="text-faint" style="font-size:0.75rem;">{% trans "Enable first for manager-assignable/vision" %}</span>
                     {% endif %}
                 </div>
             </div>

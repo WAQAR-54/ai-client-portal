@@ -531,15 +531,22 @@ def get_request_count_status(user, conversation=None):
 # (no tokenizer dependency added just for this - it's an approximation, not
 # an exact count, and is documented as such rather than presented as exact).
 _CHARS_PER_TOKEN_ESTIMATE = 4
+# A flat per-image estimate (roughly matching OpenAI's own published
+# baseline for a single non-tiled image) - image token cost varies by
+# provider/resolution/detail level in ways not worth modeling precisely
+# here, but ignoring it entirely would silently undercount every vision
+# request against this same soft cap.
+_IMAGE_TOKEN_ESTIMATE = 1000
 
 
 def validate_context_tokens(user, system_prompt, history):
     """Raise UsageLimitExceeded if the assembled prompt (system prompt +
-    full message history, including any extracted-attachment text) for the
-    NEXT request would exceed this user's Plan's max_context_tokens.
-    Rejects rather than truncates: silently dropping earlier turns to fit
-    would send the model a coherence-broken conversation and could produce
-    a confusing reply with no indication anything was cut - an explicit,
+    full message history, including any extracted-attachment text and a
+    flat per-image estimate for any vision attachment) for the NEXT
+    request would exceed this user's Plan's max_context_tokens. Rejects
+    rather than truncates: silently dropping earlier turns to fit would
+    send the model a coherence-broken conversation and could produce a
+    confusing reply with no indication anything was cut - an explicit,
     visible rejection (matching how every other Plan limit in this app
     behaves) is safer than a silent degradation the user has no way to
     notice from the reply alone."""
@@ -551,7 +558,8 @@ def validate_context_tokens(user, system_prompt, history):
         return
 
     total_chars = len(system_prompt) + sum(len(turn.get("content", "")) for turn in history)
-    estimated = max(1, total_chars // _CHARS_PER_TOKEN_ESTIMATE)
+    image_count = sum(len(turn.get("images") or []) for turn in history)
+    estimated = max(1, total_chars // _CHARS_PER_TOKEN_ESTIMATE) + image_count * _IMAGE_TOKEN_ESTIMATE
     if estimated > plan.max_context_tokens:
         raise UsageLimitExceeded(
             f"This conversation is too long for your plan's per-request context limit "
