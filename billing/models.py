@@ -1,3 +1,4 @@
+import secrets
 from decimal import Decimal
 
 from django.conf import settings
@@ -114,6 +115,23 @@ class DepartmentBillingProfile(models.Model):
         return tax_rule_for_country(self.country)["tax_rate"]
 
 
+class UserBillingProfile(models.Model):
+    """The billed-client side of a department-less invoice (see
+    billing.invoicing.generate_invoice_for_user) - the individual-user
+    counterpart to DepartmentBillingProfile above. A user fills this in
+    themselves from My Invoices; every field is optional since the Bill To
+    block already has their name/email from the User record regardless of
+    whether this profile exists."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="billing_profile")
+    company_name = models.CharField(max_length=200, blank=True)
+    phone_number = models.CharField(max_length=32, blank=True)
+    billing_address = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"Billing profile for {self.user}"
+
+
 class Invoice(models.Model):
     """One billing-period invoice for a Department (the billable-client
     unit throughout this feature). plan/currency/amounts are snapshotted
@@ -192,6 +210,15 @@ class Invoice(models.Model):
     )
     verified_at = models.DateTimeField(null=True, blank=True)
 
+    # An unguessable token for the public, no-login invoice view (see
+    # billing.views.public_invoice_view) - so a client can be emailed or
+    # sent a direct link without needing a portal account. Deliberately
+    # not the primary key: invoice_number stays the meaningful sequential
+    # identifier, this is purely an opaque sharing credential. Nullable at
+    # the DB level only so existing rows can be backfilled by migration;
+    # save() below guarantees every invoice has one from here on.
+    share_token = models.CharField(max_length=48, unique=True, null=True, blank=True, editable=False)
+
     class Meta:
         ordering = ["-issue_date", "-id"]
 
@@ -201,6 +228,8 @@ class Invoice(models.Model):
     def save(self, *args, **kwargs):
         if not self.invoice_number:
             self.invoice_number = self._next_invoice_number()
+        if not self.share_token:
+            self.share_token = secrets.token_urlsafe(24)
         super().save(*args, **kwargs)
 
     @classmethod
@@ -240,3 +269,23 @@ class Invoice(models.Model):
         self.verified_by = verifier
         self.verified_at = timezone.now()
         self.save(update_fields=["status", "verified_by", "verified_at"])
+
+
+def billing_profile_for_invoice(invoice):
+    """The billed-client side of the Bill To block - a DepartmentBillingProfile
+    for a departmental invoice, or the individual recipient's own
+    UserBillingProfile for a department-less one (see billing.invoicing.
+    generate_invoice_for_user). Shared by billing/views.py and billing/pdf.py
+    so the on-screen page, the PDF, and the public share link never
+    disagree about which profile an invoice's Bill To/Payment Details come
+    from. get_or_create rather than a plain fetch so a user/department
+    filling this in for the first time never 404s; None only for the edge
+    case of an invoice with neither (predates recipient_user existing at
+    all)."""
+    if invoice.department_id is not None:
+        profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
+        return profile
+    if invoice.recipient_user_id is not None:
+        profile, _created = UserBillingProfile.objects.get_or_create(user=invoice.recipient_user)
+        return profile
+    return None

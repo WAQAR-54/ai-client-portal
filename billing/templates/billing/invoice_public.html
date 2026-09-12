@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{{ invoice.invoice_number }} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<style>
+    @media print {
+        @page { margin: 1.5cm; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { background: #fff !important; }
+        .app-sidebar, .mobile-topbar, .topbar-mini, .app-switch, .no-print { display: none !important; }
+        .app-main { margin: 0 !important; }
+        .main-bleed, main { padding: 0 !important; }
+        .card { background: #fff !important; box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 0 !important; }
+        .invoice-doc-items, .invoice-doc-items table { overflow: visible !important; }
+        .invoice-doc-items td, .invoice-doc-items th { padding: 0.4rem 0 !important; }
+        a { text-decoration: none !important; color: inherit !important; }
+    }
+</style>
+
+<div class="card no-print" style="margin-bottom:var(--space-4); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+    <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="font-size:0.85rem;">
+        {{ invoice.get_status_display }}
+    </span>
+    <button type="button" class="btn-small btn-ghost" onclick="window.print()">{% trans "Print" %}</button>
+</div>
+
+{% include "billing/_invoice_document.html" %}
+
+<p class="text-faint mt-4 no-print" style="font-size:0.85rem;">{% trans "This is a shared view-only copy of this invoice." %}</p>
+{% endblock %}

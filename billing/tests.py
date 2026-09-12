@@ -1,14 +1,21 @@
 from datetime import timedelta
 from decimal import Decimal
 
-from django.test import TestCase
+from django.core import mail
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import Department, User
 from billing.access import has_overdue_unpaid_invoice
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department, generate_invoice_for_user
-from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
+from billing.models import (
+    DepartmentBillingProfile,
+    Invoice,
+    OrganizationBillingProfile,
+    RegionalPrice,
+    UserBillingProfile,
+)
 from billing.pdf import render_invoice_pdf
 from billing.regions import REGIONS
 from billing.tasks import sweep_due_invoices
@@ -1453,3 +1460,156 @@ class OverdueChatAccessTests(TestCase):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.get(reverse("billing:invoices"))
         self.assertEqual(response.status_code, 200)
+
+
+class InvoiceShareTokenTests(TestCase):
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Advanced")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("300"))
+        self.user = User.objects.create_user(email="client@example.com", password="pw12345!")
+
+    def test_new_invoice_gets_a_share_token(self):
+        invoice = generate_invoice_for_user(self.user, plan=self.plan)
+        self.assertTrue(invoice.share_token)
+
+    def test_share_tokens_are_unique(self):
+        invoice1 = generate_invoice_for_user(self.user, plan=self.plan)
+        invoice2 = generate_invoice_for_user(self.user, plan=self.plan, due_in_days=30)
+        self.assertNotEqual(invoice1.share_token, invoice2.share_token)
+
+
+class IndividualBillToTests(TestCase):
+    """Bill To for a department-less invoice - name/phone/address should
+    come from the recipient's own UserBillingProfile, not just their bare
+    email (see billing.models.billing_profile_for_invoice)."""
+
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Advanced")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("300"))
+        self.user = User.objects.create_user(
+            email="client@example.com", password="pw12345!", first_name="Ayesha", last_name="Khan"
+        )
+        self.invoice = generate_invoice_for_user(self.user, plan=self.plan)
+
+    def _url(self):
+        return reverse("billing:invoice_detail", kwargs={"invoice_id": self.invoice.id})
+
+    def test_falls_back_to_full_name_then_email_with_no_profile(self):
+        self.client.login(email="client@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertContains(response, "Ayesha Khan")
+        self.assertContains(response, "client@example.com")
+
+    def test_shows_company_phone_and_address_from_user_billing_profile(self):
+        UserBillingProfile.objects.create(
+            user=self.user,
+            company_name="Khan Traders",
+            phone_number="+92 300 1234567",
+            billing_address="123 Mall Road, Lahore",
+        )
+        self.client.login(email="client@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertContains(response, "Khan Traders")
+        self.assertContains(response, "client@example.com")
+        self.assertContains(response, "+92 300 1234567")
+        self.assertContains(response, "123 Mall Road, Lahore")
+
+    def test_pdf_includes_company_and_phone(self):
+        UserBillingProfile.objects.create(user=self.user, company_name="Khan Traders", phone_number="+92 300 1234567")
+        pdf_bytes = render_invoice_pdf(self.invoice)
+        self.assertGreater(len(pdf_bytes), 0)
+
+
+class UpdateMyBillingProfileTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="client@example.com", password="pw12345!")
+        self.client.login(email="client@example.com", password="pw12345!")
+
+    def test_creates_profile_on_first_save(self):
+        response = self.client.post(
+            reverse("billing:update_my_billing_profile"),
+            {"company_name": "Khan Traders", "phone_number": "0300-1234567", "billing_address": "Lahore"},
+        )
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        profile = UserBillingProfile.objects.get(user=self.user)
+        self.assertEqual(profile.company_name, "Khan Traders")
+        self.assertEqual(profile.phone_number, "0300-1234567")
+        self.assertEqual(profile.billing_address, "Lahore")
+
+    def test_updates_existing_profile(self):
+        UserBillingProfile.objects.create(user=self.user, company_name="Old Name")
+        self.client.post(reverse("billing:update_my_billing_profile"), {"company_name": "New Name"})
+        profile = UserBillingProfile.objects.get(user=self.user)
+        self.assertEqual(profile.company_name, "New Name")
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.post(reverse("billing:update_my_billing_profile"), {"company_name": "X"})
+        self.assertRedirects(response, reverse("accounts:login"))
+
+
+class PublicInvoiceViewTests(TestCase):
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Advanced")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("300"))
+        self.user = User.objects.create_user(email="client@example.com", password="pw12345!")
+        self.invoice = generate_invoice_for_user(self.user, plan=self.plan)
+
+    def test_accessible_without_login(self):
+        response = self.client.get(reverse("billing:public_invoice", kwargs={"token": self.invoice.share_token}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.invoice.invoice_number)
+
+    def test_wrong_token_404s(self):
+        response = self.client.get(reverse("billing:public_invoice", kwargs={"token": "not-a-real-token"}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_no_manage_or_submit_actions_shown(self):
+        response = self.client.get(reverse("billing:public_invoice", kwargs={"token": self.invoice.share_token}))
+        self.assertNotContains(response, "Mark paid manually")
+        self.assertNotContains(response, "Submit payment")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class EmailInvoiceToClientTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, department=self.department
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+        mail.outbox = []
+
+    def _url(self):
+        return reverse("billing:email_invoice", kwargs={"invoice_id": self.invoice.id})
+
+    def test_admin_can_email_the_invoice(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
+        self.assertRedirects(response, reverse("billing:invoice_detail", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["recipient@example.com"])
+        self.assertIn(self.invoice.invoice_number, mail.outbox[0].subject)
+        self.assertIn(self.invoice.share_token, mail.outbox[0].body)
+
+    def test_recipient_cannot_email_their_own_invoice(self):
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_stranger_admin_cannot_email(self):
+        other_department = Department.objects.create(name="Support")
+        User.objects.create_user(
+            email="otheradmin@example.com", password="pw12345!", role=User.Role.ADMIN, department=other_department
+        )
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"next_invoice_id": self.invoice.id})
+        self.assertEqual(response.status_code, 403)

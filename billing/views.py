@@ -13,13 +13,21 @@ from accounts.geo import country_code_for_ip
 from accounts.models import Department, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department
-from billing.models import DepartmentBillingProfile, Invoice, OrganizationBillingProfile, RegionalPrice
+from billing.models import (
+    DepartmentBillingProfile,
+    Invoice,
+    OrganizationBillingProfile,
+    RegionalPrice,
+    UserBillingProfile,
+    billing_profile_for_invoice,
+)
 from billing.pdf import render_invoice_pdf
 from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS, region_for_country
 from billing.tax_rules import country_choices, tax_rule_for_country
 from governance.audit import log_action
 from governance.features import RequireFeatureMixin, require_feature
-from governance.models import Plan
+from governance.models import Plan, SiteBranding
+from notifications.emailing import send_tracked_email
 
 
 def _decimal_or_none(raw):
@@ -493,10 +501,12 @@ class MyInvoicesView(LoginRequiredMixin, TemplateView):
     template_name = "billing/my_invoices.html"
 
     def get_context_data(self, **kwargs):
+        profile, _created = UserBillingProfile.objects.get_or_create(user=self.request.user)
         return super().get_context_data(**kwargs) | {
             "invoices": Invoice.objects.filter(recipient_user=self.request.user)
             .select_related("plan", "department")
             .order_by("-issue_date", "-id"),
+            "my_billing_profile": profile,
         }
 
 
@@ -555,22 +565,16 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
         )
         if not _can_view_invoice(self.request.user, invoice):
             raise PermissionDenied("You don't have access to this invoice.")
-        # get_or_create rather than a plain fetch: every invoice generated
-        # through generate_invoice_for_department already created one, but
-        # this stays safe for any invoice that predates that guarantee.
-        # None for a department-less invoice (generate_invoice_for_user) -
-        # DepartmentBillingProfile is a OneToOneField to Department, so
-        # get_or_create(department=None) would violate its NOT NULL column.
-        billing_profile = None
-        if invoice.department_id is not None:
-            billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
         return super().get_context_data(**kwargs) | {
             "invoice": invoice,
-            "billing_profile": billing_profile,
+            "billing_profile": billing_profile_for_invoice(invoice),
             "is_recipient": invoice.recipient_user_id == self.request.user.id,
             "can_manage": invoice.recipient_user_id != self.request.user.id
             and self.request.user.role in (User.Role.ADMIN, User.Role.SUPERADMIN),
             "organization_profile": OrganizationBillingProfile.load(),
+            "share_url": self.request.build_absolute_uri(
+                reverse("billing:public_invoice", kwargs={"token": invoice.share_token})
+            ),
         }
 
 
@@ -585,3 +589,80 @@ def download_invoice_pdf(request, invoice_id):
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{invoice.invoice_number}.pdf"'
     return response
+
+
+@require_http_methods(["GET"])
+def public_invoice_view(request, token):
+    """No-login invoice view for a client who received a share link/email -
+    looked up by the unguessable share_token rather than the sequential id,
+    same reasoning as everything else here: billing amounts/bank details
+    shouldn't be reachable by anyone who can merely guess a small integer.
+    Deliberately read-only (no Manage/submit-payment actions) - an
+    anonymous viewer isn't tied to any account, so this only ever renders
+    the document itself, same as the PDF."""
+    invoice = get_object_or_404(
+        Invoice.objects.select_related("department", "plan", "recipient_user"), share_token=token
+    )
+    return render(
+        request,
+        "billing/invoice_public.html",
+        {
+            "invoice": invoice,
+            "billing_profile": billing_profile_for_invoice(invoice),
+            "organization_profile": OrganizationBillingProfile.load(),
+            "site_branding": SiteBranding.load(),
+        },
+    )
+
+
+@require_http_methods(["POST"])
+def email_invoice_to_client(request, invoice_id):
+    """Emails the recipient the same no-login share link a SuperAdmin/Admin
+    can also copy manually from the invoice detail page - reuses the
+    established send_tracked_email path (notifications/emailing.py) so
+    this shows up in the admin Email Logs page like every other email the
+    app sends."""
+    if not request.user.is_authenticated:
+        return redirect("accounts:login")
+    invoice = get_object_or_404(Invoice.objects.select_related("recipient_user"), id=invoice_id)
+    if not _can_view_invoice(request.user, invoice) or request.user.role not in (
+        User.Role.ADMIN,
+        User.Role.SUPERADMIN,
+    ):
+        raise PermissionDenied("You don't have access to this invoice.")
+    default_redirect = _safe_next_url(request, reverse("billing:invoice_detail", kwargs={"invoice_id": invoice.id}))
+    if invoice.recipient_user_id is None or not invoice.recipient_user.email:
+        django_messages.error(request, "This invoice has no recipient email to send to.")
+        return redirect(default_redirect)
+
+    share_url = request.build_absolute_uri(reverse("billing:public_invoice", kwargs={"token": invoice.share_token}))
+    site_name = SiteBranding.load().site_name
+    subject = f"{site_name}: Invoice {invoice.invoice_number}"
+    text_body = (
+        f"Your invoice {invoice.invoice_number} ({invoice.currency} {invoice.total}) is ready.\n\n"
+        f"View it here: {share_url}"
+    )
+    success, error = send_tracked_email(invoice.recipient_user.email, subject, text_body)
+    if success:
+        django_messages.success(request, f"Invoice emailed to {invoice.recipient_user.email}.")
+        log_action(request.user, "billing.invoice_emailed", invoice, new_value=invoice.recipient_user.email)
+    else:
+        django_messages.error(request, f"Couldn't send that email: {error}")
+    return redirect(default_redirect)
+
+
+@require_http_methods(["POST"])
+def update_my_billing_profile(request):
+    """A user's own Bill To details for a department-less invoice (name/
+    email already come from the User record - see _billing_profile_for_
+    invoice) - edited from My Invoices, mirroring how a department's
+    billing profile is edited from the department's own settings."""
+    if not request.user.is_authenticated:
+        return redirect("accounts:login")
+    profile, _created = UserBillingProfile.objects.get_or_create(user=request.user)
+    profile.company_name = request.POST.get("company_name", "").strip()
+    profile.phone_number = request.POST.get("phone_number", "").strip()
+    profile.billing_address = request.POST.get("billing_address", "").strip()
+    profile.save(update_fields=["company_name", "phone_number", "billing_address"])
+    django_messages.success(request, "Billing details updated.")
+    return redirect("billing:my_invoices")

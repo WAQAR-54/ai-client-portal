@@ -3,6 +3,27 @@
 {% block title %}{% trans "My Invoices" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
+    <h2 style="margin-bottom:0.25rem;">{% trans "Your billing details" %}</h2>
+    <p class="text-muted" style="margin-top:0;">{% trans "Shown as \"Bill to\" on your invoices, alongside your account name and email." %}</p>
+    <form method="post" action="{% url 'billing:update_my_billing_profile' %}" style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end;">
+        {% csrf_token %}
+        <div style="flex:1; min-width:200px;">
+            <label for="company_name">{% trans "Company name" %}</label>
+            <input class="input" type="text" name="company_name" id="company_name" value="{{ my_billing_profile.company_name }}" style="margin:0;">
+        </div>
+        <div style="flex:1; min-width:180px;">
+            <label for="phone_number">{% trans "Phone number" %}</label>
+            <input class="input" type="text" name="phone_number" id="phone_number" value="{{ my_billing_profile.phone_number }}" style="margin:0;">
+        </div>
+        <div style="flex:2; min-width:220px;">
+            <label for="billing_address">{% trans "Billing address" %}</label>
+            <input class="input" type="text" name="billing_address" id="billing_address" value="{{ my_billing_profile.billing_address }}" style="margin:0;">
+        </div>
+        <button type="submit">{% trans "Save" %}</button>
+    </form>
+</div>
+
+<div class="card mt-4">
     <h1>{% trans "My Invoices" %}</h1>
     <p>{% trans "Invoices billed to you. Submit a transaction ID and/or a payment screenshot against an unpaid invoice — an admin will verify it and mark it paid." %}</p>
 

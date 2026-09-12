@@ -14,7 +14,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from xhtml2pdf import pisa
 
-from billing.models import DepartmentBillingProfile, OrganizationBillingProfile
+from billing.models import OrganizationBillingProfile, billing_profile_for_invoice
 from governance.models import SiteBranding
 
 
@@ -38,17 +38,11 @@ def render_invoice_pdf(invoice) -> bytes:
     # will eventually be called from a request-less context too (the
     # Celery Beat sweep task planned for later) - so site_branding is
     # fetched and passed explicitly rather than relied on implicitly.
-    # None for a department-less invoice (generate_invoice_for_user) -
-    # DepartmentBillingProfile is a OneToOneField to Department, so
-    # get_or_create(department=None) would violate its NOT NULL column.
-    billing_profile = None
-    if invoice.department_id is not None:
-        billing_profile, _created = DepartmentBillingProfile.objects.get_or_create(department=invoice.department)
     html = render_to_string(
         "billing/invoice_pdf.html",
         {
             "invoice": invoice,
-            "billing_profile": billing_profile,
+            "billing_profile": billing_profile_for_invoice(invoice),
             "organization_profile": OrganizationBillingProfile.load(),
             "site_branding": SiteBranding.load(),
         },

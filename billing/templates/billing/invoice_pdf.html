@@ -58,8 +58,15 @@
         <tr>
             <td width="47%">
                 <div class="label">{% trans "Bill to" %}</div>
-                {% if billing_profile.company_name %}<div><strong>{{ billing_profile.company_name }}</strong></div>
-                {% elif invoice.recipient_user %}<div><strong>{{ invoice.recipient_user.email }}</strong></div>{% endif %}
+                {% with display_name=billing_profile.company_name|default:invoice.recipient_user.get_full_name %}
+                {% if display_name %}
+                <div><strong>{{ display_name }}</strong></div>
+                {% if invoice.recipient_user %}<div>{{ invoice.recipient_user.email }}</div>{% endif %}
+                {% elif invoice.recipient_user %}
+                <div><strong>{{ invoice.recipient_user.email }}</strong></div>
+                {% endif %}
+                {% endwith %}
+                {% if billing_profile.phone_number %}<div>{{ billing_profile.phone_number }}</div>{% endif %}
                 {% if billing_profile.billing_address %}<div class="muted">{{ billing_profile.billing_address }}</div>{% endif %}
                 {% if billing_profile.tax_id %}<div class="faint">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</div>{% endif %}
             </td>
