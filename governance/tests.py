@@ -3210,7 +3210,7 @@ class CapabilityLimitsAdminTests(TestCase):
         self.client.login(email="super@example.com", password="pw12345!")
         self.assertEqual(self.client.get(reverse("governance:capability_limits")).status_code, 200)
 
-    def test_superadmin_can_set_all_four_limits(self):
+    def test_superadmin_can_set_all_six_limits(self):
         self.client.login(email="super@example.com", password="pw12345!")
         response = self.client.post(
             reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
@@ -3219,6 +3219,8 @@ class CapabilityLimitsAdminTests(TestCase):
                 "max_compare_uses_per_day": "5",
                 "max_playground_runs_per_day": "10",
                 "max_domain_searches_per_day": "15",
+                "monthly_image_reads_limit": "50",
+                "monthly_document_reads_limit": "25",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -3227,6 +3229,8 @@ class CapabilityLimitsAdminTests(TestCase):
         self.assertEqual(self.plan.max_compare_uses_per_day, 5)
         self.assertEqual(self.plan.max_playground_runs_per_day, 10)
         self.assertEqual(self.plan.max_domain_searches_per_day, 15)
+        self.assertEqual(self.plan.monthly_image_reads_limit, 50)
+        self.assertEqual(self.plan.monthly_document_reads_limit, 25)
 
     def test_blank_field_clears_the_limit_to_no_cap(self):
         self.plan.max_message_length = 500

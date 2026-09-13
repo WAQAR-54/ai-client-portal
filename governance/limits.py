@@ -54,6 +54,39 @@ def validate_upload(user, uploaded_file):
         )
 
 
+def check_attachment_monthly_limit(user, kind):
+    """Raise UploadRejected if this user has already reached their Plan's
+    monthly cap for this attachment kind ("image" or "document") - a
+    finer-grained limit layered UNDER the blanket feature_flags["file_upload"]
+    switch (that flag alone still governs "can attach anything at all";
+    this caps how much of each kind, once attachments are allowed - see
+    Plan.monthly_image_reads_limit/monthly_document_reads_limit). Plan-only
+    for now, unlike max_upload_size_mb/allowed_file_extensions above -
+    no personal/department override exists yet for these two."""
+    from governance.plans import get_assignment
+
+    assignment = get_assignment(user)
+    plan = assignment.plan if assignment else None
+    if plan is None:
+        return
+
+    limit_field = "monthly_image_reads_limit" if kind == "image" else "monthly_document_reads_limit"
+    limit = getattr(plan, limit_field)
+    if limit is None:
+        return
+
+    month_start = timezone.localdate().replace(day=1)
+    used = Message.objects.filter(
+        conversation__user=user, attachment_kind=kind, created_at__date__gte=month_start
+    ).count()
+    if used >= limit:
+        kind_label = _("images") if kind == "image" else _("documents")
+        raise UploadRejected(
+            _("You've reached your plan's monthly limit of %(limit)s %(kind)s. It resets next month.")
+            % {"limit": limit, "kind": kind_label}
+        )
+
+
 def check_usage_limits(user, conversation):
     """Raise UsageLimitExceeded if sending another message would (or already
     does) violate the user's effective daily/monthly/session/budget caps,

@@ -175,6 +175,15 @@ class Message(models.Model):
     attachment = models.FileField(upload_to="chat_attachments/%Y/%m/", null=True, blank=True)
     attachment_original_name = models.CharField(max_length=255, blank=True)
     attachment_size = models.PositiveIntegerField(null=True, blank=True, help_text="Bytes.")
+    # Set once at creation (chat/views.py, from the extension - see
+    # chat/document_extraction.py::IMAGE_EXTENSIONS) - blank when there's no
+    # attachment at all. Denormalized purely so governance/limits.py::
+    # check_attachment_monthly_limit can count "images/documents read this
+    # month" with a plain DB filter, without re-deriving the kind from
+    # attachment_original_name's extension on every check.
+    attachment_kind = models.CharField(
+        max_length=10, blank=True, choices=[("image", "Image"), ("document", "Document")]
+    )
     served_from_cache = models.BooleanField(
         default=False,
         help_text="This reply was served from the Redis response cache instead of "

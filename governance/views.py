@@ -1381,6 +1381,8 @@ def update_capability_limits(request, plan_id):
         "max_compare_uses_per_day",
         "max_playground_runs_per_day",
         "max_domain_searches_per_day",
+        "monthly_image_reads_limit",
+        "monthly_document_reads_limit",
     ]
     old_values = {field: getattr(plan, field) for field in fields}
     for field in fields:

@@ -35,7 +35,14 @@ from chat.router import (
 from chat.utils import group_conversations
 from governance.audit import log_action
 from governance.features import require_feature
-from governance.limits import UploadRejected, UsageLimitExceeded, check_usage_limits, get_usage_status, validate_upload
+from governance.limits import (
+    UploadRejected,
+    UsageLimitExceeded,
+    check_attachment_monthly_limit,
+    check_usage_limits,
+    get_usage_status,
+    validate_upload,
+)
 from providers.models import ProviderModel
 
 logger = logging.getLogger(__name__)
@@ -353,6 +360,7 @@ def post_message(request, conversation_id):
         except UsageLimitExceeded as exc:
             return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=400)
 
+    attachment_kind = ""
     if uploaded_file:
         from governance.plans import has_feature
 
@@ -365,6 +373,13 @@ def post_message(request, conversation_id):
             )
         try:
             validate_upload(request.user, uploaded_file)
+        except UploadRejected as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=400)
+
+        extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+        attachment_kind = "image" if extension in IMAGE_EXTENSIONS else "document"
+        try:
+            check_attachment_monthly_limit(request.user, attachment_kind)
         except UploadRejected as exc:
             return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=400)
 
@@ -405,7 +420,10 @@ def post_message(request, conversation_id):
             user_message.attachment = uploaded_file
             user_message.attachment_original_name = uploaded_file.name
             user_message.attachment_size = uploaded_file.size
-            user_message.save(update_fields=["attachment", "attachment_original_name", "attachment_size"])
+            user_message.attachment_kind = attachment_kind
+            user_message.save(
+                update_fields=["attachment", "attachment_original_name", "attachment_size", "attachment_kind"]
+            )
 
         if conversation.title == "New conversation":
             conversation.title = (content or uploaded_file.name)[:60]

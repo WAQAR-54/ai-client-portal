@@ -328,6 +328,23 @@ class Plan(models.Model):
             "Overrides Domain Generator's global daily search limit for this plan. Null = use the global default."
         ),
     )
+    # Finer-grained than the blanket feature_flags["file_upload"] switch
+    # (which still governs "can attach anything at all" - unchanged): these
+    # cap how MANY of each attachment kind a user on this plan can have
+    # read per calendar month, once attachments are allowed at all. See
+    # governance/limits.py::check_attachment_monthly_limit and
+    # chat/models.py::Message.attachment_kind. Null = unlimited; 0 = the
+    # plan allows file_upload but not this particular kind.
+    monthly_image_reads_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max image attachments read per calendar month. Null = unlimited.",
+    )
+    monthly_document_reads_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max document (PDF/Word/Excel/text) attachments read per calendar month. Null = unlimited.",
+    )
 
     is_active = models.BooleanField(
         default=True,

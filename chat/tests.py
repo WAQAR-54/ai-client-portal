@@ -930,6 +930,90 @@ class FileUploadTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+class AttachmentMonthlyLimitTests(TestCase):
+    """governance.limits.check_attachment_monthly_limit - a finer cap under
+    the blanket feature_flags["file_upload"] switch (still tested above),
+    on how many of each attachment KIND a plan allows per calendar month."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.plan = _grant_premium_plan(self.user)
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    def _upload(self, filename, content=b"x"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "", "attachment": SimpleUploadedFile(filename, content)},
+        )
+
+    def test_unlimited_by_default(self):
+        for i in range(3):
+            response = self._upload(f"photo{i}.png")
+            self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.conversation.messages.filter(attachment_kind="image").count(), 3)
+
+    def test_image_upload_sets_attachment_kind(self):
+        self._upload("photo.png")
+        message = self.conversation.messages.get(role=Message.Role.USER)
+        self.assertEqual(message.attachment_kind, "image")
+
+    def test_document_upload_sets_attachment_kind(self):
+        self._upload("notes.txt")
+        message = self.conversation.messages.get(role=Message.Role.USER)
+        self.assertEqual(message.attachment_kind, "document")
+
+    def test_blocks_once_monthly_image_limit_is_reached(self):
+        self.plan.monthly_image_reads_limit = 1
+        self.plan.save(update_fields=["monthly_image_reads_limit"])
+
+        first = self._upload("one.png")
+        self.assertEqual(first.status_code, 200)
+        second = self._upload("two.png")
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(self.conversation.messages.filter(attachment_kind="image").count(), 1)
+
+    def test_zero_limit_blocks_every_attempt(self):
+        self.plan.monthly_image_reads_limit = 0
+        self.plan.save(update_fields=["monthly_image_reads_limit"])
+
+        response = self._upload("photo.png")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.conversation.messages.filter(role=Message.Role.USER).exists())
+
+    def test_image_and_document_limits_are_independent(self):
+        self.plan.monthly_image_reads_limit = 0
+        self.plan.monthly_document_reads_limit = 5
+        self.plan.save(update_fields=["monthly_image_reads_limit", "monthly_document_reads_limit"])
+
+        blocked = self._upload("photo.png")
+        self.assertEqual(blocked.status_code, 400)
+        allowed = self._upload("notes.txt")
+        self.assertEqual(allowed.status_code, 200)
+
+    def test_limit_only_counts_this_calendar_month(self):
+        self.plan.monthly_image_reads_limit = 1
+        self.plan.save(update_fields=["monthly_image_reads_limit"])
+
+        old_month = timezone.make_aware(
+            timezone.datetime.combine(
+                timezone.localdate().replace(day=1) - timezone.timedelta(days=1), timezone.datetime.min.time()
+            )
+        )
+        Message.objects.create(
+            conversation=self.conversation,
+            role=Message.Role.USER,
+            content="",
+            attachment_kind="image",
+        )
+        Message.objects.filter(conversation=self.conversation, attachment_kind="image").update(created_at=old_month)
+
+        response = self._upload("new.png")
+        self.assertEqual(response.status_code, 200)
+
+
 class ModelSelectionTests(TestCase):
     def setUp(self):
         from django.core.cache import cache

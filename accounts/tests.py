@@ -772,7 +772,12 @@ class GoogleSignInTests(TestCase):
         response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
         self.assertEqual(response.status_code, 403)
 
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="")
     def test_disabled_without_a_configured_client_id_even_if_toggled_on(self):
+        # Explicit empty override rather than relying on the ambient
+        # default - local dev's own .env may well have a real client ID
+        # set (for actually testing the button), which would otherwise
+        # make this assertion false in that environment specifically.
         self._enable()
         response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
         self.assertEqual(response.status_code, 403)
@@ -875,6 +880,7 @@ class GoogleSignInTests(TestCase):
         response = self.client.get(reverse("accounts:signup"))
         self.assertContains(response, "g_id_onload")
 
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="")
     def test_button_hidden_without_a_configured_client_id_even_if_enabled(self):
         self._enable()
         response = self.client.get(reverse("accounts:login"))
