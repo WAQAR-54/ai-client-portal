@@ -1138,6 +1138,67 @@ class CheckoutPlanTests(TestCase):
         assignment = get_assignment(self.user)
         self.assertEqual(assignment.plan_id, other_plan.id)
 
+    def test_plans_page_shows_capabilities_not_just_price_and_seats(self):
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.monthly_image_reads_limit = 250
+        self.plan.save(update_fields=["feature_flags", "monthly_image_reads_limit"])
+        response = self.client.get(reverse("billing:my_plans"))
+        self.assertContains(response, "Image reading")
+        self.assertContains(response, "250")
+        self.assertContains(response, "Document generation")
+
+    def test_public_pricing_page_also_shows_capabilities(self):
+        self.client.logout()
+        self.plan.feature_flags = {"research": True}
+        self.plan.save(update_fields=["feature_flags"])
+        response = self.client.get(reverse("billing:public_pricing"))
+        self.assertContains(response, "Research (live web search)")
+
+
+class LeadCapturePlanTests(TestCase):
+    """A Plan with self_checkout_enabled=False (governance.models.Plan) -
+    the "lowest tier self-serve, higher tiers a sales conversation" split
+    from the user's own feedback. checkout_plan must 404 for one of these
+    even via a direct POST (not just hide the button); request_plan_access
+    is the "Contact us" counterpart, reusing the existing UpgradeRequest
+    inbox rather than a new admin surface."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.plan = Plan.objects.create(name="Enterprise", self_checkout_enabled=False)
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("999"))
+        self.client.login(email="u@example.com", password="pw12345!")
+        # Other seeded/pre-existing plans default self_checkout_enabled=True
+        # and would render their OWN checkout forms on the same page -
+        # deactivate them so this test's assertions are about THIS plan.
+        Plan.objects.exclude(pk=self.plan.pk).update(is_active=False)
+
+    def test_checkout_button_hidden_shows_contact_us_instead(self):
+        response = self.client.get(reverse("billing:my_plans"))
+        self.assertContains(response, "Contact us")
+        self.assertNotContains(response, f'action="{reverse("billing:checkout_plan")}"')
+
+    def test_checkout_is_blocked_even_via_a_direct_post(self):
+        response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    def test_request_plan_access_creates_an_upgrade_request(self):
+        from governance.models import UpgradeRequest
+
+        response = self.client.post(reverse("billing:request_plan_access"), {"plan_id": self.plan.id})
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        upgrade_request = UpgradeRequest.objects.get(user=self.user, requested_plan=self.plan)
+        self.assertEqual(upgrade_request.status, UpgradeRequest.Status.PENDING)
+
+    def test_request_plan_access_does_not_create_an_invoice_or_change_the_plan(self):
+        from governance.plans import get_assignment
+
+        self.client.post(reverse("billing:request_plan_access"), {"plan_id": self.plan.id})
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+        assignment = get_assignment(self.user)
+        self.assertNotEqual(getattr(assignment, "plan_id", None), self.plan.id)
+
 
 class InvoiceDetailViewTests(TestCase):
     def setUp(self):

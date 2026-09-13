@@ -33,7 +33,15 @@
             <span class="toggle"><span class="toggle-knob"></span></span>
             <span>{% trans "Visible in Change Plan picker" %}</span>
         </label>
+        <label class="toggle-switch toggle-row">
+            <input type="checkbox" name="self_checkout_enabled" {% if not plan or plan.self_checkout_enabled %}checked{% endif %}>
+            <span class="toggle"><span class="toggle-knob"></span></span>
+            <span>{% trans "Instant self-checkout on the Plans page" %}</span>
+        </label>
     </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.6rem;">
+        {% trans "When off, a user picking this plan sends a \"contact us\" request (Upgrade Requests inbox) instead of an instant invoice - for higher tiers you'd rather have a sales conversation about than let anyone check out instantly." %}
+    </p>
 
     <label for="demo_duration_days">{% trans 'Demo duration (days) — only used if "time-limited demo plan" is checked' %}</label>
     <input class="input" type="number" name="demo_duration_days" id="demo_duration_days" value="{{ plan.demo_duration_days|default_if_none:"" }}">

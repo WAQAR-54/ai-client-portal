@@ -367,6 +367,34 @@ def has_feature(user, flag_name):
     return plan.has_feature(flag_name)
 
 
+def plan_capability_summary(plan):
+    """Customer-facing capability list for ONE Plan - shown on billing's
+    Plans pages (My Plans / public pricing) so a buyer can see what
+    they're actually getting, not just seats/price. Fixed set/order from
+    governance.models.PLAN_DISPLAY_CAPABILITIES - a deliberate subset of
+    every numeric cap this app tracks (see CAPABILITY_LIMIT_FIELDS),
+    since the internal daily technical caps (message length, Compare-
+    mode/Playground/Domain Generator) aren't meaningful "what am I
+    buying" line items for someone picking a plan."""
+    from governance.models import PLAN_DISPLAY_CAPABILITIES
+
+    rows = []
+    for cap in PLAN_DISPLAY_CAPABILITIES:
+        if cap["kind"] == "toggle":
+            included = plan.has_feature(cap["key"])
+            value = _("Included") if included else _("Not included")
+        else:
+            limit = getattr(plan, cap["key"])
+            if limit is None:
+                included, value = True, _("Unlimited")
+            elif limit == 0:
+                included, value = False, _("Not included")
+            else:
+                included, value = True, f"{limit} {cap['unit']}"
+        rows.append({"label": cap["label"], "value": value, "included": included})
+    return rows
+
+
 def check_session_creation_limit(user):
     """Raise UsageLimitExceeded if the user has already started as many
     conversations today as their plan allows. Separate from

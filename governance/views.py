@@ -27,6 +27,7 @@ from governance.models import (
     ADMIN_NAV_FEATURES,
     AuditLog,
     CAPABILITY_COST_TIERS,
+    CAPABILITY_LIMIT_FIELDS,
     CAPABILITY_TOGGLE_FLAGS,
     ComplianceSettings,
     KNOWN_FEATURE_FLAGS,
@@ -1186,6 +1187,7 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
         plan.feature_flags = {key: request.POST.get(f"flag_{key}") == "on" for key, _label in KNOWN_FEATURE_FLAGS}
         plan.is_active = request.POST.get("is_active") == "on"
         plan.is_visible_to_admins = request.POST.get("is_visible_to_admins") == "on"
+        plan.self_checkout_enabled = request.POST.get("self_checkout_enabled") == "on"
 
         make_default = request.POST.get("is_default") == "on"
         provider_model_ids = _auto_enabled_provider_model_ids(
@@ -1385,17 +1387,6 @@ def update_department_retention(request, department_id):
         return render(request, "governance/_department_retention_row.html", {"department": department})
     return redirect("governance:retention_provider_approval")
 
-
-CAPABILITY_LIMIT_FIELDS = [
-    # (field, label, unit, cost_tier already in CAPABILITY_COST_TIERS)
-    ("max_message_length", "Max message length", "characters"),
-    ("max_compare_uses_per_day", "Compare-mode uses", "/ day"),
-    ("max_playground_runs_per_day", "Code Playground runs", "/ day"),
-    ("max_domain_searches_per_day", "Domain Generator searches", "/ day"),
-    ("monthly_image_reads_limit", "Image reading", "/ month"),
-    ("monthly_document_reads_limit", "Document reading", "/ month"),
-    ("monthly_media_generation_limit", "Image & video generation (Grok only)", "/ month"),
-]
 
 # Labels for the 5 CAPABILITY_TOGGLE_FLAGS - pulled from the single
 # source of truth (KNOWN_FEATURE_FLAGS) rather than redeclared here, so

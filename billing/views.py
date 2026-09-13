@@ -145,9 +145,14 @@ class PublicPricingView(TemplateView):
             ip_address = self.request.META.get("REMOTE_ADDR")
             region_code = region_for_country(country_code_for_ip(ip_address), active_codes)
 
+        from governance.plans import plan_capability_summary
+
         plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
         prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
-        rows = [{"plan": plan, "price_row": prices.get(plan.id)} for plan in plans]
+        rows = [
+            {"plan": plan, "price_row": prices.get(plan.id), "capabilities": plan_capability_summary(plan)}
+            for plan in plans
+        ]
 
         other_regions = [_region_dict(code) for code in active_codes if code != region_code]
 
@@ -170,7 +175,7 @@ class MyPlansView(LoginRequiredMixin, TemplateView):
     template_name = "billing/my_plans.html"
 
     def get_context_data(self, **kwargs):
-        from governance.plans import get_assignment
+        from governance.plans import get_assignment, plan_capability_summary
 
         active_codes = _active_region_codes()
         requested_region = self.request.GET.get("region", "").strip().upper()
@@ -186,7 +191,13 @@ class MyPlansView(LoginRequiredMixin, TemplateView):
         plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
         prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
         rows = [
-            {"plan": plan, "price_row": prices.get(plan.id), "is_current": plan.id == current_plan_id} for plan in plans
+            {
+                "plan": plan,
+                "price_row": prices.get(plan.id),
+                "is_current": plan.id == current_plan_id,
+                "capabilities": plan_capability_summary(plan),
+            }
+            for plan in plans
         ]
 
         return super().get_context_data(**kwargs) | {
@@ -207,8 +218,16 @@ def checkout_plan(request):
     an admin's manual "Email" button already uses). The actual plan
     switch happens later, only once that invoice is marked paid - see
     verify_invoice_payment/toggle_invoice_status below, which sync the
-    recipient's plan assignment to match on that transition."""
-    plan = get_object_or_404(Plan, id=request.POST.get("plan_id"), is_active=True, is_demo=False)
+    recipient's plan assignment to match on that transition.
+
+    404s (not just hides the button) for a plan with self_checkout_enabled
+    =False - that flag exists specifically so a SuperAdmin can require a
+    sales conversation for a higher tier instead of instant checkout; a
+    direct POST bypassing the "Contact us" button in the UI must not be
+    able to route around that."""
+    plan = get_object_or_404(
+        Plan, id=request.POST.get("plan_id"), is_active=True, is_demo=False, self_checkout_enabled=True
+    )
     try:
         invoice = generate_invoice_for_user(request.user, plan=plan)
     except InvoiceGenerationError as exc:
@@ -231,6 +250,34 @@ def checkout_plan(request):
             % {"plan": plan.name},
         )
     return redirect("billing:my_invoices")
+
+
+@login_required
+@require_http_methods(["POST"])
+def request_plan_access(request):
+    """The "Contact us" counterpart to checkout_plan, for a plan with
+    self_checkout_enabled=False - a SuperAdmin's deliberate choice to want
+    a sales conversation before a higher tier is granted, rather than an
+    instant self-serve invoice. Reuses governance.UpgradeRequest (the
+    SAME inbox a SuperAdmin/Admin already reviews at governance:
+    upgrade_requests) instead of a new admin surface - no invoice, no
+    plan change, just a request logged for a human to follow up on."""
+    from governance.models import UpgradeRequest
+    from governance.plans import get_assignment
+
+    plan = get_object_or_404(Plan, id=request.POST.get("plan_id"), is_active=True, is_demo=False)
+    assignment = get_assignment(request.user)
+    UpgradeRequest.objects.create(
+        user=request.user,
+        current_plan=assignment.plan if assignment else None,
+        requested_plan=plan,
+        message=_("Requested from the Plans page (%(plan)s doesn't offer instant checkout).") % {"plan": plan.name},
+    )
+    django_messages.success(
+        request,
+        _("Thanks — we've received your request for the %(plan)s plan and will be in touch.") % {"plan": plan.name},
+    )
+    return redirect("billing:my_plans")
 
 
 def _region_dict(region_code):

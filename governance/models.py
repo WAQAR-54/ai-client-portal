@@ -75,6 +75,37 @@ CAPABILITY_TOGGLE_FLAGS = [
 # purely descriptive (helps a SuperAdmin judge how tightly to gate each
 # one), not enforced anywhere. "low"/"med"/"high" match the reference
 # mockup's own 3-tier legend.
+CAPABILITY_LIMIT_FIELDS = [
+    # (field, label, unit)
+    ("max_message_length", "Max message length", "characters"),
+    ("max_compare_uses_per_day", "Compare-mode uses", "/ day"),
+    ("max_playground_runs_per_day", "Code Playground runs", "/ day"),
+    ("max_domain_searches_per_day", "Domain Generator searches", "/ day"),
+    ("monthly_image_reads_limit", "Image reading", "/ month"),
+    ("monthly_document_reads_limit", "Document reading", "/ month"),
+    ("monthly_media_generation_limit", "Image & video generation (Grok only)", "/ month"),
+]
+
+# The CUSTOMER-facing subset/order of the capabilities above, shown on
+# billing's Plans pages (My Plans / public pricing) via governance.plans.
+# plan_capability_summary() - deliberately excludes the internal daily
+# technical caps (message length, Compare-mode/Playground/Domain
+# Generator) that CAPABILITY_LIMIT_FIELDS has, since those aren't
+# meaningful "what am I buying" line items for someone picking a plan.
+PLAN_DISPLAY_CAPABILITIES = [
+    {"key": "monthly_image_reads_limit", "label": "Image reading", "kind": "numeric", "unit": "/ month"},
+    {"key": "monthly_document_reads_limit", "label": "Document reading", "kind": "numeric", "unit": "/ month"},
+    {"key": "research", "label": "Research (live web search)", "kind": "toggle"},
+    {"key": "document_generation", "label": "Document generation (Word/Excel/PowerPoint/PDF)", "kind": "toggle"},
+    {
+        "key": "monthly_media_generation_limit",
+        "label": "Image & video generation (Grok)",
+        "kind": "numeric",
+        "unit": "/ month",
+    },
+    {"key": "agent_mode", "label": "Autonomous agents (Sales/Marketing/Dev)", "kind": "toggle"},
+]
+
 CAPABILITY_COST_TIERS = {
     "max_message_length": "low",
     "max_compare_uses_per_day": "med",
@@ -435,6 +466,18 @@ class Plan(models.Model):
     is_visible_to_admins = models.BooleanField(
         default=True,
         help_text="Whether this plan appears in the Change Plan picker, or stays hidden/archived.",
+    )
+    # billing.views.MyPlansView/PublicPricingView - True (the default, so
+    # nothing already checking out silently breaks) shows a "Checkout"
+    # button (billing:checkout_plan - an instant unpaid invoice, no human
+    # in the loop). False shows "Contact us" instead (billing:
+    # request_plan_access - creates a governance.UpgradeRequest, same
+    # inbox a SuperAdmin already reviews) - the self-serve-vs-sales-
+    # assisted split a SuperAdmin would want for a low entry tier vs a
+    # higher one, without hardcoding which named plan is which.
+    self_checkout_enabled = models.BooleanField(
+        default=True,
+        help_text="Off shows 'Contact us' (creates an Upgrade Request) instead of an instant checkout button.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
