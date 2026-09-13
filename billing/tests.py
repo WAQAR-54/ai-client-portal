@@ -108,6 +108,16 @@ class PublicPricingViewTests(TestCase):
         self.assertNotContains(response, "Inactive Plan")
         self.assertNotContains(response, "Demo Plan")
 
+    def test_leads_with_agents_and_team_features_not_just_the_model_bundle(self):
+        """Positioning fix (Gap 4): "4 models bundled" is a price-based
+        pitch a provider could undercut by bundling themselves; the
+        durable differentiator is what only this app offers on top -
+        agents, team billing, an admin console. That should lead the
+        page copy, with the model count as a secondary detail."""
+        response = self.client.get(reverse("billing:public_pricing"))
+        self.assertContains(response, "Sales, Marketing, and Dev AI agents")
+        self.assertContains(response, "team-based billing")
+
     def test_shows_factual_security_claims_not_an_unbacked_certification(self):
         """Real, specific, admin-configurable features (governance's PII
         redaction and Compliance Routing) - never an unbacked
