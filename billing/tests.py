@@ -108,6 +108,17 @@ class PublicPricingViewTests(TestCase):
         self.assertNotContains(response, "Inactive Plan")
         self.assertNotContains(response, "Demo Plan")
 
+    def test_shows_factual_security_claims_not_an_unbacked_certification(self):
+        """Real, specific, admin-configurable features (governance's PII
+        redaction and Compliance Routing) - never an unbacked
+        "compliance-ready"/certification claim we can't prove if a buyer
+        asks for it."""
+        response = self.client.get(reverse("billing:public_pricing"))
+        self.assertContains(response, "PII redaction built-in")
+        self.assertContains(response, "Regional data routing available")
+        for unbacked_claim in ["compliance-ready", "Compliance-ready", "ISO 27001 certified", "SOC 2 certified"]:
+            self.assertNotContains(response, unbacked_claim)
+
 
 class UpdatePlanRegionalPricingTests(TestCase):
     def setUp(self):

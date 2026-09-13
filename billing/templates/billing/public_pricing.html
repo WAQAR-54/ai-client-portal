@@ -63,4 +63,24 @@
         {% endfor %}
     </div>
 </div>
+
+<div class="card mt-4">
+    <h2 style="margin-bottom:0.25rem;">{% trans "Security & data handling" %}</h2>
+    <p class="text-muted" style="margin-top:0;">{% trans "Specific, configurable controls — not a certification claim we can't back up." %}</p>
+    <div style="display:flex; flex-direction:column; gap:0.6rem; margin-top:0.75rem;">
+        <div style="display:flex; align-items:flex-start; gap:0.5rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-success); flex-shrink:0; margin-top:0.2rem;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>{% trans "PII redaction built-in — CNIC/national ID, credit card, and phone numbers can be automatically redacted before a message reaches an AI provider." %}</span>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:0.5rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-success); flex-shrink:0; margin-top:0.2rem;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>{% trans "Regional data routing available — a department can be restricted to only EU-hosted models." %}</span>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:0.5rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-success); flex-shrink:0; margin-top:0.2rem;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>{% trans "Zero-retention model routing available — usage can be restricted to providers that don't train on or retain your data." %}</span>
+        </div>
+    </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:0.85rem;">{% trans "These are admin-configurable controls, not a claim of ISO 27001, SOC 2, or any other certification — we don't hold one yet. Ask your administrator to enable what your organization requires." %}</p>
+</div>
 {% endblock %}
