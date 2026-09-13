@@ -47,6 +47,18 @@ SIGNUP_RATE_LIMIT = 5
 PASSWORD_RESET_IP_RATE_LIMIT = 10
 PASSWORD_RESET_EMAIL_RATE_LIMIT = 3
 
+# Per-username-per-hour cap on the login POST itself, counting EVERY
+# submission (successful or not) - closes a gap axes leaves open. Axes only
+# ever counts failed logins, so someone who already has valid (phished or
+# leaked) credentials could otherwise resubmit the login form indefinitely
+# to keep spawning brand-new MFA challenges - each with its own
+# MAX_MFA_ATTEMPTS guesses and MAX_MFA_RESENDS resends (see accounts/mfa.py)
+# - defeating that per-challenge cap by simply restarting the cycle instead
+# of exhausting it. Keyed per-username (the dimension actually being
+# abused), not per-IP, and generous enough that no real user's normal
+# login/logout/typo pattern is ever the one who hits it.
+LOGIN_RATE_LIMIT = 15
+
 
 @login_required
 @require_POST
@@ -131,6 +143,16 @@ class PortalLoginView(LoginView):
         # shared URL included) silently dumps the user on the generic
         # dashboard instead of back where they were headed.
         return self.get_redirect_url() or reverse_lazy("accounts:dashboard")
+
+    def post(self, request, *args, **kwargs):
+        # Checked before super().post() even builds/validates the form -
+        # see LOGIN_RATE_LIMIT's own comment for why this exists alongside
+        # axes rather than being redundant with it.
+        username = request.POST.get("username", "").strip().lower()
+        if username and is_rate_limited(f"login:{username}", limit=LOGIN_RATE_LIMIT, window_seconds=3600):
+            messages.error(request, translation.gettext("Too many login attempts for this account. Try again later."))
+            return self.render_to_response(self.get_context_data(form=self.get_form_class()(request)))
+        return super().post(request, *args, **kwargs)
 
     def form_valid(self, form):
         """form_valid means the password already checked out (that's what

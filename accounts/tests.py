@@ -28,6 +28,13 @@ class UserModelTests(TestCase):
 
 class AuthAndRBACTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+
+        # The login POST is now rate-limited per-username (see
+        # LoginRateLimitTests) - the cache-backed counter otherwise
+        # accumulates across every TestCase in this run that logs in as
+        # the same address.
+        cache.clear()
         self.department = Department.objects.create(name="Engineering")
         self.user = User.objects.create_user(
             email="user@example.com",
@@ -115,6 +122,62 @@ class AuthAndRBACTests(TestCase):
         self.client.login(email="user@example.com", password="pw12345!")
         response = self.client.get(reverse("accounts:logout"))
         self.assertRedirects(response, reverse("accounts:login"))
+
+
+class LoginRateLimitTests(TestCase):
+    """django-axes only ever counts FAILED logins - someone who already has
+    valid (phished/leaked) credentials could otherwise resubmit the login
+    form indefinitely to keep spawning fresh MFA challenges, each with its
+    own guess/resend allowance (see accounts/mfa.py), defeating that
+    per-challenge cap by restarting the cycle instead of exhausting it."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="person@example.com", password="pw12345!")
+
+    def _login(self, password="pw12345!"):
+        return self.client.post(reverse("accounts:login"), {"username": "person@example.com", "password": password})
+
+    def test_allows_up_to_the_limit(self):
+        from accounts.views import LOGIN_RATE_LIMIT
+
+        for _ in range(LOGIN_RATE_LIMIT):
+            response = self._login()
+            self.assertRedirects(response, reverse("accounts:dashboard"))
+            self.client.logout()
+
+    def test_blocks_once_the_limit_is_exceeded_even_with_the_right_password(self):
+        from accounts.views import LOGIN_RATE_LIMIT
+
+        for _ in range(LOGIN_RATE_LIMIT):
+            self._login()
+            self.client.logout()
+        response = self._login()
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_wrong_password_attempts_count_toward_the_same_cap(self):
+        from accounts.views import LOGIN_RATE_LIMIT
+
+        for _ in range(LOGIN_RATE_LIMIT):
+            self._login(password="wrong-password")
+        response = self._login()
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_limit_is_scoped_per_username_not_global(self):
+        from accounts.views import LOGIN_RATE_LIMIT
+
+        User.objects.create_user(email="other@example.com", password="pw12345!")
+        for _ in range(LOGIN_RATE_LIMIT):
+            self._login()
+            self.client.logout()
+        response = self.client.post(
+            reverse("accounts:login"), {"username": "other@example.com", "password": "pw12345!"}
+        )
+        self.assertRedirects(response, reverse("accounts:dashboard"))
 
 
 class SignupTests(TestCase):
@@ -535,8 +598,13 @@ class DepartmentRetentionDaysTests(TestCase):
 
 class MFALoginFlowTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
         from governance.models import SecuritySettings
 
+        # Same reason as AuthAndRBACTests.setUp: the login POST is now
+        # rate-limited per-username, and this class alone logs in as
+        # admin@example.com many times across its test methods.
+        cache.clear()
         SecuritySettings.objects.update_or_create(pk=1, defaults={"mfa_required_for_admins": True})
         self.admin = User.objects.create_user(
             email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
