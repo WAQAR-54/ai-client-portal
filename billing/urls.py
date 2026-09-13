@@ -49,4 +49,6 @@ urlpatterns = [
     path("my-invoices/", views.MyInvoicesView.as_view(), name="my_invoices"),
     path("my-invoices/<int:invoice_id>/submit-proof/", views.submit_payment_proof, name="submit_payment_proof"),
     path("my-invoices/billing-profile/", views.update_my_billing_profile, name="update_my_billing_profile"),
+    path("my-plans/", views.MyPlansView.as_view(), name="my_plans"),
+    path("my-plans/checkout/", views.checkout_plan, name="checkout_plan"),
 ]

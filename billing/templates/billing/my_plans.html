@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load i18n humanize %}
+{% block title %}{% trans "Plans" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.5rem;">
+        <h1 style="margin-bottom:0;">{% trans "Plans" %}</h1>
+        <span class="text-muted" style="font-size:0.9rem;">{{ region.flag }} {{ region.label }} ({{ region.currency }})</span>
+    </div>
+    <p>{% trans "Pick a plan and check out — this sends you an invoice by email. Your plan only actually changes once that invoice is paid; nothing switches automatically." %}</p>
+
+    <div class="plan-grid mt-4" data-stagger data-stagger-items=".plan-card">
+        {% for row in rows %}
+        <div class="plan-card{% if row.is_current %} plan-card-current{% endif %}">
+            <div class="plan-card-head">
+                <div class="plan-card-title">{{ row.plan.name }}</div>
+                {% if row.is_current %}<span class="badge badge-success">{% trans "Current plan" %}</span>{% elif row.plan.is_default %}<span class="badge">{% trans "Popular" %}</span>{% endif %}
+            </div>
+            <div class="plan-row">
+                <span>{% trans "Price" %}</span>
+                <span class="mono">
+                    {% if row.price_row.price %}{{ region.currency }} {{ row.price_row.price|floatformat:0|intcomma }}/mo{% else %}{% trans "Contact us" %}{% endif %}
+                </span>
+            </div>
+            <div class="plan-row">
+                <span>{% trans "Seats included" %}</span>
+                <span class="mono">{{ row.plan.seats_included|default:"Unlimited" }}</span>
+            </div>
+            {% if row.price_row.extra_seat_price %}
+            <div class="plan-row">
+                <span>{% trans "Extra seat" %}</span>
+                <span class="mono">+{{ region.currency }} {{ row.price_row.extra_seat_price|floatformat:0|intcomma }}/mo</span>
+            </div>
+            {% endif %}
+            {% if row.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem;">{{ row.plan.description }}</p>{% endif %}
+            {% if row.is_current %}
+            <button type="button" class="btn btn-ghost mt-3" style="width:100%;" disabled>{% trans "You're on this plan" %}</button>
+            {% else %}
+            <form method="post" action="{% url 'billing:checkout_plan' %}" style="margin-top:0.75rem;">
+                {% csrf_token %}
+                <input type="hidden" name="plan_id" value="{{ row.plan.id }}">
+                <button type="submit" class="btn" style="width:100%;">{% trans "Checkout" %}</button>
+            </form>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p class="text-faint">{% trans "No plans available yet." %}</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1044,6 +1044,101 @@ class MyInvoicesViewTests(TestCase):
         self.assertNotContains(response, self.invoice.invoice_number)
 
 
+class CheckoutPlanTests(TestCase):
+    """billing.views.MyPlansView/checkout_plan - self-service plan
+    checkout. Per the user's own explicit choice: picking a plan only
+    ever creates an unpaid Invoice priced against that plan and emails
+    it - the plan itself must never change until that invoice is marked
+    paid (see _sync_plan_assignment_to_paid_invoice, tested via the
+    payment-verification views below)."""
+
+    def setUp(self):
+        mail.outbox = []
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.plan = Plan.objects.create(name="Pro")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("99"))
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_my_plans_page_lists_active_plans(self):
+        response = self.client.get(reverse("billing:my_plans"))
+        self.assertContains(response, "Pro")
+
+    def test_checkout_creates_an_unpaid_invoice_for_the_chosen_plan(self):
+        response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.status, Invoice.Status.UNPAID)
+
+    def test_checkout_does_not_change_the_users_plan(self):
+        from governance.plans import get_assignment
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        assignment = get_assignment(self.user)
+        self.assertNotEqual(getattr(assignment, "plan_id", None), self.plan.id)
+
+    def test_checkout_emails_the_invoice(self):
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.user.email])
+
+    def test_checkout_invoice_shows_in_my_invoices(self):
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        response = self.client.get(reverse("billing:my_invoices"))
+        self.assertContains(response, "Pro")
+
+    def test_cannot_checkout_an_inactive_plan(self):
+        self.plan.is_active = False
+        self.plan.save(update_fields=["is_active"])
+        response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.assertEqual(response.status_code, 404)
+
+    def test_checkout_requires_login(self):
+        self.client.logout()
+        response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.assertEqual(response.status_code, 302)
+
+    def test_paying_the_checkout_invoice_switches_the_plan(self):
+        from governance.plans import get_assignment
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+
+        superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.logout()
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": invoice.id}))
+
+        assignment = get_assignment(self.user)
+        self.assertEqual(assignment.plan_id, self.plan.id)
+        self.assertEqual(assignment.assigned_by, superadmin)
+
+    def test_unpaying_an_already_paid_invoice_does_not_change_the_plan_again(self):
+        """toggle_invoice_status flips both ways - only the transition
+        INTO paid should ever sync the plan, never the reverse toggle."""
+        from governance.plans import assign_plan, get_assignment
+
+        other_plan = Plan.objects.create(name="Other")
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+
+        superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.logout()
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": invoice.id}))
+        # Someone manually moves the user onto yet another plan afterward.
+        assign_plan(self.user, other_plan, assigned_by=superadmin)
+        # Toggling the (now-paid) invoice back to unpaid must not revert
+        # or otherwise touch the plan assignment.
+        self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": invoice.id}))
+
+        assignment = get_assignment(self.user)
+        self.assertEqual(assignment.plan_id, other_plan.id)
+
+
 class InvoiceDetailViewTests(TestCase):
     def setUp(self):
         self.department = Department.objects.create(name="Sales")

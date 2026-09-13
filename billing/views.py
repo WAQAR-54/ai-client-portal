@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages as django_messages
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
@@ -155,6 +156,81 @@ class PublicPricingView(TemplateView):
             "rows": rows,
             "other_regions": other_regions,
         }
+
+
+class MyPlansView(LoginRequiredMixin, TemplateView):
+    """Logged-in "choose/change your plan" page - pricing per the SAME
+    region-detection PublicPricingView uses (a returning, already-signed-
+    up visitor still gets the region-appropriate price, not a second
+    different lookup), plus which plan this user is CURRENTLY on. Every
+    other plan gets a "Checkout" button (checkout_plan below) - picking
+    one only ever creates an unpaid Invoice; the plan itself never
+    changes here. See checkout_plan's own docstring for why."""
+
+    template_name = "billing/my_plans.html"
+
+    def get_context_data(self, **kwargs):
+        from governance.plans import get_assignment
+
+        active_codes = _active_region_codes()
+        requested_region = self.request.GET.get("region", "").strip().upper()
+        if requested_region in active_codes:
+            region_code = requested_region
+        else:
+            ip_address = self.request.META.get("REMOTE_ADDR")
+            region_code = region_for_country(country_code_for_ip(ip_address), active_codes)
+
+        assignment = get_assignment(self.request.user)
+        current_plan_id = assignment.plan_id if assignment else None
+
+        plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
+        prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
+        rows = [
+            {"plan": plan, "price_row": prices.get(plan.id), "is_current": plan.id == current_plan_id} for plan in plans
+        ]
+
+        return super().get_context_data(**kwargs) | {
+            "region": _region_dict(region_code),
+            "rows": rows,
+            "current_plan_id": current_plan_id,
+        }
+
+
+@login_required
+@require_http_methods(["POST"])
+def checkout_plan(request):
+    """Self-service plan checkout, per the user's own explicit choice:
+    picking a plan here NEVER changes it directly - it only generates an
+    unpaid Invoice for that plan (billing.invoicing.generate_invoice_for_
+    user, priced against the CHOSEN plan regardless of the user's current
+    assignment) and emails it (the same billing.emails.send_invoice_email
+    an admin's manual "Email" button already uses). The actual plan
+    switch happens later, only once that invoice is marked paid - see
+    verify_invoice_payment/toggle_invoice_status below, which sync the
+    recipient's plan assignment to match on that transition."""
+    plan = get_object_or_404(Plan, id=request.POST.get("plan_id"), is_active=True, is_demo=False)
+    try:
+        invoice = generate_invoice_for_user(request.user, plan=plan)
+    except InvoiceGenerationError as exc:
+        django_messages.error(request, str(exc))
+        return redirect("billing:my_plans")
+
+    success, _error = send_invoice_email(invoice)
+    if success:
+        django_messages.success(
+            request,
+            _("Invoice sent to your email for the %(plan)s plan. Pay it to switch to that plan.") % {"plan": plan.name},
+        )
+    else:
+        django_messages.warning(
+            request,
+            _(
+                "Invoice created for the %(plan)s plan, but the email couldn't be sent - "
+                "you can still find it under My Invoices."
+            )
+            % {"plan": plan.name},
+        )
+    return redirect("billing:my_invoices")
 
 
 def _region_dict(region_code):
@@ -493,6 +569,28 @@ def _safe_next_url(request, default):
     return default
 
 
+def _sync_plan_assignment_to_paid_invoice(invoice, actor):
+    """Switches invoice.recipient_user onto invoice.plan the moment an
+    invoice is confirmed paid - the other half of checkout_plan's "pick a
+    plan -> only an unpaid Invoice is created, the plan itself never
+    changes until that invoice is paid" promise. A no-op (by construction,
+    via assign_plan's own get_or_create + straight reassignment) for the
+    far more common case where the paid invoice's plan already matches
+    the recipient's current one (every recurring/welcome invoice) - this
+    runs on EVERY transition to paid, not just checkout-originated
+    invoices, since re-asserting "you're on the plan you just paid for"
+    is always correct, not just for this one new flow."""
+    if not invoice.recipient_user_id:
+        return
+    from governance.plans import assign_plan, get_assignment
+
+    assignment = get_assignment(invoice.recipient_user)
+    if assignment and assignment.plan_id == invoice.plan_id:
+        return
+    assign_plan(invoice.recipient_user, invoice.plan, assigned_by=actor)
+    log_action(actor, "billing.invoice_payment_plan_assigned", invoice, new_value=invoice.plan.name)
+
+
 @role_required(User.Role.ADMIN)
 @require_http_methods(["POST"])
 def toggle_invoice_status(request, invoice_id):
@@ -505,6 +603,8 @@ def toggle_invoice_status(request, invoice_id):
     invoice.status = Invoice.Status.UNPAID if invoice.status == Invoice.Status.PAID else Invoice.Status.PAID
     invoice.save(update_fields=["status"])
     log_action(request.user, "billing.invoice_status_toggle", invoice, old_value=old_status, new_value=invoice.status)
+    if invoice.status == Invoice.Status.PAID:
+        _sync_plan_assignment_to_paid_invoice(invoice, request.user)
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect(_safe_next_url(request, reverse("billing:invoices")))
@@ -516,6 +616,7 @@ def verify_invoice_payment(request, invoice_id):
     invoice = _get_scoped_invoice_or_403(request, invoice_id)
     invoice.verify_payment(request.user)
     log_action(request.user, "billing.invoice_payment_verified", invoice, new_value=invoice.status)
+    _sync_plan_assignment_to_paid_invoice(invoice, request.user)
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect(_safe_next_url(request, reverse("billing:invoices")))
