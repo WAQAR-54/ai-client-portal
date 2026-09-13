@@ -41,6 +41,7 @@ from governance.limits import (
     UsageLimitExceeded,
     check_attachment_monthly_limit,
     check_media_generation_monthly_limit,
+    check_research_monthly_limit,
     check_usage_limits,
     get_usage_status,
     validate_upload,
@@ -410,6 +411,11 @@ def post_message(request, conversation_id):
     # but a POSTed "research=on" shouldn't be trusted just because the UI
     # that would normally set it wasn't shown.
     research = request.POST.get("research") == "on" and has_feature(request.user, "research")
+    if research:
+        try:
+            check_research_monthly_limit(request.user)
+        except UploadRejected as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
 
     # Same reasoning again - AGENT_PERSONAS.get() below only ever accepts
     # one of the 3 known keys anyway, but the feature gate still has to be
@@ -455,6 +461,7 @@ def post_message(request, conversation_id):
             conversation=conversation,
             role=Message.Role.ASSISTANT,
             content="",
+            used_research=research,
         )
 
     return render(

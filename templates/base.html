@@ -108,6 +108,11 @@
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
                         {% trans "Plan Management" %}
                     </a>
+                    {# Moved here from "Automation" below - it edits the same Plan rows Plan Management does (feature flags + numeric caps side by side), not an automation/routing setting. #}
+                    <a href="{% url 'governance:capability_limits' %}" class="{% if request.resolver_match.url_name == "capability_limits" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>
+                        {% trans "Capability Limits" %}
+                    </a>
                     <a href="{% url 'governance:feature_visibility' %}" class="{% if request.resolver_match.url_name == "feature_visibility" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
                         {% trans "Feature Visibility" %}
@@ -152,10 +157,6 @@
                     <a href="{% url 'governance:data_handling' %}" class="{% if request.resolver_match.url_name == "data_handling" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
                         {% trans "Data Handling" %}
-                    </a>
-                    <a href="{% url 'governance:capability_limits' %}" class="{% if request.resolver_match.url_name == "capability_limits" %}active{% endif %}">
-                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>
-                        {% trans "Capability Limits" %}
                     </a>
                     {% endif %}
 

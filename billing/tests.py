@@ -1149,10 +1149,11 @@ class CheckoutPlanTests(TestCase):
 
     def test_public_pricing_page_also_shows_capabilities(self):
         self.client.logout()
-        self.plan.feature_flags = {"research": True}
-        self.plan.save(update_fields=["feature_flags"])
+        self.plan.monthly_research_limit = 25
+        self.plan.save(update_fields=["monthly_research_limit"])
         response = self.client.get(reverse("billing:public_pricing"))
         self.assertContains(response, "Research (live web search)")
+        self.assertContains(response, "25")
 
 
 class LeadCapturePlanTests(TestCase):

@@ -3344,6 +3344,32 @@ class CapabilityLimitsAdminTests(TestCase):
         self.assertTrue(self.plan.feature_flags.get("research"))
         self.assertIn(anthropic_model, self.plan.allowed_provider_models.all())
 
+    def test_can_set_monthly_research_limit_and_total_token_allowance(self):
+        """Both fields the mockup's own table shows alongside every other
+        capability - monthly_research_limit is new; monthly_token_limit is
+        the SAME column the Plan form already edits, surfaced here too so
+        it sits side by side when judging a plan (see CAPABILITY_LIMIT_
+        FIELDS' own comment in governance/models.py)."""
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
+            {"monthly_research_limit": "25", "monthly_token_limit": "2000000"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.monthly_research_limit, 25)
+        self.assertEqual(self.plan.monthly_token_limit, 2000000)
+
+    def test_model_access_row_lists_providers_allowed_for_each_plan(self):
+        anthropic_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="claude-access-test", is_enabled=True
+        )
+        self.plan.allowed_provider_models.add(anthropic_model)
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:capability_limits"))
+        self.assertContains(response, "Model access")
+        self.assertContains(response, "Anthropic")
+
 
 class ReportsTests(TestCase):
     """Revenue / Usage / Growth reports (governance/reports.py) - computed

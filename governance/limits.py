@@ -124,6 +124,40 @@ def check_media_generation_monthly_limit(user):
         )
 
 
+def check_research_monthly_limit(user):
+    """Raise UploadRejected if this user has already reached their Plan's
+    monthly cap on Research-mode uses (Plan.monthly_research_limit) - the
+    numeric cap layered UNDER the blanket feature_flags["research"]
+    switch, same two-layer pattern as check_media_generation_monthly_limit
+    above (that flag alone still governs "can turn on Research mode at
+    all"; this caps how many uses once allowed). Counts ASSISTANT-role
+    messages with used_research=True, set at send time in chat/views.py::
+    post_message."""
+    from governance.plans import get_assignment
+
+    assignment = get_assignment(user)
+    plan = assignment.plan if assignment else None
+    if plan is None:
+        return
+
+    limit = plan.monthly_research_limit
+    if limit is None:
+        return
+
+    month_start = timezone.localdate().replace(day=1)
+    used = Message.objects.filter(
+        conversation__user=user,
+        role=Message.Role.ASSISTANT,
+        used_research=True,
+        created_at__date__gte=month_start,
+    ).count()
+    if used >= limit:
+        raise UploadRejected(
+            _("You've reached your plan's monthly limit of %(limit)s Research uses. It resets next month.")
+            % {"limit": limit}
+        )
+
+
 def check_usage_limits(user, conversation):
     """Raise UsageLimitExceeded if sending another message would (or already
     does) violate the user's effective daily/monthly/session/budget caps,

@@ -50,6 +50,24 @@
                 </tr>
                 {% endfor %}
                 <tr>
+                    <td class="feature-name">
+                        <div style="font-weight:600;">{% trans "Model access" %}</div>
+                        <div class="text-faint" style="font-size:0.75rem;">{% trans "which providers this plan can use" %}</div>
+                    </td>
+                    {% for cell in model_access_row.cells %}
+                    <td style="text-align:center;">
+                        {% if cell.providers %}
+                        <span style="font-size:0.85rem;">{{ cell.providers|join:", " }}</span>
+                        {% else %}
+                        <span class="text-faint" style="font-size:0.85rem;">{% trans "None" %}</span>
+                        {% endif %}
+                        <div>
+                            <a href="{% url 'governance:plan_edit' plan_id=cell.plan.id %}" class="text-faint" style="font-size:0.72rem;">{% trans "Edit on Plan form" %}</a>
+                        </div>
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
                     <td colspan="{{ plans|length|add:1 }}" class="section-divider" style="padding:0.6rem 0.75rem; border-top:1px solid var(--color-border);">
                         <span class="text-faint" style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;">{% trans "Monthly / daily numeric limits" %}</span>
                     </td>
@@ -106,6 +124,10 @@
         <div>
             <div style="font-weight:600; font-size:0.9rem;">{% trans "Image & video generation = 1 unit per generated file" %}</div>
             <p class="text-faint" style="font-size:0.85rem; margin:0.15rem 0 0;">{% trans "An image and a video are counted the same way, combined into one monthly total - one Grok-generated image or video is always 1 unit, whichever it is." %}</p>
+        </div>
+        <div>
+            <div style="font-weight:600; font-size:0.9rem;">{% trans "Total token allowance = the overall safety ceiling" %}</div>
+            <p class="text-faint" style="font-size:0.85rem; margin:0.15rem 0 0;">{% trans "A hard monthly cap on total AI processing (tokens - the underlying unit AI models bill in), across every feature combined. Whichever limit is hit first - a per-feature one above or this total - stops further use until the next billing cycle." %}</p>
         </div>
     </div>
 </div>

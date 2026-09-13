@@ -1409,7 +1409,7 @@ class CapabilityLimitsView(SuperAdminRequiredMixin, TemplateView):
     template_name = "governance/capability_limits.html"
 
     def get_context_data(self, **kwargs):
-        plans = list(Plan.objects.order_by("-is_default", "name"))
+        plans = list(Plan.objects.order_by("-is_default", "name").prefetch_related("allowed_provider_models__provider"))
         numeric_rows = [
             {
                 "key": field,
@@ -1429,10 +1429,25 @@ class CapabilityLimitsView(SuperAdminRequiredMixin, TemplateView):
             }
             for key in CAPABILITY_TOGGLE_FLAGS
         ]
+        # Read-only (edited on the Plan form's own model checkboxes, not
+        # here) - "which of the providers are usable" is still part of
+        # "what does this plan actually unlock", so it belongs next to
+        # every other capability when comparing plans side by side, even
+        # though it isn't a value this page's own Save button submits.
+        model_access_row = {
+            "cells": [
+                {
+                    "plan": plan,
+                    "providers": sorted({pm.provider.name for pm in plan.allowed_provider_models.all()}),
+                }
+                for plan in plans
+            ]
+        }
         return super().get_context_data(**kwargs) | {
             "plans": plans,
             "numeric_rows": numeric_rows,
             "toggle_rows": toggle_rows,
+            "model_access_row": model_access_row,
         }
 
 

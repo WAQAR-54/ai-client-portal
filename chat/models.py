@@ -186,6 +186,12 @@ class Message(models.Model):
     attachment_kind = models.CharField(
         max_length=10, blank=True, choices=[("image", "Image"), ("document", "Document"), ("video", "Video")]
     )
+    # Set on the pending assistant reply when the user explicitly turned on
+    # Research mode for that send (chat/views.py::post_message) - lets
+    # governance/limits.py::check_research_monthly_limit count "how many
+    # Research uses this month" with a plain DB filter, the same
+    # denormalize-for-counting reasoning as attachment_kind above.
+    used_research = models.BooleanField(default=False)
     served_from_cache = models.BooleanField(
         default=False,
         help_text="This reply was served from the Redis response cache instead of "

@@ -83,7 +83,15 @@ CAPABILITY_LIMIT_FIELDS = [
     ("max_domain_searches_per_day", "Domain Generator searches", "/ day"),
     ("monthly_image_reads_limit", "Image reading", "/ month"),
     ("monthly_document_reads_limit", "Document reading", "/ month"),
+    ("monthly_research_limit", "Research (live web search)", "/ month"),
     ("monthly_media_generation_limit", "Image & video generation (Grok only)", "/ month"),
+    # Same field the Plan form's own "Token limits" section edits -
+    # surfaced here too so it sits side by side with every other
+    # capability when judging a plan, matching the reference mockup's
+    # own "Total token allowance" row. Both surfaces read/write the
+    # exact same column; see governance/limits.py::check_usage_limits
+    # (via plan_limit_fallback) for where it's actually enforced.
+    ("monthly_token_limit", "Total token allowance", "/ month"),
 ]
 
 # The CUSTOMER-facing subset/order of the capabilities above, shown on
@@ -95,7 +103,7 @@ CAPABILITY_LIMIT_FIELDS = [
 PLAN_DISPLAY_CAPABILITIES = [
     {"key": "monthly_image_reads_limit", "label": "Image reading", "kind": "numeric", "unit": "/ month"},
     {"key": "monthly_document_reads_limit", "label": "Document reading", "kind": "numeric", "unit": "/ month"},
-    {"key": "research", "label": "Research (live web search)", "kind": "toggle"},
+    {"key": "monthly_research_limit", "label": "Research (live web search)", "kind": "numeric", "unit": "/ month"},
     {"key": "document_generation", "label": "Document generation (Word/Excel/PowerPoint/PDF)", "kind": "toggle"},
     {
         "key": "monthly_media_generation_limit",
@@ -115,8 +123,10 @@ CAPABILITY_COST_TIERS = {
     "monthly_document_reads_limit": "med",
     "document_generation": "med",
     "research": "high",
+    "monthly_research_limit": "high",
     "agent_mode": "high",
     "monthly_media_generation_limit": "high",
+    "monthly_token_limit": "low",
 }
 
 # ---------- Role-wide feature visibility ----------
@@ -453,6 +463,18 @@ class Plan(models.Model):
         blank=True,
         default=0,
         help_text="Max Grok-generated images+videos per calendar month, combined. 0 = not included; blank = unlimited.",
+    )
+    # A numeric cap ALONGSIDE the boolean "research" feature_flags entry -
+    # same two-layer pattern as media_generation above: the flag governs
+    # "can turn on Research mode at all" (chat_home's can_use_research,
+    # re-checked server-side in chat/views.py::post_message), this caps
+    # how many uses once allowed. See governance/limits.py::
+    # check_research_monthly_limit and chat/models.py::Message.
+    # used_research for how usage is counted. Null = unlimited.
+    monthly_research_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max Research-mode (live web search) uses per calendar month. Null = unlimited.",
     )
 
     is_active = models.BooleanField(

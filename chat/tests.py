@@ -824,6 +824,35 @@ class ResearchModeTests(TestCase):
         )
         self.assertNotContains(response, "research=1")
 
+    def test_post_message_marks_the_reply_used_research_when_on(self):
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hello", "research": "on"},
+        )
+        assistant_message = conversation.messages.filter(role=Message.Role.ASSISTANT).latest("id")
+        self.assertTrue(assistant_message.used_research)
+
+    def test_post_message_blocked_once_monthly_research_limit_is_reached(self):
+        """governance.limits.check_research_monthly_limit - the numeric cap
+        layered under the boolean "research" flag, same two-layer pattern
+        as media generation's monthly cap. Checked BEFORE any message for
+        this send is created, so a blocked attempt leaves no new rows."""
+        self.premium.monthly_research_limit = 1
+        self.premium.save(update_fields=["monthly_research_limit"])
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content="prior", used_research=True
+        )
+
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hello", "research": "on"},
+        )
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Research", response.content.decode())
+        self.assertEqual(conversation.messages.filter(role=Message.Role.USER).count(), 0)
+
 
 class AgentPersonaTests(TestCase):
     """chat/prompts.py::AGENT_PERSONAS + the "agent_mode" Plan feature flag
