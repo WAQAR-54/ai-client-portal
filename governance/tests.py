@@ -3302,6 +3302,48 @@ class CapabilityLimitsAdminTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_page_shows_a_column_per_plan_and_a_row_per_capability(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:capability_limits"))
+        self.assertContains(response, self.plan.name)
+        self.assertContains(response, "Autonomous agents")
+        self.assertContains(response, "Image & video generation")
+        numeric_keys = {row["key"] for row in response.context["numeric_rows"]}
+        toggle_keys = {row["key"] for row in response.context["toggle_rows"]}
+        self.assertIn("monthly_media_generation_limit", numeric_keys)
+        self.assertEqual(
+            toggle_keys, {"file_upload", "document_generation", "research", "media_generation", "agent_mode"}
+        )
+
+    def test_toggling_a_capability_flag_merges_rather_than_replaces(self):
+        """CAPABILITY_TOGGLE_FLAGS is a deliberate subset of
+        KNOWN_FEATURE_FLAGS - a flag only ever set from the separate Plan
+        form (e.g. "export") must survive a save made from THIS page."""
+        self.plan.feature_flags = {"export": True}
+        self.plan.save(update_fields=["feature_flags"])
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
+            {"flag_document_generation": "on"},
+        )
+        self.plan.refresh_from_db()
+        self.assertTrue(self.plan.feature_flags.get("export"))
+        self.assertTrue(self.plan.feature_flags.get("document_generation"))
+        self.assertFalse(self.plan.feature_flags.get("research"))
+
+    def test_turning_on_research_from_this_page_also_auto_enables_a_claude_model(self):
+        anthropic_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="claude-cap-test", is_enabled=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(
+            reverse("governance:update_capability_limits", kwargs={"plan_id": self.plan.id}),
+            {"flag_research": "on"},
+        )
+        self.plan.refresh_from_db()
+        self.assertTrue(self.plan.feature_flags.get("research"))
+        self.assertIn(anthropic_model, self.plan.allowed_provider_models.all())
+
 
 class ReportsTests(TestCase):
     """Revenue / Usage / Growth reports (governance/reports.py) - computed

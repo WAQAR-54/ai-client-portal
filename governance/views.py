@@ -26,6 +26,8 @@ from governance.limits import _effective_limit, _metric
 from governance.models import (
     ADMIN_NAV_FEATURES,
     AuditLog,
+    CAPABILITY_COST_TIERS,
+    CAPABILITY_TOGGLE_FLAGS,
     ComplianceSettings,
     KNOWN_FEATURE_FLAGS,
     PIIRule,
@@ -1113,6 +1115,31 @@ class PlanListView(SuperAdminRequiredMixin, ListView):
     queryset = Plan.objects.order_by("-is_default", "name")
 
 
+def _auto_enabled_provider_model_ids(feature_flags, submitted_provider_model_ids):
+    """Ensures the ONE provider model each of these two flags actually
+    needs is present in the returned id set whenever that flag is on -
+    shared by PlanFormView.post and update_capability_limits, so a plan
+    saved from either page gets the same behavior. Research only works
+    through Anthropic's web_search tool (chat/providers.py); media
+    generation only works through Grok's image/video endpoints
+    (chat/media_generation.py) - without this, a SuperAdmin who turns on
+    the flag from either page would only find out it doesn't work once a
+    user hits "needs a Claude model"/"Grok isn't connected". Only ever
+    ADDS a model when a flag is on; never removes one when a flag is off,
+    since that model may be wanted for other reasons independent of this
+    one flag."""
+    provider_model_ids = set(submitted_provider_model_ids)
+    if feature_flags.get("research"):
+        anthropic_model = ProviderModel.objects.filter(provider__adapter_type="anthropic", is_enabled=True).first()
+        if anthropic_model:
+            provider_model_ids.add(str(anthropic_model.id))
+    if feature_flags.get("media_generation"):
+        grok_model = ProviderModel.objects.filter(provider__slug="grok", is_enabled=True).first()
+        if grok_model:
+            provider_model_ids.add(str(grok_model.id))
+    return provider_model_ids
+
+
 class PlanFormView(SuperAdminRequiredMixin, TemplateView):
     template_name = "governance/plan_form.html"
 
@@ -1161,27 +1188,9 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
         plan.is_visible_to_admins = request.POST.get("is_visible_to_admins") == "on"
 
         make_default = request.POST.get("is_default") == "on"
-
-        # Turning on a capability that only actually works through one
-        # specific provider (Research -> Anthropic's web_search tool,
-        # Media generation -> Grok's image/video endpoints - see
-        # chat/providers.py and chat/media_generation.py) must not leave a
-        # SuperAdmin to separately remember to also go check that
-        # provider's model in the list below - without this, they'd
-        # enable the flag, save, and only find out it doesn't work when a
-        # user hits "needs a Claude model"/"Grok isn't connected". Only
-        # ever ADDS a model when a flag is turned on; never removes one
-        # when a flag is turned off, since that model may be wanted for
-        # other reasons independent of this flag.
-        provider_model_ids = set(request.POST.getlist("provider_model_ids"))
-        if plan.feature_flags.get("research"):
-            anthropic_model = ProviderModel.objects.filter(provider__adapter_type="anthropic", is_enabled=True).first()
-            if anthropic_model:
-                provider_model_ids.add(str(anthropic_model.id))
-        if plan.feature_flags.get("media_generation"):
-            grok_model = ProviderModel.objects.filter(provider__slug="grok", is_enabled=True).first()
-            if grok_model:
-                provider_model_ids.add(str(grok_model.id))
+        provider_model_ids = _auto_enabled_provider_model_ids(
+            plan.feature_flags, request.POST.getlist("provider_model_ids")
+        )
 
         with transaction.atomic():
             plan.save()
@@ -1377,19 +1386,63 @@ def update_department_retention(request, department_id):
     return redirect("governance:retention_provider_approval")
 
 
+CAPABILITY_LIMIT_FIELDS = [
+    # (field, label, unit, cost_tier already in CAPABILITY_COST_TIERS)
+    ("max_message_length", "Max message length", "characters"),
+    ("max_compare_uses_per_day", "Compare-mode uses", "/ day"),
+    ("max_playground_runs_per_day", "Code Playground runs", "/ day"),
+    ("max_domain_searches_per_day", "Domain Generator searches", "/ day"),
+    ("monthly_image_reads_limit", "Image reading", "/ month"),
+    ("monthly_document_reads_limit", "Document reading", "/ month"),
+    ("monthly_media_generation_limit", "Image & video generation (Grok only)", "/ month"),
+]
+
+# Labels for the 5 CAPABILITY_TOGGLE_FLAGS - pulled from the single
+# source of truth (KNOWN_FEATURE_FLAGS) rather than redeclared here, so
+# the two never drift.
+_KNOWN_FLAG_LABELS = dict(KNOWN_FEATURE_FLAGS)
+
+
 class CapabilityLimitsView(SuperAdminRequiredMixin, TemplateView):
-    """Per-Plan numeric caps on specific actions (message length, Compare-
-    mode uses/day, and per-plan overrides of the two standalone tools'
-    daily quotas) - distinct from Plan Management's existing token-volume/
-    request-count caps (those bound overall usage; these bound one
-    action each). See governance/plans.py's check_message_length_limit /
-    check_compare_use_limit / effective_playground_daily_limit /
-    effective_domain_search_daily_limit for the actual enforcement."""
+    """One column per Plan, one row per capability - both the numeric
+    caps (message length, Compare-mode uses/day, the two standalone
+    tools' daily quotas, and the monthly image/document/media-generation
+    limits from Milestones 1 and 4) AND the boolean capability flags
+    (file_upload/document_generation/research/media_generation/agent_mode)
+    together in one place, rather than the flags being reachable only
+    from the separate New/Edit Plan form - see governance/plans.py's
+    check_message_length_limit/check_compare_use_limit/
+    effective_playground_daily_limit/effective_domain_search_daily_limit/
+    has_feature for the actual enforcement of everything shown here."""
 
     template_name = "governance/capability_limits.html"
 
     def get_context_data(self, **kwargs):
-        return super().get_context_data(**kwargs) | {"plans": Plan.objects.order_by("-is_default", "name")}
+        plans = list(Plan.objects.order_by("-is_default", "name"))
+        numeric_rows = [
+            {
+                "key": field,
+                "label": label,
+                "unit": unit,
+                "cost_tier": CAPABILITY_COST_TIERS.get(field, "low"),
+                "cells": [{"plan": plan, "value": getattr(plan, field)} for plan in plans],
+            }
+            for field, label, unit in CAPABILITY_LIMIT_FIELDS
+        ]
+        toggle_rows = [
+            {
+                "key": key,
+                "label": _KNOWN_FLAG_LABELS.get(key, key),
+                "cost_tier": CAPABILITY_COST_TIERS.get(key, "low"),
+                "cells": [{"plan": plan, "value": plan.has_feature(key)} for plan in plans],
+            }
+            for key in CAPABILITY_TOGGLE_FLAGS
+        ]
+        return super().get_context_data(**kwargs) | {
+            "plans": plans,
+            "numeric_rows": numeric_rows,
+            "toggle_rows": toggle_rows,
+        }
 
 
 @role_required(User.Role.SUPERADMIN)
@@ -1397,25 +1450,37 @@ class CapabilityLimitsView(SuperAdminRequiredMixin, TemplateView):
 def update_capability_limits(request, plan_id):
     plan = get_object_or_404(Plan, id=plan_id)
 
-    fields = [
-        "max_message_length",
-        "max_compare_uses_per_day",
-        "max_playground_runs_per_day",
-        "max_domain_searches_per_day",
-        "monthly_image_reads_limit",
-        "monthly_document_reads_limit",
-        "monthly_media_generation_limit",
-    ]
-    old_values = {field: getattr(plan, field) for field in fields}
-    for field in fields:
+    numeric_fields = [field for field, _label, _unit in CAPABILITY_LIMIT_FIELDS]
+    old_values = {field: getattr(plan, field) for field in numeric_fields}
+    for field in numeric_fields:
         setattr(plan, field, _int_or_none(request.POST.get(field)))
-    plan.save(update_fields=fields)
+
+    # Merge, not replace - CAPABILITY_TOGGLE_FLAGS is a deliberate SUBSET
+    # of KNOWN_FEATURE_FLAGS (see its own comment in governance/models.py),
+    # so overwriting plan.feature_flags wholesale here would silently wipe
+    # out the other flags (export, tools, model_selection, ...) that are
+    # only ever set from the separate Plan form.
+    old_flags = dict(plan.feature_flags)
+    new_flags = dict(plan.feature_flags)
+    for key in CAPABILITY_TOGGLE_FLAGS:
+        new_flags[key] = request.POST.get(f"flag_{key}") == "on"
+    plan.feature_flags = new_flags
+
+    plan.save(update_fields=numeric_fields + ["feature_flags"])
+
+    provider_model_ids = _auto_enabled_provider_model_ids(
+        new_flags, plan.allowed_provider_models.values_list("id", flat=True)
+    )
+    plan.allowed_provider_models.set(provider_model_ids)
+
     log_action(
         request.user,
         "plan.capability_limits_update",
         plan,
-        old_value=str(old_values),
-        new_value=str({field: getattr(plan, field) for field in fields}),
+        old_value=str(old_values | {f"flag_{k}": v for k, v in old_flags.items()}),
+        new_value=str(
+            {field: getattr(plan, field) for field in numeric_fields} | {f"flag_{k}": v for k, v in new_flags.items()}
+        ),
     )
     return redirect("governance:capability_limits")
 

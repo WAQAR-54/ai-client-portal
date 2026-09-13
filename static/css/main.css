@@ -1109,6 +1109,7 @@ button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent-dim);
 .badge-muted { background: var(--color-surface-muted); color: var(--color-text-muted); }
 .badge-danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .badge-success { background: var(--color-success-soft); color: var(--color-success); }
+.badge-warn { background: var(--warn-soft); color: var(--warn); }
 
 /* ---------- Tables ---------- */
 table.data {

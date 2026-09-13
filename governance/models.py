@@ -54,6 +54,40 @@ KNOWN_FEATURE_FLAGS = [
     ("agent_mode", "Autonomous agents (Sales/Marketing/Dev personas)"),
 ]
 
+# The subset of KNOWN_FEATURE_FLAGS shown on the Capability Limits page
+# (governance/views.py::CapabilityLimitsView/update_capability_limits),
+# alongside their numeric monthly caps - these are the "how much AI
+# capability does this plan actually unlock" flags a SuperAdmin needs
+# side by side with the limits, rather than only reachable from the
+# separate New/Edit Plan form. Kept as a subset (not all of
+# KNOWN_FEATURE_FLAGS) since the others (export, priority_routing, tools,
+# priority_queue, long_context, model_selection) aren't paired with a
+# numeric limit and don't belong on THIS page - they stay Plan-form-only.
+CAPABILITY_TOGGLE_FLAGS = [
+    "file_upload",
+    "document_generation",
+    "research",
+    "media_generation",
+    "agent_mode",
+]
+
+# Cost tier shown per capability row on the Capability Limits page -
+# purely descriptive (helps a SuperAdmin judge how tightly to gate each
+# one), not enforced anywhere. "low"/"med"/"high" match the reference
+# mockup's own 3-tier legend.
+CAPABILITY_COST_TIERS = {
+    "max_message_length": "low",
+    "max_compare_uses_per_day": "med",
+    "max_playground_runs_per_day": "med",
+    "max_domain_searches_per_day": "med",
+    "monthly_image_reads_limit": "med",
+    "monthly_document_reads_limit": "med",
+    "document_generation": "med",
+    "research": "high",
+    "agent_mode": "high",
+    "monthly_media_generation_limit": "high",
+}
+
 # ---------- Role-wide feature visibility ----------
 # Distinct from KNOWN_FEATURE_FLAGS above, which is a per-PLAN grant (what a
 # given user's subscription includes). This is a per-ROLE switch a

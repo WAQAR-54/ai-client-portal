@@ -3,39 +3,81 @@
 {% block title %}{% trans "Capability Limits" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
-    <h1>{% trans "Per-plan capability limits" %}</h1>
-    <p>{% trans "Numeric caps on specific actions, separate from each plan's overall token/request caps (see Plan Management). Leave a field blank for no limit — the two standalone-tool columns fall back to that tool's own default when left blank." %}</p>
-    <div class="scroll-shadow" style="overflow-x:auto; margin-top:var(--space-4);">
-        <table class="data">
+    <h1>{% trans "Plan capabilities & limits" %}</h1>
+    <p class="text-muted" style="margin-top:-0.4rem;">
+        {% trans "Turn a capability on/off per plan, and cap how much of it a plan includes. Blank a numeric field for no limit; the two standalone-tool columns fall back to that tool's own default when left blank." %}
+    </p>
+
+    <div class="legend" style="display:flex; gap:1rem; flex-wrap:wrap; margin:0.75rem 0 1.25rem;">
+        <span class="badge badge-success">{% trans "Low cost" %}</span>
+        <span class="text-faint" style="font-size:0.82rem;">{% trans "safe to leave generous" %}</span>
+        <span class="badge badge-warn" style="margin-left:0.75rem;">{% trans "Medium cost" %}</span>
+        <span class="text-faint" style="font-size:0.82rem;">{% trans "moderate limits" %}</span>
+        <span class="badge badge-danger" style="margin-left:0.75rem;">{% trans "Highest cost" %}</span>
+        <span class="text-faint" style="font-size:0.82rem;">{% trans "gate tightest, especially on a trial/Demo plan" %}</span>
+    </div>
+
+    <div class="scroll-shadow" style="overflow-x:auto;">
+        <table class="data" style="min-width:640px;">
             <thead>
                 <tr>
-                    <th>{% trans "Plan" %}</th>
-                    <th>{% trans "Max message length (chars)" %}</th>
-                    <th>{% trans "Compare-mode uses / day" %}</th>
-                    <th>{% trans "Code Playground runs / day" %}</th>
-                    <th>{% trans "Domain Generator searches / day" %}</th>
-                    <th>{% trans "Image reads / month" %}</th>
-                    <th>{% trans "Document reads / month" %}</th>
-                    <th>{% trans "Grok images+videos / month" %}</th>
-                    <th></th>
+                    <th>{% trans "Capability" %}</th>
+                    {% for plan in plans %}
+                    <th style="text-align:center;">
+                        {{ plan.name }}
+                        {% if plan.is_default %}<div class="text-faint" style="font-size:0.72rem; font-weight:500;">{% trans "default" %}</div>{% endif %}
+                    </th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
-                {% for plan in plans %}
+                {% for row in toggle_rows %}
                 <tr>
-                    <td class="name">{{ plan.name }}</td>
-                    <td><input class="input mono" type="number" min="0" name="max_message_length" form="capability-form-{{ plan.id }}" value="{{ plan.max_message_length|default_if_none:'' }}" placeholder="{% trans 'no limit' %}" style="width:7rem; margin:0;"></td>
-                    <td><input class="input mono" type="number" min="0" name="max_compare_uses_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_compare_uses_per_day|default_if_none:'' }}" placeholder="{% trans 'no limit' %}" style="width:6rem; margin:0;"></td>
-                    <td><input class="input mono" type="number" min="0" name="max_playground_runs_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_playground_runs_per_day|default_if_none:'' }}" placeholder="{% trans 'default' %}" style="width:6rem; margin:0;"></td>
-                    <td><input class="input mono" type="number" min="0" name="max_domain_searches_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_domain_searches_per_day|default_if_none:'' }}" placeholder="{% trans 'default' %}" style="width:6rem; margin:0;"></td>
-                    <td><input class="input mono" type="number" min="0" name="monthly_image_reads_limit" form="capability-form-{{ plan.id }}" value="{{ plan.monthly_image_reads_limit|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" style="width:6rem; margin:0;"></td>
-                    <td><input class="input mono" type="number" min="0" name="monthly_document_reads_limit" form="capability-form-{{ plan.id }}" value="{{ plan.monthly_document_reads_limit|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" style="width:6rem; margin:0;"></td>
-                    <td><input class="input mono" type="number" min="0" name="monthly_media_generation_limit" form="capability-form-{{ plan.id }}" value="{{ plan.monthly_media_generation_limit|default_if_none:'' }}" placeholder="{% trans '0 = none' %}" style="width:6rem; margin:0;"></td>
-                    <td><button type="submit" form="capability-form-{{ plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
+                    <td class="feature-name">
+                        <div style="font-weight:600;">{{ row.label }}</div>
+                        {% if row.cost_tier == "high" %}<span class="badge badge-danger" style="font-size:0.68rem;">{% trans "Highest cost" %}</span>
+                        {% elif row.cost_tier == "med" %}<span class="badge badge-warn" style="font-size:0.68rem;">{% trans "Medium cost" %}</span>
+                        {% else %}<span class="badge badge-success" style="font-size:0.68rem;">{% trans "Low cost" %}</span>{% endif %}
+                    </td>
+                    {% for cell in row.cells %}
+                    <td style="text-align:center;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="flag_{{ row.key }}" form="capability-form-{{ cell.plan.id }}" {% if cell.value %}checked{% endif %} onchange="this.closest('form').requestSubmit()">
+                            <span class="toggle"><span class="toggle-knob"></span></span>
+                        </label>
+                    </td>
+                    {% endfor %}
                 </tr>
-                {% empty %}
-                <tr class="empty-state-row"><td colspan="9">{% trans "No plans yet." %}</td></tr>
                 {% endfor %}
+                <tr>
+                    <td colspan="{{ plans|length|add:1 }}" class="section-divider" style="padding:0.6rem 0.75rem; border-top:1px solid var(--color-border);">
+                        <span class="text-faint" style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;">{% trans "Monthly / daily numeric limits" %}</span>
+                    </td>
+                </tr>
+                {% for row in numeric_rows %}
+                <tr>
+                    <td class="feature-name">
+                        <div style="font-weight:600;">{{ row.label }}</div>
+                        <div class="text-faint" style="font-size:0.75rem;">{{ row.unit }}</div>
+                        {% if row.cost_tier == "high" %}<span class="badge badge-danger" style="font-size:0.68rem;">{% trans "Highest cost" %}</span>
+                        {% elif row.cost_tier == "med" %}<span class="badge badge-warn" style="font-size:0.68rem;">{% trans "Medium cost" %}</span>
+                        {% else %}<span class="badge badge-success" style="font-size:0.68rem;">{% trans "Low cost" %}</span>{% endif %}
+                    </td>
+                    {% for cell in row.cells %}
+                    <td style="text-align:center;">
+                        <input class="input mono" type="number" min="0" name="{{ row.key }}" form="capability-form-{{ cell.plan.id }}" value="{{ cell.value|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" style="width:6rem; margin:0 auto;">
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                <tr>
+                    <td></td>
+                    {% for plan in plans %}
+                    <td style="text-align:center;">
+                        <button type="submit" form="capability-form-{{ plan.id }}" class="btn-small">{% trans "Save" %}</button>
+                    </td>
+                    {% endfor %}
+                </tr>
             </tbody>
         </table>
     </div>
@@ -44,4 +86,27 @@
 {% for plan in plans %}
 <form id="capability-form-{{ plan.id }}" method="post" action="{% url 'governance:update_capability_limits' plan_id=plan.id %}">{% csrf_token %}</form>
 {% endfor %}
+
+<div class="card mt-4">
+    <h2 style="margin-bottom:0.25rem;">{% trans "Reference: what counts as 1 unit" %}</h2>
+    <p class="text-muted" style="margin-top:0;">{% trans "How usage is actually counted against the monthly limits above." %}</p>
+    <div class="glossary-list" style="display:flex; flex-direction:column; gap:0.9rem; margin-top:0.75rem;">
+        <div>
+            <div style="font-weight:600; font-size:0.9rem;">{% trans "Image reading = 1 image per attachment" %}</div>
+            <p class="text-faint" style="font-size:0.85rem; margin:0.15rem 0 0;">{% trans "Every image a user attaches to a message and has read counts as 1, regardless of how many questions are asked about it afterward." %}</p>
+        </div>
+        <div>
+            <div style="font-weight:600; font-size:0.9rem;">{% trans "Document reading = 1 file per attachment" %}</div>
+            <p class="text-faint" style="font-size:0.85rem; margin:0.15rem 0 0;">{% trans "Every PDF, Word, Excel, or text file attached and read counts as 1, regardless of page count." %}</p>
+        </div>
+        <div>
+            <div style="font-weight:600; font-size:0.9rem;">{% trans "Research = 1 use each time Research mode answers" %}</div>
+            <p class="text-faint" style="font-size:0.85rem; margin:0.15rem 0 0;">{% trans "Only counts when the user has explicitly turned on Research mode for that message - a normal chat reply never counts against this, no matter how it was answered." %}</p>
+        </div>
+        <div>
+            <div style="font-weight:600; font-size:0.9rem;">{% trans "Image & video generation = 1 unit per generated file" %}</div>
+            <p class="text-faint" style="font-size:0.85rem; margin:0.15rem 0 0;">{% trans "An image and a video are counted the same way, combined into one monthly total - one Grok-generated image or video is always 1 unit, whichever it is." %}</p>
+        </div>
+    </div>
+</div>
 {% endblock %}
