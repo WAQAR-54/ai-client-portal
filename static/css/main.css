@@ -2785,6 +2785,12 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .msg-content .msg-attachment { background: var(--color-surface-muted); border: 1px solid var(--color-border); color: var(--color-text); }
 .msg-attachment:hover { text-decoration: underline; }
 
+/* Inline preview for an image/video attachment (a user's own upload, or
+   Grok-generated media - see chat/media_generation.py) - shown in place
+   of the plain download-link .msg-attachment above, which is still used
+   for every other attachment kind (documents). */
+.msg-generated-media { display: block; max-width: min(100%, 420px); max-height: 420px; border-radius: var(--radius-md); margin-top: 0.5rem; border: 1px solid var(--color-border); }
+
 .chat-composer-wrap {
     border-top: 1px solid var(--color-border);
     padding: var(--space-4);

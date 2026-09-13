@@ -67,6 +67,7 @@ urlpatterns = [
         views.export_message_document,
         name="export_message_document",
     ),
+    path("conversations/<int:conversation_id>/generate-media/", views.generate_media, name="generate_media"),
     path("templates/", views.prompt_template_list, name="prompt_template_list"),
     path("templates/save/", views.save_prompt_template, name="save_prompt_template"),
     path("templates/<int:template_id>/delete/", views.delete_prompt_template, name="delete_prompt_template"),

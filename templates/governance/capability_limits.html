@@ -16,6 +16,7 @@
                     <th>{% trans "Domain Generator searches / day" %}</th>
                     <th>{% trans "Image reads / month" %}</th>
                     <th>{% trans "Document reads / month" %}</th>
+                    <th>{% trans "Grok images+videos / month" %}</th>
                     <th></th>
                 </tr>
             </thead>
@@ -29,10 +30,11 @@
                     <td><input class="input mono" type="number" min="0" name="max_domain_searches_per_day" form="capability-form-{{ plan.id }}" value="{{ plan.max_domain_searches_per_day|default_if_none:'' }}" placeholder="{% trans 'default' %}" style="width:6rem; margin:0;"></td>
                     <td><input class="input mono" type="number" min="0" name="monthly_image_reads_limit" form="capability-form-{{ plan.id }}" value="{{ plan.monthly_image_reads_limit|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" style="width:6rem; margin:0;"></td>
                     <td><input class="input mono" type="number" min="0" name="monthly_document_reads_limit" form="capability-form-{{ plan.id }}" value="{{ plan.monthly_document_reads_limit|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" style="width:6rem; margin:0;"></td>
+                    <td><input class="input mono" type="number" min="0" name="monthly_media_generation_limit" form="capability-form-{{ plan.id }}" value="{{ plan.monthly_media_generation_limit|default_if_none:'' }}" placeholder="{% trans '0 = none' %}" style="width:6rem; margin:0;"></td>
                     <td><button type="submit" form="capability-form-{{ plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
                 </tr>
                 {% empty %}
-                <tr class="empty-state-row"><td colspan="8">{% trans "No plans yet." %}</td></tr>
+                <tr class="empty-state-row"><td colspan="9">{% trans "No plans yet." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>

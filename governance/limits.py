@@ -87,6 +87,43 @@ def check_attachment_monthly_limit(user, kind):
         )
 
 
+def check_media_generation_monthly_limit(user):
+    """Raise UploadRejected if this user has already reached their Plan's
+    combined monthly cap on Grok-generated images+videos (Plan.
+    monthly_media_generation_limit - see chat/media_generation.py). Counts
+    only ASSISTANT-role messages with attachment_kind in (image, video) -
+    a user's own uploaded/read images (also attachment_kind="image", but
+    always role=USER) are a completely separate cap
+    (monthly_image_reads_limit, check_attachment_monthly_limit above) and
+    never overlap with this one."""
+    from governance.plans import get_assignment
+
+    assignment = get_assignment(user)
+    plan = assignment.plan if assignment else None
+    if plan is None:
+        return
+
+    limit = plan.monthly_media_generation_limit
+    if limit is None:
+        return
+
+    month_start = timezone.localdate().replace(day=1)
+    used = Message.objects.filter(
+        conversation__user=user,
+        role=Message.Role.ASSISTANT,
+        attachment_kind__in=["image", "video"],
+        created_at__date__gte=month_start,
+    ).count()
+    if used >= limit:
+        raise UploadRejected(
+            _(
+                "You've reached your plan's monthly limit of %(limit)s AI-generated images/videos. "
+                "It resets next month."
+            )
+            % {"limit": limit}
+        )
+
+
 def check_usage_limits(user, conversation):
     """Raise UsageLimitExceeded if sending another message would (or already
     does) violate the user's effective daily/monthly/session/budget caps,

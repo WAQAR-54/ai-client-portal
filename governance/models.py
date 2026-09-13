@@ -37,6 +37,14 @@ KNOWN_FEATURE_FLAGS = [
     # that turn's model candidates to Anthropic ones, so the toggle never
     # silently answers without having actually searched.
     ("research", "Research mode (live web search, Claude only)"),
+    # Enforced in chat/views.py::generate_media. Same two-layer pattern as
+    # file_upload above: this boolean gates "can try this capability at
+    # all" (shows/hides the composer button); Plan.
+    # monthly_media_generation_limit (governance/limits.py::
+    # check_media_generation_monthly_limit) caps how much once allowed -
+    # defaults to 0, unlike this flag's own usual off-by-default, so both
+    # layers start closed on a freshly created plan.
+    ("media_generation", "Image & video generation (Grok only)"),
 ]
 
 # ---------- Role-wide feature visibility ----------
@@ -355,6 +363,24 @@ class Plan(models.Model):
         null=True,
         blank=True,
         help_text="Max document (PDF/Word/Excel/text) attachments read per calendar month. Null = unlimited.",
+    )
+    # Grok-only image/video generation (chat/media_generation.py) - one
+    # combined cap for both kinds, matching the reference mockup's own
+    # single "Image & video generation" row/limit rather than splitting
+    # it into two more fields. Unlike monthly_image_reads_limit/
+    # monthly_document_reads_limit above, this deliberately defaults to
+    # 0 (not None/unlimited) - real per-video cost is significant (xAI's
+    # own published rate, ~Rs 588/30s clip), so an unconfigured plan must
+    # start at "not included," never at "unlimited," and every existing
+    # plan gets 0 the moment this field is added. A SuperAdmin can still
+    # leave the Capability Limits field blank to mean unlimited (the same
+    # shared save logic as the other numeric caps there) - just a much
+    # more deliberate action than merely never having set it.
+    monthly_media_generation_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=0,
+        help_text="Max Grok-generated images+videos per calendar month, combined. 0 = not included; blank = unlimited.",
     )
 
     is_active = models.BooleanField(

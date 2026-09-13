@@ -40,6 +40,7 @@ from governance.limits import (
     UploadRejected,
     UsageLimitExceeded,
     check_attachment_monthly_limit,
+    check_media_generation_monthly_limit,
     check_usage_limits,
     get_usage_status,
     validate_upload,
@@ -105,6 +106,7 @@ def chat_home(request, conversation_id=None):
         "request_count": get_request_count_status(request.user, conversation=conversation),
         "can_select_model": has_feature(request.user, "model_selection"),
         "can_use_research": has_feature(request.user, "research"),
+        "can_generate_media": has_feature(request.user, "media_generation"),
         "can_request_upgrade": bool(plan_status["plan"]),
         "upgrade_plan_choices": upgrade_plan_choices,
     }
@@ -453,6 +455,75 @@ def post_message(request, conversation_id):
             "model_id": model_id,
             "research": research,
         },
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def generate_media(request, conversation_id):
+    """Grok-only image/video generation (chat/media_generation.py) - a
+    genuinely different action from post_message above, not routed
+    through any AIProvider/candidate selection at all. Synchronous: the
+    request blocks until generation finishes (a real scaling limit for
+    video, worth knowing - see media_generation.py's own docstring),
+    since there's no streaming/polling story wired up for this endpoint's
+    result the way stream_message has for a normal reply."""
+    from django.core.files.base import ContentFile
+
+    from chat.media_generation import MediaGenerationError, generate_image, generate_video
+    from governance.plans import has_feature
+
+    media_mode = request.POST.get("media_mode", "").strip()
+    if media_mode not in ("image", "video"):
+        return HttpResponseBadRequest("Unknown media mode")
+    if not has_feature(request.user, "media_generation"):
+        return render(
+            request,
+            "chat/_limit_exceeded.html",
+            {"message": _("Image/video generation isn't included in your current plan.")},
+            status=403,
+        )
+
+    prompt = request.POST.get("content", "").strip()
+    if not prompt:
+        return render(request, "chat/_limit_exceeded.html", {"message": _("Type a prompt first.")}, status=400)
+
+    try:
+        check_media_generation_monthly_limit(request.user)
+    except UploadRejected as exc:
+        return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=403)
+
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    try:
+        check_usage_limits(request.user, conversation)
+    except UsageLimitExceeded as exc:
+        return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
+
+    user_message = Message.objects.create(conversation=conversation, role=Message.Role.USER, content=prompt)
+    if conversation.title == "New conversation":
+        conversation.title = prompt[:60]
+        conversation.save(update_fields=["title"])
+
+    try:
+        if media_mode == "image":
+            file_bytes, filename = generate_image(prompt), "generated-image.png"
+        else:
+            file_bytes, filename = generate_video(prompt), "generated-video.mp4"
+    except MediaGenerationError as exc:
+        assistant_message = Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content=str(exc)
+        )
+    else:
+        assistant_message = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        assistant_message.attachment.save(filename, ContentFile(file_bytes, name=filename), save=False)
+        assistant_message.attachment_original_name = filename
+        assistant_message.attachment_kind = media_mode
+        assistant_message.save(update_fields=["attachment", "attachment_original_name", "attachment_kind"])
+
+    return render(
+        request,
+        "chat/_media_generation_result.html",
+        {"conversation": conversation, "user_message": user_message, "assistant_message": assistant_message},
     )
 
 

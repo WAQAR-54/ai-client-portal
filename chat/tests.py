@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import Department, User
+from chat.media_generation import MediaGenerationError
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from chat.providers import ProviderError, StreamChunk, get_provider
 from chat.router import NoModelAvailableError, classify_complexity, match_routing_rule, select_model_for_user
@@ -822,6 +823,120 @@ class ResearchModeTests(TestCase):
             {"content": "hello", "research": "on"},
         )
         self.assertNotContains(response, "research=1")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class MediaGenerationTests(TestCase):
+    """chat/media_generation.py + chat/views.py::generate_media - Grok-only
+    image/video generation, gated by the "media_generation" Plan feature
+    flag AND its own monthly_media_generation_limit (default 0, unlike
+    the reads limits above which default to unlimited - see that field's
+    own comment in governance/models.py for why)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.premium = _grant_premium_plan(self.user)
+        self.premium.feature_flags = {"media_generation": True}
+        self.premium.monthly_media_generation_limit = 5
+        self.premium.save(update_fields=["feature_flags", "monthly_media_generation_limit"])
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+        grok = Provider.objects.get(slug="grok")
+        grok.set_api_key("xai-test-key")
+        grok.save()
+
+    def _generate(self, media_mode="image", content="a cat"):
+        return self.client.post(
+            reverse("chat:generate_media", kwargs={"conversation_id": self.conversation.id}),
+            {"content": content, "media_mode": media_mode},
+        )
+
+    @patch("chat.media_generation.generate_image", return_value=b"fake-png-bytes")
+    def test_generate_image_saves_both_messages(self, mock_generate_image):
+        response = self._generate("image", "a cat wearing a hat")
+        self.assertEqual(response.status_code, 200)
+        mock_generate_image.assert_called_once_with("a cat wearing a hat")
+
+        user_message = self.conversation.messages.get(role=Message.Role.USER)
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertEqual(user_message.content, "a cat wearing a hat")
+        self.assertEqual(assistant_message.attachment_kind, "image")
+        self.assertTrue(assistant_message.attachment.name.endswith(".png"))
+
+    @patch("chat.media_generation.generate_video", return_value=b"fake-mp4-bytes")
+    def test_generate_video_saves_both_messages(self, mock_generate_video):
+        response = self._generate("video", "a cat running")
+        self.assertEqual(response.status_code, 200)
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertEqual(assistant_message.attachment_kind, "video")
+        self.assertTrue(assistant_message.attachment.name.endswith(".mp4"))
+
+    @patch("chat.media_generation.generate_image", side_effect=MediaGenerationError("Grok is down"))
+    def test_generation_failure_is_saved_as_an_error_reply_not_a_500(self, mock_generate_image):
+        response = self._generate("image", "a cat")
+        self.assertEqual(response.status_code, 200)
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertEqual(assistant_message.content, "Grok is down")
+        self.assertFalse(assistant_message.attachment)
+
+    def test_unknown_media_mode_is_bad_request(self):
+        response = self._generate("audio", "a cat")
+        self.assertEqual(response.status_code, 400)
+
+    def test_blocked_without_the_feature_flag(self):
+        self.premium.feature_flags = {"media_generation": False}
+        self.premium.save(update_fields=["feature_flags"])
+        response = self._generate()
+        self.assertEqual(response.status_code, 403)
+
+    @patch("chat.media_generation.generate_image", return_value=b"fake-png-bytes")
+    def test_blocked_once_monthly_limit_is_reached(self, mock_generate_image):
+        self.premium.monthly_media_generation_limit = 1
+        self.premium.save(update_fields=["monthly_media_generation_limit"])
+
+        first = self._generate("image", "cat one")
+        self.assertEqual(first.status_code, 200)
+        second = self._generate("image", "cat two")
+        self.assertEqual(second.status_code, 403)
+        self.assertEqual(
+            self.conversation.messages.filter(role=Message.Role.ASSISTANT, attachment_kind="image").count(), 1
+        )
+
+    def test_zero_limit_blocks_every_attempt_even_with_the_flag_on(self):
+        self.premium.monthly_media_generation_limit = 0
+        self.premium.save(update_fields=["monthly_media_generation_limit"])
+        response = self._generate()
+        self.assertEqual(response.status_code, 403)
+
+    def test_empty_prompt_is_rejected(self):
+        response = self._generate("image", "   ")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.conversation.messages.exists())
+
+    def test_generate_media_button_shown_only_with_the_feature_flag(self):
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertContains(response, "portalGenerateMedia(event, 'image')")
+
+        self.premium.feature_flags = {"media_generation": False}
+        self.premium.save(update_fields=["feature_flags"])
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertNotContains(response, "portalGenerateMedia(event, 'image')")
+
+    @patch("chat.media_generation.generate_image", return_value=b"fake-png-bytes")
+    def test_generated_image_renders_inline_not_as_a_download_link(self, mock_generate_image):
+        self._generate("image", "a cat")
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertContains(response, "msg-generated-media")
+        download_url = reverse(
+            "chat:download_attachment",
+            kwargs={"conversation_id": self.conversation.id, "message_id": assistant_message.id},
+        )
+        self.assertContains(response, f'<img class="msg-generated-media" src="{download_url}"')
 
 
 class ArenaCompareModeTests(TestCase):

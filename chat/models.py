@@ -175,14 +175,16 @@ class Message(models.Model):
     attachment = models.FileField(upload_to="chat_attachments/%Y/%m/", null=True, blank=True)
     attachment_original_name = models.CharField(max_length=255, blank=True)
     attachment_size = models.PositiveIntegerField(null=True, blank=True, help_text="Bytes.")
-    # Set once at creation (chat/views.py, from the extension - see
-    # chat/document_extraction.py::IMAGE_EXTENSIONS) - blank when there's no
-    # attachment at all. Denormalized purely so governance/limits.py::
-    # check_attachment_monthly_limit can count "images/documents read this
-    # month" with a plain DB filter, without re-deriving the kind from
-    # attachment_original_name's extension on every check.
+    # Set once at creation - for a USER message's upload, from the
+    # extension (chat/views.py, see chat/document_extraction.py::
+    # IMAGE_EXTENSIONS); for an ASSISTANT message's Grok-generated media
+    # (chat/media_generation.py), directly to "image"/"video" since there's
+    # no upload extension to read. Blank when there's no attachment at
+    # all. Denormalized purely so governance/limits.py::
+    # check_attachment_monthly_limit/check_media_generation_monthly_limit
+    # can count "how many of this kind this month" with a plain DB filter.
     attachment_kind = models.CharField(
-        max_length=10, blank=True, choices=[("image", "Image"), ("document", "Document")]
+        max_length=10, blank=True, choices=[("image", "Image"), ("document", "Document"), ("video", "Video")]
     )
     served_from_cache = models.BooleanField(
         default=False,

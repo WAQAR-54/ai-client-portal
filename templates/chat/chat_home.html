@@ -509,6 +509,7 @@ function portalCloseUpgradeModal() {
               hx-encoding="multipart/form-data"
               hx-include="#model-select"
               data-arena-post="{% url 'chat:post_arena_message' conversation_id=conversation.id %}"
+              data-generate-media-url="{% url 'chat:generate_media' conversation_id=conversation.id %}"
               hx-on::after-request="this.reset(); document.getElementById('composer-textarea').style.height='auto'; portalResetComposerAttrs();">
             {% csrf_token %}
             <textarea id="composer-textarea" class="input" name="content" placeholder="{% trans 'Message the assistant...' %}"
@@ -526,6 +527,17 @@ function portalCloseUpgradeModal() {
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </button>
                     <input type="hidden" name="research" id="research-input" value="">
+                    {% endif %}
+                    {% if can_generate_media %}
+                    <details class="export-menu">
+                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image or video with Grok, from the text in the composer' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                        </summary>
+                        <div class="export-menu-panel">
+                            <a href="#" onclick="portalGenerateMedia(event, 'image')">{% trans "Generate image" %}</a>
+                            <a href="#" onclick="portalGenerateMedia(event, 'video')">{% trans "Generate video (~1 min)" %}</a>
+                        </div>
+                    </details>
                     {% endif %}
                     {% if can_select_model %}
                     {% comment %}
@@ -722,6 +734,50 @@ function portalToggleResearch(btn) {
     var on = input.value !== "on";
     input.value = on ? "on" : "";
     btn.classList.toggle("has-file", on);
+}
+
+// Image/video generation (composer footer "Generate image/video" menu) -
+// a genuinely separate POST target (chat:generate_media, not
+// chat:post_message) since this never goes through model routing/
+// streaming at all - see that view's own docstring. Not htmx-driven like
+// the rest of the composer, since there's no natural hx-post target to
+// swap to (unlike compare mode/edit, which reuse the SAME form) - a plain
+// fetch() appending its own result HTML mirrors the export menu's own
+// fetch-based download flow just above.
+function portalGenerateMedia(evt, mediaMode) {
+    evt.preventDefault();
+    var form = document.getElementById("composer-form");
+    var textarea = document.getElementById("composer-textarea");
+    var menu = evt.target.closest("details");
+    if (menu) menu.removeAttribute("open");
+    var prompt = textarea ? textarea.value.trim() : "";
+    if (!prompt) {
+        window.alert("Type a prompt in the composer first.");
+        return;
+    }
+    var url = form.getAttribute("data-generate-media-url");
+    var csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    var formData = new FormData();
+    formData.append("content", prompt);
+    formData.append("media_mode", mediaMode);
+
+    var summary = menu ? menu.querySelector("summary") : null;
+    var originalIconHTML = summary ? summary.innerHTML : "";
+    if (summary) summary.innerHTML = '<span class="export-spinner"></span>';
+
+    fetch(url, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: formData, credentials: "same-origin"})
+        .then(function(resp) { return resp.text(); })
+        .then(function(html) {
+            var column = document.querySelector("#messages .chat-column");
+            if (column) column.insertAdjacentHTML("beforeend", html);
+            textarea.value = "";
+            textarea.style.height = "auto";
+            var container = document.getElementById("messages");
+            if (container) container.scrollTop = container.scrollHeight;
+        })
+        .finally(function() {
+            if (summary) summary.innerHTML = originalIconHTML;
+        });
 }
 
 // --- Compare mode: sidebar Chat/Compare switch -> "pick 2 models" setup
