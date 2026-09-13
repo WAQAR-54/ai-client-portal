@@ -1020,6 +1020,52 @@ class PlanFormViewTests(TestCase):
         self.assertIn(legacy_model, plan.allowed_models.all())
         self.assertIn(self.provider_model, plan.allowed_provider_models.all())
 
+    def test_turning_on_research_auto_enables_an_anthropic_model(self):
+        """A SuperAdmin turning on the "research" flag shouldn't also have
+        to separately remember to check a Claude model in the list below -
+        Research only ever works through Anthropic's web_search tool (see
+        chat/providers.py), so turning the flag on makes it actually
+        usable, not just visible."""
+        anthropic_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="claude-plan-test", is_enabled=True
+        )
+        response = self.client.post(
+            reverse("governance:plan_new"),
+            {"name": "Research Plan", "flag_research": "on", "provider_model_ids": [str(self.provider_model.id)]},
+        )
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Research Plan")
+        self.assertIn(anthropic_model, plan.allowed_provider_models.all())
+        # The admin's own explicit picks are kept too, not replaced.
+        self.assertIn(self.provider_model, plan.allowed_provider_models.all())
+
+    def test_turning_on_media_generation_auto_enables_a_grok_model(self):
+        grok_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="grok"), model_id="grok-plan-test", is_enabled=True
+        )
+        response = self.client.post(
+            reverse("governance:plan_new"), {"name": "Media Plan", "flag_media_generation": "on"}
+        )
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Media Plan")
+        self.assertIn(grok_model, plan.allowed_provider_models.all())
+
+    def test_research_flag_off_does_not_auto_enable_anthropic(self):
+        ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="claude-plan-test-2", is_enabled=True
+        )
+        response = self.client.post(reverse("governance:plan_new"), {"name": "Plain Plan"})
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Plain Plan")
+        self.assertEqual(plan.allowed_provider_models.count(), 0)
+
+    def test_turning_on_research_with_no_anthropic_model_available_does_not_error(self):
+        # No Anthropic ProviderModel exists in this test's fixtures at
+        # all - saving must still succeed (the existing "needs a Claude
+        # model" error only ever shows up later, at send-time).
+        response = self.client.post(reverse("governance:plan_new"), {"name": "No Claude Plan", "flag_research": "on"})
+        self.assertEqual(response.status_code, 302)
+
     def test_plan_form_shows_only_enabled_provider_models(self):
         disabled = ProviderModel.objects.create(
             provider=Provider.objects.get(slug="anthropic"), model_id="disabled-one", is_enabled=False

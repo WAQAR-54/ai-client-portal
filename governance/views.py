@@ -1162,10 +1162,31 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
 
         make_default = request.POST.get("is_default") == "on"
 
+        # Turning on a capability that only actually works through one
+        # specific provider (Research -> Anthropic's web_search tool,
+        # Media generation -> Grok's image/video endpoints - see
+        # chat/providers.py and chat/media_generation.py) must not leave a
+        # SuperAdmin to separately remember to also go check that
+        # provider's model in the list below - without this, they'd
+        # enable the flag, save, and only find out it doesn't work when a
+        # user hits "needs a Claude model"/"Grok isn't connected". Only
+        # ever ADDS a model when a flag is turned on; never removes one
+        # when a flag is turned off, since that model may be wanted for
+        # other reasons independent of this flag.
+        provider_model_ids = set(request.POST.getlist("provider_model_ids"))
+        if plan.feature_flags.get("research"):
+            anthropic_model = ProviderModel.objects.filter(provider__adapter_type="anthropic", is_enabled=True).first()
+            if anthropic_model:
+                provider_model_ids.add(str(anthropic_model.id))
+        if plan.feature_flags.get("media_generation"):
+            grok_model = ProviderModel.objects.filter(provider__slug="grok", is_enabled=True).first()
+            if grok_model:
+                provider_model_ids.add(str(grok_model.id))
+
         with transaction.atomic():
             plan.save()
             plan.allowed_models.set(request.POST.getlist("model_ids"))
-            plan.allowed_provider_models.set(request.POST.getlist("provider_model_ids"))
+            plan.allowed_provider_models.set(provider_model_ids)
             if make_default:
                 Plan.objects.exclude(pk=plan.pk).update(is_default=False)
                 plan.is_default = True
