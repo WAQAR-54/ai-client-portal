@@ -505,6 +505,13 @@ class SecuritySettings(models.Model):
     otherwise lock every admin out waiting on a code that never arrives."""
 
     mfa_required_for_admins = models.BooleanField(default=False)
+    # Master switch for the "Sign in with Google" button on Login/Signup
+    # (see accounts/google_auth.py::google_signin_enabled) - defaults off
+    # like mfa_required_for_admins above, for the same reason: the button
+    # is useless (and just a source of confused support requests) until a
+    # real GOOGLE_OAUTH_CLIENT_ID is actually configured in the environment,
+    # so a SuperAdmin opts in only once that's confirmed done.
+    google_signin_enabled = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Security settings"

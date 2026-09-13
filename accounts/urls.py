@@ -6,6 +6,7 @@ app_name = "accounts"
 
 urlpatterns = [
     path("login/", views.PortalLoginView.as_view(), name="login"),
+    path("google-signin/", views.google_signin, name="google_signin"),
     path("logout/", views.logout_view, name="logout"),
     path("mfa/verify/", views.MFAVerifyView.as_view(), name="mfa_verify"),
     path("mfa/resend/", views.resend_mfa_code, name="resend_mfa_code"),

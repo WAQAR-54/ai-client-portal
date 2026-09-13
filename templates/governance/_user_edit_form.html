@@ -48,6 +48,13 @@
     <button type="submit" class="btn-small btn-ghost">{% trans "Save" %}</button>
 </form>
 
+{% if u.google_sub %}
+<div class="row-menu-label">{% trans "Google account" %}</div>
+<div class="text-muted" style="font-size:0.85rem; margin-bottom:0.6rem;">
+    <span class="badge badge-muted">{% trans "Connected" %}</span> {{ u.google_email }}
+</div>
+{% endif %}
+
 <div class="row-menu-label">{% trans "Reset password" %}</div>
 <form method="post" action="{% url 'governance:reset_user_password' user_id=u.id %}" style="display:flex; flex-direction:column; gap:0.4rem; margin-bottom:0.6rem;"
       onsubmit="return portalConfirmSubmit(event, '{% blocktrans with email=u.email %}Reset the password for {{ email }}? They will need the new password to log in next time.{% endblocktrans %}');">

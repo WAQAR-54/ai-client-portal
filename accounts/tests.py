@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from unittest.mock import patch
 
 from django.conf import settings
 from django.test import TestCase, override_settings
@@ -7,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone, translation
 
 from accounts.geo import country_code_for_ip, language_for_ip
+from accounts.google_auth import GoogleSignInError
 from accounts.models import Department, User
 
 
@@ -737,6 +739,146 @@ class MFALoginFlowTests(TestCase):
         self.assertEqual(self.client.session["mfa_attempts"], 1)
         self.client.post(reverse("accounts:resend_mfa_code"))
         self.assertEqual(self.client.session["mfa_attempts"], 0)
+
+
+class GoogleSignInTests(TestCase):
+    """accounts/google_auth.py + accounts/views.py::google_signin. The
+    actual ID-token signature verification is mocked (a real call would
+    hit Google's servers) - everything downstream of a verified payload
+    (find-or-create, account linking, MFA gating, suspension, the
+    enabled/configured gate, rate limiting) is exercised for real."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def _enable(self, **extra):
+        from governance.models import SecuritySettings
+
+        SecuritySettings.objects.update_or_create(pk=1, defaults={"google_signin_enabled": True, **extra})
+
+    def _payload(self, email="newgoogle@example.com", sub="google-sub-1", name="Jane Doe"):
+        return {
+            "sub": sub,
+            "email": email,
+            "email_verified": True,
+            "name": name,
+            "picture": "https://example.com/pic.jpg",
+        }
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_disabled_by_default_even_with_client_id_configured(self):
+        response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_disabled_without_a_configured_client_id_even_if_toggled_on(self):
+        self._enable()
+        response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_creates_a_new_user_on_first_sign_in(self):
+        self._enable()
+        with patch("accounts.views.verify_google_credential", return_value=self._payload()):
+            response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["redirect"], reverse("accounts:dashboard"))
+        user = User.objects.get(email="newgoogle@example.com")
+        self.assertEqual(user.google_sub, "google-sub-1")
+        self.assertFalse(user.has_usable_password())
+        self.assertEqual(user.first_name, "Jane")
+        self.assertEqual(user.last_name, "Doe")
+        self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_links_an_existing_password_account_by_email_instead_of_duplicating(self):
+        self._enable()
+        existing = User.objects.create_user(email="linkme@example.com", password="pw12345!")
+        with patch(
+            "accounts.views.verify_google_credential",
+            return_value=self._payload(email="linkme@example.com", sub="sub-2"),
+        ):
+            self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        existing.refresh_from_db()
+        self.assertEqual(existing.google_sub, "sub-2")
+        self.assertEqual(User.objects.filter(email="linkme@example.com").count(), 1)
+        # Linking must never touch their existing password.
+        self.assertTrue(existing.has_usable_password())
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_second_sign_in_reuses_the_same_user_by_google_sub(self):
+        self._enable()
+        with patch(
+            "accounts.views.verify_google_credential",
+            return_value=self._payload(sub="sub-3", email="repeat@example.com"),
+        ):
+            self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.client.logout()
+        with patch(
+            "accounts.views.verify_google_credential",
+            return_value=self._payload(sub="sub-3", email="repeat@example.com", name="Repeat User"),
+        ):
+            self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(User.objects.filter(google_sub="sub-3").count(), 1)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_suspended_account_is_rejected(self):
+        self._enable()
+        User.objects.create_user(
+            email="suspended@example.com", password="pw12345!", google_sub="sub-4", is_active=False
+        )
+        with patch(
+            "accounts.views.verify_google_credential",
+            return_value=self._payload(email="suspended@example.com", sub="sub-4"),
+        ):
+            response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_admin_still_goes_through_mfa(self):
+        self._enable(mfa_required_for_admins=True)
+        User.objects.create_user(
+            email="gadmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            google_sub="sub-5",
+        )
+        with patch(
+            "accounts.views.verify_google_credential",
+            return_value=self._payload(email="gadmin@example.com", sub="sub-5"),
+        ):
+            response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(response.json()["redirect"], reverse("accounts:mfa_verify"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_invalid_token_returns_error_json_not_a_500(self):
+        self._enable()
+        with patch("accounts.views.verify_google_credential", side_effect=GoogleSignInError("bad token")):
+            response = self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("bad token", response.json()["error"])
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_button_hidden_on_login_page_when_disabled(self):
+        response = self.client.get(reverse("accounts:login"))
+        self.assertNotContains(response, "g_id_onload")
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_button_shown_on_login_and_signup_pages_when_enabled(self):
+        self._enable()
+        response = self.client.get(reverse("accounts:login"))
+        self.assertContains(response, "g_id_onload")
+        response = self.client.get(reverse("accounts:signup"))
+        self.assertContains(response, "g_id_onload")
+
+    def test_button_hidden_without_a_configured_client_id_even_if_enabled(self):
+        self._enable()
+        response = self.client.get(reverse("accounts:login"))
+        self.assertNotContains(response, "g_id_onload")
 
 
 class ToggleOwnMFATests(TestCase):

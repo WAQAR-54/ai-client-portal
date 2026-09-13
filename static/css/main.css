@@ -1513,6 +1513,14 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .auth-card button[type="submit"] { width: 100%; margin-top: 0.25rem; padding: 0.7rem; }
 .auth-footer { text-align: left; margin-top: var(--space-5); font-size: 0.88rem; color: var(--color-text-muted); }
 
+/* Separates the password form from the "Sign in with Google" button
+   below it (see templates/accounts/_google_signin_button.html) - shared
+   between Login and Signup rather than a one-off inline style, since it's
+   the same visual pattern on both pages. */
+.auth-divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; color: var(--color-text-faint); font-size: 0.8rem; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
+.auth-google-btn-wrap { display: flex; justify-content: center; }
+
 @media (max-width: 860px) {
     .auth-split-brand { display: none; }
 }

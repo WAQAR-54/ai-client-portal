@@ -238,6 +238,17 @@ if not DEBUG and FIELD_ENCRYPTION_KEY == _INSECURE_DEFAULT_FIELD_ENCRYPTION_KEY 
 # Custom user model
 AUTH_USER_MODEL = "accounts.User"
 
+# "Sign in with Google" (accounts/google_auth.py) - the OAuth Client ID
+# from a Google Cloud Console "OAuth client" of type Web application
+# (Credentials > Create Credentials > OAuth client ID). No client secret
+# is needed: Google Identity Services' button flow hands the browser a
+# signed ID token directly, which the backend verifies against Google's
+# own public keys - there's no server-to-server token exchange here.
+# Blank (the default) means the button never renders, regardless of the
+# SecuritySettings.google_signin_enabled toggle - see
+# accounts.google_auth.google_signin_enabled().
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "accounts:dashboard"
 LOGOUT_REDIRECT_URL = "accounts:login"

@@ -46,6 +46,11 @@ urlpatterns = [
     path("users/<int:user_id>/overrides/clear/", views.clear_user_overrides_view, name="clear_user_overrides"),
     path("feature-visibility/", views.FeatureVisibilityView.as_view(), name="feature_visibility"),
     path("feature-visibility/mfa-required/toggle/", views.toggle_mfa_required, name="toggle_mfa_required"),
+    path(
+        "feature-visibility/google-signin/toggle/",
+        views.toggle_google_signin_enabled,
+        name="toggle_google_signin_enabled",
+    ),
     path("branding/", views.BrandingSettingsView.as_view(), name="branding"),
     path("teams/", views.TeamListView.as_view(), name="teams"),
     path("teams/add/", views.add_team, name="add_team"),

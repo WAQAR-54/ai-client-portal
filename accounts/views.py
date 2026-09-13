@@ -6,7 +6,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
@@ -23,6 +23,12 @@ from accounts.forms import (
     PortalSetPasswordForm,
     ProfileForm,
     SignupForm,
+)
+from accounts.google_auth import (
+    GoogleSignInError,
+    find_or_create_user_from_google,
+    google_signin_enabled,
+    verify_google_credential,
 )
 from accounts.mfa import (
     MAX_MFA_ATTEMPTS,
@@ -58,6 +64,13 @@ PASSWORD_RESET_EMAIL_RATE_LIMIT = 3
 # abused), not per-IP, and generous enough that no real user's normal
 # login/logout/typo pattern is ever the one who hits it.
 LOGIN_RATE_LIMIT = 15
+
+# Per-IP-per-hour cap on Google sign-in attempts. More generous than
+# LOGIN_RATE_LIMIT/SIGNUP_RATE_LIMIT since one endpoint now covers both a
+# first-time signup AND every later login for anyone using this button -
+# each request still needs a fresh, Google-signed token (not a guessable
+# credential), so this is defense in depth rather than the primary guard.
+GOOGLE_SIGNIN_RATE_LIMIT = 20
 
 
 @login_required
@@ -130,10 +143,33 @@ def _send_mfa_code_email(request, user, code):
     )
 
 
+def _begin_mfa_challenge_if_required(request, user, next_url):
+    """Shared by password login (PortalLoginView.form_valid) and Google
+    sign-in (google_signin below) - both need the exact same "start a
+    fresh MFA challenge, or don't" branch once WHO is signing in is known
+    but before django.contrib.auth.login() ever runs. Returns True if a
+    challenge was started (the caller must send the user to mfa_verify
+    instead of logging them in directly) - False means log them in now."""
+    if not user_requires_mfa(user):
+        return False
+    code = start_mfa_challenge(request, user, next_url)
+    # A genuinely fresh challenge - reset the resend cap here, not in
+    # start_mfa_challenge itself (see its docstring).
+    request.session["mfa_resend_count"] = 0
+    _send_mfa_code_email(request, user, code)
+    return True
+
+
 class PortalLoginView(LoginView):
     template_name = "accounts/login.html"
     authentication_form = EmailAuthenticationForm
     redirect_authenticated_user = True
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | {
+            "google_signin_enabled": google_signin_enabled(),
+            "google_client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+        }
 
     def get_success_url(self):
         # get_redirect_url() is LoginView's own safe "?next=" handling
@@ -162,14 +198,46 @@ class PortalLoginView(LoginView):
         is what lets MFA require a second step without ever granting a
         real session first."""
         user = form.get_user()
-        if user_requires_mfa(user):
-            code = start_mfa_challenge(self.request, user, str(self.get_success_url()))
-            # A genuinely fresh challenge - reset the resend cap here, not
-            # in start_mfa_challenge itself (see its docstring).
-            self.request.session["mfa_resend_count"] = 0
-            _send_mfa_code_email(self.request, user, code)
+        if _begin_mfa_challenge_if_required(self.request, user, str(self.get_success_url())):
             return redirect("accounts:mfa_verify")
         return super().form_valid(form)
+
+
+@require_POST
+def google_signin(request):
+    """POST target of the "Sign in with Google" button's JS callback (see
+    templates/accounts/login.html and signup.html) - one endpoint serves
+    both a first-time signup and every later login, since GIS's button
+    doesn't distinguish the two and neither does Google's own concept of
+    an ID token; find_or_create_user_from_google() is what decides which
+    happened. Returns JSON rather than a redirect response because the
+    caller is the button's own fetch(), not a form submission."""
+    if not google_signin_enabled():
+        return JsonResponse({"error": translation.gettext("Google sign-in isn't enabled.")}, status=403)
+    if is_rate_limited(f"google_signin:{client_ip(request)}", limit=GOOGLE_SIGNIN_RATE_LIMIT, window_seconds=3600):
+        return JsonResponse(
+            {"error": translation.gettext("Too many attempts from this location. Try again later.")}, status=429
+        )
+
+    credential = request.POST.get("credential", "").strip()
+    if not credential:
+        return JsonResponse({"error": translation.gettext("Missing Google credential.")}, status=400)
+
+    try:
+        payload = verify_google_credential(credential)
+    except GoogleSignInError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    user = find_or_create_user_from_google(payload)
+    if not user.is_active:
+        return JsonResponse({"error": translation.gettext("This account has been suspended.")}, status=403)
+
+    next_url = str(reverse("accounts:dashboard"))
+    if _begin_mfa_challenge_if_required(request, user, next_url):
+        return JsonResponse({"redirect": str(reverse("accounts:mfa_verify"))})
+
+    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    return JsonResponse({"redirect": next_url})
 
 
 def logout_view(request):
@@ -272,6 +340,11 @@ def signup_view(request):
     if request.user.is_authenticated:
         return redirect("accounts:dashboard")
 
+    google_context = {
+        "google_signin_enabled": google_signin_enabled(),
+        "google_client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+    }
+
     if request.method == "POST":
         # Unauthenticated by design (that's the point of self-service
         # signup) and django-axes only ever tracks LOGIN failures - so
@@ -281,7 +354,7 @@ def signup_view(request):
             messages.error(
                 request, translation.gettext("Too many signup attempts from this location. Try again later.")
             )
-            return render(request, "accounts/signup.html", {"form": SignupForm()})
+            return render(request, "accounts/signup.html", {"form": SignupForm()} | google_context)
         form = SignupForm(request.POST)
         if form.is_valid():
             user = form.save()
@@ -298,7 +371,7 @@ def signup_view(request):
     else:
         form = SignupForm()
 
-    return render(request, "accounts/signup.html", {"form": form})
+    return render(request, "accounts/signup.html", {"form": form} | google_context)
 
 
 def _send_password_reset_email(request, user):

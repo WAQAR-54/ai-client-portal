@@ -36,7 +36,10 @@ per-row popover.
         {% with info=plan_info|dict_get:u.id %}
         <tr>
             <td><input type="checkbox" name="user_ids" value="{{ u.id }}" form="bulk-plan-form" class="row-checkbox" style="width:auto;"></td>
-            <td class="user-cell-name">{{ u.email }}</td>
+            <td class="user-cell-name">
+                {{ u.email }}
+                {% if u.google_sub %}<span class="badge badge-muted" style="margin-left:0.4rem; font-size:0.72rem;" title="{% trans 'Connected with Google' %}">{% trans "Google" %}</span>{% endif %}
+            </td>
             <td>
                 {% trans "No plan" as no_plan_label %}
                 <span class="badge {{ info.plan.name|plan_tier_class }}">{{ info.plan.name|default:no_plan_label }}</span>

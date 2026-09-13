@@ -1,0 +1,48 @@
+{% load i18n %}
+{% if google_signin_enabled %}
+<div class="auth-divider">{% trans "or" %}</div>
+<div id="google-signin-error" class="alert alert-danger" hidden></div>
+<div class="auth-google-btn-wrap">
+    <div id="g_id_onload"
+         data-client_id="{{ google_client_id }}"
+         data-callback="portalHandleGoogleCredential"
+         data-auto_prompt="false"></div>
+    <div class="g_id_signin" data-type="standard" data-size="large" data-width="320" data-shape="rectangular" data-logo_alignment="left"></div>
+</div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+    {% comment %}
+    One endpoint (accounts:google_signin) handles both a first-time signup
+    and every later login - see accounts/views.py::google_signin's own
+    docstring for why the button doesn't need to know which page it's on.
+    Returns JSON (not a redirect response) since the caller here is this
+    fetch(), not a form submission.
+    {% endcomment %}
+    function portalHandleGoogleCredential(response) {
+        var errorBox = document.getElementById("google-signin-error");
+        if (errorBox) errorBox.hidden = true;
+        var formData = new FormData();
+        formData.append("credential", response.credential);
+        fetch("{% url 'accounts:google_signin' %}", {
+            method: "POST",
+            headers: {"X-CSRFToken": "{{ csrf_token }}"},
+            body: formData,
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                } else if (errorBox) {
+                    errorBox.textContent = data.error || "{% trans 'Something went wrong - please try again.' %}";
+                    errorBox.hidden = false;
+                }
+            })
+            .catch(function() {
+                if (errorBox) {
+                    errorBox.textContent = "{% trans 'Something went wrong - please try again.' %}";
+                    errorBox.hidden = false;
+                }
+            });
+    }
+</script>
+{% endif %}

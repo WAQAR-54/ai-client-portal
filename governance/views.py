@@ -2688,6 +2688,8 @@ class FeatureVisibilityView(SuperAdminRequiredMixin, TemplateView):
     template_name = "governance/feature_visibility.html"
 
     def get_context_data(self, **kwargs):
+        from django.conf import settings
+
         existing = {(t.role, t.feature_key): t.is_enabled for t in RoleFeatureToggle.objects.all()}
         admin_rows = [
             {"key": key, "label": label, "enabled": existing.get(("admin", key), True)}
@@ -2706,6 +2708,7 @@ class FeatureVisibilityView(SuperAdminRequiredMixin, TemplateView):
             "user_rows": user_rows,
             "roles": ROLE_FEATURE_ROLES,
             "security_settings": SecuritySettings.load(),
+            "google_client_id_configured": bool(settings.GOOGLE_OAUTH_CLIENT_ID),
         }
 
     def post(self, request):
@@ -2745,6 +2748,23 @@ def toggle_mfa_required(request):
     settings_row.save(update_fields=["mfa_required_for_admins"])
     log_action(
         request.user, "security.mfa_required_toggle", settings_row, new_value=settings_row.mfa_required_for_admins
+    )
+    return redirect("governance:feature_visibility")
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["POST"])
+def toggle_google_signin_enabled(request):
+    """SecuritySettings.google_signin_enabled - see accounts/google_auth.py
+    ::google_signin_enabled(). Same dedicated-toggle treatment as
+    toggle_mfa_required above rather than folding into the bulk
+    ADMIN_NAV_FEATURES table - this gates a login PATH, not a nav
+    section's visibility."""
+    settings_row = SecuritySettings.load()
+    settings_row.google_signin_enabled = not settings_row.google_signin_enabled
+    settings_row.save(update_fields=["google_signin_enabled"])
+    log_action(
+        request.user, "security.google_signin_toggle", settings_row, new_value=settings_row.google_signin_enabled
     )
     return redirect("governance:feature_visibility")
 

@@ -25,6 +25,7 @@
                 {{ form.password.errors }}
                 <button type="submit">{% trans "Log in" %}</button>
             </form>
+            {% include "accounts/_google_signin_button.html" %}
             <p class="auth-footer"><a href="{% url 'accounts:password_reset_request' %}">{% trans "Forgot password?" %}</a></p>
             <p class="auth-footer">{% trans "No account?" %} <a href="{% url 'accounts:signup' %}">{% trans "Sign up" %}</a></p>
             <p class="auth-footer"><a href="{% url 'billing:public_pricing' %}">{% trans "View pricing" %}</a></p>

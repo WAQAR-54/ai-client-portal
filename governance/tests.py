@@ -2906,6 +2906,48 @@ class MFARequiredToggleTests(TestCase):
         self.assertRedirects(response, reverse("accounts:mfa_verify"))
 
 
+class GoogleSignInToggleTests(TestCase):
+    """SecuritySettings.google_signin_enabled, toggled from the same
+    Feature Visibility page - see accounts/google_auth.py::
+    google_signin_enabled() and governance/views.py::
+    toggle_google_signin_enabled. The actual sign-in flow itself
+    (accounts:google_signin) has its own tests in accounts/tests.py."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="gtogglesuper@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="gtoggleadmin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
+        )
+
+    def test_off_by_default(self):
+        from governance.models import SecuritySettings
+
+        self.assertFalse(SecuritySettings.load().google_signin_enabled)
+
+    def test_feature_visibility_page_shows_the_toggle(self):
+        self.client.login(email="gtogglesuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:feature_visibility"))
+        self.assertContains(response, "Sign in with Google")
+
+    def test_superadmin_can_toggle_it_on_and_off(self):
+        from governance.models import SecuritySettings
+
+        self.client.login(email="gtogglesuper@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_google_signin_enabled"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(SecuritySettings.load().google_signin_enabled)
+
+        self.client.post(reverse("governance:toggle_google_signin_enabled"))
+        self.assertFalse(SecuritySettings.load().google_signin_enabled)
+
+    def test_non_superadmin_cannot_toggle_it(self):
+        self.client.login(email="gtoggleadmin@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:toggle_google_signin_enabled"))
+        self.assertEqual(response.status_code, 403)
+
+
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class BrandingSettingsTests(TestCase):
     """Settings > Branding - see governance.models.SiteBranding and

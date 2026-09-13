@@ -75,4 +75,27 @@
         </form>
     </div>
 </div>
+
+<div class="card mt-5">
+    <div class="page-head-row">
+        <div>
+            <h2 style="margin-bottom:0.25rem;">{% trans "Sign in with Google" %}</h2>
+            <p class="text-muted" style="margin:0;">
+                {% trans "Lets anyone sign up or log in with a Google account instead of a password, from the Login and Sign up pages." %}
+            </p>
+            {% if not google_client_id_configured %}
+            <p class="text-faint" style="font-size:0.82rem; margin-top:0.4rem;">
+                {% trans "GOOGLE_OAUTH_CLIENT_ID isn't set in the environment yet - the button stays hidden even if you turn this on. Get a Web application OAuth client ID from Google Cloud Console > Credentials, and set it there first." %}
+            </p>
+            {% endif %}
+        </div>
+        <form method="post" action="{% url 'governance:toggle_google_signin_enabled' %}">
+            {% csrf_token %}
+            <label class="toggle-switch" title="{% trans 'Allow Sign in with Google' %}">
+                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if security_settings.google_signin_enabled %}checked{% endif %}>
+                <span class="toggle"><span class="toggle-knob"></span></span>
+            </label>
+        </form>
+    </div>
+</div>
 {% endblock %}

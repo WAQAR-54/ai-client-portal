@@ -192,6 +192,20 @@ class User(AbstractUser):
     # being read. A User/Manager can turn it on/off themselves from Settings.
     mfa_enabled = models.BooleanField(default=False)
 
+    # Sign in with Google (accounts/google_auth.py) - google_sub is the
+    # stable, never-reused Google account id ("sub" claim), the actual link
+    # key; unique+nullable so multiple never-linked accounts can all sit at
+    # NULL (both SQLite and Postgres allow more than one NULL under a
+    # unique constraint). email/picture/linked_at are re-stamped on every
+    # Google sign-in, not just the first, so a changed Google avatar/email
+    # shows up without a separate sync step. Presence of google_sub is
+    # exactly what "connected to Google" means on the Profile and admin
+    # Users pages - no separate boolean needed.
+    google_sub = models.CharField(max_length=255, unique=True, null=True, blank=True, db_index=True)
+    google_email = models.EmailField(blank=True)
+    google_picture_url = models.URLField(blank=True, max_length=500)
+    google_linked_at = models.DateTimeField(null=True, blank=True)
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
