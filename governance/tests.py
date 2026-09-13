@@ -3209,3 +3209,201 @@ class CapabilityLimitsAdminTests(TestCase):
             {"max_message_length": "100"},
         )
         self.assertEqual(response.status_code, 403)
+
+
+class ReportsTests(TestCase):
+    """Revenue / Usage / Growth reports (governance/reports.py) - computed
+    entirely from existing data (Invoice, Message, User), no new tracking
+    model. Fixtures deliberately never price the Demo plan for any region,
+    so accounts.signals.generate_welcome_invoice_on_creation always fails
+    silently for every user created here (see SweepDueInvoicesTests in
+    billing/tests.py for the same convention) and never pollutes these
+    hand-built invoice counts with an extra auto-generated one."""
+
+    def setUp(self):
+        self.eng = Department.objects.create(name="Engineering")
+        self.sales = Department.objects.create(name="Sales")
+        self.superadmin = User.objects.create_user(
+            email="reportsuper@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.eng_admin = User.objects.create_user(
+            email="reportengadmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.eng,
+        )
+        self.plan = Plan.objects.create(name="Growth")
+
+    def _make_invoice(self, *, department, recipient, status, total, currency="USD", due_date=None, issue_date=None):
+        from billing.models import Invoice
+
+        today = timezone.localdate()
+        return Invoice.objects.create(
+            department=department,
+            recipient_user=recipient,
+            plan=self.plan,
+            issue_date=issue_date or today,
+            due_date=due_date or (today + timezone.timedelta(days=14)),
+            currency=currency,
+            subtotal=total,
+            tax_rate=0,
+            tax_amount=0,
+            total=total,
+            status=status,
+        )
+
+    # ---------- Revenue Report ----------
+
+    def test_revenue_report_totals_and_scoping(self):
+        from billing.models import Invoice
+
+        eng_user = User.objects.create_user(email="enguser@example.com", password="pw12345!", department=self.eng)
+        sales_user = User.objects.create_user(email="salesuser@example.com", password="pw12345!", department=self.sales)
+        self._make_invoice(department=self.eng, recipient=eng_user, status=Invoice.Status.PAID, total=100)
+        self._make_invoice(department=self.eng, recipient=eng_user, status=Invoice.Status.UNPAID, total=50)
+        self._make_invoice(department=self.sales, recipient=sales_user, status=Invoice.Status.PAID, total=200)
+
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:revenue_report"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_invoiced"], 350)
+        self.assertEqual(response.context["total_collected"], 300)
+        self.assertEqual(response.context["total_outstanding"], 50)
+        self.assertIsNotNone(response.context["by_department"])
+
+        # A scoped Admin sees only their own department's invoices and no
+        # cross-department breakdown - matching billing.views._invoices_context.
+        self.client.logout()
+        self.client.login(email="reportengadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:revenue_report"))
+        self.assertEqual(response.context["total_invoiced"], 150)
+        self.assertIsNone(response.context["by_department"])
+
+    def test_revenue_report_overdue_counts_unpaid_past_due_date(self):
+        from billing.models import Invoice
+
+        user = User.objects.create_user(email="overdueuser@example.com", password="pw12345!")
+        past_due = timezone.localdate() - timezone.timedelta(days=5)
+        self._make_invoice(department=None, recipient=user, status=Invoice.Status.UNPAID, total=75, due_date=past_due)
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:revenue_report"))
+        self.assertEqual(response.context["overdue_count"], 1)
+        self.assertEqual(response.context["overdue_amount"], 75)
+
+    def test_revenue_report_date_range_filter(self):
+        from billing.models import Invoice
+
+        user = User.objects.create_user(email="dateuser@example.com", password="pw12345!")
+        old_date = timezone.localdate() - timezone.timedelta(days=200)
+        self._make_invoice(department=None, recipient=user, status=Invoice.Status.PAID, total=999, issue_date=old_date)
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(
+            reverse("governance:revenue_report"), {"date_from": timezone.localdate().isoformat()}
+        )
+        self.assertEqual(response.context["total_invoiced"], 0)
+
+    def test_export_revenue_report_csv(self):
+        from billing.models import Invoice
+
+        user = User.objects.create_user(email="csvuser@example.com", password="pw12345!")
+        self._make_invoice(department=None, recipient=user, status=Invoice.Status.PAID, total=42)
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:export_revenue_report_csv"))
+        self.assertEqual(response["Content-Type"], "text/csv")
+        body = response.content.decode()
+        self.assertIn("Invoice #", body)
+        self.assertIn("csvuser@example.com", body)
+
+    # ---------- Usage Report ----------
+
+    def test_usage_report_grouped_by_plan_and_department(self):
+        from governance.plans import assign_plan
+
+        eng_user = User.objects.create_user(email="usageeng@example.com", password="pw12345!", department=self.eng)
+        assign_plan(eng_user, self.plan)
+        conv = Conversation.objects.create(user=eng_user, title="c")
+        Message.objects.create(
+            conversation=conv,
+            role=Message.Role.ASSISTANT,
+            content="hi",
+            input_tokens=100,
+            output_tokens=50,
+            estimated_cost="1.50",
+        )
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:usage_rollup_report"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_requests"], 1)
+        self.assertEqual(response.context["total_tokens"], 150)
+        self.assertEqual(float(response.context["total_cost"]), 1.5)
+        self.assertEqual(len(response.context["by_plan"]), 1)
+        self.assertEqual(response.context["by_plan"][0]["name"], "Growth")
+        self.assertIsNotNone(response.context["by_department"])
+
+        self.client.logout()
+        self.client.login(email="reportengadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:usage_rollup_report"))
+        self.assertEqual(response.context["total_requests"], 1)
+        self.assertIsNone(response.context["by_department"])
+
+    def test_export_usage_rollup_csv(self):
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:export_usage_rollup_csv"))
+        self.assertEqual(response["Content-Type"], "text/csv")
+
+    # ---------- Growth Report ----------
+
+    def test_growth_report_counts_and_scoping(self):
+        User.objects.create_user(email="growth1@example.com", password="pw12345!", department=self.eng)
+        User.objects.create_user(
+            email="growth2@example.com", password="pw12345!", department=self.sales, is_active=False
+        )
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:growth_report"))
+        self.assertEqual(response.status_code, 200)
+        # superadmin + eng_admin + growth1 + growth2 = 4
+        self.assertEqual(response.context["total_users"], 4)
+        self.assertEqual(response.context["suspended_count"], 1)
+        self.assertIsNotNone(response.context["by_department"])
+
+        self.client.logout()
+        self.client.login(email="reportengadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:growth_report"))
+        # only eng_admin + growth1 are in Engineering - Sales' suspended user
+        # must never be counted in a scoped Admin's own-department total.
+        self.assertEqual(response.context["total_users"], 2)
+        self.assertEqual(response.context["suspended_count"], 0)
+        self.assertIsNone(response.context["by_department"])
+
+    def test_export_growth_report_csv(self):
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:export_growth_report_csv"))
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("reportsuper@example.com", response.content.decode())
+
+    # ---------- Access control ----------
+
+    def test_reports_require_admin_role(self):
+        User.objects.create_user(email="plainreportuser@example.com", password="pw12345!")
+        self.client.login(email="plainreportuser@example.com", password="pw12345!")
+        for url_name in ["revenue_report", "usage_rollup_report", "growth_report"]:
+            response = self.client.get(reverse(f"governance:{url_name}"))
+            self.assertEqual(response.status_code, 403, url_name)
+
+    def test_reports_feature_can_be_hidden_from_admin_role_but_not_superadmin(self):
+        RoleFeatureToggle.objects.create(role="admin", feature_key="reports", is_enabled=False)
+        self.client.login(email="reportengadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:revenue_report"))
+        self.assertEqual(response.status_code, 403)
+
+        self.client.logout()
+        self.client.login(email="reportsuper@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:revenue_report"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_reports_nav_link_hidden_when_feature_disabled(self):
+        RoleFeatureToggle.objects.create(role="admin", feature_key="reports", is_enabled=False)
+        self.client.login(email="reportengadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertNotIn(b"Revenue Report", response.content)

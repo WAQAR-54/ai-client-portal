@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Growth Report" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card scroll-shadow" style="overflow-x:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+        <h1 style="margin-bottom:0;">{% trans "Growth Report" %}</h1>
+        <a href="{% url 'governance:export_growth_report_csv' %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Export CSV" %}</a>
+    </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.5rem;">{% trans "Headcount as of now, plus new signups over the last 6 months." %}</p>
+
+    <div class="kpi-grid mt-4">
+        <div class="kpi-card"><div class="kpi-label">{% trans "Total users" %}</div><div class="kpi-value mono">{{ total_users }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Active" %}</div><div class="kpi-value mono">{{ active_count }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Suspended" %}</div><div class="kpi-value mono">{{ suspended_count }}</div></div>
+    </div>
+
+    <div class="card mt-4" style="margin-bottom:var(--space-4);">
+        <h2 style="margin-bottom:0.25rem;">{% trans "New signups, last 6 months" %}</h2>
+        {% if has_monthly_data %}
+        <div class="bar-chart">
+            {% for label, count, pct in monthly_bars %}
+            <div class="bar-col" title="{{ count }}">
+                <div class="bar-fill" style="height:{{ pct }}%"></div>
+                <div class="bar-label">{{ label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-faint" style="font-size:0.85rem;">{% trans "No signups in this window yet." %}</p>
+        {% endif %}
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:var(--space-4);">
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By role" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Role" %}</th><th>{% trans "Count" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_role %}
+                    <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if by_department is not None %}
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By department" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Department" %}</th><th>{% trans "Count" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_department %}
+                    <tr><td>{{ row.name }}</td><td>{{ row.count }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

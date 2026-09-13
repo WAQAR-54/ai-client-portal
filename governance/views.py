@@ -49,6 +49,13 @@ from governance.plans import (
     get_plan_status,
     get_user_overrides,
 )
+from governance.reports import (
+    growth_report_rows,
+    growth_summary,
+    revenue_report_rows,
+    revenue_summary,
+    usage_rollup_summary,
+)
 from providers.models import ProviderModel
 
 # ---------- Department-scoping helpers ----------
@@ -2822,3 +2829,111 @@ class BrandingSettingsView(SuperAdminRequiredMixin, TemplateView):
         log_action(request.user, "branding.update", branding, new_value=site_name)
         django_messages.success(request, _("Branding updated."))
         return redirect("governance:branding")
+
+
+# ---------- Reports (Revenue / Usage / Growth) ----------
+# See governance/reports.py for the actual aggregation logic - kept out of
+# this file the same way governance/limits.py and governance/plans.py hold
+# the business logic behind their own Views here. Every view is
+# AdminRequiredMixin (not SuperAdminRequiredMixin): a scoped Admin sees
+# their own department's numbers, a SuperAdmin sees the whole org - the
+# scoping itself lives in each *_summary() function, matching how
+# UsageSummaryView/_filtered_assistant_messages already do it for Usage &
+# Cost.
+
+
+class RevenueReportView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    feature_key = "reports"
+    template_name = "governance/revenue_report.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | revenue_summary(self.request)
+
+
+class UsageRollupReportView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    feature_key = "reports"
+    template_name = "governance/usage_report.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | usage_rollup_summary(self.request)
+
+
+class GrowthReportView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
+    feature_key = "reports"
+    template_name = "governance/growth_report.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(**kwargs) | growth_summary(self.request)
+
+
+@role_required(User.Role.ADMIN)
+@require_feature("reports")
+@require_GET
+def export_revenue_report_csv(request):
+    import csv
+
+    rows = revenue_report_rows(request)
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="revenue_report.csv"'
+    writer = csv.writer(response)
+    writer.writerow(
+        ["Invoice #", "Department", "Recipient", "Plan", "Issue date", "Due date", "Currency", "Total", "Status"]
+    )
+    for inv in rows:
+        writer.writerow(
+            [
+                inv.invoice_number,
+                inv.department.name if inv.department else "",
+                inv.recipient_user.email if inv.recipient_user else "",
+                inv.plan.name,
+                inv.issue_date.strftime("%Y-%m-%d"),
+                inv.due_date.strftime("%Y-%m-%d"),
+                inv.currency,
+                f"{inv.total:.2f}",
+                inv.get_status_display(),
+            ]
+        )
+    return response
+
+
+@role_required(User.Role.ADMIN)
+@require_feature("reports")
+@require_GET
+def export_usage_rollup_csv(request):
+    import csv
+
+    summary = usage_rollup_summary(request)
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="usage_rollup_report.csv"'
+    writer = csv.writer(response)
+    writer.writerow(["Group", "Name", "Requests", "Tokens", "Cost"])
+    for row in summary["by_plan"]:
+        writer.writerow(["Plan", row["name"], row["requests"], row["tokens"], f"{row['cost']:.6f}"])
+    if summary["by_department"] is not None:
+        for row in summary["by_department"]:
+            writer.writerow(["Department", row["name"], row["requests"], row["tokens"], f"{row['cost']:.6f}"])
+    return response
+
+
+@role_required(User.Role.ADMIN)
+@require_feature("reports")
+@require_GET
+def export_growth_report_csv(request):
+    import csv
+
+    rows = growth_report_rows(request)
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="growth_report.csv"'
+    writer = csv.writer(response)
+    writer.writerow(["Email", "Role", "Department", "Status", "Joined"])
+    for u in rows:
+        writer.writerow(
+            [
+                u.email,
+                u.get_role_display(),
+                u.department.name if u.department else "",
+                "Active" if u.is_active else "Suspended",
+                u.date_joined.strftime("%Y-%m-%d"),
+            ]
+        )
+    return response

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Revenue Report" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card scroll-shadow" style="overflow-x:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+        <h1 style="margin-bottom:0;">{% trans "Revenue Report" %}</h1>
+        <a href="{% url 'governance:export_revenue_report_csv' %}" class="btn-small btn-ghost" style="text-decoration:none;"
+           onclick="this.href = this.href.split('?')[0] + window.location.search;">{% trans "Export CSV" %}</a>
+    </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.5rem;">{% trans "Invoice-based - totals reflect whatever date range is selected below. Export respects it too." %}</p>
+
+    <form class="filter-toolbar" method="get">
+        <input type="date" name="date_from" value="{{ date_from }}" title="{% trans 'Issued from' %}">
+        <input type="date" name="date_to" value="{{ date_to }}" title="{% trans 'Issued to' %}">
+        <button type="submit" class="btn-small">{% trans "Apply" %}</button>
+        {% if date_from or date_to %}<a href="{% url 'governance:revenue_report' %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Clear" %}</a>{% endif %}
+    </form>
+
+    <div class="kpi-grid mt-4">
+        <div class="kpi-card"><div class="kpi-label">{% trans "Invoiced" %}</div><div class="kpi-value mono">{{ total_invoiced|floatformat:2 }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Collected" %}</div><div class="kpi-value mono">{{ total_collected|floatformat:2 }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Outstanding" %}</div><div class="kpi-value mono">{{ total_outstanding|floatformat:2 }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Overdue" %}</div><div class="kpi-value mono">{{ overdue_amount|floatformat:2 }}</div><div class="text-faint" style="font-size:0.78rem;">{% blocktrans count counter=overdue_count %}{{ counter }} invoice{% plural %}{{ counter }} invoices{% endblocktrans %}</div></div>
+    </div>
+
+    <div class="card mt-4" style="margin-bottom:var(--space-4);">
+        <h2 style="margin-bottom:0.25rem;">{% trans "Collected revenue, last 6 months" %}</h2>
+        {% if has_monthly_data %}
+        <div class="bar-chart">
+            {% for label, total, pct in monthly_bars %}
+            <div class="bar-col" title="{{ total|floatformat:2 }}">
+                <div class="bar-fill" style="height:{{ pct }}%"></div>
+                <div class="bar-label">{{ label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-faint" style="font-size:0.85rem;">{% trans "No paid invoices in this window yet." %}</p>
+        {% endif %}
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:var(--space-4); margin-bottom:var(--space-4);">
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By status" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Status" %}</th><th>{% trans "Count" %}</th><th>{% trans "Total" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_status %}
+                    <tr>
+                        <td>
+                            {% if row.status == "paid" %}<span class="badge badge-success">{{ row.label }}</span>
+                            {% elif row.status == "pending_verification" %}<span class="badge badge-muted">{{ row.label }}</span>
+                            {% else %}<span class="badge badge-danger">{{ row.label }}</span>{% endif %}
+                        </td>
+                        <td>{{ row.count }}</td>
+                        <td class="mono">{{ row.total|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By plan" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Plan" %}</th><th>{% trans "Count" %}</th><th>{% trans "Total" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_plan %}
+                    <tr><td>{{ row.name }}</td><td>{{ row.count }}</td><td class="mono">{{ row.total|floatformat:2 }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By currency" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Currency" %}</th><th>{% trans "Count" %}</th><th>{% trans "Total" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_currency %}
+                    <tr><td>{{ row.currency }}</td><td>{{ row.count }}</td><td class="mono">{{ row.total|floatformat:2 }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if by_department is not None %}
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By department" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Department" %}</th><th>{% trans "Count" %}</th><th>{% trans "Total" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_department %}
+                    <tr><td>{{ row.name }}</td><td>{{ row.count }}</td><td class="mono">{{ row.total|floatformat:2 }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if invoice_count == 0 %}
+    <p class="text-faint">{% trans "No invoices match this filter yet." %}</p>
+    {% endif %}
+</div>
+{% endblock %}

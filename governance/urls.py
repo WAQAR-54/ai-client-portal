@@ -125,4 +125,10 @@ urlpatterns = [
         views.delete_department_template,
         name="delete_department_template",
     ),
+    path("reports/revenue/", views.RevenueReportView.as_view(), name="revenue_report"),
+    path("reports/revenue/export.csv", views.export_revenue_report_csv, name="export_revenue_report_csv"),
+    path("reports/usage/", views.UsageRollupReportView.as_view(), name="usage_rollup_report"),
+    path("reports/usage/export.csv", views.export_usage_rollup_csv, name="export_usage_rollup_csv"),
+    path("reports/growth/", views.GrowthReportView.as_view(), name="growth_report"),
+    path("reports/growth/export.csv", views.export_growth_report_csv, name="export_growth_report_csv"),
 ]

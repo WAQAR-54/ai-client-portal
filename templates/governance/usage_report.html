@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Usage Report" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card scroll-shadow" style="overflow-x:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+        <h1 style="margin-bottom:0;">{% trans "Usage Report" %}</h1>
+        <a href="{% url 'governance:export_usage_rollup_csv' %}" class="btn-small btn-ghost" style="text-decoration:none;"
+           onclick="this.href = this.href.split('?')[0] + window.location.search;">{% trans "Export CSV" %}</a>
+    </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.5rem;">{% trans "Grouped by plan and department - for the per-user breakdown, see Usage & Cost." %}</p>
+
+    <form class="filter-toolbar" method="get">
+        <input type="date" name="date_from" value="{{ date_from }}" title="{% trans 'From' %}">
+        <input type="date" name="date_to" value="{{ date_to }}" title="{% trans 'To' %}">
+        <button type="submit" class="btn-small">{% trans "Apply" %}</button>
+        {% if date_from or date_to %}<a href="{% url 'governance:usage_rollup_report' %}" class="btn-small btn-ghost" style="text-decoration:none;">{% trans "Clear" %}</a>{% endif %}
+    </form>
+
+    <div class="kpi-grid mt-4">
+        <div class="kpi-card"><div class="kpi-label">{% trans "Requests" %}</div><div class="kpi-value mono">{{ total_requests }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Tokens" %}</div><div class="kpi-value mono">{{ total_tokens }}</div></div>
+        <div class="kpi-card"><div class="kpi-label">{% trans "Cost" %}</div><div class="kpi-value mono">${{ total_cost|floatformat:2 }}</div></div>
+    </div>
+
+    <div class="card mt-4" style="margin-bottom:var(--space-4);">
+        <h2 style="margin-bottom:0.25rem;">{% trans "Cost by day, last 14 days" %}</h2>
+        {% if has_daily_data %}
+        <div class="bar-chart">
+            {% for label, cost, pct in daily_bars %}
+            <div class="bar-col" title="${{ cost|floatformat:2 }}">
+                <div class="bar-fill" style="height:{{ pct }}%"></div>
+                <div class="bar-label">{{ label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-faint" style="font-size:0.85rem;">{% trans "No cost recorded in the last 14 days yet." %}</p>
+        {% endif %}
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--space-4);">
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By plan" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Plan" %}</th><th>{% trans "Requests" %}</th><th>{% trans "Tokens" %}</th><th>{% trans "Cost" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_plan %}
+                    <tr><td>{{ row.name }}</td><td>{{ row.requests }}</td><td>{{ row.tokens }}</td><td class="mono">${{ row.cost|floatformat:2 }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-faint">{% trans "No usage in this window yet." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if by_department is not None %}
+        <div class="card">
+            <h2 style="margin-bottom:0.5rem;">{% trans "By department" %}</h2>
+            <table class="data">
+                <thead><tr><th>{% trans "Department" %}</th><th>{% trans "Requests" %}</th><th>{% trans "Tokens" %}</th><th>{% trans "Cost" %}</th></tr></thead>
+                <tbody>
+                    {% for row in by_department %}
+                    <tr><td>{{ row.name }}</td><td>{{ row.requests }}</td><td>{{ row.tokens }}</td><td class="mono">${{ row.cost|floatformat:2 }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-faint">{% trans "No usage in this window yet." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

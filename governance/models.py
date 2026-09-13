@@ -48,6 +48,7 @@ ADMIN_NAV_FEATURES = [
     ("audit_logs", "Audit Logs"),
     ("feedback", "Feedback"),
     ("department_settings", "Department Settings (system prompt / templates)"),
+    ("reports", "Reports (Revenue / Usage / Growth)"),
 ]
 
 # Chat/Settings features any signed-in role (User, Manager, Admin) uses -
