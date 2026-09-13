@@ -62,6 +62,11 @@ urlpatterns = [
         views.export_conversation_pdf,
         name="export_conversation_pdf",
     ),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/export/<str:doc_format>/",
+        views.export_message_document,
+        name="export_message_document",
+    ),
     path("templates/", views.prompt_template_list, name="prompt_template_list"),
     path("templates/save/", views.save_prompt_template, name="save_prompt_template"),
     path("templates/<int:template_id>/delete/", views.delete_prompt_template, name="delete_prompt_template"),

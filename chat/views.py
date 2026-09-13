@@ -3,6 +3,7 @@ import re
 from urllib.parse import quote
 
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -708,6 +709,58 @@ def export_conversation_pdf(request, conversation_id):
 def _export_filename(conversation):
     slug = re.sub(r"[^a-z0-9]+", "-", conversation.title.lower()).strip("-") or "conversation"
     return slug[:60]
+
+
+_MESSAGE_EXPORT_CONTENT_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pdf": "application/pdf",
+}
+
+
+@login_required
+@require_GET
+def export_message_document(request, conversation_id, message_id, doc_format):
+    """Turns ONE assistant message into a downloadable file - see
+    chat/document_generation.py's own docstring for how this differs from
+    export_conversation_pdf/markdown/text above (whole-conversation
+    transcript export, no feature gate of its own).
+
+    Gated by governance.plans.has_feature (the per-PLAN subscription
+    grant, Plan.feature_flags) - NOT governance.features.require_feature,
+    which is the unrelated per-ROLE nav-visibility switch
+    (RoleFeatureToggle). Same inline-check style already used for
+    "file_upload"/"model_selection" elsewhere in this file, not a
+    decorator, since KNOWN_FEATURE_FLAGS checks read the ACTING user's
+    Plan, not their role."""
+    from governance.plans import has_feature
+
+    if not has_feature(request.user, "document_generation"):
+        raise PermissionDenied("Document generation isn't included in your current plan.")
+    if doc_format not in _MESSAGE_EXPORT_CONTENT_TYPES:
+        return HttpResponseBadRequest("Unknown document format")
+
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    message = get_object_or_404(Message, id=message_id, conversation=conversation, role=Message.Role.ASSISTANT)
+
+    from chat.document_generation import (
+        render_message_docx,
+        render_message_pdf,
+        render_message_pptx,
+        render_message_xlsx,
+    )
+
+    renderer = {
+        "docx": render_message_docx,
+        "xlsx": render_message_xlsx,
+        "pptx": render_message_pptx,
+        "pdf": render_message_pdf,
+    }[doc_format]
+    file_bytes = renderer(message)
+    response = HttpResponse(file_bytes, content_type=_MESSAGE_EXPORT_CONTENT_TYPES[doc_format])
+    response["Content-Disposition"] = f'attachment; filename="message-{message.id}.{doc_format}"'
+    return response
 
 
 def _visible_prompt_templates(user):

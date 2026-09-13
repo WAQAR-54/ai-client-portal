@@ -1014,6 +1014,137 @@ class AttachmentMonthlyLimitTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+class MessageDocumentGenerationTests(TestCase):
+    """chat/document_generation.py + chat/views.py::export_message_document
+    - turning one assistant message into a downloadable Word/Excel/
+    PowerPoint/PDF file, gated by the "document_generation" Plan feature
+    flag. Each generated file is round-tripped through its own library to
+    confirm it's actually well-formed, not just non-empty bytes."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.plan = _grant_premium_plan(self.user)
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+        self.message = Message.objects.create(
+            conversation=self.conversation,
+            role=Message.Role.ASSISTANT,
+            content=(
+                "# Report title\n\n"
+                "Some intro paragraph.\n\n"
+                "## Section one\n\n"
+                "- first bullet\n"
+                "- second bullet\n\n"
+                "| Name | Score |\n"
+                "| --- | --- |\n"
+                "| Alice | 10 |\n"
+                "| Bob | 8 |\n"
+            ),
+        )
+
+    def _export_url(self, doc_format):
+        return reverse(
+            "chat:export_message_document",
+            kwargs={"conversation_id": self.conversation.id, "message_id": self.message.id, "doc_format": doc_format},
+        )
+
+    def test_docx_export_is_a_valid_document(self):
+        from io import BytesIO
+
+        from docx import Document
+
+        response = self.client.get(self._export_url("docx"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        document = Document(BytesIO(response.content))
+        all_text = "\n".join(p.text for p in document.paragraphs)
+        self.assertIn("Report title", all_text)
+        self.assertIn("first bullet", all_text)
+        self.assertEqual(len(document.tables), 1)
+        self.assertEqual(document.tables[0].cell(1, 0).text, "Alice")
+
+    def test_xlsx_export_is_a_valid_workbook(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        response = self.client.get(self._export_url("xlsx"))
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content))
+        sheet = workbook.active
+        values = [cell.value for row in sheet.iter_rows() for cell in row if cell.value is not None]
+        self.assertIn("Report title", values)
+        self.assertIn("Alice", values)
+
+    def test_pptx_export_is_a_valid_presentation(self):
+        from io import BytesIO
+
+        from pptx import Presentation
+
+        response = self.client.get(self._export_url("pptx"))
+        self.assertEqual(response.status_code, 200)
+        presentation = Presentation(BytesIO(response.content))
+        self.assertGreaterEqual(len(presentation.slides), 1)
+        titles = [slide.shapes.title.text for slide in presentation.slides if slide.shapes.title]
+        self.assertIn("Report title", titles)
+
+    def test_pdf_export_starts_with_pdf_magic_bytes(self):
+        response = self.client.get(self._export_url("pdf"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_unknown_format_is_bad_request(self):
+        response = self.client.get(
+            reverse(
+                "chat:export_message_document",
+                kwargs={"conversation_id": self.conversation.id, "message_id": self.message.id, "doc_format": "zip"},
+            )
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_blocked_without_the_feature_flag(self):
+        self.plan.feature_flags = {"document_generation": False}
+        self.plan.save(update_fields=["feature_flags"])
+        response = self.client.get(self._export_url("pdf"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_cannot_export_another_users_message(self):
+        other = User.objects.create_user(email="other@example.com", password="pw12345!")
+        _grant_premium_plan(other)
+        self.client.logout()
+        self.client.login(email="other@example.com", password="pw12345!")
+        response = self.client.get(self._export_url("pdf"))
+        self.assertEqual(response.status_code, 404)
+
+    def test_generate_document_button_shown_only_with_the_feature_flag(self):
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertContains(response, "Generate document")
+
+        self.plan.feature_flags = {"document_generation": False}
+        self.plan.save(update_fields=["feature_flags"])
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertNotContains(response, "Generate document")
+
+    def test_cannot_export_a_user_message(self):
+        user_message = Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="hi")
+        response = self.client.get(
+            reverse(
+                "chat:export_message_document",
+                kwargs={
+                    "conversation_id": self.conversation.id,
+                    "message_id": user_message.id,
+                    "doc_format": "pdf",
+                },
+            )
+        )
+        self.assertEqual(response.status_code, 404)
+
+
 class ModelSelectionTests(TestCase):
     def setUp(self):
         from django.core.cache import cache

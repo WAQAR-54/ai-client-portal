@@ -26,6 +26,11 @@ KNOWN_FEATURE_FLAGS = [
     # unchecked/off like every other flag in this list, requiring an explicit
     # opt-in.
     ("model_selection", "Manual model selection"),
+    # Enforced in chat/views.py::export_message_document - see
+    # chat/document_generation.py. Lets a user turn one assistant message
+    # into a downloadable Word/Excel/PowerPoint/PDF file, distinct from
+    # the "export" flag above (whole-conversation transcript export).
+    ("document_generation", "Document generation (Word/Excel/PowerPoint/PDF)"),
 ]
 
 # ---------- Role-wide feature visibility ----------
