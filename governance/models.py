@@ -31,6 +31,12 @@ KNOWN_FEATURE_FLAGS = [
     # into a downloadable Word/Excel/PowerPoint/PDF file, distinct from
     # the "export" flag above (whole-conversation transcript export).
     ("document_generation", "Document generation (Word/Excel/PowerPoint/PDF)"),
+    # Enforced in chat/views.py::stream_message via chat/providers.py's
+    # enable_web_search param - only AnthropicProvider actually acts on it
+    # (Claude's native web_search server tool); enabling this restricts
+    # that turn's model candidates to Anthropic ones, so the toggle never
+    # silently answers without having actually searched.
+    ("research", "Research mode (live web search, Claude only)"),
 ]
 
 # ---------- Role-wide feature visibility ----------

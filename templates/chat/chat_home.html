@@ -521,6 +521,12 @@ function portalCloseUpgradeModal() {
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         <input type="file" name="attachment" id="attach-input" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
                     </label>
+                    {% if can_use_research %}
+                    <button type="button" class="attach-btn" id="research-toggle-btn" title="{% trans 'Research mode — searches the web for current information (needs a Claude model)' %}" onclick="portalToggleResearch(this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </button>
+                    <input type="hidden" name="research" id="research-input" value="">
+                    {% endif %}
                     {% if can_select_model %}
                     {% comment %}
                     A handful of quick-pick chips for fast access, syncing with the fuller header
@@ -699,6 +705,23 @@ function portalResetComposerAttrs() {
     // of silently double-costing AI calls on a message they forgot it was
     // still on for.
     portalSetCompareMode(false);
+    // Research mode is per-turn too, same reasoning - the hidden input's
+    // value already resets via the form's own native reset() (its default
+    // HTML value is ""), this just syncs the button's visual state to match.
+    var researchBtn = document.getElementById("research-toggle-btn");
+    if (researchBtn) researchBtn.classList.remove("has-file");
+}
+
+// Research mode toggle (composer footer) - see can_use_research/
+// chat:post_message's own "research" POST field. Reuses .attach-btn's
+// existing "has-file" accent-highlight look for the toggled-on state
+// rather than introducing a second, visually-inconsistent active style.
+function portalToggleResearch(btn) {
+    var input = document.getElementById("research-input");
+    if (!input) return;
+    var on = input.value !== "on";
+    input.value = on ? "on" : "";
+    btn.classList.toggle("has-file", on);
 }
 
 // --- Compare mode: sidebar Chat/Compare switch -> "pick 2 models" setup

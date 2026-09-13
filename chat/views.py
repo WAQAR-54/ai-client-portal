@@ -104,6 +104,7 @@ def chat_home(request, conversation_id=None):
         "usage": get_usage_status(request.user, conversation=conversation),
         "request_count": get_request_count_status(request.user, conversation=conversation),
         "can_select_model": has_feature(request.user, "model_selection"),
+        "can_use_research": has_feature(request.user, "research"),
         "can_request_upgrade": bool(plan_status["plan"]),
         "upgrade_plan_choices": upgrade_plan_choices,
     }
@@ -399,6 +400,12 @@ def post_message(request, conversation_id):
     if model_id and not models_visible_to_user(request.user).filter(id=model_id).exists():
         model_id = ""
 
+    # Same reasoning as model_id just above - the toggle is already hidden
+    # client-side when the plan disallows it (chat_home's can_use_research),
+    # but a POSTed "research=on" shouldn't be trusted just because the UI
+    # that would normally set it wasn't shown.
+    research = request.POST.get("research") == "on" and has_feature(request.user, "research")
+
     # Lock the conversation row for the duration of the check+create so two
     # concurrent sends against the same conversation can't both pass the
     # session_limit check before either message is committed. (Postgres
@@ -444,6 +451,7 @@ def post_message(request, conversation_id):
             "pending_message": pending_assistant_message,
             "user_message": user_message,
             "model_id": model_id,
+            "research": research,
         },
     )
 
@@ -911,6 +919,7 @@ def stream_message(request, conversation_id, message_id, token):
 
     history = _history_with_attachments(conversation, exclude_message_id=message.id)
     requested_model_id = request.GET.get("model_id", "").strip()
+    research = request.GET.get("research") == "1"
 
     def event_stream():
         # Every exit path below saves *something* to message.content and
@@ -960,6 +969,24 @@ def stream_message(request, conversation_id, message_id, token):
         ):
             candidates = [budget_status["fallback_model"]]
 
+        # Research mode only actually works on AnthropicProvider (Claude's
+        # native web_search server tool - see chat/providers.py) - narrowing
+        # candidates to Anthropic-adapter models here means the toggle
+        # never silently answers WITHOUT having searched, on whatever
+        # non-Claude model auto-routing/a manual pick/budget automation
+        # would otherwise have used. Checked here (post_message already
+        # confirmed the "research" plan feature) rather than earlier, so
+        # it applies after every other candidate-selection rule above,
+        # budget automation included.
+        if research:
+            anthropic_candidates = [c for c in candidates if c.provider.adapter_type == "anthropic"]
+            if not anthropic_candidates:
+                message.content = "Research mode needs a Claude model enabled for your account."
+                message.save(update_fields=["content"])
+                yield _sse_event("done", "")
+                return
+            candidates = anthropic_candidates
+
         system_prompt = build_system_prompt(request.user)
 
         from governance.plans import validate_context_tokens
@@ -977,7 +1004,10 @@ def stream_message(request, conversation_id, message_id, token):
         # history so a repeat of the identical exchange - not just the
         # same trailing message - is what's required to hit. See
         # chat/response_cache.py for why the whole history is hashed.
-        cached = get_cached_response(request.user.id, candidates[0].id, system_prompt, history)
+        # Skipped entirely for research mode - a cached answer never
+        # actually ran a fresh search, which defeats the whole point of
+        # asking for "current information" a second time.
+        cached = None if research else get_cached_response(request.user.id, candidates[0].id, system_prompt, history)
         if cached is not None:
             yield _sse_event("message", cached["text"])
             message.content = cached["text"]
@@ -1008,7 +1038,7 @@ def stream_message(request, conversation_id, message_id, token):
 
             try:
                 for chunk in provider.stream_chat(
-                    history_for_model, model_config.model_id, system_prompt=system_prompt
+                    history_for_model, model_config.model_id, system_prompt=system_prompt, enable_web_search=research
                 ):
                     if chunk.text:
                         full_text += chunk.text

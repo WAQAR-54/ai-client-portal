@@ -36,12 +36,24 @@ class AIProvider(ABC):
         self.provider_row = provider_row
 
     @abstractmethod
-    def stream_chat(self, messages: list[dict], model_name: str, system_prompt: str = "") -> Iterator[StreamChunk]:
+    def stream_chat(
+        self, messages: list[dict], model_name: str, system_prompt: str = "", enable_web_search: bool = False
+    ) -> Iterator[StreamChunk]:
         """Yield StreamChunk(text=...) for each token/segment, then one final
-        StreamChunk(done=True, input_tokens=..., output_tokens=...)."""
+        StreamChunk(done=True, input_tokens=..., output_tokens=...).
+
+        enable_web_search requests Research mode (chat/views.py::
+        stream_message) - live web search grounded in current sources.
+        Only AnthropicProvider below actually acts on it (Claude's native
+        web_search server tool); every other provider accepts and quietly
+        ignores the flag rather than erroring, since stream_message already
+        restricts Research mode's candidates to Anthropic models before
+        this is ever called with enable_web_search=True on anything else."""
 
     @abstractmethod
-    def complete(self, messages: list[dict], model_name: str, system_prompt: str = "") -> str:
+    def complete(
+        self, messages: list[dict], model_name: str, system_prompt: str = "", enable_web_search: bool = False
+    ) -> str:
         """Non-streaming single-shot completion, used by the smart router classifier."""
 
 
@@ -93,7 +105,11 @@ class OpenAICompatibleProvider(AIProvider):
             formatted.append({"role": m["role"], "content": parts})
         return formatted
 
-    def stream_chat(self, messages, model_name, system_prompt=""):
+    def stream_chat(self, messages, model_name, system_prompt="", enable_web_search=False):
+        # enable_web_search is a no-op here - see AIProvider.stream_chat's
+        # own docstring for why. Real web search over the Chat Completions
+        # API this class uses would need OpenAI's separate Responses API
+        # (a different call shape entirely), not attempted in this pass.
         try:
             stream = self._client().chat.completions.create(
                 model=model_name,
@@ -112,7 +128,7 @@ class OpenAICompatibleProvider(AIProvider):
         except Exception as exc:
             raise ProviderError(str(exc)) from exc
 
-    def complete(self, messages, model_name, system_prompt=""):
+    def complete(self, messages, model_name, system_prompt="", enable_web_search=False):
         try:
             response = self._client().chat.completions.create(
                 model=model_name,
@@ -154,12 +170,29 @@ class AnthropicProvider(AIProvider):
             formatted.append({"role": m["role"], "content": parts})
         return formatted
 
-    def stream_chat(self, messages, model_name, system_prompt=""):
+    # Basic (non-dynamic-filtering) version of Anthropic's native web_search
+    # server tool - see chat/views.py::stream_message for how Research mode
+    # reaches here. text_stream already yields only "text"-type content
+    # block deltas, so adding this tool needs no other change to the
+    # streaming loop below: server_tool_use/web_search_tool_result blocks
+    # (the search query/results themselves) simply aren't text blocks and
+    # never appear in text_stream - they're only visible via
+    # get_final_message().content afterward, which this doesn't currently
+    # surface further (no citations UI in this pass - just the grounded
+    # answer text). max_uses caps searches per turn as a cost guard.
+    _WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
+
+    def stream_chat(self, messages, model_name, system_prompt="", enable_web_search=False):
         try:
             kwargs = {"system": system_prompt} if system_prompt else {}
+            if enable_web_search:
+                kwargs["tools"] = [self._WEB_SEARCH_TOOL]
             with self._client().messages.stream(
                 model=model_name,
-                max_tokens=4096,
+                # A search-grounded answer citing several sources tends to
+                # run longer than a plain reply - the same reasoning as
+                # complete()'s own bump below, just for the streaming path.
+                max_tokens=8000 if enable_web_search else 4096,
                 messages=self._format_messages(messages),
                 **kwargs,
             ) as stream:
@@ -174,12 +207,14 @@ class AnthropicProvider(AIProvider):
         except Exception as exc:
             raise ProviderError(str(exc)) from exc
 
-    def complete(self, messages, model_name, system_prompt=""):
+    def complete(self, messages, model_name, system_prompt="", enable_web_search=False):
         try:
             kwargs = {"system": system_prompt} if system_prompt else {}
+            if enable_web_search:
+                kwargs["tools"] = [self._WEB_SEARCH_TOOL]
             response = self._client().messages.create(
                 model=model_name,
-                max_tokens=1024,
+                max_tokens=2048 if enable_web_search else 1024,
                 messages=self._format_messages(messages),
                 **kwargs,
             )
@@ -231,7 +266,10 @@ class GeminiProvider(AIProvider):
             body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         return body
 
-    def stream_chat(self, messages, model_name, system_prompt=""):
+    def stream_chat(self, messages, model_name, system_prompt="", enable_web_search=False):
+        # enable_web_search is a no-op here - see AIProvider.stream_chat's
+        # own docstring. Gemini has its own native Google Search grounding
+        # tool, but wiring it up is out of scope for this pass.
         url = f"{self._BASE_URL}/models/{model_name}:streamGenerateContent"
         try:
             resp = requests.post(
@@ -261,7 +299,7 @@ class GeminiProvider(AIProvider):
         except requests.RequestException as exc:
             raise ProviderError(str(exc)) from exc
 
-    def complete(self, messages, model_name, system_prompt=""):
+    def complete(self, messages, model_name, system_prompt="", enable_web_search=False):
         url = f"{self._BASE_URL}/models/{model_name}:generateContent"
         try:
             resp = requests.post(

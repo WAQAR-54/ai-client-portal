@@ -712,6 +712,118 @@ class ChatViewTests(TestCase):
         mock_classify.assert_not_called()
 
 
+class ResearchModeTests(TestCase):
+    """Research mode (chat/views.py::stream_message's "research" GET flag,
+    chat/providers.py's enable_web_search) - only AnthropicProvider ever
+    acts on it, so stream_message must restrict that turn's candidates to
+    Anthropic models rather than silently answering unsearched on
+    whatever else would have been picked."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.openai_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="gpt-test",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        self.claude_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"),
+            model_id="claude-test",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        self.premium = _grant_premium_plan(self.user, self.openai_model, self.claude_model)
+        self.premium.feature_flags = {"research": True}
+        self.premium.save(update_fields=["feature_flags"])
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def _pending_message(self):
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, content="hi")
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        return conversation, pending
+
+    def _stream(self, conversation, pending, **extra_params):
+        return self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            ),
+            extra_params,
+        )
+
+    @patch("chat.views.get_provider")
+    def test_enable_web_search_passed_through_for_an_anthropic_model(self, mock_get_provider):
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="answer"), StreamChunk(done=True, input_tokens=5, output_tokens=5)]
+        )
+        conversation, pending = self._pending_message()
+        response = self._stream(conversation, pending, model_id=self.claude_model.id, research="1")
+        b"".join(response.streaming_content)
+
+        mock_provider.stream_chat.assert_called_once()
+        self.assertTrue(mock_provider.stream_chat.call_args.kwargs["enable_web_search"])
+        pending.refresh_from_db()
+        self.assertEqual(pending.content, "answer")
+        self.assertEqual(pending.provider_model_used, self.claude_model)
+
+    @patch("chat.views.get_provider")
+    def test_blocked_when_only_a_non_anthropic_model_is_requested(self, mock_get_provider):
+        conversation, pending = self._pending_message()
+        response = self._stream(conversation, pending, model_id=self.openai_model.id, research="1")
+        b"".join(response.streaming_content)
+
+        mock_get_provider.return_value.stream_chat.assert_not_called()
+        pending.refresh_from_db()
+        self.assertIn("Claude model", pending.content)
+
+    @patch("chat.views.get_provider")
+    def test_without_research_flag_web_search_is_not_requested(self, mock_get_provider):
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="answer"), StreamChunk(done=True, input_tokens=5, output_tokens=5)]
+        )
+        conversation, pending = self._pending_message()
+        response = self._stream(conversation, pending, model_id=self.claude_model.id)
+        b"".join(response.streaming_content)
+
+        self.assertFalse(mock_provider.stream_chat.call_args.kwargs["enable_web_search"])
+
+    def test_research_checkbox_hidden_without_the_plan_feature(self):
+        # Checks for the button element itself (its onclick), not the bare
+        # "research-toggle-btn" id string - that string is ALSO referenced,
+        # unconditionally, inside portalResetComposerAttrs()'s always-
+        # rendered JS (a plain null-guarded getElementById lookup), so
+        # assertNotContains against the id alone would false-fail here.
+        self.premium.feature_flags = {"research": False}
+        self.premium.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id}))
+        self.assertNotContains(response, "portalToggleResearch(this)")
+
+    def test_research_checkbox_shown_with_the_plan_feature(self):
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id}))
+        self.assertContains(response, "portalToggleResearch(this)")
+
+    def test_post_message_ignores_research_flag_without_the_plan_feature(self):
+        self.premium.feature_flags = {"research": False}
+        self.premium.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hello", "research": "on"},
+        )
+        self.assertNotContains(response, "research=1")
+
+
 class ArenaCompareModeTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
