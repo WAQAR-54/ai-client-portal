@@ -118,6 +118,14 @@ class AuthAndRBACTests(TestCase):
 
 
 class SignupTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+
+        # signup_view is now rate-limited (see SignupRateLimitTests) -
+        # the cache-backed counter is otherwise shared across every
+        # TestCase in this run using the test client's default IP.
+        cache.clear()
+
     def test_signup_creates_user_with_default_role_and_logs_in(self):
         response = self.client.post(
             reverse("accounts:signup"),
@@ -166,8 +174,46 @@ class SignupTests(TestCase):
         self.assertRedirects(response, reverse("accounts:dashboard"))
 
 
+class SignupRateLimitTests(TestCase):
+    """django-axes only ever tracks LOGIN failures - self-service signup
+    (unauthenticated, no account needed) has no other protection against
+    automated mass account creation from one source without this."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def _signup(self, email):
+        return self.client.post(
+            reverse("accounts:signup"),
+            {"email": email, "password1": "a-strong-password-123", "password2": "a-strong-password-123"},
+        )
+
+    def test_allows_up_to_the_limit(self):
+        from accounts.views import SIGNUP_RATE_LIMIT
+
+        for i in range(SIGNUP_RATE_LIMIT):
+            response = self._signup(f"person{i}@example.com")
+            self.assertRedirects(response, reverse("accounts:dashboard"))
+            self.client.logout()
+
+    def test_blocks_once_the_limit_is_exceeded(self):
+        from accounts.views import SIGNUP_RATE_LIMIT
+
+        for i in range(SIGNUP_RATE_LIMIT):
+            self._signup(f"person{i}@example.com")
+            self.client.logout()
+        response = self._signup("onemore@example.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(email="onemore@example.com").exists())
+
+
 class PasswordResetFlowTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
         self.user = User.objects.create_user(email="reset@example.com", password="old-password-123")
 
     def _extract_reset_url(self, html_body):
@@ -242,6 +288,35 @@ class PasswordResetFlowTests(TestCase):
         self.client.login(email="reset@example.com", password="old-password-123")
         response = self.client.get(reverse("accounts:password_reset_request"))
         self.assertRedirects(response, reverse("accounts:dashboard"))
+
+    def test_repeated_requests_for_the_same_email_are_rate_limited(self):
+        """django-axes doesn't cover this endpoint (it only tracks LOGIN
+        failures) - without its own cap, this address's inbox could be
+        bombed with reset links indefinitely from a single source."""
+        from django.core import mail
+
+        from accounts.views import PASSWORD_RESET_EMAIL_RATE_LIMIT
+
+        mail.outbox = []
+        for _ in range(PASSWORD_RESET_EMAIL_RATE_LIMIT):
+            self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        self.assertEqual(len(mail.outbox), PASSWORD_RESET_EMAIL_RATE_LIMIT)
+
+        response = self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        self.assertEqual(len(mail.outbox), PASSWORD_RESET_EMAIL_RATE_LIMIT)
+        # Same redirect either way - a visibly different response once
+        # rate-limited would itself leak information (same reasoning as
+        # test_request_does_not_reveal_whether_email_exists above).
+        self.assertRedirects(response, reverse("accounts:login"))
+
+    def test_rate_limited_request_shows_the_same_message_as_a_real_one(self):
+        from accounts.views import PASSWORD_RESET_EMAIL_RATE_LIMIT
+
+        for _ in range(PASSWORD_RESET_EMAIL_RATE_LIMIT):
+            self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        response = self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email}, follow=True)
+        messages_list = list(response.context["messages"])
+        self.assertTrue(any("we've sent a link" in str(m) for m in messages_list))
 
 
 class ProfileTests(TestCase):
@@ -396,6 +471,11 @@ class GeoLanguageMiddlewareTests(TestCase):
 
 
 class SignupLanguageTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+
     def test_signup_carries_over_geo_detected_language(self):
         response = self.client.post(
             reverse("accounts:signup"),
@@ -560,6 +640,35 @@ class MFALoginFlowTests(TestCase):
     def test_direct_visit_without_pending_challenge_redirects_to_login(self):
         response = self.client.get(reverse("accounts:mfa_verify"))
         self.assertRedirects(response, reverse("accounts:login"))
+
+    def test_resend_cap_forces_restart_instead_of_unlimited_cycling(self):
+        """The real bug this closes: resending used to reset mfa_attempts
+        to 0 every time with no cap of its own, so alternating "guess up
+        to MAX_MFA_ATTEMPTS times, then resend" indefinitely would never
+        trip the attempt limit - only MAX_MFA_RESENDS resends are now
+        allowed before a real re-login is required, same as exhausting
+        MAX_MFA_ATTEMPTS."""
+        from accounts.mfa import MAX_MFA_RESENDS
+
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        for _ in range(MAX_MFA_RESENDS):
+            response = self.client.post(reverse("accounts:resend_mfa_code"))
+            self.assertRedirects(response, reverse("accounts:mfa_verify"))
+        response = self.client.post(reverse("accounts:resend_mfa_code"))
+        self.assertRedirects(response, reverse("accounts:login"))
+        self.assertNotIn("mfa_user_id", self.client.session)
+
+    def test_resend_does_not_reset_the_wrong_guess_counter(self):
+        """Resetting mfa_attempts on every resend is intentional (a fresh
+        code invalidates old guesses anyway) - what's under test here is
+        that this alone can no longer be exploited indefinitely, per
+        MAX_MFA_RESENDS above; a single resend still legitimately clears
+        prior wrong guesses against the code it just replaced."""
+        self.client.post(reverse("accounts:login"), {"username": "admin@example.com", "password": "pw12345!"})
+        self.client.post(reverse("accounts:mfa_verify"), {"code": "000000"})
+        self.assertEqual(self.client.session["mfa_attempts"], 1)
+        self.client.post(reverse("accounts:resend_mfa_code"))
+        self.assertEqual(self.client.session["mfa_attempts"], 0)
 
 
 class ToggleOwnMFATests(TestCase):

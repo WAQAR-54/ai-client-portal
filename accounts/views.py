@@ -26,6 +26,7 @@ from accounts.forms import (
 )
 from accounts.mfa import (
     MAX_MFA_ATTEMPTS,
+    MAX_MFA_RESENDS,
     OTP_EXPIRY_MINUTES,
     clear_mfa_session,
     mfa_challenge_expired,
@@ -34,7 +35,17 @@ from accounts.mfa import (
 )
 from accounts.models import User
 from accounts.permissions import AdminRequiredMixin
+from accounts.rate_limit import client_ip, is_rate_limited
 from governance.features import require_feature
+
+# Per-IP-per-hour caps on the two unauthenticated, abuse-prone endpoints
+# django-axes doesn't cover (it only tracks LOGIN failures) - see
+# accounts/rate_limit.py. Generous enough that a real person fumbling a
+# signup form, or a shared office IP with several people resetting
+# passwords the same afternoon, is never the one who hits these.
+SIGNUP_RATE_LIMIT = 5
+PASSWORD_RESET_IP_RATE_LIMIT = 10
+PASSWORD_RESET_EMAIL_RATE_LIMIT = 3
 
 
 @login_required
@@ -131,6 +142,9 @@ class PortalLoginView(LoginView):
         user = form.get_user()
         if user_requires_mfa(user):
             code = start_mfa_challenge(self.request, user, str(self.get_success_url()))
+            # A genuinely fresh challenge - reset the resend cap here, not
+            # in start_mfa_challenge itself (see its docstring).
+            self.request.session["mfa_resend_count"] = 0
             _send_mfa_code_email(self.request, user, code)
             return redirect("accounts:mfa_verify")
         return super().form_valid(form)
@@ -194,6 +208,16 @@ class MFAVerifyView(TemplateView):
 def resend_mfa_code(request):
     if "mfa_user_id" not in request.session:
         return redirect("accounts:login")
+
+    resend_count = request.session.get("mfa_resend_count", 0)
+    if resend_count >= MAX_MFA_RESENDS:
+        # Forces a real re-login rather than an indefinite resend+retry
+        # cycle - see MAX_MFA_RESENDS's own docstring in accounts/mfa.py.
+        clear_mfa_session(request)
+        messages.error(request, translation.gettext("Too many code requests — log in again to get a new code."))
+        return redirect("accounts:login")
+    request.session["mfa_resend_count"] = resend_count + 1
+
     user = User.objects.get(id=request.session["mfa_user_id"])
     next_url = request.session.get("mfa_next", "")
     code = start_mfa_challenge(request, user, next_url)
@@ -227,6 +251,15 @@ def signup_view(request):
         return redirect("accounts:dashboard")
 
     if request.method == "POST":
+        # Unauthenticated by design (that's the point of self-service
+        # signup) and django-axes only ever tracks LOGIN failures - so
+        # this is the one thing standing between "one person signing up"
+        # and automated mass account creation from a single IP.
+        if is_rate_limited(f"signup:{client_ip(request)}", limit=SIGNUP_RATE_LIMIT, window_seconds=3600):
+            messages.error(
+                request, translation.gettext("Too many signup attempts from this location. Try again later.")
+            )
+            return render(request, "accounts/signup.html", {"form": SignupForm()})
         form = SignupForm(request.POST)
         if form.is_valid():
             user = form.save()
@@ -276,10 +309,28 @@ def password_reset_request_view(request):
     if request.method == "POST":
         form = PortalPasswordResetForm(request.POST)
         if form.is_valid():
-            for user in form.get_users(form.cleaned_data["email"]):
-                _send_password_reset_email(request, user)
-            # Same message regardless of whether an account exists, so this
-            # can't be used to check whether an email is registered.
+            email = form.cleaned_data["email"]
+            # Rate-limited by IP (stop one source mass-requesting resets
+            # across many addresses) AND by the target email itself (stop
+            # that address's inbox being bombed with reset links from
+            # many sources) - checked with `or` so either alone is
+            # enough to suppress the send. Never surfaced to the caller:
+            # the exact same generic message is shown either way, same
+            # as the existing account-enumeration defense below - a
+            # visibly different response when rate-limited would leak
+            # its own bit of information.
+            ip_limited = is_rate_limited(
+                f"pwreset_ip:{client_ip(request)}", limit=PASSWORD_RESET_IP_RATE_LIMIT, window_seconds=3600
+            )
+            email_limited = is_rate_limited(
+                f"pwreset_email:{email.lower()}", limit=PASSWORD_RESET_EMAIL_RATE_LIMIT, window_seconds=3600
+            )
+            if not ip_limited and not email_limited:
+                for user in form.get_users(email):
+                    _send_password_reset_email(request, user)
+            # Same message regardless of whether an account exists (or
+            # this request got rate-limited), so this can't be used to
+            # check whether an email is registered.
             messages.success(
                 request,
                 translation.gettext("If an account exists for that email, we've sent a link to reset your password."),
