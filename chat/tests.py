@@ -825,6 +825,123 @@ class ResearchModeTests(TestCase):
         self.assertNotContains(response, "research=1")
 
 
+class AgentPersonaTests(TestCase):
+    """chat/prompts.py::AGENT_PERSONAS + the "agent_mode" Plan feature flag
+    - a specialized system-prompt persona for this turn, threaded from
+    post_message through to stream_message exactly like model_id/research
+    (see ResearchModeTests above for the same pattern)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="test-model",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        self.premium = _grant_premium_plan(self.user, self.model)
+        self.premium.feature_flags = {"agent_mode": True}
+        self.premium.save(update_fields=["feature_flags"])
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_agent_persona_threads_through_to_the_system_prompt(self, mock_get_provider, mock_classify):
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="hi"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+        )
+        conversation = Conversation.objects.create(user=self.user)
+        post_response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "help me sell this", "agent_persona": "sales"},
+        )
+        self.assertContains(post_response, "agent_persona=sales")
+
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            ),
+            {"agent_persona": "sales"},
+        )
+        b"".join(response.streaming_content)
+
+        system_prompt_used = mock_provider.stream_chat.call_args.kwargs["system_prompt"]
+        self.assertIn("SALES AGENT", system_prompt_used)
+
+    def test_unknown_persona_is_ignored(self):
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hi", "agent_persona": "not-a-real-persona"},
+        )
+        self.assertNotContains(response, "agent_persona=")
+
+    def test_post_message_ignores_persona_without_the_plan_feature(self):
+        self.premium.feature_flags = {"agent_mode": False}
+        self.premium.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hi", "agent_persona": "dev"},
+        )
+        self.assertNotContains(response, "agent_persona=")
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_stream_message_ignores_persona_without_the_plan_feature(self, mock_get_provider, mock_classify):
+        # Direct GET to stream_message (bypassing post_message entirely) -
+        # confirms the feature gate is re-checked there too, not just
+        # trusted from the URL.
+        self.premium.feature_flags = {"agent_mode": False}
+        self.premium.save(update_fields=["feature_flags"])
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="hi"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+        )
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, content="hi")
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            ),
+            {"agent_persona": "dev"},
+        )
+        b"".join(response.streaming_content)
+
+        system_prompt_used = mock_provider.stream_chat.call_args.kwargs["system_prompt"]
+        self.assertNotIn("DEV AGENT", system_prompt_used)
+
+    def test_agent_menu_hidden_without_the_plan_feature(self):
+        # Checks the gated markup itself (an actual onclick call), not the
+        # bare "portalSetAgentPersona" function name - that name is ALSO
+        # present, unconditionally, inside the always-rendered <script>
+        # block that just *defines* the function (see the same
+        # ResearchModeTests fix above for the identical false-fail).
+        self.premium.feature_flags = {"agent_mode": False}
+        self.premium.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id}))
+        self.assertNotContains(response, "portalSetAgentPersona(event, 'sales')")
+
+    def test_agent_menu_shown_with_the_plan_feature(self):
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id}))
+        self.assertContains(response, "portalSetAgentPersona(event, 'sales')")
+        self.assertContains(response, "Sales Agent")
+        self.assertContains(response, "Marketing Agent")
+        self.assertContains(response, "Dev Agent")
+
+
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class MediaGenerationTests(TestCase):
     """chat/media_generation.py + chat/views.py::generate_media - Grok-only

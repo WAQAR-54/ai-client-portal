@@ -85,6 +85,7 @@ def chat_home(request, conversation_id=None):
     if conversation_id:
         conversation = _owned_conversation_or_404(request, conversation_id)
 
+    from chat.prompts import AGENT_PERSONAS
     from governance.models import Plan
     from governance.plans import get_budget_automation_status, get_plan_status, get_request_count_status, has_feature
 
@@ -107,6 +108,8 @@ def chat_home(request, conversation_id=None):
         "can_select_model": has_feature(request.user, "model_selection"),
         "can_use_research": has_feature(request.user, "research"),
         "can_generate_media": has_feature(request.user, "media_generation"),
+        "can_use_agent_mode": has_feature(request.user, "agent_mode"),
+        "agent_personas": [(key, label) for key, (label, _instruction) in AGENT_PERSONAS.items()],
         "can_request_upgrade": bool(plan_status["plan"]),
         "upgrade_plan_choices": upgrade_plan_choices,
     }
@@ -408,6 +411,15 @@ def post_message(request, conversation_id):
     # that would normally set it wasn't shown.
     research = request.POST.get("research") == "on" and has_feature(request.user, "research")
 
+    # Same reasoning again - AGENT_PERSONAS.get() below only ever accepts
+    # one of the 3 known keys anyway, but the feature gate still has to be
+    # re-checked server-side rather than trusted from a hidden POST field.
+    from chat.prompts import AGENT_PERSONAS
+
+    agent_persona = request.POST.get("agent_persona", "").strip()
+    if agent_persona not in AGENT_PERSONAS or not has_feature(request.user, "agent_mode"):
+        agent_persona = ""
+
     # Lock the conversation row for the duration of the check+create so two
     # concurrent sends against the same conversation can't both pass the
     # session_limit check before either message is committed. (Postgres
@@ -454,6 +466,7 @@ def post_message(request, conversation_id):
             "user_message": user_message,
             "model_id": model_id,
             "research": research,
+            "agent_persona": agent_persona,
         },
     )
 
@@ -992,6 +1005,17 @@ def stream_message(request, conversation_id, message_id, token):
     requested_model_id = request.GET.get("model_id", "").strip()
     research = request.GET.get("research") == "1"
 
+    # Re-validated here too (not just trusted from post_message having
+    # already checked it) since this is reached by a direct GET, same
+    # reasoning as requested_model_id being re-checked against
+    # models_visible_to_user just below rather than trusting the caller.
+    from chat.prompts import AGENT_PERSONAS
+    from governance.plans import has_feature
+
+    agent_persona = request.GET.get("agent_persona", "").strip()
+    if agent_persona not in AGENT_PERSONAS or not has_feature(request.user, "agent_mode"):
+        agent_persona = ""
+
     def event_stream():
         # Every exit path below saves *something* to message.content and
         # then yields "done" — never a separate "error" event. An SSE event
@@ -1058,7 +1082,7 @@ def stream_message(request, conversation_id, message_id, token):
                 return
             candidates = anthropic_candidates
 
-        system_prompt = build_system_prompt(request.user)
+        system_prompt = build_system_prompt(request.user, agent_persona=agent_persona)
 
         from governance.plans import validate_context_tokens
 

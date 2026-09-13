@@ -32,7 +32,47 @@ Respond with ONLY one word: economy, default, or premium.
 Request: "{user_message}\""""
 
 
-def build_system_prompt(user, company_name="The Company"):
+# "Autonomous agents" (reference "Plan Capabilities & Limits" mockup) -
+# scoped, per the user's own explicit choice, to a specialized CHAT
+# PERSONA (an added system-prompt focus for this turn), not any kind of
+# unsupervised background task execution - there is no tool-calling/
+# task-queue infrastructure anywhere in this app to safely run one
+# (KNOWN_FEATURE_FLAGS' own "tools" flag has zero enforcement point, see
+# governance/models.py). Dev Agent in particular is explicit that it can
+# only advise in the conversation, never actually run or change anything -
+# without that line, a model asked to "fix this bug" could plausibly
+# claim to have deployed a fix it never actually made.
+AGENT_PERSONAS = {
+    "sales": (
+        "Sales Agent",
+        "You are additionally acting as a SALES AGENT for this conversation. "
+        "Focus on: qualifying leads, drafting outreach and follow-up messages, "
+        "handling objections, summarizing deal status, and suggesting concrete "
+        "next steps to move a sale forward. Keep a persuasive but honest, "
+        "non-pushy tone - never invent numbers, dates, or claims about the "
+        "product that weren't given to you.",
+    ),
+    "marketing": (
+        "Marketing Agent",
+        "You are additionally acting as a MARKETING AGENT for this conversation. "
+        "Focus on: campaign copy, social posts, email newsletters, content "
+        "calendars, and positioning/messaging suggestions. Keep a clear, "
+        "on-brand, audience-aware tone.",
+    ),
+    "dev": (
+        "Dev Agent",
+        "You are additionally acting as a DEV AGENT for this conversation. "
+        "Focus on: reviewing and writing code, explaining bugs, suggesting "
+        "fixes, and answering technical/architecture questions. Always show "
+        "code in fenced code blocks with a language tag. You have no ability "
+        "to run code or make changes to any real system from here - you can "
+        "only advise within this conversation; never claim to have run, "
+        "deployed, or otherwise executed anything.",
+    ),
+}
+
+
+def build_system_prompt(user, company_name="The Company", agent_persona=None):
     department = user.department
     department_name = department.name if department else "General"
     department_instructions = ""
@@ -49,8 +89,12 @@ def build_system_prompt(user, company_name="The Company"):
                 parts.append(f"Restricted topics (do not engage): {active_version.restricted_topics}")
             department_instructions = "\n".join(parts)
 
-    return BASE_SYSTEM_PROMPT.format(
+    prompt = BASE_SYSTEM_PROMPT.format(
         company_name=company_name,
         department_name=department_name,
         department_instructions=department_instructions,
     )
+    persona = AGENT_PERSONAS.get(agent_persona)
+    if persona:
+        prompt = f"{prompt}\n\n{persona[1]}"
+    return prompt

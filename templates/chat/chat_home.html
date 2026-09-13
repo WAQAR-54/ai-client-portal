@@ -528,6 +528,20 @@ function portalCloseUpgradeModal() {
                     </button>
                     <input type="hidden" name="research" id="research-input" value="">
                     {% endif %}
+                    {% if can_use_agent_mode %}
+                    <details class="export-menu">
+                        <summary class="attach-btn no-marker" id="agent-persona-summary" title="{% trans 'Act as a specialized agent for this conversation' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></svg>
+                        </summary>
+                        <div class="export-menu-panel">
+                            <a href="#" onclick="portalSetAgentPersona(event, '')">{% trans "None (default)" %}</a>
+                            {% for key, label in agent_personas %}
+                            <a href="#" onclick="portalSetAgentPersona(event, '{{ key }}')" id="agent-persona-option-{{ key }}">{{ label }}</a>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    <input type="hidden" name="agent_persona" id="agent-persona-input" value="">
+                    {% endif %}
                     {% if can_generate_media %}
                     <details class="export-menu">
                         <summary class="attach-btn no-marker" title="{% trans 'Generate an image or video with Grok, from the text in the composer' %}">
@@ -734,6 +748,21 @@ function portalToggleResearch(btn) {
     var on = input.value !== "on";
     input.value = on ? "on" : "";
     btn.classList.toggle("has-file", on);
+}
+
+// Agent persona (composer footer menu) - unlike Research/model selection,
+// deliberately STICKY across sends (not reset in portalResetComposerAttrs)
+// since picking "Sales Agent" reads as switching into a mode for this
+// conversation, not a one-off per-message toggle - stays active until the
+// user explicitly picks "None (default)" again.
+function portalSetAgentPersona(evt, persona) {
+    evt.preventDefault();
+    var input = document.getElementById("agent-persona-input");
+    var summary = document.getElementById("agent-persona-summary");
+    var menu = evt.target.closest("details");
+    if (input) input.value = persona;
+    if (summary) summary.classList.toggle("has-file", !!persona);
+    if (menu) menu.removeAttribute("open");
 }
 
 // Image/video generation (composer footer "Generate image/video" menu) -

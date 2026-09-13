@@ -45,6 +45,13 @@ KNOWN_FEATURE_FLAGS = [
     # defaults to 0, unlike this flag's own usual off-by-default, so both
     # layers start closed on a freshly created plan.
     ("media_generation", "Image & video generation (Grok only)"),
+    # Enforced in chat/views.py::post_message + stream_message, via
+    # chat/prompts.py::AGENT_PERSONAS. One flag covers all 3 personas
+    # (Sales/Marketing/Dev), matching the reference mockup's single
+    # "Autonomous agents" row - see AGENT_PERSONAS' own comment for why
+    # this is scoped to a system-prompt persona switch, not any kind of
+    # unsupervised task execution.
+    ("agent_mode", "Autonomous agents (Sales/Marketing/Dev personas)"),
 ]
 
 # ---------- Role-wide feature visibility ----------
