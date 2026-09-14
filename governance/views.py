@@ -1616,13 +1616,19 @@ class EmailLogListView(SuperAdminRequiredMixin, TemplateView):
 
         week_ago = timezone.now() - timezone.timedelta(days=7)
         recent = EmailLog.objects.filter(created_at__gte=week_ago)
-        sent_count = recent.count()
+        # Was recent.count() (every attempt, sent AND failed) mislabeled
+        # as "Sent" - an SMTP outage would have inflated this number
+        # instead of showing up as failures, and open_rate was dividing
+        # by that same inflated total instead of actual successful sends.
+        sent_count = recent.filter(status=EmailLog.Status.SENT).count()
+        failed_count = recent.filter(status=EmailLog.Status.FAILED).count()
         opened_count = recent.filter(opened_at__isnull=False).count()
         open_rate = round(opened_count / sent_count * 100) if sent_count else 0
         return super().get_context_data(**kwargs) | {
             "email_settings": EmailSettings.load(),
             "logs": EmailLog.objects.all()[:100],
             "sent_count": sent_count,
+            "failed_count": failed_count,
             "opened_count": opened_count,
             "open_rate": open_rate,
         }

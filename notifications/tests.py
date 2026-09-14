@@ -10,7 +10,7 @@ from chat.views import _notify_if_usage_warning
 from governance.models import Plan, UserPlanAssignment
 from governance.plans import assign_plan
 from notifications.models import EmailLog, EmailSettings, Notification, NotificationPreference, NotificationType
-from notifications.notify import notify, recently_notified
+from notifications.notify import notification_action_url, notify, recently_notified
 from notifications.tasks import sweep_expiring_demo_plans
 
 
@@ -329,6 +329,130 @@ class BellDropdownAndPreferencesTests(TestCase):
         self.assertEqual(response.status_code, 302)
         preference = NotificationPreference.objects.get(user=self.user)
         self.assertFalse(preference.email_usage_warning)
+
+    def test_notification_with_a_destination_renders_as_a_real_link(self):
+        """Reported directly - clicking a notification used to only ever
+        mark it read, never take you anywhere. PLAN_CHANGE has a clear
+        destination (My Plans)."""
+        notify(self.user, NotificationType.PLAN_CHANGE, title="Plan changed", metadata={"plan_name": "Advanced"})
+        response = self.client.get(reverse("notifications:bell_dropdown"))
+        self.assertContains(response, f'href="{reverse("billing:my_plans")}"')
+
+    def test_notification_with_no_destination_still_shows_as_mark_read_only(self):
+        notify(self.user, NotificationType.ADMIN_CHANGE, title="Something changed")
+        response = self.client.get(reverse("notifications:bell_dropdown"))
+        self.assertContains(response, "Something changed")
+        self.assertContains(response, "<form")
+
+    def test_mark_read_via_plain_post_redirects_to_next(self):
+        """Not every mark-read comes from the htmx-driven bell - the full
+        history page (notifications:list) posts plainly and expects a
+        redirect back, not a bell-dropdown partial."""
+        notification = notify(self.user, NotificationType.USAGE_WARNING, title="One")
+        response = self.client.post(
+            reverse("notifications:mark_read", kwargs={"notification_id": notification.id}),
+            {"next": reverse("notifications:list")},
+        )
+        self.assertRedirects(response, reverse("notifications:list"))
+        notification.refresh_from_db()
+        self.assertTrue(notification.is_read)
+
+    def test_mark_read_via_htmx_still_returns_the_bell_partial(self):
+        notification = notify(self.user, NotificationType.USAGE_WARNING, title="One")
+        response = self.client.post(
+            reverse("notifications:mark_read", kwargs={"notification_id": notification.id}),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "notif-bell")
+
+
+class NotificationActionUrlTests(TestCase):
+    """notification_action_url() - one deliberate destination per
+    NotificationType, matching what each type's own body text already
+    tells the recipient to go look at (see the function's own docstring
+    for why a plain function, not a Notification model property)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="linkcheck@example.com", password="pw12345!")
+
+    def _make(self, notification_type, metadata=None):
+        return Notification.objects.create(
+            user=self.user, notification_type=notification_type, title="x", metadata=metadata or {}
+        )
+
+    def test_plan_change_links_to_my_plans(self):
+        self.assertEqual(notification_action_url(self._make(NotificationType.PLAN_CHANGE)), reverse("billing:my_plans"))
+
+    def test_trial_expiring_and_expired_link_to_my_plans(self):
+        self.assertEqual(
+            notification_action_url(self._make(NotificationType.TRIAL_EXPIRING)), reverse("billing:my_plans")
+        )
+        self.assertEqual(
+            notification_action_url(self._make(NotificationType.TRIAL_EXPIRED)), reverse("billing:my_plans")
+        )
+
+    def test_invoice_payment_submitted_links_to_the_specific_invoice(self):
+        n = self._make(NotificationType.INVOICE_PAYMENT_SUBMITTED, metadata={"invoice_id": 42})
+        self.assertEqual(notification_action_url(n), reverse("billing:invoice_detail", kwargs={"invoice_id": 42}))
+
+    def test_invoice_payment_submitted_without_an_id_falls_back_to_the_list(self):
+        n = self._make(NotificationType.INVOICE_PAYMENT_SUBMITTED, metadata={})
+        self.assertEqual(notification_action_url(n), reverse("billing:invoices"))
+
+    def test_admin_change_links_to_profile(self):
+        self.assertEqual(
+            notification_action_url(self._make(NotificationType.ADMIN_CHANGE)), reverse("accounts:profile")
+        )
+
+    def test_account_created_links_to_dashboard(self):
+        self.assertEqual(
+            notification_action_url(self._make(NotificationType.ACCOUNT_CREATED)), reverse("accounts:dashboard")
+        )
+
+    def test_model_sync_available_links_to_providers(self):
+        self.assertEqual(
+            notification_action_url(self._make(NotificationType.MODEL_SYNC_AVAILABLE)), reverse("providers:list")
+        )
+
+    def test_usage_warning_links_to_chat(self):
+        self.assertEqual(notification_action_url(self._make(NotificationType.USAGE_WARNING)), reverse("chat:chat_home"))
+
+
+class NotificationListPageTests(TestCase):
+    """The full-history page (notifications:list) - the bell dropdown
+    only ever shows the 10 most recent, so anyone with more piled up had
+    no way to ever see or act on the rest."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="history@example.com", password="pw12345!")
+        self.client.login(email="history@example.com", password="pw12345!")
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("notifications:list"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_shows_more_than_the_bells_10_most_recent(self):
+        for i in range(15):
+            notify(self.user, NotificationType.USAGE_WARNING, title=f"Notice {i}")
+        response = self.client.get(reverse("notifications:list"))
+        self.assertEqual(response.context["page_obj"].paginator.count, 15)
+
+    def test_paginates_at_25_per_page(self):
+        for i in range(30):
+            notify(self.user, NotificationType.USAGE_WARNING, title=f"Notice {i}")
+        response = self.client.get(reverse("notifications:list"))
+        self.assertEqual(len(response.context["page_obj"].object_list), 25)
+        self.assertTrue(response.context["page_obj"].has_next())
+
+    def test_only_shows_the_logged_in_users_own_notifications(self):
+        other = User.objects.create_user(email="someone-else@example.com", password="pw12345!")
+        notify(other, NotificationType.USAGE_WARNING, title="Not yours")
+        notify(self.user, NotificationType.USAGE_WARNING, title="Yours")
+        response = self.client.get(reverse("notifications:list"))
+        self.assertContains(response, "Yours")
+        self.assertNotContains(response, "Not yours")
 
 
 class EmailSettingsModelTests(TestCase):

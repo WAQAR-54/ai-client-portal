@@ -16,6 +16,22 @@
         </div>
         <div class="notif-list">
             {% for n in notifications %}
+            {% if n.action_url %}
+            {% comment %}
+            Navigates for real (a plain <a>, not intercepted) - marking
+            it read is a fire-and-forget POST alongside that, not
+            something the click has to wait on (see portalMarkNotificationRead
+            in ui-kit.js: fetch(..., {keepalive: true}) so it still
+            completes even as the browser leaves for action_url).
+            {% endcomment %}
+            <a href="{{ n.action_url }}" class="notif-item{% if not n.is_read %} notif-item-unread{% endif %}"
+               data-mark-read-url="{% url 'notifications:mark_read' notification_id=n.id %}"
+               onclick="portalMarkNotificationRead(this)">
+                <span class="notif-item-title">{{ n.title }}</span>
+                {% if n.body %}<span class="notif-item-body">{{ n.body|truncatechars:90 }}</span>{% endif %}
+                <span class="notif-item-time mono">{{ n.created_at|date:"M d, H:i" }}</span>
+            </a>
+            {% else %}
             <form method="post" action="{% url 'notifications:mark_read' notification_id=n.id %}" hx-post="{% url 'notifications:mark_read' notification_id=n.id %}" hx-target="closest .notif-bell" hx-swap="outerHTML">
                 {% csrf_token %}
                 <button type="submit" class="notif-item{% if not n.is_read %} notif-item-unread{% endif %}">
@@ -24,9 +40,11 @@
                     <span class="notif-item-time mono">{{ n.created_at|date:"M d, H:i" }}</span>
                 </button>
             </form>
+            {% endif %}
             {% empty %}
             <p class="notif-empty">{% trans "No notifications yet." %}</p>
             {% endfor %}
         </div>
+        <a href="{% url 'notifications:list' %}" class="notif-dropdown-footer">{% trans "View all notifications" %}</a>
     </div>
 </details>

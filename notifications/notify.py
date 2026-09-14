@@ -36,3 +36,39 @@ def recently_notified(user, notification_type, since):
         notification_type=notification_type,
         created_at__gte=since,
     ).exists()
+
+
+def notification_action_url(notification):
+    """Where clicking this notification should go, or None if there's
+    nowhere meaningful to send it (the bell dropdown then keeps its
+    plain mark-read-only behavior for that one). A plain function, not a
+    Notification model method, so it can freely reverse() into billing/
+    governance/providers URLs without pulling those apps into
+    notifications' own model-import graph. One deliberate destination
+    per NotificationType, matching what each type's own body text
+    already tells the recipient to go look at."""
+    from django.urls import reverse
+
+    from notifications.models import NotificationType
+
+    meta = notification.metadata or {}
+    if notification.notification_type in (NotificationType.PLAN_CHANGE,):
+        return reverse("billing:my_plans")
+    if notification.notification_type in (NotificationType.TRIAL_EXPIRING, NotificationType.TRIAL_EXPIRED):
+        return reverse("billing:my_plans")
+    if notification.notification_type == NotificationType.INVOICE_PAYMENT_SUBMITTED:
+        invoice_id = meta.get("invoice_id")
+        return (
+            reverse("billing:invoice_detail", kwargs={"invoice_id": invoice_id})
+            if invoice_id
+            else reverse("billing:invoices")
+        )
+    if notification.notification_type == NotificationType.ADMIN_CHANGE:
+        return reverse("accounts:profile")
+    if notification.notification_type == NotificationType.ACCOUNT_CREATED:
+        return reverse("accounts:dashboard")
+    if notification.notification_type == NotificationType.MODEL_SYNC_AVAILABLE:
+        return reverse("providers:list")
+    if notification.notification_type == NotificationType.USAGE_WARNING:
+        return reverse("chat:chat_home")
+    return None

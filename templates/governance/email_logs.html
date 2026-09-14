@@ -27,6 +27,10 @@
             <div class="email-stat-value">{{ open_rate }}%</div>
             <div class="email-stat-label">{% trans "Open rate" %}</div>
         </div>
+        <div class="email-stat">
+            <div class="email-stat-value{% if failed_count %} danger{% endif %}">{{ failed_count }}</div>
+            <div class="email-stat-label">{% trans "Failed (7 days)" %}</div>
+        </div>
     </div>
 
     <div class="log-filter-row">

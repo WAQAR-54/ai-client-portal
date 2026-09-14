@@ -266,3 +266,50 @@ document.addEventListener("htmx:afterSwap", function(evt) {
     var target = evt.detail && evt.detail.target;
     if (target) portalInitSmoothDetails(target);
 });
+
+/* Notification bell (<details class="notif-bell">, notifications/
+   _bell_dropdown.html) - every mark-read/mark-all-read click AND the
+   45-second auto-poll (base.html's #notif-bell-wrap, hx-trigger="load,
+   every 45s") re-render this whole element via htmx, which drops its
+   open/closed state each time: clicking one notification to mark it
+   read used to close the entire dropdown immediately, and an open
+   dropdown would silently collapse on its own every 45 seconds - you
+   could never work through more than one notification per bell-click.
+   Tracked via the native `toggle` event (delegated with capture, since
+   the element itself gets replaced and a plain non-capturing listener
+   bound to the old node would be gone) rather than reading the swapped-
+   in target directly, which htmx's outerHTML/innerHTML swaps don't
+   expose consistently. */
+var portalNotifBellWasOpen = false;
+document.addEventListener("toggle", function(evt) {
+    if (evt.target.classList && evt.target.classList.contains("notif-bell")) {
+        portalNotifBellWasOpen = evt.target.open;
+    }
+}, true);
+document.body.addEventListener("htmx:afterSwap", function(evt) {
+    var target = evt.detail && evt.detail.target;
+    if (!target) return;
+    var touchesBell = target.id === "notif-bell-wrap" || (target.classList && target.classList.contains("notif-bell"));
+    if (!touchesBell || !portalNotifBellWasOpen) return;
+    document.querySelectorAll(".notif-bell").forEach(function(bell) { bell.open = true; });
+});
+
+/* A notification with somewhere real to go (see notifications.notify.
+   notification_action_url) is a plain <a href> - lets it navigate
+   normally instead of intercepting the click, while still marking it
+   read: a fire-and-forget POST with keepalive:true, which Chrome/
+   Firefox/Safari all keep alive past the page unload that's about to
+   happen, unlike a plain fetch (which the browser would otherwise
+   abort mid-flight the moment navigation starts). */
+function portalMarkNotificationRead(anchor) {
+    var url = anchor.getAttribute("data-mark-read-url");
+    // Any csrf token on the page works - Django's CSRF check only cares
+    // that the value matches the session's, not which form it came from.
+    var csrfInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    fetch(url, {
+        method: "POST",
+        headers: csrfInput ? {"X-CSRFToken": csrfInput.value} : {},
+        credentials: "same-origin",
+        keepalive: true,
+    });
+}

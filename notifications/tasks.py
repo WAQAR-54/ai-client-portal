@@ -26,6 +26,15 @@ _EMAIL_TYPE_STYLE = {
     "plan_change": ("#1e9a6c", "#e3f5ec", "notifications/_email_content_plan_change.html"),
     "model_sync_available": ("#00aef0", "#e3f6fd", "notifications/_email_content_model_sync.html"),
     "account_created": ("#00aef0", "#e3f6fd", "notifications/_email_content_account_created.html"),
+    # These two were real, actively-triggered types (governance/views.py's
+    # _notify_admin_change, billing/views.py's payment-proof notify()
+    # call) that had simply never been added here - silently falling
+    # back to _DEFAULT_EMAIL_STYLE, generic content but not visually
+    # wrong. Neither carries any metadata worth a dedicated content
+    # template (see their own notify() call sites), so they just get
+    # their own accent colors on the same default layout.
+    "admin_change": ("#5b5fc7", "#eceafd", "notifications/_email_content_default.html"),
+    "invoice_payment_submitted": ("#0f9b8e", "#e1f5f3", "notifications/_email_content_default.html"),
 }
 _DEFAULT_EMAIL_STYLE = ("#00aef0", "#e3f6fd", "notifications/_email_content_default.html")
 

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Notifications" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.5rem;">
+        <h1 style="margin-bottom:0;">{% trans "Notifications" %}</h1>
+        <form method="post" action="{% url 'notifications:mark_all_read' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'notifications:list' %}">
+            <button type="submit" class="btn-small btn-ghost">{% trans "Mark all read" %}</button>
+        </form>
+    </div>
+    <p class="text-muted" style="margin-top:-0.4rem;">{% trans "Your full notification history - the bell only ever shows the 10 most recent." %}</p>
+
+    <div class="notif-history-list" style="display:flex; flex-direction:column; margin-top:0.75rem;">
+        {% for n in page_obj %}
+        <div class="notif-history-row{% if not n.is_read %} notif-history-row-unread{% endif %}">
+            {% if n.action_url %}
+            <a href="{{ n.action_url }}" class="notif-history-link" data-mark-read-url="{% url 'notifications:mark_read' notification_id=n.id %}" onclick="portalMarkNotificationRead(this)">
+                <span class="notif-item-title">{{ n.title }}</span>
+                {% if n.body %}<span class="notif-item-body">{{ n.body }}</span>{% endif %}
+            </a>
+            {% else %}
+            <div class="notif-history-link">
+                <span class="notif-item-title">{{ n.title }}</span>
+                {% if n.body %}<span class="notif-item-body">{{ n.body }}</span>{% endif %}
+            </div>
+            {% endif %}
+            <div style="display:flex; align-items:center; gap:0.6rem; flex-shrink:0;">
+                <span class="notif-item-time mono">{{ n.created_at|date:"Y-m-d H:i" }}</span>
+                {% if not n.is_read %}
+                <form method="post" action="{% url 'notifications:mark_read' notification_id=n.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'notifications:list' %}">
+                    <button type="submit" class="btn-small btn-ghost">{% trans "Mark read" %}</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="notif-empty">{% trans "No notifications yet." %}</p>
+        {% endfor %}
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <div class="pagination-bar">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← {% trans "Prev" %}</a>{% endif %}
+        <span class="text-faint">{% blocktrans with number=page_obj.number pages=page_obj.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktrans %}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">{% trans "Next" %} →</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

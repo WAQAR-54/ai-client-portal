@@ -1446,7 +1446,20 @@ class EmailLogsAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "a@example.com")
         self.assertContains(response, "b@example.com")
+        self.assertEqual(response.context["sent_count"], 1)
+        self.assertEqual(response.context["failed_count"], 1)
+
+    def test_sent_count_excludes_failed_attempts(self):
+        """Was recent.count() (every attempt, sent AND failed) mislabeled
+        "Sent" - a failure spike would have inflated it instead of
+        showing up as a failure. sent_count/failed_count must be
+        disjoint."""
+        self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent")
+        self.EmailLog.objects.create(recipient="b@example.com", subject="Hi2", status="sent")
+        self.EmailLog.objects.create(recipient="c@example.com", subject="Hi3", status="failed")
+        response = self.client.get(reverse("governance:email_logs"))
         self.assertEqual(response.context["sent_count"], 2)
+        self.assertEqual(response.context["failed_count"], 1)
 
     def test_open_rate_calculation(self):
         self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent", opened_at=timezone.now())
