@@ -44,21 +44,31 @@
     {% if plan %}
     <div class="plan-manage-detail">
         <div class="card">
-            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.75rem;">
                 <h2 style="margin:0;">{{ plan.name }}</h2>
                 {% if plan.is_default %}<span class="badge">{% trans "Default" %}</span>{% endif %}
                 {% if plan.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% else %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
                 {% if plan.is_most_popular %}<span class="badge badge-warn">{% trans "Most popular" %}</span>{% endif %}
             </div>
+            <div class="log-filter-row" id="planManageTabs">
+                <div class="log-filter-chip active" data-plan-tab="basics" onclick="portalSetPlanManageTab('basics', this)">{% trans "Basics" %}</div>
+                <div class="log-filter-chip" data-plan-tab="pricing" onclick="portalSetPlanManageTab('pricing', this)">{% trans "Regional Pricing" %}</div>
+                <div class="log-filter-chip" data-plan-tab="limits" onclick="portalSetPlanManageTab('limits', this)">{% trans "Feature Limits" %}</div>
+                <div class="log-filter-chip" data-plan-tab="budget" onclick="portalSetPlanManageTab('budget', this)">{% trans "Budget Automation" %}</div>
+                <div class="log-filter-chip" data-plan-tab="access" onclick="portalSetPlanManageTab('access', this)">{% trans "Access & Availability" %}</div>
+            </div>
+        </div>
+
+        <div data-plan-tab-panel="basics" class="card">
             {% include "governance/_plan_form_fields.html" %}
         </div>
 
-        <div class="card">
+        <div data-plan-tab-panel="pricing" class="card" hidden>
             <div class="form-section-label" style="margin-top:0;">{% trans "Regional Pricing" %}</div>
             <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">{% trans "Exact price per region - no auto currency conversion." %}</p>
             <form method="post" action="{% url 'billing:update_plan_regional_pricing' plan_id=plan.id %}">
                 {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}#pricing">
                 {% for row in region_rows %}
                 <div class="plan-manage-row">
                     <span class="plan-manage-row-label">{{ row.flag }} {{ row.label }}</span>
@@ -87,12 +97,12 @@
             </form>
         </div>
 
-        <div class="card">
+        <div data-plan-tab-panel="limits" class="card" hidden>
             <div class="form-section-label" style="margin-top:0;">{% trans "Feature Access & Limits" %}</div>
             <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">{% trans "Turn a capability on/off and cap how much of it this plan includes. Blank a numeric field for no limit." %}</p>
             <form method="post" action="{% url 'governance:update_capability_limits' plan_id=plan.id %}">
                 {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}#limits">
                 {% for row in toggle_rows %}
                 <div class="plan-manage-row">
                     <span class="plan-manage-row-label">
@@ -124,7 +134,7 @@
             </form>
         </div>
 
-        <div class="card">
+        <div data-plan-tab-panel="limits" class="card" hidden>
             <div class="form-section-label" style="margin-top:0;">{% trans "Token Ceiling & Margin Snapshot" %}</div>
             <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">
                 {% trans "Total token allowance is set above, alongside the other numeric caps. Estimated cost uses this plan's allowed models' real per-token rates; margin compares that against the Rest-of-world (USD) price - no currency conversion." %}
@@ -149,7 +159,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div data-plan-tab-panel="budget" class="card" hidden>
             <div class="form-section-label" style="margin-top:0;">{% trans "Budget Automation" %}</div>
             <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">
                 {% trans "Once month-to-date spend crosses this threshold, new replies are forced onto the fallback model instead of blocking the user outright." %}
@@ -157,7 +167,7 @@
             {% if plan.monthly_budget_cap %}
             <form method="post" action="{% url 'governance:update_budget_automation' plan_id=plan.id %}">
                 {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}#budget">
                 <div class="toggle-row-group toggle-row-wrap">
                     <label class="toggle-switch toggle-row">
                         <input type="checkbox" name="auto_downgrade_enabled" {% if plan.auto_downgrade_enabled %}checked{% endif %}>
@@ -192,12 +202,12 @@
             {% endif %}
         </div>
 
-        <div class="card">
+        <div data-plan-tab-panel="access" class="card" hidden>
             <div class="form-section-label" style="margin-top:0;">{% trans "Access & Availability" %}</div>
             <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">{% trans "Where and how this plan can be seen or purchased." %}</p>
             <form method="post" action="{% url 'governance:update_plan_access' plan_id=plan.id %}">
                 {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}#access">
                 <div class="plan-manage-access-row">
                     <div>
                         <div style="font-weight:600; font-size:0.88rem;">{% trans "Active" %}</div>
@@ -260,4 +270,23 @@
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_head %}
+<script>
+function portalSetPlanManageTab(tabKey, btn) {
+    document.querySelectorAll('#planManageTabs .log-filter-chip').forEach(function(c) { c.classList.remove('active'); });
+    btn.classList.add('active');
+    document.querySelectorAll('[data-plan-tab-panel]').forEach(function(panel) {
+        panel.hidden = panel.dataset.planTabPanel !== tabKey;
+    });
+}
+// Every section's form redirects back here with #<tab> in the URL (see
+// each form's hidden "next" field) so saving a non-Basics tab lands back
+// on that SAME tab instead of resetting to Basics.
+document.addEventListener('DOMContentLoaded', function() {
+    var tabKey = (window.location.hash || '').replace('#', '');
+    var btn = document.querySelector('#planManageTabs .log-filter-chip[data-plan-tab="' + tabKey + '"]');
+    if (btn) portalSetPlanManageTab(tabKey, btn);
+});
+</script>
 {% endblock %}

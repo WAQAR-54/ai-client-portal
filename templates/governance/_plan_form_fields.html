@@ -4,7 +4,7 @@
       hx-post="{% if plan %}{% url 'governance:plan_edit' plan_id=plan.id %}{% else %}{% url 'governance:plan_new' %}{% endif %}"
       hx-swap="none">
     {% csrf_token %}
-    {% if plan %}<input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">{% endif %}
+    {% if plan %}<input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}#basics">{% endif %}
     {# is_active/self_checkout_enabled are edited from this plan's own Access & Availability section (update_plan_access) now, not here - kept as hidden passthroughs so saving Basics never silently resets them. New plans default both to on, matching the prior visible-checkbox defaults. #}
     <input type="hidden" name="is_active" value="{% if not plan or plan.is_active %}on{% else %}{% endif %}">
     <input type="hidden" name="self_checkout_enabled" value="{% if not plan or plan.self_checkout_enabled %}on{% else %}{% endif %}">
