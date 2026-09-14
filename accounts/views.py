@@ -366,12 +366,35 @@ def signup_view(request):
             if active_language and active_language != user.preferred_language:
                 user.preferred_language = active_language
                 user.save(update_fields=["preferred_language"])
+            notify_self_signup_welcome(user)
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
             return redirect("accounts:dashboard")
     else:
         form = SignupForm()
 
     return render(request, "accounts/signup.html", {"form": form} | google_context)
+
+
+def notify_self_signup_welcome(user):
+    """Welcome notice for someone who created their OWN account (password
+    form here, or a first-time Google sign-in - see google_auth.py::
+    find_or_create_user_from_google) - the self-signup counterpart to
+    governance/views.py::_notify_account_created (admin-created accounts
+    only; never both fire for the same user, since each call site only
+    runs on its own creation path). Points at where to go next rather than
+    login instructions, since self-signup already logs them in
+    immediately - unlike an admin-created account, there's no separate
+    password to relay."""
+    from notifications.models import NotificationType
+    from notifications.notify import notify
+
+    with translation.override(user.preferred_language):
+        title = translation.gettext("Welcome to AI Client Portal")
+        body = translation.gettext(
+            "Your account is ready. Head to Chat to start a conversation, or check My Plans to see what your "
+            "plan includes."
+        )
+    notify(user, NotificationType.ACCOUNT_CREATED, title=title, body=body)
 
 
 def _send_password_reset_email(request, user):
@@ -468,7 +491,55 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["user"] = self.request.user
+        context["admin_setup_checklist"] = self._admin_setup_checklist(self.request.user)
         return context
+
+    @staticmethod
+    def _admin_setup_checklist(user):
+        """A brand-new department Admin otherwise has to discover Users/
+        Billing Profile/System Prompt on their own by browsing the nav
+        (Gap 15 - onboarding) - this surfaces the 3 setup steps directly
+        on first login. Returns None (renders nothing) once every item is
+        done, or for anyone who isn't a department Admin at all - it's a
+        one-time nudge, not a permanent dashboard fixture."""
+        if user.role != User.Role.ADMIN or not user.department_id:
+            return None
+
+        from governance.features import user_has_feature
+
+        department = user.department
+        items = [
+            {
+                "label": translation.gettext("Add your team"),
+                "url": reverse("governance:users"),
+                "done": department.users.exclude(pk=user.pk).exists(),
+            },
+        ]
+        # Billing Profile/System Prompt are both gated behind the same
+        # role-wide "department_settings" feature (see governance's
+        # SystemPromptView/billing's DepartmentBillingProfileView) - if a
+        # SuperAdmin has hidden that from Admins, linking to it here would
+        # just 403. "Add your team" alone still stands on its own.
+        if user_has_feature(user, "department_settings"):
+            from billing.models import DepartmentBillingProfile
+            from governance.models import SystemPromptVersion
+
+            items += [
+                {
+                    "label": translation.gettext("Set up your billing profile"),
+                    "url": reverse("billing:department_billing_profile", kwargs={"department_id": department.id}),
+                    "done": DepartmentBillingProfile.objects.filter(department=department).exists(),
+                },
+                {
+                    "label": translation.gettext("Customize your system prompt"),
+                    "url": reverse("governance:system_prompt", kwargs={"department_id": department.id}),
+                    "done": SystemPromptVersion.objects.filter(department=department, is_active=True).exists(),
+                },
+            ]
+
+        if all(item["done"] for item in items):
+            return None
+        return items
 
 
 class AdminPanelView(AdminRequiredMixin, RedirectView):

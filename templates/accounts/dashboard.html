@@ -11,4 +11,24 @@
     </p>
     <p class="mt-4"><a href="{% url 'chat:chat_home' %}" class="btn">{% trans "Open Chat" %} →</a></p>
 </div>
+
+{% if admin_setup_checklist %}
+<div class="card mt-4">
+    <h2 style="margin-bottom:0.25rem;">{% trans "Finish setting up your department" %}</h2>
+    <p class="text-muted" style="margin-top:0;">{% trans "A few quick steps — this disappears once they're all done." %}</p>
+    <ul style="list-style:none; padding:0; margin:0.75rem 0 0; display:flex; flex-direction:column; gap:0.5rem;">
+        {% for item in admin_setup_checklist %}
+        <li style="display:flex; align-items:center; gap:0.6rem;">
+            {% if item.done %}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-success); flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-faint" style="text-decoration:line-through;">{{ item.label }}</span>
+            {% else %}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-text-faint); flex-shrink:0;"><circle cx="12" cy="12" r="9"/></svg>
+            <a href="{{ item.url }}">{{ item.label }}</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 {% endblock %}

@@ -72,6 +72,7 @@ def find_or_create_user_from_google(payload):
     user = User.objects.filter(google_sub=google_sub).first()
     if user is None:
         user = User.objects.filter(email__iexact=email).first()
+    is_new = user is None
     if user is None:
         user = User(email=email, role=User.Role.USER)
         user.set_unusable_password()
@@ -86,4 +87,12 @@ def find_or_create_user_from_google(payload):
     user.google_picture_url = payload.get("picture", "") or ""
     user.google_linked_at = timezone.now()
     user.save()
+    if is_new:
+        # Same self-signup welcome as the password form - a first-time
+        # Google sign-in is just as much "someone created their own
+        # account" as filling in SignupForm (see accounts/views.py::
+        # notify_self_signup_welcome).
+        from accounts.views import notify_self_signup_welcome
+
+        notify_self_signup_welcome(user)
     return user

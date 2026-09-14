@@ -238,6 +238,26 @@ class SignupTests(TestCase):
         response = self.client.get(reverse("accounts:signup"))
         self.assertRedirects(response, reverse("accounts:dashboard"))
 
+    def test_signup_sends_a_welcome_notification(self):
+        """Gap 15 (onboarding) - a self-signed-up user previously got no
+        welcome email at all, unlike an admin-created account (see
+        governance/views.py::_notify_account_created). Reuses the same
+        NotificationType.ACCOUNT_CREATED (both mean "your account is
+        ready"), just with self-signup-appropriate copy."""
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "newperson@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+        )
+        user = User.objects.get(email="newperson@example.com")
+        notification = Notification.objects.get(user=user, notification_type=NotificationType.ACCOUNT_CREATED)
+        self.assertIn("Welcome", notification.title)
+
 
 class SignupRateLimitTests(TestCase):
     """django-axes only ever tracks LOGIN failures - self-service signup
@@ -797,6 +817,22 @@ class GoogleSignInTests(TestCase):
         self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
 
     @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_first_sign_in_sends_a_welcome_notification(self):
+        """Gap 15 (onboarding) - a first-time Google sign-in creates an
+        account exactly as much as the password form does, so it gets the
+        same self-signup welcome notice (accounts/views.py::
+        notify_self_signup_welcome)."""
+        from notifications.models import Notification, NotificationType
+
+        self._enable()
+        with patch("accounts.views.verify_google_credential", return_value=self._payload()):
+            self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        user = User.objects.get(email="newgoogle@example.com")
+        self.assertTrue(
+            Notification.objects.filter(user=user, notification_type=NotificationType.ACCOUNT_CREATED).exists()
+        )
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
     def test_links_an_existing_password_account_by_email_instead_of_duplicating(self):
         self._enable()
         existing = User.objects.create_user(email="linkme@example.com", password="pw12345!")
@@ -810,6 +846,21 @@ class GoogleSignInTests(TestCase):
         self.assertEqual(User.objects.filter(email="linkme@example.com").count(), 1)
         # Linking must never touch their existing password.
         self.assertTrue(existing.has_usable_password())
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    def test_linking_an_existing_account_does_not_resend_the_welcome_notification(self):
+        from notifications.models import Notification, NotificationType
+
+        self._enable()
+        existing = User.objects.create_user(email="linkme2@example.com", password="pw12345!")
+        with patch(
+            "accounts.views.verify_google_credential",
+            return_value=self._payload(email="linkme2@example.com", sub="sub-3"),
+        ):
+            self.client.post(reverse("accounts:google_signin"), {"credential": "tok"})
+        self.assertFalse(
+            Notification.objects.filter(user=existing, notification_type=NotificationType.ACCOUNT_CREATED).exists()
+        )
 
     @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
     def test_second_sign_in_reuses_the_same_user_by_google_sub(self):
@@ -1001,6 +1052,61 @@ class DocsServingTests(TestCase):
     def test_nonexistent_doc_404s_rather_than_crashing(self):
         response = self.client.get("/docs/guides/does-not-exist.html")
         self.assertEqual(response.status_code, 404)
+
+
+class DashboardAdminSetupChecklistTests(TestCase):
+    """DashboardView._admin_setup_checklist (Gap 15 - onboarding): a
+    brand-new department Admin otherwise has to discover Users/Billing
+    Profile/System Prompt on their own by browsing the nav - this
+    surfaces the 3 setup steps directly, and disappears once done."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Engineering")
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, department=self.department
+        )
+        self.client.login(email="admin@example.com", password="pw12345!")
+
+    def test_shows_all_three_steps_for_a_fresh_department(self):
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Add your team")
+        self.assertContains(response, "Set up your billing profile")
+        self.assertContains(response, "Customize your system prompt")
+
+    def test_disappears_once_every_step_is_done(self):
+        from billing.models import DepartmentBillingProfile
+        from governance.models import SystemPromptVersion
+
+        User.objects.create_user(email="member@example.com", password="pw12345!", department=self.department)
+        DepartmentBillingProfile.objects.create(department=self.department, company_name="Acme")
+        SystemPromptVersion.objects.create(department=self.department, content="Be helpful.", is_active=True)
+
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertNotContains(response, "Finish setting up your department")
+
+    def test_hidden_for_an_admin_with_no_department(self):
+        self.admin.department = None
+        self.admin.save(update_fields=["department"])
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertNotContains(response, "Finish setting up your department")
+
+    def test_hidden_for_a_plain_user(self):
+        User.objects.create_user(
+            email="plain@example.com", password="pw12345!", role=User.Role.USER, department=self.department
+        )
+        self.client.login(email="plain@example.com", password="pw12345!")
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertNotContains(response, "Finish setting up your department")
+
+    def test_billing_and_system_prompt_steps_hidden_when_department_settings_feature_is_off(self):
+        from governance.models import RoleFeatureToggle
+
+        RoleFeatureToggle.objects.update_or_create(
+            role=User.Role.ADMIN, feature_key="department_settings", defaults={"is_enabled": False}
+        )
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Add your team")
+        self.assertNotContains(response, "Set up your billing profile")
 
 
 class TemplateHygieneTests(TestCase):
