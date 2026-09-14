@@ -26,6 +26,28 @@ def _quantize(amount):
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _plan_line_item_description(plan):
+    """ "Advanced Plan — Research, Document generation, ..." - reported
+    directly: a department-less invoice's one line item used to read
+    "Advanced — someone@example.com", the recipient's own email
+    standing in as if it were the item description (confusing, and
+    redundant with the Bill To block, which already has that address).
+    Reuses governance.plans.plan_capability_summary - the exact same
+    capability list already shown on the Plans pages - so this always
+    reflects what the plan actually includes, rather than only working
+    when a SuperAdmin has separately filled in Plan.description (most
+    plans never have). Trims each label's parenthetical detail (e.g.
+    "Document generation (Word/Excel/PowerPoint/PDF)" -> "Document
+    generation") - a plain feature name reads better in a one-line
+    invoice item than the fuller Plans-page wording."""
+    from governance.plans import plan_capability_summary
+
+    feature_names = [row["label"].split(" (")[0] for row in plan_capability_summary(plan) if row["included"]]
+    if feature_names:
+        return f"{plan.name} Plan — {', '.join(feature_names)}"
+    return f"{plan.name} Plan"
+
+
 def generate_invoice_for_department(
     department, recipient_user=None, *, plan=None, seat_count=None, region_code=None, due_in_days=DEFAULT_DUE_IN_DAYS
 ):
@@ -192,7 +214,7 @@ def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=N
         raise InvoiceGenerationError(f"{resolved_plan.name} has no price set for {resolved_region_code} yet.")
 
     subtotal = regional_price.price
-    line_items = [{"description": f"{resolved_plan.name} — {user.email}", "amount": str(regional_price.price)}]
+    line_items = [{"description": _plan_line_item_description(resolved_plan), "amount": str(regional_price.price)}]
     # A department-less invoice always bills exactly one person - unlike
     # generate_invoice_for_department's actual_seats, there's no team to
     # count here, so this is never conditional on plan.seats_included.

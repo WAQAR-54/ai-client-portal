@@ -558,6 +558,23 @@ class GenerateInvoiceForUserTests(TestCase):
         self.assertEqual(invoice.tax_rate, Decimal("0"))  # ROW isn't in TAX_RULES -> DEFAULT_TAX_RULE
         self.assertEqual(invoice.seats_billed, 1)
 
+    def test_department_less_invoice_line_item_describes_the_plans_features_not_the_email(self):
+        """Reported directly - the line item used to read "Growth —
+        solo@example.com", the recipient's own email standing in as if
+        it were an item description (confusing, and redundant with the
+        Bill To block, which already has that address). Now describes
+        what's actually included instead (governance.plans.
+        plan_capability_summary - the same list shown on the Plans
+        pages)."""
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        user = User.objects.create_user(email="solo@example.com", password="pw12345!")
+        invoice = generate_invoice_for_user(user, plan=self.plan)
+        description = invoice.line_items[0]["description"]
+        self.assertIn("Growth Plan", description)
+        self.assertIn("Document generation", description)
+        self.assertNotIn("solo@example.com", description)
+
     def test_explicit_plan_overrides_department_plan(self):
         other_plan = Plan.objects.create(name="Enterprise")
         RegionalPrice.objects.create(plan=other_plan, region_code="AE", price=Decimal("999"))
