@@ -1492,6 +1492,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 }
 
 .auth-split-form {
+    position: relative;
+    overflow: hidden;
     flex: 1;
     display: flex;
     align-items: center;
@@ -1499,15 +1501,62 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     padding: var(--space-6) var(--space-4);
     background: var(--color-surface-muted);
 }
+/* Two soft blurred color blobs behind the card - unlike .auth-orb-scene
+   (the brand panel's centerpiece, hidden below 860px along with the rest
+   of that panel), this side of the split is ALWAYS visible, mobile
+   included, so this is what actually guarantees a visible design change
+   on every screen size. */
+.auth-split-form::before,
+.auth-split-form::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.5;
+    pointer-events: none;
+}
+.auth-split-form::before {
+    width: 300px;
+    height: 300px;
+    top: -80px;
+    right: -80px;
+    background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+}
+.auth-split-form::after {
+    width: 260px;
+    height: 260px;
+    bottom: -90px;
+    left: -60px;
+    background: radial-gradient(circle, var(--secondary) 0%, transparent 70%);
+}
 
 .auth-card {
+    position: relative;
+    z-index: 1;
     width: 100%;
     max-width: 380px;
     background: var(--color-surface);
-    border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: var(--space-8) var(--space-6);
-    box-shadow: var(--shadow-lg);
+    /* Gradient "border" via the classic double-background trick (an
+       opaque padding-box layer over a gradient border-box layer) instead
+       of a plain solid border - a thin cyan-to-navy glow around the card
+       rather than a flat --color-border line. */
+    border: 1px solid transparent;
+    background-image: linear-gradient(var(--color-surface), var(--color-surface)),
+        linear-gradient(135deg, var(--accent) 0%, var(--secondary) 100%);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 174, 240, 0.08), var(--shadow-lg);
+    animation: auth-card-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes auth-card-rise {
+    from { opacity: 0; transform: translateY(18px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-card { animation: none; }
 }
 .auth-card h1 { text-align: left; margin-bottom: 0.3rem; }
 .auth-subtitle { text-align: left; color: var(--color-text-muted); font-size: 0.88rem; margin-bottom: var(--space-6); }
