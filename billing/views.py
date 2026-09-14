@@ -4,10 +4,11 @@ from django.contrib import messages as django_messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils import translation
+from django.utils import timezone, translation
+from django.utils.dateparse import parse_date
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
@@ -551,13 +552,30 @@ def generate_invoice(request):
     seat_count = _int_or_none(request.POST.get("seat_count"))
     region_code = request.POST.get("region_code", "").strip() or None
 
+    # Explicit due date, chosen by whoever's generating this invoice,
+    # rather than always falling back to generate_invoice_for_user's own
+    # default (14 days, or a demo plan's own trial length) - converted to
+    # the due_in_days that function actually takes, since issue_date is
+    # always "today" for a manually generated invoice. A past/today date
+    # is left alone rather than rejected - an admin backdating an invoice
+    # they know is already overdue is a real, deliberate use case.
+    due_date_str = request.POST.get("due_date", "").strip()
+    due_in_days = None
+    if due_date_str:
+        due_date = parse_date(due_date_str)
+        if due_date is None:
+            return HttpResponseBadRequest("Invalid due date")
+        due_in_days = (due_date - timezone.localdate()).days
+
     try:
         # generate_invoice_for_user bills the department's subscription
         # when the recipient has one with a plan assigned, and the
         # recipient directly otherwise - the exact same choice the
         # automatic welcome-invoice signal and recurring sweep already
         # make, so a manually-generated invoice is never a special case.
-        invoice = generate_invoice_for_user(recipient, plan=plan, seat_count=seat_count, region_code=region_code)
+        invoice = generate_invoice_for_user(
+            recipient, plan=plan, seat_count=seat_count, region_code=region_code, due_in_days=due_in_days
+        )
     except InvoiceGenerationError as exc:
         django_messages.error(request, str(exc))
     else:

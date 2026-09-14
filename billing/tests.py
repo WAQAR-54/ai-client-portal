@@ -792,6 +792,50 @@ class GenerateInvoiceViewTests(TestCase):
         self.assertEqual(invoice.currency, "PKR")
         self.assertEqual(invoice.subtotal, Decimal("8900"))
 
+    def test_explicit_due_date_overrides_the_default(self):
+        from django.utils import timezone
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        chosen_due_date = timezone.localdate() + timezone.timedelta(days=3)
+        self.client.post(
+            reverse("billing:generate_invoice"),
+            {"recipient_user_id": self.recipient.id, "due_date": chosen_due_date.isoformat()},
+        )
+        invoice = Invoice.objects.get(department=self.department)
+        self.assertEqual(invoice.due_date, chosen_due_date)
+
+    def test_blank_due_date_falls_back_to_the_normal_default(self):
+        from django.utils import timezone
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.client.post(reverse("billing:generate_invoice"), {"recipient_user_id": self.recipient.id})
+        invoice = Invoice.objects.get(department=self.department)
+        self.assertEqual(invoice.due_date, invoice.issue_date + timezone.timedelta(days=14))
+
+    def test_a_past_due_date_is_allowed_not_rejected(self):
+        """A deliberate backdate (an admin knows this invoice is already
+        overdue) - not an error case."""
+        from django.utils import timezone
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        past_due_date = timezone.localdate() - timezone.timedelta(days=5)
+        response = self.client.post(
+            reverse("billing:generate_invoice"),
+            {"recipient_user_id": self.recipient.id, "due_date": past_due_date.isoformat()},
+        )
+        self.assertRedirects(response, reverse("billing:invoices"))
+        invoice = Invoice.objects.get(department=self.department)
+        self.assertEqual(invoice.due_date, past_due_date)
+
+    def test_invalid_due_date_is_a_bad_request(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:generate_invoice"),
+            {"recipient_user_id": self.recipient.id, "due_date": "not-a-date"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Invoice.objects.filter(department=self.department).exists())
+
     def test_recipient_in_department_without_a_plan_is_still_eligible(self):
         # "Bill to" should list everyone with a department, not just
         # departments that already carry a subscription - the plan is
@@ -1294,6 +1338,19 @@ class InvoiceDetailViewTests(TestCase):
         self.assertContains(response, "Acme Corp")
         self.assertContains(response, "123 Business Road, Karachi")
         self.assertContains(response, "NTN-1234567-8")
+
+    def test_recipient_name_takes_priority_over_company_name_when_both_are_set(self):
+        """Reported directly - the invoice should read as the actual
+        person's, not fall back to a company name that happens to be on
+        file when the person's own name is right there. The test above
+        covers the fallback case (no name on the recipient at all)."""
+        self.recipient.first_name = "Ayesha"
+        self.recipient.last_name = "Khan"
+        self.recipient.save(update_fields=["first_name", "last_name"])
+        DepartmentBillingProfile.objects.filter(department=self.department).update(company_name="Acme Corp")
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertContains(response, "Ayesha Khan")
 
     def test_toggle_from_detail_page_redirects_back_to_detail_page(self):
         self.client.login(email="admin@example.com", password="pw12345!")
@@ -1837,7 +1894,12 @@ class IndividualBillToTests(TestCase):
         self.assertContains(response, "Ayesha Khan")
         self.assertContains(response, "client@example.com")
 
-    def test_shows_company_phone_and_address_from_user_billing_profile(self):
+    def test_shows_phone_and_address_from_user_billing_profile_but_the_users_own_name_not_company_name(self):
+        """The recipient's own name (already set on self.user - see
+        setUp) takes priority over company_name even when one is on file
+        - see _invoice_document.html's own comment on this same
+        priority. Phone/address from the billing profile still show
+        regardless, since those aren't affected by that priority."""
         UserBillingProfile.objects.create(
             user=self.user,
             company_name="Khan Traders",
@@ -1846,10 +1908,20 @@ class IndividualBillToTests(TestCase):
         )
         self.client.login(email="client@example.com", password="pw12345!")
         response = self.client.get(self._url())
-        self.assertContains(response, "Khan Traders")
+        self.assertContains(response, "Ayesha Khan")
+        self.assertNotContains(response, "Khan Traders")
         self.assertContains(response, "client@example.com")
         self.assertContains(response, "+92 300 1234567")
         self.assertContains(response, "123 Mall Road, Lahore")
+
+    def test_falls_back_to_company_name_when_recipient_has_no_name(self):
+        self.user.first_name = ""
+        self.user.last_name = ""
+        self.user.save(update_fields=["first_name", "last_name"])
+        UserBillingProfile.objects.create(user=self.user, company_name="Khan Traders")
+        self.client.login(email="client@example.com", password="pw12345!")
+        response = self.client.get(self._url())
+        self.assertContains(response, "Khan Traders")
 
     def test_pdf_includes_company_and_phone(self):
         UserBillingProfile.objects.create(user=self.user, company_name="Khan Traders", phone_number="+92 300 1234567")

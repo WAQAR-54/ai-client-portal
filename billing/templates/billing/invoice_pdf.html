@@ -61,7 +61,8 @@
         <tr>
             <td width="47%">
                 <div class="label">{% trans "Bill to" %}</div>
-                {% with display_name=billing_profile.company_name|default:invoice.recipient_user.get_full_name %}
+                {% comment %}Recipient's own name takes priority over any billing_profile.company_name - see _invoice_document.html's own comment on this same line for why.{% endcomment %}
+                {% with display_name=invoice.recipient_user.get_full_name|default:billing_profile.company_name %}
                 {% if display_name %}
                 <div class="field"><strong>{{ display_name }}</strong></div>
                 {% if invoice.recipient_user %}<div class="field">{{ invoice.recipient_user.email }}</div>{% endif %}

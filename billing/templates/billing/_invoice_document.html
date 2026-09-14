@@ -102,7 +102,20 @@ mirrors the same content and Bill To logic.
     <div class="invoice-doc-parties">
         <div>
             <div class="invoice-doc-label">{% trans "Bill to" %}</div>
-            {% with display_name=billing_profile.company_name|default:invoice.recipient_user.get_full_name %}
+            {% comment %}
+            The actual PERSON being billed takes priority over any
+            company_name on their billing profile - reported directly:
+            an individual's invoice should read as theirs, not read back
+            a company name that happens to be on file (billing_profile
+            here is DepartmentBillingProfile for a departmental invoice,
+            or UserBillingProfile for a department-less one - either way,
+            the recipient is a real person, so their own name is the
+            more meaningful "Bill to" line). company_name only fills in
+            when there's genuinely no recipient_user name to show (a
+            blank name, or a legacy department-only invoice with no
+            individual tied to it at all).
+            {% endcomment %}
+            {% with display_name=invoice.recipient_user.get_full_name|default:billing_profile.company_name %}
             {% if display_name %}
             <p style="font-weight:600; color:#232019;">{{ display_name }}</p>
             {% if invoice.recipient_user %}<p>{{ invoice.recipient_user.email }}</p>{% endif %}

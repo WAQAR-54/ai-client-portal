@@ -41,10 +41,14 @@
                 {% endfor %}
             </select>
         </div>
+        <div style="flex:0 0 160px; min-width:150px;">
+            <label for="due_date">{% trans "Due date" %}</label>
+            <input class="input" type="date" name="due_date" id="due_date" style="margin:0;">
+        </div>
         <button type="submit" {% if not eligible_recipients %}disabled{% endif %}>{% trans "Generate invoice" %}</button>
     </form>
     <p class="text-faint" style="font-size:0.82rem; margin-top:0.6rem;">
-        {% trans "For a user with a department that has its own plan: leave \"Plan to bill\" on the default to use that plan, \"Team members\" blank for the department's actual headcount, and \"Region\" on auto-detect for the department's billing country. For anyone else, this bills the person directly - \"Team members\" is always 1 and \"Region\" defaults to the rest-of-world rate." %}
+        {% trans "For a user with a department that has its own plan: leave \"Plan to bill\" on the default to use that plan, \"Team members\" blank for the department's actual headcount, and \"Region\" on auto-detect for the department's billing country. For anyone else, this bills the person directly - \"Team members\" is always 1 and \"Region\" defaults to the rest-of-world rate. Leave \"Due date\" blank to use the plan's normal default (14 days, or a demo's own trial length)." %}
     </p>
 </div>
 
