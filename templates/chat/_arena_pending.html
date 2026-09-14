@@ -9,7 +9,7 @@
                 <span class="arena-model-name">{{ comparison.model_a.display_label }}</span>
             </div>
             <div class="arena-body">
-                {% include "chat/_pending_assistant_row.html" with conversation=conversation pending_message=comparison.response_a model_id=comparison.model_a_id %}
+                {% include "chat/_pending_assistant_row.html" with conversation=conversation pending_message=comparison.response_a stream_qs=stream_qs_a %}
             </div>
             <div class="arena-foot">
                 <form method="post" action="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"
@@ -27,7 +27,7 @@
                 <span class="arena-model-name">{{ comparison.model_b.display_label }}</span>
             </div>
             <div class="arena-body">
-                {% include "chat/_pending_assistant_row.html" with conversation=conversation pending_message=comparison.response_b model_id=comparison.model_b_id %}
+                {% include "chat/_pending_assistant_row.html" with conversation=conversation pending_message=comparison.response_b stream_qs=stream_qs_b %}
             </div>
             <div class="arena-foot">
                 <form method="post" action="{% url 'chat:pick_arena_winner' conversation_id=conversation.id comparison_id=comparison.id %}"

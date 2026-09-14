@@ -1085,6 +1085,184 @@ class MediaGenerationTests(TestCase):
         self.assertContains(response, f'<img class="msg-generated-media" src="{download_url}"')
 
 
+class DocumentGenerationOutputModeTests(TestCase):
+    """generate_media's "document" media_mode (composer's unified Generate
+    menu's "Generate document" option) - unlike image/video (Grok's own
+    generation endpoints), this calls a normal text model first via the
+    same auto-routing as regular chat, then renders straight to a .docx.
+    Gated on document_generation - a DIFFERENT Plan flag from
+    media_generation - with no monthly numeric cap of its own (see
+    chat/views.py::_generate_document_bytes's own docstring)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="test-model",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        self.premium = _grant_premium_plan(self.user, self.model)
+        self.premium.feature_flags = {"document_generation": True}
+        self.premium.save(update_fields=["feature_flags"])
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    def _generate(self, content="write a Q3 memo"):
+        return self.client.post(
+            reverse("chat:generate_media", kwargs={"conversation_id": self.conversation.id}),
+            {"content": content, "media_mode": "document"},
+        )
+
+    @patch("chat.views.get_provider")
+    def test_generate_document_saves_both_messages_with_a_docx_attachment(self, mock_get_provider):
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="# Q3 memo\n\nRevenue is up."), StreamChunk(done=True, input_tokens=5, output_tokens=5)]
+        )
+        response = self._generate("write a Q3 memo")
+        self.assertEqual(response.status_code, 200)
+        user_message = self.conversation.messages.get(role=Message.Role.USER)
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertEqual(user_message.content, "write a Q3 memo")
+        self.assertEqual(assistant_message.attachment_kind, "document")
+        self.assertTrue(assistant_message.attachment.name.endswith(".docx"))
+
+    def test_blocked_without_the_document_generation_flag(self):
+        self.premium.feature_flags = {"document_generation": False}
+        self.premium.save(update_fields=["feature_flags"])
+        response = self._generate()
+        self.assertEqual(response.status_code, 403)
+
+    def test_media_generation_flag_alone_does_not_unlock_document_mode(self):
+        self.premium.feature_flags = {"document_generation": False, "media_generation": True}
+        self.premium.save(update_fields=["feature_flags"])
+        response = self._generate()
+        self.assertEqual(response.status_code, 403)
+
+    def test_no_model_available_is_saved_as_an_error_reply_not_a_500(self):
+        self.premium.allowed_provider_models.clear()
+        response = self._generate()
+        self.assertEqual(response.status_code, 200)
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertIn("No AI model", assistant_message.content)
+        self.assertFalse(assistant_message.attachment)
+
+    @patch("chat.views.get_provider")
+    def test_provider_error_is_saved_as_an_error_reply_not_a_500(self, mock_get_provider):
+        mock_get_provider.return_value.stream_chat.side_effect = ProviderError("Upstream is down")
+        response = self._generate()
+        self.assertEqual(response.status_code, 200)
+        assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertEqual(assistant_message.content, "Upstream is down")
+        self.assertFalse(assistant_message.attachment)
+
+    @patch("chat.views.get_provider")
+    def test_document_generation_ignores_medias_own_monthly_cap(self, mock_get_provider):
+        """monthly_media_generation_limit=0 (media_generation's own
+        default-closed cap) must NOT block document mode - it's a
+        different capability with no numeric cap of its own."""
+        self.premium.monthly_media_generation_limit = 0
+        self.premium.save(update_fields=["monthly_media_generation_limit"])
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="content"), StreamChunk(done=True)]
+        )
+        response = self._generate()
+        self.assertEqual(response.status_code, 200)
+
+    def test_generate_document_menu_item_shown_only_with_the_feature_flag(self):
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertContains(response, "portalGenerateMedia(event, 'document')")
+
+        self.premium.feature_flags = {"document_generation": False}
+        self.premium.save(update_fields=["feature_flags"])
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
+        self.assertNotContains(response, "portalGenerateMedia(event, 'document')")
+
+
+class CodeOutputModeTests(TestCase):
+    """Composer's "Code" output-mode toggle (chat/prompts.py's
+    CODE_OUTPUT_HINT) - a one-off, per-message system-prompt hint threaded
+    through post_message -> stream_message exactly like `research`.
+    Deliberately no Plan feature flag - available to everyone, since it
+    costs nothing over a user just asking for code directly in plain
+    chat, which already works today."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="test-model",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        _grant_premium_plan(self.user, self.model)
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def _pending_message(self):
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, content="hi")
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        return conversation, pending
+
+    def test_post_message_threads_output_mode_into_the_stream_url(self):
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hello", "output_mode": "code"},
+        )
+        self.assertContains(response, "output_mode=code")
+
+    def test_unknown_output_mode_value_is_ignored(self):
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "hello", "output_mode": "something-else"},
+        )
+        self.assertNotContains(response, "output_mode=")
+
+    @patch("chat.views.get_provider")
+    def test_stream_message_appends_the_code_hint_to_the_system_prompt(self, mock_get_provider):
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="answer"), StreamChunk(done=True, input_tokens=5, output_tokens=5)]
+        )
+        conversation, pending = self._pending_message()
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            ),
+            {"model_id": self.model.id, "output_mode": "code"},
+        )
+        b"".join(response.streaming_content)
+        self.assertIn("complete, working code", mock_provider.stream_chat.call_args.kwargs["system_prompt"])
+
+    @patch("chat.views.get_provider")
+    def test_without_the_output_mode_the_hint_is_not_added(self, mock_get_provider):
+        mock_provider = mock_get_provider.return_value
+        mock_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="answer"), StreamChunk(done=True, input_tokens=5, output_tokens=5)]
+        )
+        conversation, pending = self._pending_message()
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            ),
+            {"model_id": self.model.id},
+        )
+        b"".join(response.streaming_content)
+        self.assertNotIn("complete, working code", mock_provider.stream_chat.call_args.kwargs["system_prompt"])
+
+
 class ArenaCompareModeTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
@@ -1113,6 +1291,19 @@ class ArenaCompareModeTests(TestCase):
         self.assertEqual(comparison.response_b.role, Message.Role.ASSISTANT)
         user_message = Message.objects.get(role=Message.Role.USER, conversation=self.conversation)
         self.assertEqual(comparison.user_message, user_message)
+
+    def test_post_arena_message_streams_from_each_pane_s_own_model(self):
+        """Regression check for _pending_assistant_row.html's stream_qs
+        refactor (was inline per-variable {% if %} string-building,
+        extended once too many times for output_mode - now a single
+        precomputed query string per pane, built in post_arena_message)."""
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "compare these", "model_a_id": self.model_a.id, "model_b_id": self.model_b.id},
+        )
+        content = response.content.decode()
+        self.assertIn(f"?model_id={self.model_a.id}", content)
+        self.assertIn(f"?model_id={self.model_b.id}", content)
 
     def test_post_arena_message_rejects_same_model_twice(self):
         response = self.client.post(

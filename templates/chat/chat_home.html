@@ -528,6 +528,10 @@ function portalCloseUpgradeModal() {
                     </button>
                     <input type="hidden" name="research" id="research-input" value="">
                     {% endif %}
+                    <button type="button" class="attach-btn" id="code-mode-toggle-btn" title="{% trans 'Code mode — asks for a code-focused answer to this message' %}" onclick="portalToggleCodeMode(this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    </button>
+                    <input type="hidden" name="output_mode" id="output-mode-input" value="">
                     {% if can_use_agent_mode %}
                     <details class="export-menu">
                         <summary class="attach-btn no-marker" id="agent-persona-summary" title="{% trans 'Act as a specialized agent for this conversation' %}">
@@ -542,14 +546,19 @@ function portalCloseUpgradeModal() {
                     </details>
                     <input type="hidden" name="agent_persona" id="agent-persona-input" value="">
                     {% endif %}
-                    {% if can_generate_media %}
+                    {% if can_generate_media or can_generate_document %}
                     <details class="export-menu">
-                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image or video with Grok, from the text in the composer' %}">
+                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image, video, or document from the text in the composer' %}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                         </summary>
                         <div class="export-menu-panel">
+                            {% if can_generate_media %}
                             <a href="#" onclick="portalGenerateMedia(event, 'image')">{% trans "Generate image" %}</a>
                             <a href="#" onclick="portalGenerateMedia(event, 'video')">{% trans "Generate video (~1 min)" %}</a>
+                            {% endif %}
+                            {% if can_generate_document %}
+                            <a href="#" onclick="portalGenerateMedia(event, 'document')">{% trans "Generate document (.docx)" %}</a>
+                            {% endif %}
                         </div>
                     </details>
                     {% endif %}
@@ -736,6 +745,9 @@ function portalResetComposerAttrs() {
     // HTML value is ""), this just syncs the button's visual state to match.
     var researchBtn = document.getElementById("research-toggle-btn");
     if (researchBtn) researchBtn.classList.remove("has-file");
+    // Code output mode is per-turn too, same reasoning as Research above.
+    var codeModeBtn = document.getElementById("code-mode-toggle-btn");
+    if (codeModeBtn) codeModeBtn.classList.remove("has-file");
 }
 
 // Research mode toggle (composer footer) - see can_use_research/
@@ -747,6 +759,18 @@ function portalToggleResearch(btn) {
     if (!input) return;
     var on = input.value !== "on";
     input.value = on ? "on" : "";
+    btn.classList.toggle("has-file", on);
+}
+
+// "Code" output mode (composer footer) - see chat/prompts.py's
+// CODE_OUTPUT_HINT and chat:post_message's own "output_mode" POST field.
+// Same one-off, per-message toggle shape as Research above (not sticky
+// across sends - see portalResetComposerAttrs).
+function portalToggleCodeMode(btn) {
+    var input = document.getElementById("output-mode-input");
+    if (!input) return;
+    var on = input.value !== "code";
+    input.value = on ? "code" : "";
     btn.classList.toggle("has-file", on);
 }
 

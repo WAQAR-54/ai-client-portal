@@ -1,6 +1,6 @@
 import logging
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -109,6 +109,7 @@ def chat_home(request, conversation_id=None):
         "can_select_model": has_feature(request.user, "model_selection"),
         "can_use_research": has_feature(request.user, "research"),
         "can_generate_media": has_feature(request.user, "media_generation"),
+        "can_generate_document": has_feature(request.user, "document_generation"),
         "can_use_agent_mode": has_feature(request.user, "agent_mode"),
         "agent_personas": [(key, label) for key, (label, _instruction) in AGENT_PERSONAS.items()],
         "can_request_upgrade": bool(plan_status["plan"]),
@@ -426,6 +427,16 @@ def post_message(request, conversation_id):
     if agent_persona not in AGENT_PERSONAS or not has_feature(request.user, "agent_mode"):
         agent_persona = ""
 
+    # Composer's "Code" output-mode toggle (see chat/prompts.py's own
+    # comment on CODE_OUTPUT_HINT) - no feature gate to re-check here,
+    # unlike research/agent_persona/model_id above, since it's available
+    # to everyone regardless of plan (a one-off prompt hint, not a new
+    # capability). Still whitelisted against the one known value rather
+    # than trusting an arbitrary POSTed string straight into the prompt.
+    output_mode = request.POST.get("output_mode", "").strip()
+    if output_mode != "code":
+        output_mode = ""
+
     # Lock the conversation row for the duration of the check+create so two
     # concurrent sends against the same conversation can't both pass the
     # session_limit check before either message is committed. (Postgres
@@ -464,6 +475,22 @@ def post_message(request, conversation_id):
             used_research=research,
         )
 
+    # Built in Python rather than the template's own nested-{% if %} string
+    # concatenation (what this used to be, before output_mode - a 4th
+    # optional param made the "which of these need a leading &" branching
+    # genuinely error-prone to extend correctly) - urlencode only ever
+    # includes params that are actually set, in a fixed, unambiguous order.
+    stream_query_params = {}
+    if model_id:
+        stream_query_params["model_id"] = model_id
+    if research:
+        stream_query_params["research"] = "1"
+    if agent_persona:
+        stream_query_params["agent_persona"] = agent_persona
+    if output_mode:
+        stream_query_params["output_mode"] = output_mode
+    stream_qs = f"?{urlencode(stream_query_params)}" if stream_query_params else ""
+
     return render(
         request,
         "chat/_message_pending.html",
@@ -471,47 +498,100 @@ def post_message(request, conversation_id):
             "conversation": conversation,
             "pending_message": pending_assistant_message,
             "user_message": user_message,
-            "model_id": model_id,
-            "research": research,
-            "agent_persona": agent_persona,
+            "stream_qs": stream_qs,
         },
     )
+
+
+def _generate_document_bytes(user, prompt):
+    """The composer's "File" output mode - unlike image/video (Grok's own
+    generation endpoints), a document's content has to come from a normal
+    text model first. Deliberately mirrors generate_image/generate_video's
+    own shape (just the prompt, no conversation history - a one-shot
+    generation, not a conversational reply) rather than routing through
+    the full streaming pipeline: same auto-routing as regular chat
+    (classify_complexity + select_model_candidates), one synchronous
+    provider call, then rendered straight to a .docx via chat/
+    document_generation.py's existing render_message_docx - reused as-is
+    by handing it a throwaway object with a .content attribute, since
+    that function only ever reads that one attribute off whatever it's
+    given. Raises MediaGenerationError (the same type generate_image/
+    generate_video raise) on any failure, so generate_media's caller
+    needs only one except clause regardless of media_mode."""
+    from types import SimpleNamespace
+
+    from chat.document_generation import render_message_docx
+    from chat.media_generation import MediaGenerationError
+
+    candidates = select_model_candidates(user, classify_complexity(prompt))
+    if not candidates:
+        raise MediaGenerationError(_("No AI model is enabled and permitted for this user."))
+
+    try:
+        content_text = ""
+        for chunk in get_provider(candidates[0].provider).stream_chat(
+            [{"role": "user", "content": prompt}], candidates[0].model_id, system_prompt=build_system_prompt(user)
+        ):
+            content_text += chunk.text
+            if chunk.done:
+                break
+    except ProviderError as exc:
+        raise MediaGenerationError(str(exc)) from exc
+
+    if not content_text.strip():
+        raise MediaGenerationError(_("The model returned an empty response."))
+    return render_message_docx(SimpleNamespace(content=content_text))
 
 
 @login_required
 @require_http_methods(["POST"])
 def generate_media(request, conversation_id):
-    """Grok-only image/video generation (chat/media_generation.py) - a
-    genuinely different action from post_message above, not routed
-    through any AIProvider/candidate selection at all. Synchronous: the
-    request blocks until generation finishes (a real scaling limit for
-    video, worth knowing - see media_generation.py's own docstring),
-    since there's no streaming/polling story wired up for this endpoint's
-    result the way stream_message has for a normal reply."""
+    """Grok-only image/video generation (chat/media_generation.py), plus
+    the "File" output mode (_generate_document_bytes above) - a genuinely
+    different action from post_message above for all three modes, not
+    routed through the full streaming pipeline (image/video never were;
+    document deliberately mirrors their one-shot shape rather than
+    getting its own separate endpoint, since the gating/usage-limit/
+    message-creation plumbing below is identical either way). Synchronous:
+    the request blocks until generation finishes (a real scaling limit
+    for video especially, worth knowing - see media_generation.py's own
+    docstring), since there's no streaming/polling story wired up for
+    this endpoint's result the way stream_message has for a normal reply."""
     from django.core.files.base import ContentFile
 
     from chat.media_generation import MediaGenerationError, generate_image, generate_video
     from governance.plans import has_feature
 
     media_mode = request.POST.get("media_mode", "").strip()
-    if media_mode not in ("image", "video"):
+    if media_mode not in ("image", "video", "document"):
         return HttpResponseBadRequest("Unknown media mode")
-    if not has_feature(request.user, "media_generation"):
-        return render(
-            request,
-            "chat/_limit_exceeded.html",
-            {"message": _("Image/video generation isn't included in your current plan.")},
-            status=403,
+    # Document generation is gated on the SAME Plan flag as the existing
+    # after-the-fact "export this reply as a file" button
+    # (export_message_document below) - a different capability from
+    # image/video, so it gets its own feature check rather than sharing
+    # media_generation's.
+    required_feature = "document_generation" if media_mode == "document" else "media_generation"
+    if not has_feature(request.user, required_feature):
+        message = (
+            _("Document generation isn't included in your current plan.")
+            if media_mode == "document"
+            else _("Image/video generation isn't included in your current plan.")
         )
+        return render(request, "chat/_limit_exceeded.html", {"message": message}, status=403)
 
     prompt = request.POST.get("content", "").strip()
     if not prompt:
         return render(request, "chat/_limit_exceeded.html", {"message": _("Type a prompt first.")}, status=400)
 
-    try:
-        check_media_generation_monthly_limit(request.user)
-    except UploadRejected as exc:
-        return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=403)
+    # No monthly numeric cap for document generation (deliberately, to
+    # avoid scope creep - it shares no limit with monthly_document_reads_
+    # limit, which counts READING an attachment, a different action from
+    # generating one) - only image/video have this check.
+    if media_mode in ("image", "video"):
+        try:
+            check_media_generation_monthly_limit(request.user)
+        except UploadRejected as exc:
+            return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=403)
 
     conversation = _owned_conversation_or_404(request, conversation_id)
     try:
@@ -527,8 +607,10 @@ def generate_media(request, conversation_id):
     try:
         if media_mode == "image":
             file_bytes, filename = generate_image(prompt), "generated-image.png"
-        else:
+        elif media_mode == "video":
             file_bytes, filename = generate_video(prompt), "generated-video.mp4"
+        else:
+            file_bytes, filename = _generate_document_bytes(request.user, prompt), "generated-document.docx"
     except MediaGenerationError as exc:
         assistant_message = Message.objects.create(
             conversation=conversation, role=Message.Role.ASSISTANT, content=str(exc)
@@ -641,7 +723,13 @@ def post_arena_message(request, conversation_id):
     return render(
         request,
         "chat/_arena_pending.html",
-        {"conversation": conversation, "user_message": user_message, "comparison": comparison},
+        {
+            "conversation": conversation,
+            "user_message": user_message,
+            "comparison": comparison,
+            "stream_qs_a": f"?model_id={model_a_id}" if model_a_id else "",
+            "stream_qs_b": f"?model_id={model_b_id}" if model_b_id else "",
+        },
     )
 
 
@@ -732,7 +820,7 @@ def regenerate_message(request, conversation_id, message_id):
     return render(
         request,
         "chat/_pending_assistant_row.html",
-        {"conversation": conversation, "pending_message": message, "model_id": ""},
+        {"conversation": conversation, "pending_message": message, "stream_qs": ""},
     )
 
 
@@ -1011,6 +1099,13 @@ def stream_message(request, conversation_id, message_id, token):
     history = _history_with_attachments(conversation, exclude_message_id=message.id)
     requested_model_id = request.GET.get("model_id", "").strip()
     research = request.GET.get("research") == "1"
+    # Composer's "Code" output-mode toggle - post_message already
+    # whitelisted this to "" or "code" before it ever reached the stream
+    # URL, but re-checked here too rather than trusted, same reasoning as
+    # requested_model_id just above.
+    output_mode = request.GET.get("output_mode", "").strip()
+    if output_mode != "code":
+        output_mode = ""
 
     # Re-validated here too (not just trusted from post_message having
     # already checked it) since this is reached by a direct GET, same
@@ -1089,7 +1184,7 @@ def stream_message(request, conversation_id, message_id, token):
                 return
             candidates = anthropic_candidates
 
-        system_prompt = build_system_prompt(request.user, agent_persona=agent_persona)
+        system_prompt = build_system_prompt(request.user, agent_persona=agent_persona, output_mode=output_mode)
 
         from governance.plans import validate_context_tokens
 

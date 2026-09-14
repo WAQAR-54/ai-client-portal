@@ -72,7 +72,21 @@ AGENT_PERSONAS = {
 }
 
 
-def build_system_prompt(user, company_name="The Company", agent_persona=None):
+# Composer's "Code" output-mode toggle (chat_home.html's #output-mode-input,
+# threaded through post_message -> stream_message exactly like `research` -
+# a one-off, per-message hint, deliberately NOT a persistent persona like
+# AGENT_PERSONAS above (picking "Code" for one message shouldn't change how
+# every later reply in the conversation is written). No Plan feature flag
+# gates this - it costs nothing extra over a user just asking for code
+# directly in plain chat, which already works today.
+CODE_OUTPUT_HINT = (
+    "For THIS message only, respond primarily with complete, working code in "
+    "fenced code blocks with a language tag. Keep any prose explanation brief "
+    "and place it before or after the code, not interleaved inside it."
+)
+
+
+def build_system_prompt(user, company_name="The Company", agent_persona=None, output_mode=None):
     department = user.department
     department_name = department.name if department else "General"
     department_instructions = ""
@@ -97,4 +111,6 @@ def build_system_prompt(user, company_name="The Company", agent_persona=None):
     persona = AGENT_PERSONAS.get(agent_persona)
     if persona:
         prompt = f"{prompt}\n\n{persona[1]}"
+    if output_mode == "code":
+        prompt = f"{prompt}\n\n{CODE_OUTPUT_HINT}"
     return prompt
