@@ -57,7 +57,7 @@
     {# monthly_token_limit is edited from this plan's Token Ceiling & Margin Snapshot section instead (same field the Feature Access & Limits form's CAPABILITY_LIMIT_FIELDS already shows) - kept as a hidden passthrough here so saving Basics never silently wipes it. #}
     <input type="hidden" name="monthly_token_limit" value="{{ plan.monthly_token_limit|default_if_none:'' }}">
     <div class="form-section-label">{% trans "Usage limits" %}</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 1rem;">
         <div>
             <label for="daily_token_limit">{% trans "Daily token limit" %}</label>
             <input class="input" type="number" name="daily_token_limit" id="daily_token_limit" value="{{ plan.daily_token_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">

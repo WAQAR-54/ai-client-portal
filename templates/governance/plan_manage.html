@@ -60,22 +60,27 @@
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
                 {% for row in region_rows %}
-                <div class="plan-manage-region-row">
-                    <span>{{ row.flag }} {{ row.label }}</span>
-                    <span class="text-faint mono" style="font-size:0.8rem;">{{ row.currency }}</span>
-                    <input class="input mono" type="text" name="price_{{ row.code }}" value="{{ row.price_row.price|default_if_none:'' }}" placeholder="{% trans 'Not set' %}">
+                <div class="plan-manage-row">
+                    <span class="plan-manage-row-label">{{ row.flag }} {{ row.label }}</span>
+                    <span class="plan-manage-currency-input">
+                        <span class="plan-manage-currency-tag">{{ row.currency }}</span>
+                        <input class="input mono" type="text" name="price_{{ row.code }}" value="{{ row.price_row.price|default_if_none:'' }}" placeholder="{% trans 'Not set' %}">
+                    </span>
                 </div>
                 {% endfor %}
-                <div class="plan-manage-region-row">
-                    <span>{% trans "Seats included" %}</span>
-                    <span></span>
-                    <input class="input mono" type="number" min="0" name="seats_included" value="{{ plan.seats_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
+                <div class="plan-manage-row">
+                    <span class="plan-manage-row-label">{% trans "Seats included" %}</span>
+                    <span class="plan-manage-row-control">
+                        <input class="input mono" type="number" min="0" name="seats_included" value="{{ plan.seats_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
+                    </span>
                 </div>
                 {% for row in region_rows %}
-                <div class="plan-manage-region-row">
-                    <span class="text-faint" style="font-size:0.85rem;">{% trans "Extra / seat" %} ({{ row.currency }})</span>
-                    <span></span>
-                    <input class="input mono" type="text" name="extra_seat_price_{{ row.code }}" value="{{ row.price_row.extra_seat_price|default_if_none:'' }}" placeholder="{% trans 'none' %}">
+                <div class="plan-manage-row">
+                    <span class="plan-manage-row-label text-faint" style="font-size:0.85rem;">{% trans "Extra / seat" %} ({{ row.currency }})</span>
+                    <span class="plan-manage-currency-input">
+                        <span class="plan-manage-currency-tag">{{ row.currency }}</span>
+                        <input class="input mono" type="text" name="extra_seat_price_{{ row.code }}" value="{{ row.price_row.extra_seat_price|default_if_none:'' }}" placeholder="{% trans 'none' %}">
+                    </span>
                 </div>
                 {% endfor %}
                 <button type="submit" class="btn-small" style="margin-top:0.75rem;">{% trans "Save pricing" %}</button>
@@ -89,30 +94,30 @@
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
                 {% for row in toggle_rows %}
-                <div class="plan-manage-feature-row">
-                    <span>
+                <div class="plan-manage-row">
+                    <span class="plan-manage-row-label">
                         {{ row.label }}
                         {% if row.cost_tier == "high" %}<span class="badge badge-danger" style="font-size:0.65rem;">{% trans "Highest cost" %}</span>
                         {% elif row.cost_tier == "med" %}<span class="badge badge-warn" style="font-size:0.65rem;">{% trans "Medium cost" %}</span>
                         {% else %}<span class="badge badge-success" style="font-size:0.65rem;">{% trans "Low cost" %}</span>{% endif %}
                     </span>
-                    <label class="toggle-switch">
+                    <label class="toggle-switch plan-manage-row-control">
                         <input type="checkbox" name="flag_{{ row.key }}" {% if row.value %}checked{% endif %}>
                         <span class="toggle"><span class="toggle-knob"></span></span>
                     </label>
-                    <span></span>
                 </div>
                 {% endfor %}
                 {% for row in numeric_rows %}
-                <div class="plan-manage-feature-row">
-                    <span>
+                <div class="plan-manage-row">
+                    <span class="plan-manage-row-label">
                         {{ row.label }} <span class="text-faint" style="font-size:0.78rem;">{{ row.unit }}</span>
                         {% if row.cost_tier == "high" %}<span class="badge badge-danger" style="font-size:0.65rem;">{% trans "Highest cost" %}</span>
                         {% elif row.cost_tier == "med" %}<span class="badge badge-warn" style="font-size:0.65rem;">{% trans "Medium cost" %}</span>
                         {% else %}<span class="badge badge-success" style="font-size:0.65rem;">{% trans "Low cost" %}</span>{% endif %}
                     </span>
-                    <span></span>
-                    <input class="input mono" type="number" min="0" name="{{ row.key }}" value="{{ row.value|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
+                    <span class="plan-manage-row-control">
+                        <input class="input mono" type="number" min="0" name="{{ row.key }}" value="{{ row.value|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
+                    </span>
                 </div>
                 {% endfor %}
                 <button type="submit" class="btn-small" style="margin-top:0.75rem;">{% trans "Save features & limits" %}</button>

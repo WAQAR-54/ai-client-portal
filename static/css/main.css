@@ -1848,6 +1848,10 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     flex-direction: column;
     gap: 2px;
 }
+/* Splits one nav-group's links into sub-clusters (e.g. Plan Management +
+   its 3 read-only Compare views, vs. the unrelated settings below) without
+   introducing a second nested <details> level. */
+.nav-divider { height: 1px; background: var(--color-border); margin: 0.35rem 0.6rem; }
 
 /* Chat sidebar's conversation-group labels (Pinned/Today/Yesterday) - a
    quieter, sentence-case heading, not shouting uppercase. */
@@ -3866,8 +3870,21 @@ details[open] > .smooth-details-summary::before { transform: rotate(45deg); }
 .plan-manage-item.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .plan-manage-item-price { display: block; font-size: 0.72rem; color: var(--color-text-faint); font-weight: 400; }
 .plan-manage-detail { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.plan-manage-region-row, .plan-manage-feature-row { display: grid; grid-template-columns: 1fr 90px 8rem; gap: 0.75rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); }
-.plan-manage-region-row:last-child, .plan-manage-feature-row:last-child { border-bottom: none; }
+/* One shared "settings row" shape (label block left, one control right) -
+   deliberately flex, not a fixed-column grid: a grid with an always-empty
+   middle column (a toggle row has no numeric input and vice versa) reads
+   as scattered, with controls floating with no clear anchor. */
+.plan-manage-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+.plan-manage-row:last-child { border-bottom: none; }
+.plan-manage-row-label { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.85rem; min-width: 0; }
+.plan-manage-row-control { flex-shrink: 0; }
+.plan-manage-row-control .input { width: 9rem; }
+/* Currency shown as a prefix INSIDE the price input (matching the
+   original reference mockup's own region-input-wrap pattern) instead of
+   as a separate floating grid column with empty space on both sides. */
+.plan-manage-currency-input { position: relative; width: 9rem; }
+.plan-manage-currency-input .input { width: 100%; padding-left: 2.6rem; }
+.plan-manage-currency-tag { position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); font-size: 0.72rem; font-weight: 600; color: var(--color-text-faint); pointer-events: none; }
 .plan-manage-access-row { display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 0; border-bottom: 1px solid var(--color-border); gap: 0.75rem; }
 .plan-manage-access-row:last-child { border-bottom: none; }
 .plan-manage-snapshot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }

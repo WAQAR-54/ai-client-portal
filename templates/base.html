@@ -130,20 +130,11 @@
                     <summary class="nav-group-label"><span>{% trans "Plans & access" %}</span>{% include "_nav_group_chevron.html" %}</summary>
                     <div class="nav-group-body">
                     {% if user.is_superadmin %}
-                    {# Plan Management / Models / Feature Visibility are SuperAdmin-only (role hierarchy prompt, Section 1/2) - never shown to a department-scoped Admin, not even grayed out. #}
+                    {# Plan Management / Models / Feature Visibility are SuperAdmin-only (role hierarchy prompt, Section 1/2) - never shown to a department-scoped Admin, not even grayed out. Plan Management and its 3 read-only "Compare" views are kept adjacent - one cluster about Plans, not spread across the group - with a thin divider before the unrelated settings below. #}
                     <a href="{% url 'governance:plan_manage' %}" class="{% if request.resolver_match.url_name == "plan_manage" or request.resolver_match.url_name == "plan_new" or request.resolver_match.url_name == "plan_edit" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
                         {% trans "Plan Management" %}
                     </a>
-                    <a href="{% url 'governance:feature_visibility' %}" class="{% if request.resolver_match.url_name == "feature_visibility" %}active{% endif %}">
-                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
-                        {% trans "Feature Visibility" %}
-                    </a>
-                    <a href="{% url 'governance:branding' %}" class="{% if request.resolver_match.url_name == "branding" %}active{% endif %}">
-                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-6 4 4 5-7 4 5"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
-                        {% trans "Branding" %}
-                    </a>
-                    {# Read-only "all plans side by side" views - everything here is now EDITED from Plan Management above; these three exist only for the at-a-glance comparison, moved together into one place (Regional Pricing used to live under the separate "Billing" group below). #}
                     <a href="{% url 'governance:capability_limits' %}" class="{% if request.resolver_match.url_name == "capability_limits" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>
                         {% trans "Compare: Capability Limits" %}
@@ -153,8 +144,17 @@
                         {% trans "Compare: Budget Automation" %}
                     </a>
                     <a href="{% url 'billing:regional_pricing' %}" class="{% if request.resolver_match.url_name == "regional_pricing" %}active{% endif %}">
-                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                         {% trans "Compare: Regional Pricing" %}
+                    </a>
+                    <div class="nav-divider"></div>
+                    <a href="{% url 'governance:feature_visibility' %}" class="{% if request.resolver_match.url_name == "feature_visibility" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                        {% trans "Feature Visibility" %}
+                    </a>
+                    <a href="{% url 'governance:branding' %}" class="{% if request.resolver_match.url_name == "branding" %}active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-6 4 4 5-7 4 5"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
+                        {% trans "Branding" %}
                     </a>
                     {% endif %}
                     {% if user|has_feature:"upgrade_requests" %}
