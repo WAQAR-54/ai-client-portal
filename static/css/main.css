@@ -1749,7 +1749,46 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     padding: 18px 12px 7px;
     flex-shrink: 0;
 }
-.nav-group-label:first-of-type { padding-top: 0; }
+/* Scoped to a DIRECT child of .app-nav-sub (only "Overview", the one
+   single-link heading left as a plain <div> - see the collapsible-group
+   comment above the People group in base.html) rather than the old
+   :first-of-type, which would otherwise ALSO match every collapsible
+   group's own <summary class="nav-group-label"> (each is trivially
+   "first of its type" inside its OWN <details>, having no sibling
+   summaries there) and wipe out the top spacing between every group. */
+.app-nav-sub > .nav-group-label:first-child { padding-top: 0; }
+
+/* Collapsible nav groups (<details class="nav-group">, base.html) - the
+   open/close animation itself is portalSmoothDetails (ui-kit.js,
+   already used elsewhere for smooth <details> panels); this is just the
+   layout/chrome: <summary> reuses .nav-group-label's exact look but
+   needs the browser's own disclosure-triangle suppressed and a flex row
+   for the label + chevron, and .nav-group-body replaces the gap the
+   links used to get for free as direct flex children of .app-nav-sub. */
+summary.nav-group-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+}
+summary.nav-group-label::-webkit-details-marker { display: none; }
+summary.nav-group-label:hover { color: var(--sidebar-text); }
+.nav-group-chevron {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    opacity: 0.7;
+    transition: transform 200ms var(--ease);
+}
+.nav-group[open] > summary .nav-group-chevron { transform: rotate(180deg); }
+.nav-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
 
 /* Chat sidebar's conversation-group labels (Pinned/Today/Yesterday) - a
    quieter, sentence-case heading, not shouting uppercase. */

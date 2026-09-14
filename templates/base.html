@@ -76,7 +76,30 @@
                         {% trans "Overview" %}
                     </a>
 
-                    <div class="nav-group-label">{% trans "People" %}</div>
+                    {% comment %}
+                    Every group below (People onward) is a collapsible
+                    <details class="nav-group smooth-details"> instead of a
+                    plain heading - a SuperAdmin's nav runs to 8 groups /
+                    20+ links, well past one screenful (see .app-nav's own
+                    comment on the scroll-fade mask this used to need just
+                    to keep the last item from looking clipped/broken).
+                    Collapsing groups you're not using is what actually
+                    fixes that, rather than just fading/auto-scrolling to
+                    a link that's still buried below a long scroll.
+                    portalSmoothDetails (ui-kit.js) gives the open/close its
+                    animation; the small inline script right after </nav>
+                    persists which groups are open per browser (data-nav-
+                    group as the storage key - stable across a language
+                    switch, unlike the translated label text) and always
+                    force-opens whichever group contains the current page,
+                    regardless of what was last stored, so the active link
+                    is never hidden inside a collapsed group. Single-link
+                    "Overview" above is left as a plain heading - nothing
+                    to collapse there.
+                    {% endcomment %}
+                    <details class="nav-group smooth-details" data-nav-group="people" open>
+                    <summary class="nav-group-label"><span>{% trans "People" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     <a href="{% url 'governance:users' %}" class="{% if request.resolver_match.url_name == "users" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         {% trans "Users" %}
@@ -99,9 +122,13 @@
                         {% trans "Department settings" %}
                     </a>
                     {% endif %}
+                    </div>
+                    </details>
 
                     {% if user.is_superadmin or user|has_feature:"upgrade_requests" or user|has_feature:"limits" %}
-                    <div class="nav-group-label">{% trans "Plans & access" %}</div>
+                    <details class="nav-group smooth-details" data-nav-group="plans-access" open>
+                    <summary class="nav-group-label"><span>{% trans "Plans & access" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     {% if user.is_superadmin %}
                     {# Plan Management / Models / Feature Visibility are SuperAdmin-only (role hierarchy prompt, Section 1/2) - never shown to a department-scoped Admin, not even grayed out. #}
                     <a href="{% url 'governance:plans' %}" class="{% if request.resolver_match.url_name == "plans" or request.resolver_match.url_name == "plan_new" or request.resolver_match.url_name == "plan_edit" %}active{% endif %}">
@@ -138,10 +165,14 @@
                         {% trans "Limits" %}
                     </a>
                     {% endif %}
+                    </div>
+                    </details>
                     {% endif %}
 
                     {% if user.is_superadmin %}
-                    <div class="nav-group-label">{% trans "Automation" %}</div>
+                    <details class="nav-group smooth-details" data-nav-group="automation" open>
+                    <summary class="nav-group-label"><span>{% trans "Automation" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     <a href="{% url 'governance:routing_rules' %}" class="{% if request.resolver_match.url_name == "routing_rules" or request.resolver_match.url_name == "routing_rule_new" or request.resolver_match.url_name == "routing_rule_edit" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></svg>
                         {% trans "Smart Routing" %}
@@ -158,10 +189,14 @@
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
                         {% trans "Data Handling" %}
                     </a>
+                    </div>
+                    </details>
                     {% endif %}
 
                     {% if user.is_superadmin or user.department_id and user|has_feature:"department_settings" %}
-                    <div class="nav-group-label">{% trans "Billing" %}</div>
+                    <details class="nav-group smooth-details" data-nav-group="billing" open>
+                    <summary class="nav-group-label"><span>{% trans "Billing" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     {% if user.is_superadmin %}
                     <a href="{% url 'billing:regional_pricing' %}" class="{% if request.resolver_match.url_name == "regional_pricing" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -182,10 +217,14 @@
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                         {% trans "Invoices" %}
                     </a>
+                    </div>
+                    </details>
                     {% endif %}
 
                     {% if user|has_feature:"reports" %}
-                    <div class="nav-group-label">{% trans "Reports" %}</div>
+                    <details class="nav-group smooth-details" data-nav-group="reports" open>
+                    <summary class="nav-group-label"><span>{% trans "Reports" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     <a href="{% url 'governance:revenue_report' %}" class="{% if request.resolver_match.url_name == "revenue_report" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                         {% trans "Revenue Report" %}
@@ -198,10 +237,14 @@
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         {% trans "Growth Report" %}
                     </a>
+                    </div>
+                    </details>
                     {% endif %}
 
                     {% if user.is_superadmin %}
-                    <div class="nav-group-label">{% trans "Models" %}</div>
+                    <details class="nav-group smooth-details" data-nav-group="models" open>
+                    <summary class="nav-group-label"><span>{% trans "Models" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     <a href="{% url 'providers:list' %}" class="{% if request.resolver_match.app_name == "providers" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V7a2 2 0 0 1 2-2h6l2 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M12 11v4"/><path d="M10 13h4"/></svg>
                         {% trans "Providers" %}
@@ -210,10 +253,14 @@
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
                         {% trans "Models (legacy)" %}
                     </a>
+                    </div>
+                    </details>
                     {% endif %}
 
                     {% if user|has_feature:"usage_cost" or user|has_feature:"audit_logs" or user|has_feature:"feedback" or user.is_superadmin %}
-                    <div class="nav-group-label">{% trans "System" %}</div>
+                    <details class="nav-group smooth-details" data-nav-group="system" open>
+                    <summary class="nav-group-label"><span>{% trans "System" %}</span>{% include "_nav_group_chevron.html" %}</summary>
+                    <div class="nav-group-body">
                     {% if user|has_feature:"usage_cost" %}
                     <a href="{% url 'governance:usage' %}" class="{% if request.resolver_match.url_name == "usage" %}active{% endif %}">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -238,10 +285,39 @@
                         {% trans "Email Logs" %}
                     </a>
                     {% endif %}
+                    </div>
+                    </details>
                     {% endif %}
                 </div>
                 {% endif %}
             </nav>
+            <script>
+                (function() {
+                    // Restore each nav group's collapsed/open state from
+                    // last visit - EXCEPT a group containing the current
+                    // page's active link, which always stays open
+                    // regardless of what was last stored, so the page
+                    // you're actually on is never hidden. Runs
+                    // synchronously right here (not at the bottom of
+                    // body) so it applies before the sidebar is likely to
+                    // have painted yet, minimizing any open-then-collapse
+                    // flash. The `toggle` event (fired whenever
+                    // .open changes, including from portalSmoothDetails'
+                    // own JS-driven open/close in ui-kit.js) is what
+                    // persists a manual click back to storage.
+                    document.querySelectorAll(".app-nav .nav-group[data-nav-group]").forEach(function(group) {
+                        var key = "navGroupOpen:" + group.dataset.navGroup;
+                        if (!group.querySelector("a.active")) {
+                            try {
+                                if (localStorage.getItem(key) === "0") group.removeAttribute("open");
+                            } catch (e) {}
+                        }
+                        group.addEventListener("toggle", function() {
+                            try { localStorage.setItem(key, group.open ? "1" : "0"); } catch (e) {}
+                        });
+                    });
+                })();
+            </script>
             <div class="app-sidebar-footer">
                 <div class="app-sidebar-account-chip">
                     <span class="msg-avatar msg-avatar-user">{{ user.email|first|upper }}</span>
