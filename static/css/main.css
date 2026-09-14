@@ -2224,7 +2224,10 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
        screen), so "up" would mean off the top of the viewport. */
     top: calc(100% + 0.5rem);
     left: 0;
-    width: 220px;
+    /* Widened from 220px - a real model id like "deepseek-v4-flash-
+       vision-exp" was wrapping onto a second line at that width. Capped
+       at 92vw so it still fits on a narrow phone screen. */
+    width: max(220px, min(320px, 92vw));
     max-height: 320px;
     overflow-y: auto;
     background: var(--color-surface);
@@ -2260,6 +2263,12 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     font-family: inherit;
     cursor: pointer;
     transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+    /* One line even for a long model id - the panel above is now widened
+       to fit most names in full; this is the safety net (ellipsis, not a
+       second line) for whatever still doesn't fit. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .model-select-option:hover { background: var(--color-surface-muted); }
 .model-select-option.is-selected { color: var(--accent); background: rgba(0, 174, 240, 0.08); border: 1px solid var(--accent-dim); font-weight: 650; }
