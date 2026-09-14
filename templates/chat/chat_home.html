@@ -1102,13 +1102,17 @@ function portalSelectModel(value, labelText) {
     });
 })();
 
-// Every "..."/summary-triggered dropdown in the chat header and composer
-// toolbar (export, usage, profile, templates, model picker) is a native
-// <details> element - browsers don't close those on an outside click by
-// default, only on clicking the summary again. One shared listener closes
-// whichever one is open whenever the click lands outside all of them.
+// Every "..."/summary-triggered dropdown on this page (export, usage,
+// profile, templates, the Smart Routing model picker, the composer's
+// Agent/Generate menus) is a native <details> element - browsers don't
+// close those on an outside click by default, only on clicking the
+// summary again. One shared listener closes whichever one is open
+// whenever the click lands outside all of them. Covers .chat-header
+// itself (not just .chat-header-actions) so the model picker - which
+// lives directly in the header, not that sub-container - is included;
+// previously it wasn't, and stayed open no matter where else you clicked.
 document.addEventListener("click", function(evt) {
-    document.querySelectorAll(".chat-header-actions details[open], .composer-toolbar details[open]").forEach(function(d) {
+    document.querySelectorAll(".chat-header details[open], .composer-toolbar details[open], .composer-footer details[open]").forEach(function(d) {
         if (!d.contains(evt.target)) d.removeAttribute("open");
     });
 });

@@ -2250,6 +2250,13 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .model-select-option {
     display: flex;
     align-items: center;
+    /* Without this, the global `button, .btn { justify-content: center }`
+       rule (main.css, no competing declaration for this property on this
+       class otherwise) wins and centers the dot+label pair instead of
+       lining it up at the left edge - same bug already hit and fixed
+       once for .settings-tab-sidebar and once for .app-sidebar-footer
+       button.link-btn. */
+    justify-content: flex-start;
     gap: 0.5rem;
     width: 100%;
     text-align: left;
