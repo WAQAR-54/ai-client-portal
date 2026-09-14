@@ -1571,74 +1571,83 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
 .auth-google-btn-wrap { display: flex; justify-content: center; }
 
-/* Decorative 3D-look orb (templates/accounts/_auth_orb.html, shared by
-   Login/Signup) - pure CSS, no canvas/WebGL: a radial-gradient sphere
-   with an offset highlight to fake a light source, a tilted ring (2D
-   rotateX/rotateZ under a perspective parent) for a Saturn-like sense of
-   depth, and a few blurred drifting particles. Placed in the DOM right
-   after .brand-mark and before the tagline/h2/p (all of which are
+/* Layered floating 3D feature cards (templates/accounts/_auth_showcase.html,
+   shared by Login/Signup) - pure CSS, no canvas/WebGL/JS: a handful of
+   small frosted-glass cards, each naming one real differentiator (see
+   the public pricing page's own tagline - Gap 4), tilted in 3D under a
+   shared perspective and gently floating at staggered speeds so they
+   read as a loose overlapping stack rather than a flat row. Placed in
+   the DOM right after .brand-mark and before the tagline/h2/p (all
    already position:relative in this stylesheet) so the headline text
    naturally paints on top without needing explicit z-index bumps on
    every text rule. aria-hidden in the template since it's purely
    decorative. */
-.auth-orb-scene {
+.auth-showcase {
     position: absolute;
-    right: -8%;
-    bottom: -10%;
-    width: min(440px, 62%);
-    aspect-ratio: 1;
+    inset: 0;
     z-index: 0;
-    perspective: 900px;
+    perspective: 1200px;
 }
-.auth-orb {
+.auth-float-card {
     position: absolute;
-    inset: 10%;
-    border-radius: 50%;
-    background:
-        radial-gradient(circle at 32% 26%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.28) 13%, transparent 34%),
-        radial-gradient(circle at 62% 68%, var(--accent) 0%, transparent 62%),
-        radial-gradient(circle at 50% 50%, #ffffff 0%, var(--accent) 32%, var(--secondary-hover) 76%, #050a1e 100%);
-    box-shadow:
-        0 0 70px 12px rgba(0, 174, 240, 0.4),
-        inset -20px -24px 55px rgba(0, 0, 0, 0.45),
-        inset 14px 16px 32px rgba(255, 255, 255, 0.22);
-    animation: auth-orb-float 9s ease-in-out infinite;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.8rem 1.05rem;
+    max-width: 210px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 22px 44px -14px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.25;
 }
-.auth-orb-ring {
-    position: absolute;
-    inset: -4%;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: 0 0 36px rgba(0, 174, 240, 0.3);
-    transform: rotateX(72deg) rotateZ(-18deg);
-    animation: auth-orb-spin 18s linear infinite;
-}
-.auth-orb-particle {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: radial-gradient(circle, #fff 0%, var(--accent) 70%, transparent 100%);
-    box-shadow: 0 0 14px 2px rgba(0, 174, 240, 0.6);
-}
-.auth-orb-particle-1 { top: 8%; left: 4%; animation: auth-orb-drift 7s ease-in-out infinite; }
-.auth-orb-particle-2 { top: 72%; left: 88%; width: 6px; height: 6px; animation: auth-orb-drift 9.5s ease-in-out infinite reverse; }
-.auth-orb-particle-3 { top: 48%; left: -3%; width: 14px; height: 14px; animation: auth-orb-drift 11s ease-in-out infinite; }
+.auth-float-card svg { width: 18px; height: 18px; flex-shrink: 0; color: #7fddfb; }
 
-@keyframes auth-orb-float {
-    0%, 100% { transform: translateY(0) scale(1); }
-    50% { transform: translateY(-14px) scale(1.02); }
+.auth-float-card-1 {
+    top: 6%;
+    right: 4%;
+    transform: rotate3d(1, -1, 0, 16deg) rotateZ(-4deg);
+    animation: auth-card-float-1 8s ease-in-out infinite;
 }
-@keyframes auth-orb-spin {
-    from { transform: rotateX(72deg) rotateZ(0deg); }
-    to { transform: rotateX(72deg) rotateZ(360deg); }
+.auth-float-card-2 {
+    top: 42%;
+    right: 20%;
+    z-index: 1;
+    transform: rotate3d(1, -1, 0, 12deg) rotateZ(3deg);
+    animation: auth-card-float-2 9.5s ease-in-out infinite;
 }
-@keyframes auth-orb-drift {
-    0%, 100% { transform: translate(0, 0); opacity: 0.85; }
-    50% { transform: translate(10px, -16px); opacity: 1; }
+.auth-float-card-3 {
+    top: 74%;
+    right: 2%;
+    transform: rotate3d(1, -1, 0, 18deg) rotateZ(-6deg);
+    animation: auth-card-float-3 10.5s ease-in-out infinite;
+}
+
+@keyframes auth-card-float-1 {
+    0%, 100% { transform: rotate3d(1, -1, 0, 16deg) rotateZ(-4deg) translateY(0); }
+    50% { transform: rotate3d(1, -1, 0, 16deg) rotateZ(-4deg) translateY(-14px); }
+}
+@keyframes auth-card-float-2 {
+    0%, 100% { transform: rotate3d(1, -1, 0, 12deg) rotateZ(3deg) translateY(0); }
+    50% { transform: rotate3d(1, -1, 0, 12deg) rotateZ(3deg) translateY(12px); }
+}
+@keyframes auth-card-float-3 {
+    0%, 100% { transform: rotate3d(1, -1, 0, 18deg) rotateZ(-6deg) translateY(0); }
+    50% { transform: rotate3d(1, -1, 0, 18deg) rotateZ(-6deg) translateY(-10px); }
 }
 @media (prefers-reduced-motion: reduce) {
-    .auth-orb, .auth-orb-ring, .auth-orb-particle { animation: none; }
+    .auth-float-card { animation: none; }
+}
+@media (max-width: 1080px) {
+    /* The brand panel itself narrows well before its 860px full-hide
+       breakpoint below - pull card 2 in so it doesn't clip against the
+       form panel's edge at in-between widths. */
+    .auth-float-card-2 { right: 6%; }
 }
 
 @media (max-width: 860px) {
