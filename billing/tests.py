@@ -2317,3 +2317,20 @@ class DeleteInvoiceTests(TestCase):
         self.client.login(email="super@example.com", password="pw12345!")
         response = self.client.get(reverse("billing:invoices"))
         self.assertContains(response, reverse("billing:email_invoice", kwargs={"invoice_id": self.invoice.id}))
+
+    def test_delete_button_uses_hx_confirm_not_the_plain_form_helper(self):
+        """Reported directly: clicking Delete deleted the invoice
+        immediately, with the confirm dialog only appearing afterward,
+        powerless to stop anything. Root cause: this form has hx-post
+        (htmx issues its own AJAX request straight off the native submit
+        event) alongside onsubmit="portalConfirmSubmit(...)" - a helper
+        that only works for a PLAIN form, since it can preventDefault()
+        the native submission but has no way to stop htmx's own,
+        separate listener on the same event from firing regardless. The
+        fix is hx-confirm (htmx's own confirmation hook, already used
+        correctly for every other htmx-driven delete in this app - e.g.
+        governance's routing rules/models) rather than that helper."""
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.get(reverse("billing:invoices"))
+        self.assertContains(response, "hx-confirm=")
+        self.assertNotContains(response, "portalConfirmSubmit")

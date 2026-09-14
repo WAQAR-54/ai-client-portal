@@ -66,7 +66,8 @@
                 {% if can_delete_invoices %}
                 <form method="post" action="{% url 'billing:delete_invoice' invoice_id=invoice.id %}"
                       hx-post="{% url 'billing:delete_invoice' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML"
-                      style="display:inline;" onsubmit="return portalConfirmSubmit(event, '{% blocktrans with number=invoice.invoice_number %}Delete invoice {{ number }}? This cannot be undone.{% endblocktrans %}');">
+                      hx-confirm="{% blocktrans with number=invoice.invoice_number %}Delete invoice {{ number }}? This cannot be undone.{% endblocktrans %}"
+                      style="display:inline;">
                     {% csrf_token %}
                     <button type="submit" class="btn-small btn-ghost">{% trans "Delete" %}</button>
                 </form>
