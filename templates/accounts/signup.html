@@ -13,7 +13,7 @@
         <div class="auth-card">
             <h1>{% trans "Create your account" %}</h1>
             <p class="auth-subtitle">{% blocktrans with name=site_branding.site_name %}Get started with {{ name }}.{% endblocktrans %}</p>
-            <form method="post">
+            <form method="post" data-stagger data-stagger-items="label, input, button[type=submit]">
                 {% csrf_token %}
                 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
                 <label for="{{ form.email.id_for_label }}">{% trans "Email" %}</label>

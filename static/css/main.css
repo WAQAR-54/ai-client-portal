@@ -1474,7 +1474,21 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     display: flex; align-items: center; gap: 0.6rem;
     font-weight: 700; font-size: 1.15rem; position: relative;
 }
-.auth-split-brand .brand-mark .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.auth-split-brand .brand-mark .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 rgba(255, 255, 255, 0.6);
+    animation: auth-dot-pulse 2.4s ease-in-out infinite;
+}
+@keyframes auth-dot-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.5); }
+    50% { box-shadow: 0 0 0 6px rgba(255, 255, 255, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-split-brand .brand-mark .dot { animation: none; }
+}
 .brand-tagline { opacity: 0.75; font-size: 0.9rem; margin: 0.5rem 0 0; position: relative; }
 .auth-split-brand h2 {
     font-size: 2rem;
@@ -1522,6 +1536,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     top: -80px;
     right: -80px;
     background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+    animation: auth-blob-drift-1 12s ease-in-out infinite;
 }
 .auth-split-form::after {
     width: 260px;
@@ -1529,6 +1544,18 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     bottom: -90px;
     left: -60px;
     background: radial-gradient(circle, var(--secondary) 0%, transparent 70%);
+    animation: auth-blob-drift-2 14s ease-in-out infinite;
+}
+@keyframes auth-blob-drift-1 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(-24px, 28px) scale(1.12); }
+}
+@keyframes auth-blob-drift-2 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(20px, -22px) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-split-form::before, .auth-split-form::after { animation: none; }
 }
 
 .auth-card {
