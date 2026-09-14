@@ -13,7 +13,7 @@
     {% if results_plans %}
     <div class="model-select-group-label">{% trans "Plans" %}</div>
     {% for p in results_plans %}
-    <a class="model-select-option" href="{% url 'governance:plans' %}">{{ p.name }}</a>
+    <a class="model-select-option" href="{% url 'governance:plan_manage' plan_id=p.id %}">{{ p.name }}</a>
     {% endfor %}
     {% endif %}
     {% if results_logs %}

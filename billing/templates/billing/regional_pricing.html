@@ -4,8 +4,8 @@
 {% block admin_page_title %}{% trans "Regional Pricing" %}{% endblock %}
 {% block content %}
 <div class="card">
-    <h1>{% trans "Regional Pricing" %}</h1>
-    <p>{% trans "Set the exact price per plan for each region yourself — no auto-conversion. The public pricing page and invoices use these numbers directly." %}</p>
+    <h1>{% trans "Compare plans — Regional Pricing" %}</h1>
+    <p>{% trans "Read-only side-by-side view. To change a plan's price, open it in Plan Management." %}</p>
 
     {% if any_missing %}
     <div class="alert alert-warning" style="margin-bottom:1rem;">
@@ -42,14 +42,9 @@
                         {% if row.missing %}<span class="badge badge-danger">{% trans "Missing price" %}</span>{% endif %}
                     </td>
                     {% for cell in row.cells %}
-                    <td>
-                        <input class="input mono" type="text"
-                               name="price_{{ cell.region_code }}" form="regional-form-{{ row.plan.id }}"
-                               value="{{ cell.price|default_if_none:'' }}" placeholder="{% trans 'Not set' %}"
-                               style="width:6.5rem; margin:0;">
-                    </td>
+                    <td class="mono">{{ cell.price|default_if_none:"—" }}</td>
                     {% endfor %}
-                    <td><button type="submit" form="regional-form-{{ row.plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
+                    <td><a href="{% url 'governance:plan_manage' plan_id=row.plan.id %}" class="text-faint" style="font-size:0.72rem;">{% trans "Edit in Plan Management" %}</a></td>
                 </tr>
                 {% empty %}
                 <tr class="empty-state-row"><td colspan="6">{% trans "No plans yet." %}</td></tr>
@@ -95,20 +90,11 @@
                 {% for row in rows %}
                 <tr>
                     <td class="name">{{ row.plan.name }}</td>
-                    <td>
-                        <input class="input mono" type="number" min="0" name="seats_included" form="regional-form-{{ row.plan.id }}"
-                               value="{{ row.plan.seats_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}"
-                               style="width:6rem; margin:0;">
-                    </td>
+                    <td class="mono">{{ row.plan.seats_included|default_if_none:"unlimited" }}</td>
                     {% for cell in row.cells %}
-                    <td>
-                        <input class="input mono" type="text"
-                               name="extra_seat_price_{{ cell.region_code }}" form="regional-form-{{ row.plan.id }}"
-                               value="{{ cell.extra_seat_price|default_if_none:'' }}" placeholder="{% trans 'none' %}"
-                               style="width:6.5rem; margin:0;">
-                    </td>
+                    <td class="mono">{{ cell.extra_seat_price|default_if_none:"—" }}</td>
                     {% endfor %}
-                    <td><button type="submit" form="regional-form-{{ row.plan.id }}" class="btn-small">{% trans "Save" %}</button></td>
+                    <td><a href="{% url 'governance:plan_manage' plan_id=row.plan.id %}" class="text-faint" style="font-size:0.72rem;">{% trans "Edit in Plan Management" %}</a></td>
                 </tr>
                 {% empty %}
                 <tr class="empty-state-row"><td colspan="7">{% trans "No plans yet." %}</td></tr>
@@ -121,8 +107,4 @@
         {% blocktrans %}Example: a department on a plan with 3 seats included that actually has 5 people gets billed for 2 extra seats on its next invoice. Leave the extra-seat price blank to never charge for extra seats in that region.{% endblocktrans %}
     </p>
 </div>
-
-{% for row in rows %}
-<form id="regional-form-{{ row.plan.id }}" method="post" action="{% url 'billing:update_plan_regional_pricing' plan_id=row.plan.id %}">{% csrf_token %}</form>
-{% endfor %}
 {% endblock %}

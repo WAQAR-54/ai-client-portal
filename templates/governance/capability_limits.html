@@ -3,9 +3,9 @@
 {% block title %}{% trans "Capability Limits" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
-    <h1>{% trans "Plan capabilities & limits" %}</h1>
+    <h1>{% trans "Compare plans — Capability limits" %}</h1>
     <p class="text-muted" style="margin-top:-0.4rem;">
-        {% trans "Turn a capability on/off per plan, and cap how much of it a plan includes. Blank a numeric field for no limit; the two standalone-tool columns fall back to that tool's own default when left blank." %}
+        {% trans "Read-only side-by-side view. To change a value, open that plan in Plan Management." %}
     </p>
 
     <div class="legend" style="display:flex; gap:1rem; flex-wrap:wrap; margin:0.75rem 0 1.25rem;">
@@ -41,10 +41,7 @@
                     </td>
                     {% for cell in row.cells %}
                     <td style="text-align:center;">
-                        <label class="toggle-switch">
-                            <input type="checkbox" name="flag_{{ row.key }}" form="capability-form-{{ cell.plan.id }}" {% if cell.value %}checked{% endif %} onchange="this.closest('form').requestSubmit()">
-                            <span class="toggle"><span class="toggle-knob"></span></span>
-                        </label>
+                        {% if cell.value %}<span class="badge badge-success">{% trans "On" %}</span>{% else %}<span class="badge badge-muted">{% trans "Off" %}</span>{% endif %}
                     </td>
                     {% endfor %}
                 </tr>
@@ -62,7 +59,7 @@
                         <span class="text-faint" style="font-size:0.85rem;">{% trans "None" %}</span>
                         {% endif %}
                         <div>
-                            <a href="{% url 'governance:plan_edit' plan_id=cell.plan.id %}" class="text-faint" style="font-size:0.72rem;">{% trans "Edit on Plan form" %}</a>
+                            <a href="{% url 'governance:plan_manage' plan_id=cell.plan.id %}" class="text-faint" style="font-size:0.72rem;">{% trans "Edit in Plan Management" %}</a>
                         </div>
                     </td>
                     {% endfor %}
@@ -82,28 +79,14 @@
                         {% else %}<span class="badge badge-success" style="font-size:0.68rem;">{% trans "Low cost" %}</span>{% endif %}
                     </td>
                     {% for cell in row.cells %}
-                    <td style="text-align:center;">
-                        <input class="input mono" type="number" min="0" name="{{ row.key }}" form="capability-form-{{ cell.plan.id }}" value="{{ cell.value|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}" style="width:6rem; margin:0 auto;">
-                    </td>
+                    <td class="mono" style="text-align:center;">{{ cell.value|default_if_none:"—" }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
-                <tr>
-                    <td></td>
-                    {% for plan in plans %}
-                    <td style="text-align:center;">
-                        <button type="submit" form="capability-form-{{ plan.id }}" class="btn-small">{% trans "Save" %}</button>
-                    </td>
-                    {% endfor %}
-                </tr>
             </tbody>
         </table>
     </div>
 </div>
-
-{% for plan in plans %}
-<form id="capability-form-{{ plan.id }}" method="post" action="{% url 'governance:update_capability_limits' plan_id=plan.id %}">{% csrf_token %}</form>
-{% endfor %}
 
 <div class="card mt-4">
     <h2 style="margin-bottom:0.25rem;">{% trans "Reference: what counts as 1 unit" %}</h2>

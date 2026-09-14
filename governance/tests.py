@@ -1,4 +1,5 @@
 import tempfile
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import patch
 
@@ -30,6 +31,7 @@ from governance.plans import (
     effective_allowed_provider_model_ids,
     effective_domain_search_daily_limit,
     effective_playground_daily_limit,
+    estimate_plan_margin,
     region_allowed_provider_model_ids,
     get_budget_automation_status,
     validate_context_tokens,
@@ -1081,6 +1083,212 @@ class PlanFormViewTests(TestCase):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:plan_new"))
         self.assertEqual(response.status_code, 403)
+
+    def test_new_plan_defaults_to_per_user_track(self):
+        response = self.client.post(reverse("governance:plan_new"), {"name": "Track Default Plan"})
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Track Default Plan")
+        self.assertEqual(plan.billing_track, Plan.BillingTrack.PER_USER)
+
+    def test_billing_track_can_be_set_to_team(self):
+        response = self.client.post(
+            reverse("governance:plan_new"), {"name": "Team Track Plan", "billing_track": "team"}
+        )
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Team Track Plan")
+        self.assertEqual(plan.billing_track, Plan.BillingTrack.TEAM)
+
+    def test_invalid_billing_track_falls_back_to_per_user(self):
+        response = self.client.post(
+            reverse("governance:plan_new"), {"name": "Bad Track Plan", "billing_track": "bogus"}
+        )
+        self.assertEqual(response.status_code, 302)
+        plan = Plan.objects.get(name="Bad Track Plan")
+        self.assertEqual(plan.billing_track, Plan.BillingTrack.PER_USER)
+
+    def test_marking_most_popular_unsets_any_other_plan(self):
+        first = Plan.objects.create(name="First Popular", is_most_popular=True)
+        response = self.client.post(reverse("governance:plan_new"), {"name": "Second Popular", "is_most_popular": "on"})
+        self.assertEqual(response.status_code, 302)
+        first.refresh_from_db()
+        second = Plan.objects.get(name="Second Popular")
+        self.assertFalse(first.is_most_popular)
+        self.assertTrue(second.is_most_popular)
+
+    def test_plan_edit_redirects_to_plan_manage_by_default(self):
+        plan = Plan.objects.create(name="Redirect Plan")
+        response = self.client.post(
+            reverse("governance:plan_edit", kwargs={"plan_id": plan.id}), {"name": "Redirect Plan"}
+        )
+        self.assertRedirects(response, reverse("governance:plan_manage", kwargs={"plan_id": plan.id}))
+
+    def test_plan_edit_honors_explicit_next(self):
+        plan = Plan.objects.create(name="Next Plan")
+        response = self.client.post(
+            reverse("governance:plan_edit", kwargs={"plan_id": plan.id}),
+            {"name": "Next Plan", "next": reverse("governance:capability_limits")},
+        )
+        self.assertRedirects(response, reverse("governance:capability_limits"))
+
+
+class PlanManageViewTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+
+    def test_groups_plans_by_billing_track(self):
+        per_user = Plan.objects.create(name="Solo Plan", billing_track=Plan.BillingTrack.PER_USER)
+        team = Plan.objects.create(name="Squad Plan", billing_track=Plan.BillingTrack.TEAM)
+        response = self.client.get(reverse("governance:plan_manage"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(per_user, response.context["per_user_plans"])
+        self.assertIn(team, response.context["team_plans"])
+        self.assertNotIn(team, response.context["per_user_plans"])
+
+    def test_no_plan_id_selects_first_plan(self):
+        expected_first = Plan.objects.order_by("billing_track", "-is_default", "name").first()
+        response = self.client.get(reverse("governance:plan_manage"))
+        self.assertEqual(response.context["plan"], expected_first)
+
+    def test_selecting_a_specific_plan(self):
+        Plan.objects.create(name="Plan A")
+        plan_b = Plan.objects.create(name="Plan B")
+        response = self.client.get(reverse("governance:plan_manage", kwargs={"plan_id": plan_b.id}))
+        self.assertEqual(response.context["plan"], plan_b)
+
+    def test_region_rows_lazily_created_for_new_plan(self):
+        from billing.models import RegionalPrice
+
+        plan = Plan.objects.create(name="Fresh Region Plan")
+        self.assertEqual(RegionalPrice.objects.filter(plan=plan).count(), 0)
+        response = self.client.get(reverse("governance:plan_manage", kwargs={"plan_id": plan.id}))
+        self.assertGreater(len(response.context["region_rows"]), 0)
+        self.assertGreater(RegionalPrice.objects.filter(plan=plan).count(), 0)
+
+    def test_non_superadmin_gets_403(self):
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:plan_manage"))
+        self.assertEqual(response.status_code, 403)
+
+
+class UpdatePlanAccessTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="super@example.com", password="pw12345!")
+        self.plan = Plan.objects.create(name="Access Plan")
+
+    def test_updates_all_four_fields(self):
+        response = self.client.post(
+            reverse("governance:update_plan_access", kwargs={"plan_id": self.plan.id}),
+            {
+                "is_active": "on",
+                "self_checkout_enabled": "on",
+                "show_on_public_pricing": "on",
+                "is_most_popular": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.plan.refresh_from_db()
+        self.assertTrue(self.plan.is_active)
+        self.assertTrue(self.plan.self_checkout_enabled)
+        self.assertTrue(self.plan.show_on_public_pricing)
+        self.assertTrue(self.plan.is_most_popular)
+
+    def test_unchecking_everything_turns_it_all_off(self):
+        self.plan.is_active = True
+        self.plan.self_checkout_enabled = True
+        self.plan.show_on_public_pricing = True
+        self.plan.save()
+        response = self.client.post(reverse("governance:update_plan_access", kwargs={"plan_id": self.plan.id}), {})
+        self.assertEqual(response.status_code, 302)
+        self.plan.refresh_from_db()
+        self.assertFalse(self.plan.is_active)
+        self.assertFalse(self.plan.self_checkout_enabled)
+        self.assertFalse(self.plan.show_on_public_pricing)
+
+    def test_marking_most_popular_unsets_any_other_plan(self):
+        other = Plan.objects.create(name="Other Popular", is_most_popular=True)
+        response = self.client.post(
+            reverse("governance:update_plan_access", kwargs={"plan_id": self.plan.id}), {"is_most_popular": "on"}
+        )
+        self.assertEqual(response.status_code, 302)
+        other.refresh_from_db()
+        self.plan.refresh_from_db()
+        self.assertFalse(other.is_most_popular)
+        self.assertTrue(self.plan.is_most_popular)
+
+    def test_redirects_to_next_when_given(self):
+        response = self.client.post(
+            reverse("governance:update_plan_access", kwargs={"plan_id": self.plan.id}),
+            {"next": reverse("governance:budget_automation")},
+        )
+        self.assertRedirects(response, reverse("governance:budget_automation"))
+
+    def test_non_superadmin_cannot_update_access(self):
+        self.plan.is_active = False
+        self.plan.save(update_fields=["is_active"])
+        self.client.logout()
+        User.objects.create_user(email="admin@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:update_plan_access", kwargs={"plan_id": self.plan.id}), {"is_active": "on"}
+        )
+        self.assertEqual(response.status_code, 403)
+        self.plan.refresh_from_db()
+        self.assertFalse(self.plan.is_active)
+
+
+class EstimatePlanMarginTests(TestCase):
+    def setUp(self):
+        from billing.models import RegionalPrice
+
+        self.RegionalPrice = RegionalPrice
+        self.plan = Plan.objects.create(name="Margin Plan", monthly_token_limit=1_000_000)
+        self.model = ModelConfig.objects.create(
+            provider=ModelConfig.Provider.ANTHROPIC,
+            model_name="margin-test-model",
+            input_cost_per_1m=Decimal("3.00"),
+            output_cost_per_1m=Decimal("5.00"),
+        )
+        self.plan.allowed_models.add(self.model)
+
+    def test_healthy_margin(self):
+        self.RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("20.00"))
+        result = estimate_plan_margin(self.plan)
+        # avg rate = (3+5)/2 = 4 per 1M tokens; 1M tokens -> est_cost = 4.00
+        self.assertEqual(result["est_cost"], Decimal("4.00"))
+        self.assertEqual(result["margin_multiple"], Decimal("5"))
+        self.assertEqual(result["margin_class"], "good")
+
+    def test_tight_margin(self):
+        self.RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("5.00"))
+        result = estimate_plan_margin(self.plan)
+        self.assertEqual(result["margin_class"], "tight")
+
+    def test_none_when_no_token_limit(self):
+        self.plan.monthly_token_limit = None
+        self.plan.save()
+        result = estimate_plan_margin(self.plan)
+        self.assertIsNone(result["est_cost"])
+        self.assertIsNone(result["margin_multiple"])
+
+    def test_none_when_no_allowed_model_has_pricing(self):
+        unpriced_plan = Plan.objects.create(name="Unpriced Plan", monthly_token_limit=1_000_000)
+        unrated_model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="unrated")
+        unpriced_plan.allowed_models.add(unrated_model)
+        result = estimate_plan_margin(unpriced_plan)
+        self.assertIsNone(result["est_cost"])
+
+    def test_none_when_no_row_price_set(self):
+        result = estimate_plan_margin(self.plan)
+        self.assertIsNone(result["margin_multiple"])
+        self.assertIsNotNone(result["est_cost"])
 
 
 class BudgetAutomationTests(TestCase):
@@ -2313,15 +2521,15 @@ class RoleHierarchyAccessControlTests(TestCase):
 
     def test_plan_management_403_for_admin(self):
         self.client.login(email="admina@example.com", password="pw12345!")
-        self.assertEqual(self.client.get(reverse("governance:plans")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("governance:plan_manage")).status_code, 403)
 
     def test_plan_management_403_for_manager(self):
         self.client.login(email="managera@example.com", password="pw12345!")
-        self.assertEqual(self.client.get(reverse("governance:plans")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("governance:plan_manage")).status_code, 403)
 
     def test_plan_management_200_for_superadmin(self):
         self.client.login(email="super@example.com", password="pw12345!")
-        self.assertEqual(self.client.get(reverse("governance:plans")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("governance:plan_manage")).status_code, 200)
 
     def test_departments_403_for_admin(self):
         self.client.login(email="admina@example.com", password="pw12345!")
@@ -2731,7 +2939,7 @@ class RoleHierarchyAccessControlTests(TestCase):
         for url_name in [
             "dashboard",
             "users",
-            "plans",
+            "plan_manage",
             "models",
             "departments",
             "teams",

@@ -148,7 +148,19 @@ class PublicPricingView(TemplateView):
 
         from governance.plans import plan_capability_summary
 
-        plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
+        # is_demo=False stays a hard structural rule (a trial plan isn't a
+        # "buy this" tile on a marketing grid); show_on_public_pricing is
+        # an ADDITIONAL opt-out layer on top, letting a SuperAdmin also
+        # hide any non-demo plan from this anonymous grid independent of
+        # is_active (which still governs assignability elsewhere). See
+        # MyPlansView below, which intentionally keeps only the old
+        # is_demo check - the logged-in self-serve picker is a different
+        # concept that show_on_public_pricing doesn't apply to.
+        plans = list(
+            Plan.objects.filter(is_active=True, is_demo=False, show_on_public_pricing=True).order_by(
+                "-is_default", "name"
+            )
+        )
         prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
         rows = [
             {"plan": plan, "price_row": prices.get(plan.id), "capabilities": plan_capability_summary(plan)}
@@ -391,7 +403,7 @@ def update_plan_regional_pricing(request, plan_id):
         updated[code] = {"price": str(rp.price), "extra_seat_price": str(rp.extra_seat_price)}
 
     log_action(request.user, "billing.regional_pricing_update", plan, new_value=str(updated))
-    return redirect("billing:regional_pricing")
+    return redirect(request.POST.get("next") or "billing:regional_pricing")
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)

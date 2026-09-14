@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% load i18n humanize %}
+{% block title %}{% trans "Plan Management" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+    <div>
+        <h1 style="margin-bottom:0.15rem;">{% trans "Plan Management" %}</h1>
+        <p class="text-muted" style="margin:0;">{% trans "Everything about a plan - pricing, regions, features, limits, availability - in one place." %}</p>
+    </div>
+    <button type="button" class="btn"
+            hx-get="{% url 'governance:plan_new' %}" hx-target="#newPlanModalBody" hx-swap="innerHTML"
+            onclick="portalOpenModal('newPlanModal');">+ {% trans "New plan" %}</button>
+</div>
+
+<div class="plan-manage-shell">
+    <div class="card plan-manage-sidebar">
+        {% if per_user_plans %}
+        <div class="plan-manage-group-label">{% trans "Per-User Plans" %}</div>
+        {% for p in per_user_plans %}
+        <a href="{% url 'governance:plan_manage' plan_id=p.id %}" class="plan-manage-item{% if plan.id == p.id %} active{% endif %}">
+            <span>
+                {{ p.name }}
+                <span class="plan-manage-item-price">{% if p.is_demo %}{% trans "Free trial" %}{% elif not p.is_active %}{% trans "Retired" %}{% else %}{% trans "Active" %}{% endif %}</span>
+            </span>
+        </a>
+        {% endfor %}
+        {% endif %}
+        {% if team_plans %}
+        <div class="plan-manage-group-label">{% trans "Team Plans" %}</div>
+        {% for p in team_plans %}
+        <a href="{% url 'governance:plan_manage' plan_id=p.id %}" class="plan-manage-item{% if plan.id == p.id %} active{% endif %}">
+            <span>
+                {{ p.name }}
+                <span class="plan-manage-item-price">{% if not p.is_active %}{% trans "Retired" %}{% else %}{% trans "Active" %}{% endif %}</span>
+            </span>
+        </a>
+        {% endfor %}
+        {% endif %}
+        {% if not plans %}
+        <p class="text-faint" style="font-size:0.85rem; padding:0.5rem;">{% trans "No plans yet." %}</p>
+        {% endif %}
+    </div>
+
+    {% if plan %}
+    <div class="plan-manage-detail">
+        <div class="card">
+            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                <h2 style="margin:0;">{{ plan.name }}</h2>
+                {% if plan.is_default %}<span class="badge">{% trans "Default" %}</span>{% endif %}
+                {% if plan.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% else %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
+                {% if plan.is_most_popular %}<span class="badge badge-warn">{% trans "Most popular" %}</span>{% endif %}
+            </div>
+            {% include "governance/_plan_form_fields.html" %}
+        </div>
+
+        <div class="card">
+            <div class="form-section-label" style="margin-top:0;">{% trans "Regional Pricing" %}</div>
+            <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">{% trans "Exact price per region - no auto currency conversion." %}</p>
+            <form method="post" action="{% url 'billing:update_plan_regional_pricing' plan_id=plan.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                {% for row in region_rows %}
+                <div class="plan-manage-region-row">
+                    <span>{{ row.flag }} {{ row.label }}</span>
+                    <span class="text-faint mono" style="font-size:0.8rem;">{{ row.currency }}</span>
+                    <input class="input mono" type="text" name="price_{{ row.code }}" value="{{ row.price_row.price|default_if_none:'' }}" placeholder="{% trans 'Not set' %}">
+                </div>
+                {% endfor %}
+                <div class="plan-manage-region-row">
+                    <span>{% trans "Seats included" %}</span>
+                    <span></span>
+                    <input class="input mono" type="number" min="0" name="seats_included" value="{{ plan.seats_included|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
+                </div>
+                {% for row in region_rows %}
+                <div class="plan-manage-region-row">
+                    <span class="text-faint" style="font-size:0.85rem;">{% trans "Extra / seat" %} ({{ row.currency }})</span>
+                    <span></span>
+                    <input class="input mono" type="text" name="extra_seat_price_{{ row.code }}" value="{{ row.price_row.extra_seat_price|default_if_none:'' }}" placeholder="{% trans 'none' %}">
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn-small" style="margin-top:0.75rem;">{% trans "Save pricing" %}</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="form-section-label" style="margin-top:0;">{% trans "Feature Access & Limits" %}</div>
+            <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">{% trans "Turn a capability on/off and cap how much of it this plan includes. Blank a numeric field for no limit." %}</p>
+            <form method="post" action="{% url 'governance:update_capability_limits' plan_id=plan.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                {% for row in toggle_rows %}
+                <div class="plan-manage-feature-row">
+                    <span>
+                        {{ row.label }}
+                        {% if row.cost_tier == "high" %}<span class="badge badge-danger" style="font-size:0.65rem;">{% trans "Highest cost" %}</span>
+                        {% elif row.cost_tier == "med" %}<span class="badge badge-warn" style="font-size:0.65rem;">{% trans "Medium cost" %}</span>
+                        {% else %}<span class="badge badge-success" style="font-size:0.65rem;">{% trans "Low cost" %}</span>{% endif %}
+                    </span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="flag_{{ row.key }}" {% if row.value %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
+                    <span></span>
+                </div>
+                {% endfor %}
+                {% for row in numeric_rows %}
+                <div class="plan-manage-feature-row">
+                    <span>
+                        {{ row.label }} <span class="text-faint" style="font-size:0.78rem;">{{ row.unit }}</span>
+                        {% if row.cost_tier == "high" %}<span class="badge badge-danger" style="font-size:0.65rem;">{% trans "Highest cost" %}</span>
+                        {% elif row.cost_tier == "med" %}<span class="badge badge-warn" style="font-size:0.65rem;">{% trans "Medium cost" %}</span>
+                        {% else %}<span class="badge badge-success" style="font-size:0.65rem;">{% trans "Low cost" %}</span>{% endif %}
+                    </span>
+                    <span></span>
+                    <input class="input mono" type="number" min="0" name="{{ row.key }}" value="{{ row.value|default_if_none:'' }}" placeholder="{% trans 'unlimited' %}">
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn-small" style="margin-top:0.75rem;">{% trans "Save features & limits" %}</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="form-section-label" style="margin-top:0;">{% trans "Token Ceiling & Margin Snapshot" %}</div>
+            <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">
+                {% trans "Total token allowance is set above, alongside the other numeric caps. Estimated cost uses this plan's allowed models' real per-token rates; margin compares that against the Rest-of-world (USD) price - no currency conversion." %}
+            </p>
+            <div class="plan-manage-snapshot-grid">
+                <div class="plan-manage-snapshot-box">
+                    <div class="plan-manage-snapshot-label">{% trans "Total token ceiling / mo" %}</div>
+                    <div class="mono" style="font-size:0.95rem; font-weight:600;">{{ plan.monthly_token_limit|default_if_none:"—"|intcomma }}</div>
+                </div>
+                <div class="plan-manage-snapshot-box">
+                    <div class="plan-manage-snapshot-label">{% trans "Est. cost / user / mo (ROW)" %}</div>
+                    <div class="mono" style="font-size:0.95rem; font-weight:600;">{% if margin.est_cost %}${{ margin.est_cost|floatformat:2 }}{% else %}—{% endif %}</div>
+                </div>
+                <div class="plan-manage-snapshot-box">
+                    <div class="plan-manage-snapshot-label">{% trans "Margin at ROW price" %}</div>
+                    {% if margin.margin_multiple %}
+                    <span class="badge {% if margin.margin_class == 'good' %}badge-success{% else %}badge-warn{% endif %}">{{ margin.margin_multiple|floatformat:2 }}x — {% if margin.margin_class == "good" %}{% trans "Healthy" %}{% else %}{% trans "Tight" %}{% endif %}</span>
+                    {% else %}
+                    <span class="text-faint">{% trans "Not enough data" %}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="form-section-label" style="margin-top:0;">{% trans "Budget Automation" %}</div>
+            <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">
+                {% trans "Once month-to-date spend crosses this threshold, new replies are forced onto the fallback model instead of blocking the user outright." %}
+            </p>
+            {% if plan.monthly_budget_cap %}
+            <form method="post" action="{% url 'governance:update_budget_automation' plan_id=plan.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                <div class="toggle-row-group toggle-row-wrap">
+                    <label class="toggle-switch toggle-row">
+                        <input type="checkbox" name="auto_downgrade_enabled" {% if plan.auto_downgrade_enabled %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                        <span>{% trans "Auto-downgrade on high spend" %}</span>
+                    </label>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
+                    <div>
+                        <label for="auto_downgrade_threshold_pct">{% trans "Trigger at (%)" %}</label>
+                        <input class="input" type="number" min="1" max="99" name="auto_downgrade_threshold_pct" id="auto_downgrade_threshold_pct" value="{{ plan.auto_downgrade_threshold_pct }}">
+                    </div>
+                    <div>
+                        <label for="auto_downgrade_fallback_model_id">{% trans "Fallback model" %}</label>
+                        <select class="input" name="auto_downgrade_fallback_model_id" id="auto_downgrade_fallback_model_id">
+                            <option value="">{% trans "— choose a model —" %}</option>
+                            {% regroup provider_models by provider.name as fallback_groups %}
+                            {% for group in fallback_groups %}
+                            <optgroup label="{{ group.grouper }}">
+                                {% for m in group.list %}
+                                <option value="{{ m.id }}" {% if plan.auto_downgrade_fallback_model_id == m.id %}selected{% endif %}>{{ m.display_label }}</option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn-small" style="margin-top:0.75rem;">{% trans "Save budget automation" %}</button>
+            </form>
+            {% else %}
+            <span class="badge badge-muted">{% trans "Set a monthly budget cap above first" %}</span>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <div class="form-section-label" style="margin-top:0;">{% trans "Access & Availability" %}</div>
+            <p class="text-faint" style="font-size:0.82rem; margin-top:-0.3rem;">{% trans "Where and how this plan can be seen or purchased." %}</p>
+            <form method="post" action="{% url 'governance:update_plan_access' plan_id=plan.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">
+                <div class="plan-manage-access-row">
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">{% trans "Active" %}</div>
+                        <div class="text-faint" style="font-size:0.78rem;">{% trans "Inactive plans can't be newly assigned; existing history is kept." %}</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="is_active" {% if plan.is_active %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
+                </div>
+                <div class="plan-manage-access-row">
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">{% trans "Show on public pricing page" %}</div>
+                        <div class="text-faint" style="font-size:0.78rem;">{% trans "Visible to anonymous visitors at /pricing/." %}</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="show_on_public_pricing" {% if plan.show_on_public_pricing %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
+                </div>
+                <div class="plan-manage-access-row">
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">{% trans "Self-serve signup" %}</div>
+                        <div class="text-faint" style="font-size:0.78rem;">{% trans "If off, this plan only goes through Upgrade Requests." %}</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="self_checkout_enabled" {% if plan.self_checkout_enabled %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
+                </div>
+                <div class="plan-manage-access-row">
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">{% trans 'Mark as "Most popular"' %}</div>
+                        <div class="text-faint" style="font-size:0.78rem;">{% trans "Highlighted badge on the public pricing page and this list. Only one plan at a time." %}</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="is_most_popular" {% if plan.is_most_popular %}checked{% endif %}>
+                        <span class="toggle"><span class="toggle-knob"></span></span>
+                    </label>
+                </div>
+                <button type="submit" class="btn-small" style="margin-top:0.75rem;">{% trans "Save access & availability" %}</button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="card"><p class="text-faint">{% trans "Create a plan to get started." %}</p></div>
+    {% endif %}
+</div>
+
+<div class="modal-overlay" id="newPlanModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title">{% trans "New plan" %}</h3>
+            <button type="button" class="modal-close" onclick="portalCloseModal('newPlanModal')" aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="newPlanModalBody">
+            <!-- Populated by htmx from governance:plan_new -->
+        </div>
+    </div>
+</div>
+{% endblock %}

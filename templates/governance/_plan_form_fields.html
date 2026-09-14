@@ -4,6 +4,10 @@
       hx-post="{% if plan %}{% url 'governance:plan_edit' plan_id=plan.id %}{% else %}{% url 'governance:plan_new' %}{% endif %}"
       hx-swap="none">
     {% csrf_token %}
+    {% if plan %}<input type="hidden" name="next" value="{% url 'governance:plan_manage' plan_id=plan.id %}">{% endif %}
+    {# is_active/self_checkout_enabled are edited from this plan's own Access & Availability section (update_plan_access) now, not here - kept as hidden passthroughs so saving Basics never silently resets them. New plans default both to on, matching the prior visible-checkbox defaults. #}
+    <input type="hidden" name="is_active" value="{% if not plan or plan.is_active %}on{% else %}{% endif %}">
+    <input type="hidden" name="self_checkout_enabled" value="{% if not plan or plan.self_checkout_enabled %}on{% else %}{% endif %}">
 
     <div class="form-section-label">{% trans "Basics" %}</div>
     <label for="name">{% trans "Name" %}</label>
@@ -12,16 +16,21 @@
     <label for="description">{% trans "Description" %}</label>
     <input class="input" type="text" name="description" id="description" value="{{ plan.description|default:"" }}">
 
+    <label for="billing_track">{% trans "Billing track" %}</label>
+    <select class="input" name="billing_track" id="billing_track">
+        {% for value, label in billing_track_choices %}
+        <option value="{{ value }}" {% if plan.billing_track == value or not plan and value == "per_user" %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.6rem;">
+        {% trans "Display/grouping only (Plan Management's sidebar) - doesn't restrict who this plan can actually bill." %}
+    </p>
+
     <div class="toggle-row-group toggle-row-wrap">
         <label class="toggle-switch toggle-row">
             <input type="checkbox" name="is_demo" {% if plan.is_demo %}checked{% endif %}>
             <span class="toggle"><span class="toggle-knob"></span></span>
             <span>{% trans "Time-limited demo plan" %}</span>
-        </label>
-        <label class="toggle-switch toggle-row">
-            <input type="checkbox" name="is_active" {% if not plan or plan.is_active %}checked{% endif %}>
-            <span class="toggle"><span class="toggle-knob"></span></span>
-            <span>{% trans "Active" %}</span>
         </label>
         <label class="toggle-switch toggle-row">
             <input type="checkbox" name="is_default" {% if plan.is_default %}checked{% endif %}>
@@ -33,12 +42,10 @@
             <span class="toggle"><span class="toggle-knob"></span></span>
             <span>{% trans "Visible in Change Plan picker" %}</span>
         </label>
-        <label class="toggle-switch toggle-row">
-            <input type="checkbox" name="self_checkout_enabled" {% if not plan or plan.self_checkout_enabled %}checked{% endif %}>
-            <span class="toggle"><span class="toggle-knob"></span></span>
-            <span>{% trans "Instant self-checkout on the Plans page" %}</span>
-        </label>
     </div>
+    <p class="text-faint" style="font-size:0.82rem; margin-top:-0.6rem;">
+        {% trans "Active, self-checkout, public-pricing visibility and Most popular now live in this plan's own Access & Availability section below." %}
+    </p>
     <p class="text-faint" style="font-size:0.82rem; margin-top:-0.6rem;">
         {% trans "When off, a user picking this plan sends a \"contact us\" request (Upgrade Requests inbox) instead of an instant invoice - for higher tiers you'd rather have a sales conversation about than let anyone check out instantly." %}
     </p>
@@ -47,15 +54,13 @@
     <input class="input" type="number" name="demo_duration_days" id="demo_duration_days" value="{{ plan.demo_duration_days|default_if_none:"" }}">
 
     {% trans "unlimited" as unlimited_placeholder %}
+    {# monthly_token_limit is edited from this plan's Token Ceiling & Margin Snapshot section instead (same field the Feature Access & Limits form's CAPABILITY_LIMIT_FIELDS already shows) - kept as a hidden passthrough here so saving Basics never silently wipes it. #}
+    <input type="hidden" name="monthly_token_limit" value="{{ plan.monthly_token_limit|default_if_none:'' }}">
     <div class="form-section-label">{% trans "Usage limits" %}</div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
         <div>
             <label for="daily_token_limit">{% trans "Daily token limit" %}</label>
             <input class="input" type="number" name="daily_token_limit" id="daily_token_limit" value="{{ plan.daily_token_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
-        </div>
-        <div>
-            <label for="monthly_token_limit">{% trans "Monthly token limit" %}</label>
-            <input class="input" type="number" name="monthly_token_limit" id="monthly_token_limit" value="{{ plan.monthly_token_limit|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
         </div>
         <div>
             <label for="messages_per_session_limit">{% trans "Messages per session" %}</label>
@@ -143,5 +148,5 @@
     {% endif %}
 
     <button type="submit">{% if plan %}{% trans "Save changes" %}{% else %}{% trans "Create plan" %}{% endif %}</button>
-    <a href="{% url 'governance:plans' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">{% trans "Cancel" %}</a>
+    {% if not plan %}<a href="{% url 'governance:plan_manage' %}" class="btn-small btn-ghost" style="text-decoration:none; margin-left:0.5rem;">{% trans "Cancel" %}</a>{% endif %}
 </form>

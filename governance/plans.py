@@ -24,6 +24,7 @@ ever *restrict* on top of that baseline once assigned.
 """
 
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.utils import timezone
@@ -393,6 +394,52 @@ def plan_capability_summary(plan):
                 included, value = True, f"{limit} {cap['unit']}"
         rows.append({"label": cap["label"], "value": value, "included": included})
     return rows
+
+
+_HEALTHY_MARGIN_MULTIPLE = Decimal("1.5")
+
+
+def estimate_plan_margin(plan):
+    """Plan Management's "Token Ceiling & Margin Snapshot" - a REAL
+    estimate from actual rates (chat.models.ModelConfig.input_cost_per_1m/
+    output_cost_per_1m, the fields actually enforced via Plan.
+    allowed_models - allowed_provider_models is still inert), never a
+    fabricated number. Returns a dict with est_cost/margin_multiple/
+    margin_class all None when there isn't enough real data to estimate
+    from (no monthly_token_limit set, no allowed model has both prices
+    set, or no ROW RegionalPrice.price yet) - the template renders "-"
+    rather than a misleading guess.
+
+    Compares against the ROW region's price specifically (already USD,
+    the same currency ModelConfig's rates are in) - deliberately avoids
+    any currency conversion, matching this app's explicit "no auto
+    currency conversion between regions" product decision (see
+    billing.models.RegionalPrice's own docstring)."""
+    from billing.models import RegionalPrice
+
+    result = {"est_cost": None, "margin_multiple": None, "margin_class": None}
+
+    if not plan.monthly_token_limit:
+        return result
+
+    rated_models = [
+        m for m in plan.allowed_models.all() if m.input_cost_per_1m is not None and m.output_cost_per_1m is not None
+    ]
+    if not rated_models:
+        return result
+
+    avg_rate_per_mtok = sum((m.input_cost_per_1m + m.output_cost_per_1m) / 2 for m in rated_models) / len(rated_models)
+    est_cost = (Decimal(plan.monthly_token_limit) / Decimal("1000000")) * avg_rate_per_mtok
+    result["est_cost"] = est_cost
+
+    row_price = RegionalPrice.objects.filter(plan=plan, region_code="ROW").values_list("price", flat=True).first()
+    if not row_price or not est_cost:
+        return result
+
+    margin_multiple = row_price / est_cost
+    result["margin_multiple"] = margin_multiple
+    result["margin_class"] = "good" if margin_multiple >= _HEALTHY_MARGIN_MULTIPLE else "tight"
+    return result
 
 
 def check_session_creation_limit(user):

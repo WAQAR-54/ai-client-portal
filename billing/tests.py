@@ -113,6 +113,14 @@ class PublicPricingViewTests(TestCase):
         self.assertNotContains(response, "Inactive Plan")
         self.assertNotContains(response, "Demo Plan")
 
+    def test_show_on_public_pricing_false_hides_an_otherwise_active_plan(self):
+        """An active, non-demo plan can still be hidden from this
+        anonymous marketing grid via the new independent toggle - e.g. a
+        sales-only enterprise tier that stays assignable elsewhere."""
+        Plan.objects.create(name="Sales Only Plan", is_active=True, show_on_public_pricing=False)
+        response = self.client.get(reverse("billing:public_pricing"), REMOTE_ADDR="182.176.1.1")
+        self.assertNotContains(response, "Sales Only Plan")
+
     def test_leads_with_agents_and_team_features_not_just_the_model_bundle(self):
         """Positioning fix (Gap 4): "4 models bundled" is a price-based
         pitch a provider could undercut by bundling themselves; the

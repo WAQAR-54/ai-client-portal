@@ -502,6 +502,35 @@ class Plan(models.Model):
         help_text="Off shows 'Contact us' (creates an Upgrade Request) instead of an instant checkout button.",
     )
 
+    class BillingTrack(models.TextChoices):
+        PER_USER = "per_user", "Per-User"
+        TEAM = "team", "Team"
+
+    # Display/grouping only (Plan Management's sidebar sections) - no
+    # enforcement anywhere. Any Plan can already bill either a User or a
+    # Team (billing.invoicing.generate_invoice_for_user/_for_team both take
+    # a plain plan= override), so this never gates which function runs.
+    billing_track = models.CharField(max_length=10, choices=BillingTrack.choices, default=BillingTrack.PER_USER)
+
+    # Distinct from is_active (which also controls assignability via the
+    # Change Plan picker/checkout) - lets a plan stay active/assignable
+    # while being hidden from the anonymous marketing grid (e.g. a sales-
+    # only enterprise tier, or the Demo plan). Only billing.views.
+    # PublicPricingView reads this; MyPlansView/checkout_plan/
+    # request_plan_access (the logged-in self-serve picker) intentionally
+    # keep their own separate is_active+is_demo check.
+    show_on_public_pricing = models.BooleanField(
+        default=True,
+        help_text="Off hides this plan from the public /pricing/ page, even if Active.",
+    )
+    # Cosmetic badge only (Plan Management + public pricing page) - single
+    # selection enforced the same way is_default already is, in
+    # PlanFormView.post below.
+    is_most_popular = models.BooleanField(
+        default=False,
+        help_text="Highlights this plan with a 'Most popular' badge. Only one plan should have this set.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

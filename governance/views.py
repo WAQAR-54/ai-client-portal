@@ -1104,18 +1104,6 @@ def clear_user_overrides_view(request, user_id):
     return redirect("governance:users")
 
 
-class PlanListView(SuperAdminRequiredMixin, ListView):
-    """Plan Management is SuperAdmin-only (role hierarchy prompt, Section
-    1/2) — an Admin uses the Plans a SuperAdmin already made visible to
-    them (via Change Plan on the Users list), but cannot see this
-    create/edit screen at all, not just have it grayed out."""
-
-    model = Plan
-    template_name = "governance/plans.html"
-    context_object_name = "plans"
-    queryset = Plan.objects.order_by("-is_default", "name")
-
-
 def _auto_enabled_provider_model_ids(feature_flags, submitted_provider_model_ids):
     """Ensures the ONE provider model each of these two flags actually
     needs is present in the returned id set whenever that flag is on -
@@ -1188,8 +1176,14 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
         plan.is_active = request.POST.get("is_active") == "on"
         plan.is_visible_to_admins = request.POST.get("is_visible_to_admins") == "on"
         plan.self_checkout_enabled = request.POST.get("self_checkout_enabled") == "on"
+        plan.billing_track = (
+            request.POST.get("billing_track")
+            if request.POST.get("billing_track") in Plan.BillingTrack.values
+            else Plan.BillingTrack.PER_USER
+        )
 
         make_default = request.POST.get("is_default") == "on"
+        make_most_popular = request.POST.get("is_most_popular") == "on"
         provider_model_ids = _auto_enabled_provider_model_ids(
             plan.feature_flags, request.POST.getlist("provider_model_ids")
         )
@@ -1205,13 +1199,158 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
             elif plan.is_default and not make_default:
                 plan.is_default = False
                 plan.save(update_fields=["is_default"])
+            # Same single-selection pattern as is_default above.
+            if make_most_popular:
+                Plan.objects.exclude(pk=plan.pk).update(is_most_popular=False)
+                plan.is_most_popular = True
+                plan.save(update_fields=["is_most_popular"])
+            elif plan.is_most_popular and not make_most_popular:
+                plan.is_most_popular = False
+                plan.save(update_fields=["is_most_popular"])
 
         log_action(request.user, "plan.create" if is_new else "plan.update", plan, new_value=plan.name)
+        next_url = request.POST.get("next") or reverse("governance:plan_manage", kwargs={"plan_id": plan.pk})
         if request.headers.get("HX-Request"):
             response = HttpResponse(status=204)
-            response["HX-Redirect"] = reverse("governance:plans")
+            response["HX-Redirect"] = next_url
             return response
-        return redirect("governance:plans")
+        return redirect(next_url)
+
+
+class PlanManageView(SuperAdminRequiredMixin, TemplateView):
+    """Single consolidated screen for everything about one Plan - regional
+    pricing, feature access + limits, token ceiling + margin snapshot, and
+    access/availability - replacing 4 previously-scattered pages (plans.
+    html/plan_form.html, capability_limits.html, budget_automation.html,
+    billing's regional_pricing.html) that each edited a different slice of
+    the same Plan row from a different nav spot. Every section's form
+    posts straight to that section's OWN existing endpoint (PlanFormView.
+    post, update_capability_limits, update_plan_access, billing.views.
+    update_plan_regional_pricing) with a hidden next= field pointing back
+    here - this page is a new shell around reused write logic, not a
+    rewrite of it. The old 3 matrix pages stay as read-only "Compare
+    Plans" views (see governance/views.py's CapabilityLimitsView/
+    BudgetAutomationView and billing.views.RegionalPricingView)."""
+
+    template_name = "governance/plan_manage.html"
+
+    def get_context_data(self, **kwargs):
+        from billing.models import RegionalPrice
+        from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS
+
+        plans = list(Plan.objects.order_by("billing_track", "-is_default", "name"))
+        plan = get_object_or_404(Plan, id=kwargs["plan_id"]) if kwargs.get("plan_id") else (plans[0] if plans else None)
+
+        context = super().get_context_data(**kwargs) | {
+            "plans": plans,
+            "per_user_plans": [p for p in plans if p.billing_track == Plan.BillingTrack.PER_USER],
+            "team_plans": [p for p in plans if p.billing_track == Plan.BillingTrack.TEAM],
+            "plan": plan,
+            "period_choices": Plan.Period.choices,
+            "billing_track_choices": Plan.BillingTrack.choices,
+            "models": ModelConfig.objects.order_by("provider", "model_name"),
+            "provider_models": ProviderModel.objects.filter(is_enabled=True).select_related("provider"),
+        }
+        if plan is None:
+            return context
+
+        existing_flags = plan.feature_flags
+        context["known_flags"] = [(key, label, bool(existing_flags.get(key))) for key, label in KNOWN_FEATURE_FLAGS]
+        context["selected_model_ids"] = set(plan.allowed_models.values_list("id", flat=True))
+        context["selected_provider_model_ids"] = set(plan.allowed_provider_models.values_list("id", flat=True))
+
+        context["numeric_rows"] = [
+            {
+                "key": field,
+                "label": label,
+                "unit": unit,
+                "cost_tier": CAPABILITY_COST_TIERS.get(field, "low"),
+                "value": getattr(plan, field),
+            }
+            for field, label, unit in CAPABILITY_LIMIT_FIELDS
+        ]
+        context["toggle_rows"] = [
+            {
+                "key": key,
+                "label": _KNOWN_FLAG_LABELS.get(key, key),
+                "cost_tier": CAPABILITY_COST_TIERS.get(key, "low"),
+                "value": plan.has_feature(key),
+            }
+            for key in CAPABILITY_TOGGLE_FLAGS
+        ]
+
+        # Same "lazily ensure a row exists" pattern as billing.views.
+        # RegionalPricingView, scoped to just this one plan.
+        default_codes = [code for code, *_ in REGIONS]
+        extra_codes = [code for code, *_ in EXTRA_REGIONS]
+        added_codes = list(
+            RegionalPrice.objects.filter(plan=plan, region_code__in=extra_codes)
+            .values_list("region_code", flat=True)
+            .distinct()
+        )
+        active_codes = default_codes + [c for c in added_codes if c not in default_codes]
+        existing_prices = {
+            rp.region_code: rp for rp in RegionalPrice.objects.filter(plan=plan, region_code__in=active_codes)
+        }
+        to_create = [RegionalPrice(plan=plan, region_code=code) for code in active_codes if code not in existing_prices]
+        if to_create:
+            RegionalPrice.objects.bulk_create(to_create)
+            existing_prices = {
+                rp.region_code: rp for rp in RegionalPrice.objects.filter(plan=plan, region_code__in=active_codes)
+            }
+        context["region_rows"] = [
+            {
+                "code": code,
+                "label": REGION_BY_CODE[code][1],
+                "currency": REGION_BY_CODE[code][2],
+                "flag": REGION_BY_CODE[code][3],
+                "price_row": existing_prices[code],
+            }
+            for code in active_codes
+        ]
+
+        from governance.plans import estimate_plan_margin
+
+        context["margin"] = estimate_plan_margin(plan)
+        return context
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["POST"])
+def update_plan_access(request, plan_id):
+    plan = get_object_or_404(Plan, id=plan_id)
+    old_value = (
+        f"active={plan.is_active} self_checkout={plan.self_checkout_enabled} "
+        f"public={plan.show_on_public_pricing} popular={plan.is_most_popular}"
+    )
+
+    plan.is_active = request.POST.get("is_active") == "on"
+    plan.self_checkout_enabled = request.POST.get("self_checkout_enabled") == "on"
+    plan.show_on_public_pricing = request.POST.get("show_on_public_pricing") == "on"
+
+    make_most_popular = request.POST.get("is_most_popular") == "on"
+    update_fields = ["is_active", "self_checkout_enabled", "show_on_public_pricing"]
+    with transaction.atomic():
+        plan.save(update_fields=update_fields)
+        if make_most_popular:
+            Plan.objects.exclude(pk=plan.pk).update(is_most_popular=False)
+            plan.is_most_popular = True
+            plan.save(update_fields=["is_most_popular"])
+        elif plan.is_most_popular and not make_most_popular:
+            plan.is_most_popular = False
+            plan.save(update_fields=["is_most_popular"])
+
+    log_action(
+        request.user,
+        "plan.access_update",
+        plan,
+        old_value=old_value,
+        new_value=(
+            f"active={plan.is_active} self_checkout={plan.self_checkout_enabled} "
+            f"public={plan.show_on_public_pricing} popular={plan.is_most_popular}"
+        ),
+    )
+    return redirect(request.POST.get("next") or reverse("governance:plan_manage", kwargs={"plan_id": plan.pk}))
 
 
 class BudgetAutomationView(SuperAdminRequiredMixin, TemplateView):
@@ -1255,7 +1394,7 @@ def update_budget_automation(request, plan_id):
         old_value=old_value,
         new_value=f"enabled={plan.auto_downgrade_enabled} threshold={plan.auto_downgrade_threshold_pct}",
     )
-    return redirect("governance:budget_automation")
+    return redirect(request.POST.get("next") or "governance:budget_automation")
 
 
 class RoutingRuleListView(SuperAdminRequiredMixin, ListView):
@@ -1488,7 +1627,7 @@ def update_capability_limits(request, plan_id):
             {field: getattr(plan, field) for field in numeric_fields} | {f"flag_{k}": v for k, v in new_flags.items()}
         ),
     )
-    return redirect("governance:capability_limits")
+    return redirect(request.POST.get("next") or "governance:capability_limits")
 
 
 _PII_RULE_ORDER = ["national_id", "credit_card", "phone_number"]
