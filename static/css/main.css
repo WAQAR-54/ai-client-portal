@@ -1522,6 +1522,76 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
 .auth-google-btn-wrap { display: flex; justify-content: center; }
 
+/* Decorative 3D-look orb (templates/accounts/_auth_orb.html, shared by
+   Login/Signup) - pure CSS, no canvas/WebGL: a radial-gradient sphere
+   with an offset highlight to fake a light source, a tilted ring (2D
+   rotateX/rotateZ under a perspective parent) for a Saturn-like sense of
+   depth, and a few blurred drifting particles. Placed in the DOM right
+   after .brand-mark and before the tagline/h2/p (all of which are
+   already position:relative in this stylesheet) so the headline text
+   naturally paints on top without needing explicit z-index bumps on
+   every text rule. aria-hidden in the template since it's purely
+   decorative. */
+.auth-orb-scene {
+    position: absolute;
+    right: -8%;
+    bottom: -10%;
+    width: min(440px, 62%);
+    aspect-ratio: 1;
+    z-index: 0;
+    perspective: 900px;
+}
+.auth-orb {
+    position: absolute;
+    inset: 10%;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 32% 26%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.28) 13%, transparent 34%),
+        radial-gradient(circle at 62% 68%, var(--accent) 0%, transparent 62%),
+        radial-gradient(circle at 50% 50%, #ffffff 0%, var(--accent) 32%, var(--secondary-hover) 76%, #050a1e 100%);
+    box-shadow:
+        0 0 70px 12px rgba(0, 174, 240, 0.4),
+        inset -20px -24px 55px rgba(0, 0, 0, 0.45),
+        inset 14px 16px 32px rgba(255, 255, 255, 0.22);
+    animation: auth-orb-float 9s ease-in-out infinite;
+}
+.auth-orb-ring {
+    position: absolute;
+    inset: -4%;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 36px rgba(0, 174, 240, 0.3);
+    transform: rotateX(72deg) rotateZ(-18deg);
+    animation: auth-orb-spin 18s linear infinite;
+}
+.auth-orb-particle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, var(--accent) 70%, transparent 100%);
+    box-shadow: 0 0 14px 2px rgba(0, 174, 240, 0.6);
+}
+.auth-orb-particle-1 { top: 8%; left: 4%; animation: auth-orb-drift 7s ease-in-out infinite; }
+.auth-orb-particle-2 { top: 72%; left: 88%; width: 6px; height: 6px; animation: auth-orb-drift 9.5s ease-in-out infinite reverse; }
+.auth-orb-particle-3 { top: 48%; left: -3%; width: 14px; height: 14px; animation: auth-orb-drift 11s ease-in-out infinite; }
+
+@keyframes auth-orb-float {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-14px) scale(1.02); }
+}
+@keyframes auth-orb-spin {
+    from { transform: rotateX(72deg) rotateZ(0deg); }
+    to { transform: rotateX(72deg) rotateZ(360deg); }
+}
+@keyframes auth-orb-drift {
+    0%, 100% { transform: translate(0, 0); opacity: 0.85; }
+    50% { transform: translate(10px, -16px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-orb, .auth-orb-ring, .auth-orb-particle { animation: none; }
+}
+
 @media (max-width: 860px) {
     .auth-split-brand { display: none; }
 }
