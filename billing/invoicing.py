@@ -137,6 +137,41 @@ def generate_invoice_for_department(
     )
 
 
+def generate_invoice_for_team(team, *, plan=None, region_code=None, due_in_days=None):
+    """One invoice for a specific Team, billed to that team's own Manager
+    (accounts.Team.manager) - not the department-wide "pick any user"
+    flow generate_invoice_for_department's caller normally drives.
+    Reported directly: there was no way to bill a team on its own at
+    all, and the department-wide seat_count (department.users.count())
+    doesn't mean anything for "this one team's headcount."
+
+    seat_count is ALWAYS team.members.count() - computed fresh from the
+    real accounts.Team roster every time this runs, never a stored or
+    manually-typed number, so it can never drift from reality (the exact
+    complaint: "increasing team size doesn't get calculated in"). Delegates
+    the actual money math (plan resolution, regional price, tax, the
+    existing extra-seat-over-plan.seats_included line item) straight to
+    generate_invoice_for_department - reused as-is, not reimplemented,
+    since a team is still billed against its department's regional price/
+    tax profile.
+
+    Raises InvoiceGenerationError if the team has no manager assigned yet
+    (there'd be no one to send it to) - same clear-reason-not-generic-
+    failure convention as every other case that function already raises."""
+    if team.manager_id is None:
+        raise InvoiceGenerationError(f'"{team.name}" has no manager assigned yet - assign one before invoicing it.')
+
+    seat_count = team.members.count()
+    return generate_invoice_for_department(
+        team.department,
+        recipient_user=team.manager,
+        plan=plan,
+        seat_count=seat_count,
+        region_code=region_code,
+        due_in_days=due_in_days if due_in_days is not None else DEFAULT_DUE_IN_DAYS,
+    )
+
+
 def _effective_due_in_days(plan, due_in_days):
     if due_in_days is not None:
         return due_in_days

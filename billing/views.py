@@ -14,10 +14,10 @@ from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
 from accounts.geo import country_code_for_ip
-from accounts.models import Department, User
+from accounts.models import Department, Team, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
 from billing.emails import send_invoice_email, share_url_for_invoice
-from billing.invoicing import InvoiceGenerationError, generate_invoice_for_user
+from billing.invoicing import InvoiceGenerationError, generate_invoice_for_team, generate_invoice_for_user
 from billing.models import (
     DepartmentBillingProfile,
     Invoice,
@@ -581,6 +581,34 @@ def generate_invoice(request):
     else:
         log_action(request.user, "billing.invoice_generate", invoice, new_value=invoice.invoice_number)
     return redirect("billing:invoices")
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def generate_team_invoice(request, team_id):
+    """The "generate an invoice for THIS team" action on the Teams page
+    (governance:teams) - see billing.invoicing.generate_invoice_for_team
+    for why this is a separate function from generate_invoice above
+    rather than one more field on that form: the recipient (the team's
+    own Manager) and the seat count (team.members.count(), always live)
+    are never a choice here, both are simply what the team actually is
+    right now."""
+    team = get_object_or_404(Team.objects.select_related("department", "manager"), id=team_id)
+    if _is_scoped_admin(request.user) and team.department_id != request.user.department_id:
+        raise PermissionDenied("That team is outside your department.")
+
+    try:
+        invoice = generate_invoice_for_team(team)
+    except InvoiceGenerationError as exc:
+        django_messages.error(request, str(exc))
+    else:
+        log_action(request.user, "billing.team_invoice_generate", invoice, new_value=invoice.invoice_number)
+        django_messages.success(
+            request,
+            _("Invoice %(number)s generated for %(manager)s.")
+            % {"number": invoice.invoice_number, "manager": team.manager.email},
+        )
+    return redirect("governance:teams")
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)

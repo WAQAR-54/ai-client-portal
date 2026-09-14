@@ -6,9 +6,14 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import Department, User
+from accounts.models import Department, Team, User
 from billing.access import has_overdue_unpaid_invoice
-from billing.invoicing import InvoiceGenerationError, generate_invoice_for_department, generate_invoice_for_user
+from billing.invoicing import (
+    InvoiceGenerationError,
+    generate_invoice_for_department,
+    generate_invoice_for_team,
+    generate_invoice_for_user,
+)
 from billing.models import (
     DepartmentBillingProfile,
     Invoice,
@@ -632,6 +637,152 @@ class GenerateInvoiceForUserTests(TestCase):
         invoice = generate_invoice_for_user(user, plan=self.plan, region_code="AE")
         self.assertEqual(invoice.currency, "AED")
         self.assertEqual(invoice.subtotal, Decimal("100"))
+
+
+class GenerateInvoiceForTeamTests(TestCase):
+    """billing.invoicing.generate_invoice_for_team - reported directly:
+    there was no way to bill a specific team at all (only a whole
+    Department, or one individual user). Recipient is always the
+    team's own Manager; seat count is always team.members.count(),
+    computed live so it can never drift from the team's real size."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.plan = Plan.objects.create(name="Growth", seats_included=2)
+        RegionalPrice.objects.create(
+            plan=self.plan, region_code="ROW", price=Decimal("100"), extra_seat_price=Decimal("10")
+        )
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        self.manager = User.objects.create_user(
+            email="manager@example.com", password="pw12345!", role=User.Role.MANAGER, department=self.department
+        )
+        self.team = Team.objects.create(name="Alpha", department=self.department, manager=self.manager)
+        self.manager.team = self.team
+        self.manager.save(update_fields=["team"])
+
+    def test_invoice_is_billed_to_the_teams_manager(self):
+        invoice = generate_invoice_for_team(self.team)
+        self.assertEqual(invoice.recipient_user, self.manager)
+        self.assertEqual(invoice.department, self.department)
+
+    def test_seat_count_is_the_teams_real_member_count(self):
+        for i in range(3):
+            member = User.objects.create_user(email=f"member{i}@example.com", password="pw12345!")
+            member.team = self.team
+            member.save(update_fields=["team"])
+        # 3 members + the manager (also a team member via User.team,
+        # kept in sync - see Team.manager's own help_text) = 4.
+        invoice = generate_invoice_for_team(self.team)
+        self.assertEqual(invoice.seats_billed, 4)
+
+    def test_seat_count_recalculates_as_team_size_changes(self):
+        """The exact complaint: increasing team size wasn't reflected in
+        the invoice. Each call recomputes from the real roster, not a
+        stored number - so a second invoice picks up the new size."""
+        first_invoice = generate_invoice_for_team(self.team)
+        self.assertEqual(first_invoice.seats_billed, 1)
+
+        new_member = User.objects.create_user(email="newmember@example.com", password="pw12345!")
+        new_member.team = self.team
+        new_member.save(update_fields=["team"])
+
+        second_invoice = generate_invoice_for_team(self.team)
+        self.assertEqual(second_invoice.seats_billed, 2)
+
+    def test_extra_seats_over_the_plans_included_count_are_billed(self):
+        for i in range(2):
+            member = User.objects.create_user(email=f"extra{i}@example.com", password="pw12345!")
+            member.team = self.team
+            member.save(update_fields=["team"])
+        # 2 extra members + manager = 3 seats; plan includes 2 -> 1 extra.
+        invoice = generate_invoice_for_team(self.team)
+        self.assertEqual(invoice.seats_billed, 3)
+        self.assertEqual(invoice.subtotal, Decimal("110"))  # 100 base + 1 extra seat @ 10
+
+    def test_raises_when_the_team_has_no_manager(self):
+        unmanaged_team = Team.objects.create(name="Beta", department=self.department)
+        with self.assertRaises(InvoiceGenerationError):
+            generate_invoice_for_team(unmanaged_team)
+
+
+class GenerateTeamInvoiceViewTests(TestCase):
+    """The "Generate invoice" button on the Teams page (governance:teams)."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.plan = Plan.objects.create(name="Growth")
+
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.manager = User.objects.create_user(
+            email="manager@example.com", password="pw12345!", role=User.Role.MANAGER, department=self.department
+        )
+        self.team = Team.objects.create(name="Alpha", department=self.department, manager=self.manager)
+        self.manager.team = self.team
+        self.manager.save(update_fields=["team"])
+
+        # Deliberately priced/assigned AFTER every fixture user is created
+        # (see GenerateInvoiceViewTests' own setUp for the same reasoning):
+        # generate_welcome_invoice_on_creation (accounts/signals.py) would
+        # otherwise give each of them their own extra welcome invoice the
+        # moment the department has both a plan and a price, muddying
+        # exactly the single invoice each test below expects from its own
+        # POST.
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+
+    def _url(self):
+        from django.urls import reverse
+
+        return reverse("billing:generate_team_invoice", kwargs={"team_id": self.team.id})
+
+    def test_admin_generates_invoice_for_own_departments_team(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(self._url())
+        self.assertRedirects(response, reverse("governance:teams"))
+        from billing.models import Invoice
+
+        self.assertTrue(Invoice.objects.filter(recipient_user=self.manager).exists())
+
+    def test_superadmin_generates_invoice_for_any_team(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(self._url())
+        self.assertRedirects(response, reverse("governance:teams"))
+        from billing.models import Invoice
+
+        self.assertTrue(Invoice.objects.filter(recipient_user=self.manager).exists())
+
+    def test_admin_cannot_generate_for_another_departments_team(self):
+        other_manager = User.objects.create_user(
+            email="othermanager@example.com", password="pw12345!", department=self.other_department
+        )
+        other_team = Team.objects.create(name="Beta", department=self.other_department, manager=other_manager)
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:generate_team_invoice", kwargs={"team_id": other_team.id}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_unmanaged_team_shows_an_error_and_creates_no_invoice(self):
+        unmanaged_team = Team.objects.create(name="Gamma", department=self.department)
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:generate_team_invoice", kwargs={"team_id": unmanaged_team.id}), follow=True
+        )
+        from billing.models import Invoice
+
+        self.assertFalse(Invoice.objects.filter(department=self.department, plan=self.plan).exists())
+        messages = list(response.context["messages"])
+        self.assertTrue(any("no manager" in str(m) for m in messages))
 
 
 class InvoiceListViewTests(TestCase):
