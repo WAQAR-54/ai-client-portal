@@ -1636,6 +1636,19 @@ class EmailLogListView(SuperAdminRequiredMixin, TemplateView):
 
 @role_required(User.Role.SUPERADMIN)
 @require_http_methods(["POST"])
+def delete_email_logs(request):
+    from notifications.models import EmailLog
+
+    if request.POST.get("delete_all") == "1":
+        EmailLog.objects.all().delete()
+    else:
+        log_ids = request.POST.getlist("log_ids")
+        EmailLog.objects.filter(id__in=log_ids).delete()
+    return redirect("governance:email_logs")
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["POST"])
 def update_email_settings(request):
     from notifications.models import EmailSettings
 

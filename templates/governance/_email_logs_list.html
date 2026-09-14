@@ -1,7 +1,25 @@
 {% load i18n %}
+<form id="emailLogsBulkForm" method="post" action="{% url 'governance:delete_email_logs' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Delete the selected email logs? This cannot be undone." %}')">
+    {% csrf_token %}
+</form>
+<form id="emailLogsDeleteAllForm" method="post" action="{% url 'governance:delete_email_logs' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Delete ALL email logs? This cannot be undone." %}')">
+    {% csrf_token %}
+    <input type="hidden" name="delete_all" value="1">
+</form>
+{% if logs %}
+<div class="log-bulk-actions" style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;">
+    <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem;">
+        <input type="checkbox" id="emailLogsSelectAll" onchange="portalToggleAllEmailLogs(this)">
+        {% trans "Select all" %}
+    </label>
+    <button type="submit" form="emailLogsBulkForm" class="btn-small btn-ghost">{% trans "Delete selected" %}</button>
+    <button type="submit" form="emailLogsDeleteAllForm" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Delete all" %}</button>
+</div>
+{% endif %}
 <div id="emailLogsList">
     {% for log in logs %}
     <div class="email-log-row" data-status="{% if log.status == 'failed' %}failed{% elif log.opened_at %}opened{% else %}pending{% endif %}">
+        <input type="checkbox" name="log_ids" value="{{ log.id }}" form="emailLogsBulkForm" class="email-log-select">
         {% if log.status == "sent" %}
         <div class="email-log-icon sent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
         {% else %}

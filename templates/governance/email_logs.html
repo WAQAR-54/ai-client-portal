@@ -66,6 +66,11 @@ function portalSetLogFilter(filter, el) {
         row.style.display = (filter === "all" || row.dataset.status === filter) ? "flex" : "none";
     });
 }
+function portalToggleAllEmailLogs(checkbox) {
+    document.querySelectorAll("#emailLogsList .email-log-select").forEach(function(cb) {
+        if (cb.closest(".email-log-row").style.display !== "none") cb.checked = checkbox.checked;
+    });
+}
 function portalTogglePasswordField() {
     var field = document.getElementById("emailPasswordField");
     var btn = document.getElementById("emailPasswordToggle");

@@ -1468,6 +1468,30 @@ class EmailLogsAdminTests(TestCase):
         self.assertEqual(response.context["opened_count"], 1)
         self.assertEqual(response.context["open_rate"], 50)
 
+    def test_delete_selected_logs(self):
+        keep = self.EmailLog.objects.create(recipient="keep@example.com", subject="Keep", status="sent")
+        gone = self.EmailLog.objects.create(recipient="gone@example.com", subject="Gone", status="failed")
+        response = self.client.post(reverse("governance:delete_email_logs"), {"log_ids": [str(gone.id)]})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(self.EmailLog.objects.filter(id=gone.id).exists())
+        self.assertTrue(self.EmailLog.objects.filter(id=keep.id).exists())
+
+    def test_delete_all_logs(self):
+        self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent")
+        self.EmailLog.objects.create(recipient="b@example.com", subject="Hi2", status="failed")
+        response = self.client.post(reverse("governance:delete_email_logs"), {"delete_all": "1"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.EmailLog.objects.count(), 0)
+
+    def test_delete_logs_requires_superadmin(self):
+        log = self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent")
+        self.client.logout()
+        User.objects.create_user(email="admin2@example.com", password="pw12345!", role=User.Role.ADMIN)
+        self.client.login(email="admin2@example.com", password="pw12345!")
+        response = self.client.post(reverse("governance:delete_email_logs"), {"log_ids": [str(log.id)]})
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(self.EmailLog.objects.filter(id=log.id).exists())
+
     def test_update_settings_saves_fields(self):
         response = self.client.post(
             reverse("governance:update_email_settings"),

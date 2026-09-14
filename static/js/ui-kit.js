@@ -286,7 +286,7 @@ document.addEventListener("toggle", function(evt) {
         portalNotifBellWasOpen = evt.target.open;
     }
 }, true);
-document.body.addEventListener("htmx:afterSwap", function(evt) {
+document.addEventListener("htmx:afterSwap", function(evt) {
     var target = evt.detail && evt.detail.target;
     if (!target) return;
     var touchesBell = target.id === "notif-bell-wrap" || (target.classList && target.classList.contains("notif-bell"));
@@ -311,5 +311,14 @@ function portalMarkNotificationRead(anchor) {
         headers: csrfInput ? {"X-CSRFToken": csrfInput.value} : {},
         credentials: "same-origin",
         keepalive: true,
+    });
+}
+
+/* notifications/list.html's "Select all" checkbox for bulk-delete - checks
+   every notif-select box so the visible page of history can be deleted in
+   one go via the notifBulkForm. */
+function portalToggleAllNotifications(checkbox) {
+    document.querySelectorAll(".notif-select").forEach(function(cb) {
+        cb.checked = checkbox.checked;
     });
 }

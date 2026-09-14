@@ -13,9 +13,30 @@
     </div>
     <p class="text-muted" style="margin-top:-0.4rem;">{% trans "Your full notification history - the bell only ever shows the 10 most recent." %}</p>
 
+    <form id="notifBulkForm" method="post" action="{% url 'notifications:delete_notifications' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Delete the selected notifications? This cannot be undone." %}')">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'notifications:list' %}">
+    </form>
+    <form id="notifDeleteAllForm" method="post" action="{% url 'notifications:delete_notifications' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Delete ALL notifications? This cannot be undone." %}')">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'notifications:list' %}">
+        <input type="hidden" name="delete_all" value="1">
+    </form>
+    {% if page_obj %}
+    <div style="display:flex; align-items:center; gap:0.75rem; margin-top:0.5rem;">
+        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem;">
+            <input type="checkbox" id="notifSelectAll" onchange="portalToggleAllNotifications(this)">
+            {% trans "Select all" %}
+        </label>
+        <button type="submit" form="notifBulkForm" class="btn-small btn-ghost">{% trans "Delete selected" %}</button>
+        <button type="submit" form="notifDeleteAllForm" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Delete all" %}</button>
+    </div>
+    {% endif %}
+
     <div class="notif-history-list" style="display:flex; flex-direction:column; margin-top:0.75rem;">
         {% for n in page_obj %}
-        <div class="notif-history-row{% if not n.is_read %} notif-history-row-unread{% endif %}">
+        <div class="notif-history-row{% if not n.is_read %} notif-history-row-unread{% endif %}" style="display:flex; align-items:center; gap:0.6rem;">
+            <input type="checkbox" name="notification_ids" value="{{ n.id }}" form="notifBulkForm" class="notif-select">
             {% if n.action_url %}
             <a href="{{ n.action_url }}" class="notif-history-link" data-mark-read-url="{% url 'notifications:mark_read' notification_id=n.id %}" onclick="portalMarkNotificationRead(this)">
                 <span class="notif-item-title">{{ n.title }}</span>

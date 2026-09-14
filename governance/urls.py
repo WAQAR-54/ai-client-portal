@@ -96,6 +96,7 @@ urlpatterns = [
         name="update_capability_limits",
     ),
     path("email-logs/", views.EmailLogListView.as_view(), name="email_logs"),
+    path("email-logs/delete/", views.delete_email_logs, name="delete_email_logs"),
     path("email-logs/settings/update/", views.update_email_settings, name="update_email_settings"),
     path("email-logs/settings/test/", views.send_test_email, name="send_test_email"),
     path("upgrade-requests/", views.UpgradeRequestListView.as_view(), name="upgrade_requests"),

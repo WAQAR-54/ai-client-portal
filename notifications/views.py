@@ -96,6 +96,18 @@ def mark_all_read(request):
 @login_required
 @require_feature("notifications")
 @require_http_methods(["POST"])
+def delete_notifications(request):
+    if request.POST.get("delete_all") == "1":
+        Notification.objects.filter(user=request.user).delete()
+    else:
+        notification_ids = request.POST.getlist("notification_ids")
+        Notification.objects.filter(user=request.user, id__in=notification_ids).delete()
+    return redirect(request.POST.get("next") or "notifications:list")
+
+
+@login_required
+@require_feature("notifications")
+@require_http_methods(["POST"])
 def update_preferences(request):
     preference, _created = NotificationPreference.objects.get_or_create(user=request.user)
     for key, _label in EMAIL_TOGGLE_LABELS:

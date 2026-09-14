@@ -454,6 +454,28 @@ class NotificationListPageTests(TestCase):
         self.assertContains(response, "Yours")
         self.assertNotContains(response, "Not yours")
 
+    def test_delete_selected_notifications(self):
+        keep = notify(self.user, NotificationType.USAGE_WARNING, title="Keep")
+        gone = notify(self.user, NotificationType.USAGE_WARNING, title="Gone")
+        response = self.client.post(reverse("notifications:delete_notifications"), {"notification_ids": [gone.id]})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Notification.objects.filter(id=gone.id).exists())
+        self.assertTrue(Notification.objects.filter(id=keep.id).exists())
+
+    def test_delete_all_notifications(self):
+        notify(self.user, NotificationType.USAGE_WARNING, title="One")
+        notify(self.user, NotificationType.ADMIN_CHANGE, title="Two")
+        response = self.client.post(reverse("notifications:delete_notifications"), {"delete_all": "1"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Notification.objects.filter(user=self.user).count(), 0)
+
+    def test_delete_notifications_only_affects_own_notifications(self):
+        other = User.objects.create_user(email="someone-else2@example.com", password="pw12345!")
+        others_notification = notify(other, NotificationType.USAGE_WARNING, title="Not yours")
+        response = self.client.post(reverse("notifications:delete_notifications"), {"delete_all": "1"})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Notification.objects.filter(id=others_notification.id).exists())
+
 
 class EmailSettingsModelTests(TestCase):
     def test_load_creates_singleton(self):
