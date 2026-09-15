@@ -9,14 +9,3 @@ staticfiles/
 logs/
 media/
 docs/LOCAL_ACCESS.md
-
-# React frontend (frontend/) - node_modules never committed; static/react/
-# is Vite's BUILD OUTPUT (generated from frontend/src), not source, so it
-# isn't committed either - same reasoning as staticfiles/ above. Means
-# production needs a Node build step (npm ci && npm run build) added to
-# the Docker/CI pipeline before any real page depends on it - not needed
-# yet for Phase 0's throwaway /react-test/ page, but required before
-# Phase 1 ships a real converted page.
-frontend/node_modules/
-frontend/dist/
-static/react/
