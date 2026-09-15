@@ -3,6 +3,8 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
+from api.views import react_test
+
 
 def serve_media(request, path):
     # A thin wrapper, not django.views.static.serve directly registered
@@ -29,6 +31,9 @@ def serve_docs(request, path):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/", include("api.urls")),
+    # React Phase 0 smoke test only - see api/views.py::react_test.
+    path("react-test/", react_test, name="react_test"),
     path("accounts/", include("accounts.urls")),
     path("billing/", include("billing.urls")),
     path("chat/", include("chat.urls")),

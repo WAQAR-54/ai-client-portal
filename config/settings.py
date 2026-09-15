@@ -61,7 +61,9 @@ INSTALLED_APPS = [
     "django.contrib.humanize",
     "axes",
     "django_celery_beat",
+    "rest_framework",
     "accounts",
+    "api",
     "billing",
     "chat",
     "domaingen",
@@ -103,6 +105,20 @@ AUTHENTICATION_BACKENDS = [
     "axes.backends.AxesStandaloneBackend",  # must be first - checks lockout before real auth
     "django.contrib.auth.backends.ModelBackend",
 ]
+
+# SessionAuthentication reuses the same logged-in session/CSRF this app
+# already relies on everywhere else - no separate token/JWT auth layer.
+# IsAuthenticated by default so a new endpoint added later without a
+# permission_classes override fails closed, not open; /api/ping/ (React
+# Phase 0 smoke test) explicitly opts into AllowAny for itself.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}
 
 # Login brute-force protection (django-axes) - tracked in the DB, no Redis
 # needed. Locks the ACCOUNT after AXES_FAILURE_LIMIT failures within
