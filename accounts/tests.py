@@ -126,6 +126,88 @@ class AuthAndRBACTests(TestCase):
         self.assertRedirects(response, reverse("accounts:login"))
 
 
+class SqlInjectionSafetyTests(TestCase):
+    """Not testing a fix - proving there's nothing to fix. Every query in
+    this app goes through the Django ORM (confirmed by grepping the whole
+    codebase for .raw()/.extra()/cursor.execute()/RawSQL/migrations.
+    RunSQL - none exist anywhere), which always sends user input to the
+    database as a bound parameter, never concatenated into the SQL
+    string. These tests feed classic injection payloads into the most
+    user-input-heavy unauthenticated entry points and assert the app
+    behaves exactly as it would for any other bad-but-harmless input:
+    no 500, no auth bypass, no data leak - never that the payload
+    "gets rejected" by some filter, because there is no filter; the
+    payload is just an ordinary string value that happens not to match
+    anything."""
+
+    # A `--` comment-out, a UNION-based data-leak attempt, a classic
+    # tautology used to bypass a `WHERE` clause, and a stacked
+    # DROP TABLE - the four textbook payload shapes.
+    PAYLOADS = [
+        "' OR '1'='1",
+        "'; DROP TABLE accounts_user; --",
+        "' UNION SELECT email, password FROM accounts_user --",
+        "admin'--",
+    ]
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.real_user = User.objects.create_user(email="real@example.com", password="pw12345!")
+
+    def test_login_payloads_never_bypass_authentication_or_500(self):
+        for payload in self.PAYLOADS:
+            with self.subTest(payload=payload):
+                response = self.client.post(reverse("accounts:login"), {"username": payload, "password": payload})
+                self.assertEqual(response.status_code, 200)  # re-rendered form, never a crash
+                self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_login_payload_as_password_for_a_real_email_still_fails(self):
+        """The sharpest version of the tautology attack: a real, existing
+        email paired with a payload as the PASSWORD - if this ever logged
+        someone in, the password check itself would be the injection
+        point, not just the username field."""
+        for payload in self.PAYLOADS:
+            with self.subTest(payload=payload):
+                response = self.client.post(
+                    reverse("accounts:login"), {"username": "real@example.com", "password": payload}
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn("_auth_user_id", self.client.session)
+        # The real account must still exist and still log in normally
+        # afterward - a stacked DROP TABLE payload, if it had executed,
+        # would have taken the whole users table down with it.
+        self.assertTrue(User.objects.filter(email="real@example.com").exists())
+        self.client.login(email="real@example.com", password="pw12345!")
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_signup_payloads_never_500_and_never_create_a_row_for_a_malformed_email(self):
+        from django.core.cache import cache
+
+        for payload in self.PAYLOADS:
+            with self.subTest(payload=payload):
+                cache.clear()  # each attempt would otherwise trip SIGNUP_RATE_LIMIT
+                response = self.client.post(
+                    reverse("accounts:signup"),
+                    {"email": payload, "password1": payload, "password2": payload},
+                )
+                self.assertEqual(response.status_code, 200)  # invalid email format, form re-rendered
+                self.assertFalse(User.objects.filter(email=payload).exists())
+
+    def test_global_search_payloads_never_500(self):
+        self.client.login(email="real@example.com", password="pw12345!")
+        self.real_user.role = User.Role.ADMIN
+        self.real_user.is_staff = True
+        self.real_user.save()
+        for payload in self.PAYLOADS:
+            with self.subTest(payload=payload):
+                response = self.client.get(reverse("governance:global_search"), {"q": payload})
+                self.assertEqual(response.status_code, 200)
+        # The users table must still be intact and queryable afterward.
+        self.assertTrue(User.objects.filter(email="real@example.com").exists())
+
+
 class LoginRateLimitTests(TestCase):
     """django-axes only ever counts FAILED logins - someone who already has
     valid (phished/leaked) credentials could otherwise resubmit the login
