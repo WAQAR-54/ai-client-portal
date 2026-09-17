@@ -206,6 +206,36 @@ class UserModelPermissionTests(TestCase):
         self.assertEqual(UserModelPermission.objects.filter(user=self.user).count(), 2)
 
 
+class LooksLikeDocumentRequestTests(TestCase):
+    """chat/router.py::looks_like_document_request - the heuristic that
+    auto-enables document/artifact mode without requiring the composer
+    toggle (see chat/views.py::post_message)."""
+
+    def test_matches_common_phrasings(self):
+        from chat.router import looks_like_document_request
+
+        for content in [
+            "write me a proposal for the new client",
+            "draft a report on Q3 sales",
+            "can you prepare a business plan for my startup",
+            "I need a cover letter for this job",
+            "get me a memo ready for the meeting",
+        ]:
+            self.assertTrue(looks_like_document_request(content), content)
+
+    def test_does_not_match_ordinary_questions(self):
+        from chat.router import looks_like_document_request
+
+        for content in [
+            "what's the capital of France?",
+            "hi there",
+            "can you explain how photosynthesis works",
+            "",
+            None,
+        ]:
+            self.assertFalse(looks_like_document_request(content), content)
+
+
 class RouterTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
@@ -1940,6 +1970,44 @@ class DocumentModeToggleTests(TestCase):
         pending = conversation.messages.get(role=Message.Role.ASSISTANT)
         self.assertFalse(pending.is_artifact)
         self.assertEqual(pending.artifact_title, "")
+
+    def test_document_mode_auto_detects_from_message_content_without_the_toggle(self):
+        """The actual real-world bug this exists to fix: a user typing
+        "write me a proposal" with no composer toggle touched used to get
+        a plain chat reply (and the model would often confusingly refuse
+        to "attach a file"). No document_mode POST field at all here -
+        looks_like_document_request must be what turns this on."""
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "write me a proposal for the new client"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertTrue(pending.is_artifact)
+
+    def test_auto_detection_still_requires_the_feature_flag(self):
+        self.plan.feature_flags = {"document_generation": False}
+        self.plan.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "write me a proposal for the new client"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertFalse(pending.is_artifact)
+
+    def test_ordinary_messages_do_not_trigger_document_mode(self):
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "what's the capital of France?"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertFalse(pending.is_artifact)
 
     @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")

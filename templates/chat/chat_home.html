@@ -587,22 +587,34 @@ function portalCloseUpgradeModal() {
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         <input type="file" name="attachment" id="attach-input" accept=".pdf,.docx,.xlsx,.txt,.csv,.md,.json,.png,.jpg,.jpeg" style="display:none;">
                     </label>
-                    {% if can_use_research %}
-                    <button type="button" class="attach-btn" id="research-toggle-btn" title="{% trans 'Research mode — searches the web for current information (needs a Claude model)' %}" onclick="portalToggleResearch(this)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    </button>
-                    <input type="hidden" name="research" id="research-input" value="">
-                    {% endif %}
-                    <button type="button" class="attach-btn" id="code-mode-toggle-btn" title="{% trans 'Code mode — asks for a code-focused answer to this message' %}" onclick="portalToggleCodeMode(this)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                    </button>
+                    {% comment %}
+                    Research and Code-mode consolidated into one "More
+                    options" menu instead of two always-visible icons -
+                    document generation used to be a third icon here too,
+                    but that's now auto-detected from the message itself
+                    (see chat/router.py::looks_like_document_request) rather
+                    than needing a toggle found and clicked first, so it no
+                    longer needs a composer control at all.
+                    {% endcomment %}
+                    <details class="export-menu">
+                        <summary class="attach-btn no-marker" title="{% trans 'More options' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                        </summary>
+                        <div class="export-menu-panel">
+                            {% if can_use_research %}
+                            <a href="#" class="menu-toggle-item" id="research-toggle-btn" onclick="event.preventDefault(); portalToggleResearch(this)">
+                                <svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                {% trans "Research (web search)" %}
+                            </a>
+                            {% endif %}
+                            <a href="#" class="menu-toggle-item" id="code-mode-toggle-btn" onclick="event.preventDefault(); portalToggleCodeMode(this)">
+                                <svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                {% trans "Code-focused answer" %}
+                            </a>
+                        </div>
+                    </details>
+                    {% if can_use_research %}<input type="hidden" name="research" id="research-input" value="">{% endif %}
                     <input type="hidden" name="output_mode" id="output-mode-input" value="">
-                    {% if can_generate_document %}
-                    <button type="button" class="attach-btn" id="document-toggle-btn" title="{% trans 'Generate a document — this reply opens in a side panel you can copy, download, and share.' %}" onclick="portalToggleDocumentMode(this)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    </button>
-                    <input type="hidden" name="document_mode" id="document-mode-input" value="">
-                    {% endif %}
                     {% if can_use_agent_mode %}
                     <details class="export-menu">
                         <summary class="attach-btn no-marker" id="agent-persona-summary" title="{% trans 'Act as a specialized agent for this conversation' %}">
@@ -931,30 +943,28 @@ function portalResetComposerAttrs() {
     portalSetCompareMode(false);
     // Research mode is per-turn too, same reasoning - the hidden input's
     // value already resets via the form's own native reset() (its default
-    // HTML value is ""), this just syncs the button's visual state to match.
+    // HTML value is ""), this just syncs the menu item's checkmark to match.
     var researchBtn = document.getElementById("research-toggle-btn");
-    if (researchBtn) researchBtn.classList.remove("has-file");
+    if (researchBtn) researchBtn.classList.remove("active");
     // Code output mode is per-turn too, same reasoning as Research above.
     var codeModeBtn = document.getElementById("code-mode-toggle-btn");
-    if (codeModeBtn) codeModeBtn.classList.remove("has-file");
-    // Document mode is per-turn too, same reasoning as Research above.
-    var documentModeBtn = document.getElementById("document-toggle-btn");
-    if (documentModeBtn) documentModeBtn.classList.remove("has-file");
+    if (codeModeBtn) codeModeBtn.classList.remove("active");
 }
 
-// Research mode toggle (composer footer) - see can_use_research/
-// chat:post_message's own "research" POST field. Reuses .attach-btn's
-// existing "has-file" accent-highlight look for the toggled-on state
-// rather than introducing a second, visually-inconsistent active style.
+// Research mode toggle (composer's "More options" menu) - see
+// can_use_research/chat:post_message's own "research" POST field. Toggles
+// .active, which shows/hides the item's checkmark (see .menu-check CSS) -
+// menu items stay open after a click (details isn't closed) so toggling
+// several in one visit doesn't require reopening the menu each time.
 function portalToggleResearch(btn) {
     var input = document.getElementById("research-input");
     if (!input) return;
     var on = input.value !== "on";
     input.value = on ? "on" : "";
-    btn.classList.toggle("has-file", on);
+    btn.classList.toggle("active", on);
 }
 
-// "Code" output mode (composer footer) - see chat/prompts.py's
+// "Code" output mode (composer's "More options" menu) - see chat/prompts.py's
 // CODE_OUTPUT_HINT and chat:post_message's own "output_mode" POST field.
 // Same one-off, per-message toggle shape as Research above (not sticky
 // across sends - see portalResetComposerAttrs).
@@ -963,18 +973,7 @@ function portalToggleCodeMode(btn) {
     if (!input) return;
     var on = input.value !== "code";
     input.value = on ? "code" : "";
-    btn.classList.toggle("has-file", on);
-}
-
-// Document-mode composer toggle - see chat/prompts.py's DOCUMENT_OUTPUT_HINT
-// and chat:post_message's own "document_mode" POST field. Same one-off,
-// per-message toggle shape as Research/Code above.
-function portalToggleDocumentMode(btn) {
-    var input = document.getElementById("document-mode-input");
-    if (!input) return;
-    var on = input.value !== "on";
-    input.value = on ? "on" : "";
-    btn.classList.toggle("has-file", on);
+    btn.classList.toggle("active", on);
 }
 
 // Agent persona (composer footer menu) - unlike Research/model selection,

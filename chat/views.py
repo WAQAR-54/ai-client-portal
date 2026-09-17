@@ -30,6 +30,7 @@ from chat.response_cache import get_cached_response, store_cached_response
 from chat.router import (
     NoModelAvailableError,
     classify_complexity,
+    looks_like_document_request,
     match_routing_rule,
     models_visible_to_user,
     select_model_candidates,
@@ -549,12 +550,18 @@ def post_message(request, conversation_id):
     if output_mode != "code":
         output_mode = ""
 
-    # Composer's "Generate document" toggle - same re-check pattern as
-    # model_id/research/agent_persona above, gated on the existing
-    # document_generation Plan feature flag (already used for the
-    # per-message export-menu Download action - this toggle is a second,
-    # independent consumer of that same flag, not a new one).
-    document_mode = request.POST.get("document_mode") == "on" and has_feature(request.user, "document_generation")
+    # Document mode - gated on the existing document_generation Plan
+    # feature flag (already used for the per-message export-menu Download
+    # action). Auto-detected from the message content by default (see
+    # chat/router.py::looks_like_document_request) rather than requiring
+    # the user to find and click a composer toggle first - real usage
+    # showed people simply typing "write me a proposal" and getting a
+    # confused refusal because the toggle was never touched. The explicit
+    # POST field is kept as a manual override (e.g. a future "force
+    # document mode" affordance), not currently exposed in the composer UI.
+    document_mode = has_feature(request.user, "document_generation") and (
+        request.POST.get("document_mode") == "on" or looks_like_document_request(content)
+    )
 
     # Lock the conversation row for the duration of the check+create so two
     # concurrent sends against the same conversation can't both pass the

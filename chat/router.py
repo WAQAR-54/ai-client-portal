@@ -22,6 +22,18 @@ _CODE_KEYWORD_RE = re.compile(
     r"\b(def|function|class|import|const|let|var|return|elif|except|public|private|static)\b" r"|[{};]|=>|::",
 )
 _CASUAL_WORD_LIMIT = 8
+# Auto-detects "the user wants a document written" so the composer's
+# Generate-document behavior doesn't depend on the user first finding and
+# clicking a toggle - see chat/views.py::post_message. Deliberately broad
+# (a false positive just opens an artifact panel for a reply that would
+# have been fine as plain text anyway - low cost; a false negative is the
+# actual user-facing bug this exists to avoid) rather than narrowly precise.
+_DOCUMENT_REQUEST_RE = re.compile(
+    r"\b(write|draft|prepare|create|generate|make|compose|need|want|get|ready)\b"
+    r".{0,40}\b(proposal|report|memo|document|doc|letter|resume|cv|contract|"
+    r"agreement|business\s*plan|summary|brief|essay|article|invoice|cover\s*letter)\b",
+    re.IGNORECASE,
+)
 # An attachment counts as a "long document" past this size - short/small
 # attachments (a one-page snippet) don't trigger the "long document" rule.
 _LONG_DOCUMENT_BYTES = 20_000
@@ -115,6 +127,15 @@ def select_model_for_user(user, tier: str) -> ProviderModel:
     if not candidates:
         raise NoModelAvailableError("No AI model is enabled and permitted for this user.")
     return candidates[0]
+
+
+def looks_like_document_request(content):
+    """True when a user's message reads like a request to write a real
+    document (a proposal, report, letter, ...) - see _DOCUMENT_REQUEST_RE
+    above for the exact heuristic and reasoning. Used by chat/views.py::
+    post_message to auto-enable document/artifact mode without requiring
+    the user to find and click the composer's toggle first."""
+    return bool(_DOCUMENT_REQUEST_RE.search(content or ""))
 
 
 def _condition_matches(condition, message):

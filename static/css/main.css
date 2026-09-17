@@ -2254,6 +2254,12 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 }
 .export-menu-panel a:hover { background: var(--color-surface-muted); text-decoration: none; }
 .export-menu-panel a[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+/* Checkable menu items (composer's "More options" - Research/Code mode)
+   - a checkmark that's only visible once toggled on, rather than a whole
+   second highlight style; reuses .export-menu-panel a's own look/hover. */
+.menu-toggle-item { display: flex; align-items: center; gap: 0.5rem; }
+.menu-toggle-item .menu-check { width: 14px; height: 14px; flex-shrink: 0; visibility: hidden; color: var(--secondary); }
+.menu-toggle-item.active .menu-check { visibility: visible; }
 /* Same look for a <form><button> pair inside the panel (chat/
    _conversation_item.html's "Move to project" menu, whose options each
    submit their own POST rather than just navigating like the <a> options
