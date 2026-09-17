@@ -6,7 +6,7 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
-@shared_task
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=3)
 def sweep_conversation_retention():
     """Deletes whole Conversations (cascading to their Messages) once
     they're older than their owner's Department.retention_period - see
@@ -14,7 +14,12 @@ def sweep_conversation_retention():
     retention limit (retention_days is None, i.e. "Forever") is skipped
     entirely. Measured from Conversation.updated_at (last activity), not
     created_at, so a conversation someone keeps coming back to is never
-    swept just because it's old."""
+    swept just because it's old.
+
+    Retries up to 3 times with backoff on an unexpected failure (a DB
+    blip mid-sweep) - safe to retry since each department's delete is
+    keyed off the same cutoff and re-running just re-evaluates it;
+    already-deleted rows simply won't match a second time."""
     from accounts.models import Department
     from chat.models import Conversation
 

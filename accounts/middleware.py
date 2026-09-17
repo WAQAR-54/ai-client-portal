@@ -5,6 +5,7 @@ from django.shortcuts import redirect
 from django.utils import timezone, translation
 
 from accounts.geo import language_for_ip
+from accounts.rate_limit import client_ip
 
 
 class GeoLanguageMiddleware:
@@ -34,8 +35,7 @@ class GeoLanguageMiddleware:
         cookie_name = settings.LANGUAGE_COOKIE_NAME
         detected = None
         if cookie_name not in request.COOKIES:
-            ip_address = request.META.get("REMOTE_ADDR")
-            detected = language_for_ip(ip_address)
+            detected = language_for_ip(client_ip(request))
             request.COOKIES[cookie_name] = detected
 
         response = self.get_response(request)

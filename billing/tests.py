@@ -1177,6 +1177,63 @@ class SubmitPaymentProofTests(TestCase):
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.submitted_transaction_id, "TXN-FIRST")
 
+    def test_valid_image_proof_is_accepted(self):
+        import io
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (10, 10), color="red").save(buf, format="PNG")
+        upload = SimpleUploadedFile("proof.png", buf.getvalue(), content_type="image/png")
+
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"proof_image": upload},
+        )
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PENDING_VERIFICATION)
+        self.assertTrue(self.invoice.submitted_proof_image)
+
+    def test_non_image_proof_is_rejected(self):
+        """Invoice.submit_payment_proof() saves straight via update_fields,
+        bypassing ImageField's normal ModelForm validation entirely - the
+        view itself must reject a non-image (e.g. an SVG, which can carry
+        a <script> and is opened target="_blank" from this app's own
+        origin via the "View proof" link - a stored-XSS vector) before it
+        ever reaches that save."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("proof.svg", b"<svg onload='alert(1)'></svg>", content_type="image/svg+xml")
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"proof_image": upload},
+            follow=True,
+        )
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.UNPAID)
+        messages = list(response.context["messages"])
+        self.assertTrue(any("valid image" in str(m) for m in messages))
+
+    def test_oversized_proof_image_is_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from billing.views import _MAX_PAYMENT_PROOF_BYTES
+
+        upload = SimpleUploadedFile("proof.png", b"\x00" * (_MAX_PAYMENT_PROOF_BYTES + 1), content_type="image/png")
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"proof_image": upload},
+            follow=True,
+        )
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.UNPAID)
+        messages = list(response.context["messages"])
+        self.assertTrue(any("too big" in str(m) for m in messages))
+
 
 class PaymentSubmittedNotificationTests(TestCase):
     """submit_payment_proof notifies whoever can actually act on the

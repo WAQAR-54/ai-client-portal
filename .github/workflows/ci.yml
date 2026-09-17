@@ -120,6 +120,12 @@ jobs:
 
       # Real client's-eye-view check, not just "did the SSH commands exit 0" -
       # a deploy that runs cleanly but ships a broken homepage still fails here.
+      # Hits /healthz/ (config/urls.py) rather than /accounts/login/ - that
+      # page used to pass this check as long as Gunicorn could render a
+      # login form, even with the database completely unreachable (a
+      # database-only outage wouldn't have failed a plain-page load, and
+      # would have shipped/kept a broken deploy). /healthz/ actually runs a
+      # SELECT 1 against the real database and 503s if that fails.
       # Retries with backoff instead of one fixed sleep+check: a full
       # container restart (stop old, start freshly-built new, Gunicorn boot)
       # took over 10s on this VM in practice and tripped a false-positive
@@ -129,7 +135,7 @@ jobs:
         id: health_check
         run: |
           for i in 1 2 3 4 5 6 7 8; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${{ secrets.SSH_HOST }}/accounts/login/" || echo "000")
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${{ secrets.SSH_HOST }}/healthz/" || echo "000")
             echo "Attempt $i: status $status"
             if [ "$status" = "200" ]; then
               exit 0

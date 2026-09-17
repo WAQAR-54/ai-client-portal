@@ -627,6 +627,18 @@ class AuditLog(models.Model):
 
     class Meta:
         ordering = ["-timestamp"]
+        indexes = [
+            # governance/views.py::AuditLogListView's two real query
+            # patterns: browse recent-first with no filter (needs an index
+            # on -timestamp alone - the ordering above has no index behind
+            # it otherwise), and filter by one exact action_type then sort
+            # by recency (the composite covers that in one index without
+            # a second lookup). actor already gets an index for free from
+            # its ForeignKey; target_type/actor are only ever searched via
+            # icontains here, which a plain b-tree index can't accelerate.
+            models.Index(fields=["-timestamp"], name="auditlog_timestamp_idx"),
+            models.Index(fields=["action_type", "-timestamp"], name="auditlog_action_ts_idx"),
+        ]
 
     def __str__(self):
         return f"{self.actor} {self.action_type} {self.target_type}:{self.target_id}"

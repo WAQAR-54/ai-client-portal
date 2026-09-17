@@ -5,7 +5,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext as _
 
 
-@shared_task
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=300, max_retries=3)
 def sync_all_connected_providers():
     """Periodic beat task: re-syncs every connected Provider's model list
     via sync_provider() (still bound by its own never-auto-enable
@@ -13,7 +13,12 @@ def sync_all_connected_providers():
     what a manual Resync click does) and notifies SuperAdmins if any new
     models were found - a SuperAdmin still has to visit the Providers page
     and explicitly enable anything found; this only saves them from having
-    to remember to click Resync themselves."""
+    to remember to click Resync themselves.
+
+    Retries up to 3 times with backoff on an unexpected failure - each
+    provider's own sync_provider() call already reports success/failure
+    per-provider without raising, so this only guards the loop/notify
+    logic around it."""
     from accounts.models import User
     from notifications.models import NotificationType
     from notifications.notify import notify, recently_notified

@@ -512,6 +512,17 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
     template_name = "governance/users.html"
     partial_template_name = "governance/_users_table.html"
     context_object_name = "users"
+    paginate_by = 50
+
+    def get_paginate_by(self, queryset):
+        # "Sort by engagement" ranks demo users across the WHOLE filtered
+        # list, not just whatever 50 rows land on a page - falling back to
+        # one unpaginated page here keeps that sort correct without a
+        # second, DB-side ranking implementation. Rare/admin-only, so the
+        # trade is worth it.
+        if self.request.GET.get("sort") == "engagement":
+            return None
+        return self.paginate_by
 
     def get_queryset(self):
         qs = User.objects.select_related("department", "team", "plan_assignment__plan").order_by("email")
@@ -551,17 +562,39 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
             .values_list("conversation__user_id", "count")
         )
 
+        sort_by_engagement = self.request.GET.get("sort") == "engagement"
+
+        used_tokens_by_user = {}
+        if sort_by_engagement:
+            # Only fetched when actually sorting by it - engagement_score's
+            # own per-user Message aggregate is exactly the N+1 this page
+            # used to pay on every load, for a value the table never even
+            # displays outside this one sort mode. One batched aggregate
+            # across every filtered user instead of one query per user.
+            used_tokens_by_user = dict(
+                Message.objects.filter(conversation__user__in=users, role=Message.Role.ASSISTANT)
+                .values("conversation__user_id")
+                .annotate(total=Sum(F("input_tokens") + F("output_tokens")))
+                .values_list("conversation__user_id", "total")
+            )
+
         plan_info = {}
         for u in users:
-            status = get_plan_status(u)
+            # u.plan_assignment is already select_related-loaded above -
+            # passing it in skips get_plan_status's own per-user query.
+            assignment = getattr(u, "plan_assignment", None)
+            status = get_plan_status(u, assignment=assignment)
             plan_info[u.id] = {
                 **status,
-                "engagement": engagement_score(u),
-                "override_count": count_user_overrides(u),
+                "engagement": (
+                    engagement_score(u, status=status, used_tokens=used_tokens_by_user.get(u.id, 0))
+                    if sort_by_engagement
+                    else None
+                ),
                 "request_count_30d": request_counts.get(u.id, 0),
             }
 
-        if self.request.GET.get("sort") == "engagement":
+        if sort_by_engagement:
             users.sort(key=lambda u: plan_info[u.id]["engagement"] or -1, reverse=True)
             ctx[self.context_object_name] = users
 
@@ -581,6 +614,7 @@ class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
             "plan_filter": self.request.GET.get("plan", ""),
             "sort": self.request.GET.get("sort", ""),
             "total_count": _scope_users(self.request, User.objects.all()).count(),
+            "querystring_without_page": _querystring_without(self.request, "page"),
         }
 
 

@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase, override_settings
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone, translation
 
@@ -206,6 +206,80 @@ class SqlInjectionSafetyTests(TestCase):
                 self.assertEqual(response.status_code, 200)
         # The users table must still be intact and queryable afterward.
         self.assertTrue(User.objects.filter(email="real@example.com").exists())
+
+
+class ClientIpTests(TestCase):
+    """accounts/rate_limit.py::client_ip - behind this deployment's real
+    proxy chain (Cloudflare -> Nginx -> Gunicorn), plain REMOTE_ADDR is
+    always Nginx's own address, never the visitor's. Before this fix,
+    every rate limit keyed by client_ip() (signup, password-reset,
+    Google sign-in) was silently a GLOBAL cap shared by every visitor
+    instead of a per-visitor one - the 6th signup attempt from ANYONE,
+    anywhere, would have blocked the 7th person's signup too."""
+
+    def test_prefers_cf_connecting_ip(self):
+        from accounts.rate_limit import client_ip
+
+        request = RequestFactory().get("/", REMOTE_ADDR="127.0.0.1", HTTP_CF_CONNECTING_IP="203.0.113.5")
+        self.assertEqual(client_ip(request), "203.0.113.5")
+
+    def test_falls_back_to_first_x_forwarded_for_entry(self):
+        from accounts.rate_limit import client_ip
+
+        request = RequestFactory().get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="203.0.113.5, 127.0.0.1")
+        self.assertEqual(client_ip(request), "203.0.113.5")
+
+    def test_falls_back_to_remote_addr_with_no_proxy_headers(self):
+        from accounts.rate_limit import client_ip
+
+        request = RequestFactory().get("/", REMOTE_ADDR="203.0.113.5")
+        self.assertEqual(client_ip(request), "203.0.113.5")
+
+    def test_signup_rate_limit_is_scoped_per_real_visitor_not_global(self):
+        """The actual bug, end to end: two different visitors (identified
+        by CF-Connecting-IP, exactly like production traffic) must each
+        get their own signup rate-limit allowance - one visitor
+        exhausting theirs must never block the other's."""
+        from django.core.cache import cache
+
+        from accounts.views import SIGNUP_RATE_LIMIT
+
+        cache.clear()
+        for i in range(SIGNUP_RATE_LIMIT):
+            self.client.post(
+                reverse("accounts:signup"),
+                {
+                    "email": f"visitor-a-{i}@example.com",
+                    "password1": "a-strong-password-123",
+                    "password2": "a-strong-password-123",
+                },
+                HTTP_CF_CONNECTING_IP="203.0.113.1",
+            )
+            self.client.logout()
+        # Visitor A is now rate-limited...
+        blocked_response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "visitor-a-blocked@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+            HTTP_CF_CONNECTING_IP="203.0.113.1",
+        )
+        self.assertFalse(User.objects.filter(email="visitor-a-blocked@example.com").exists())
+        # ...but Visitor B, a completely different real visitor, is not.
+        other_response = self.client.post(
+            reverse("accounts:signup"),
+            {
+                "email": "visitor-b@example.com",
+                "password1": "a-strong-password-123",
+                "password2": "a-strong-password-123",
+            },
+            HTTP_CF_CONNECTING_IP="203.0.113.2",
+        )
+        self.assertRedirects(other_response, reverse("accounts:dashboard"))
+        self.assertTrue(User.objects.filter(email="visitor-b@example.com").exists())
+        del blocked_response
 
 
 class LoginRateLimitTests(TestCase):
@@ -1103,6 +1177,28 @@ class ErrorPageTests(TestCase):
         self.assertIn("Something went wrong", html)
 
 
+class HealthzTests(TestCase):
+    """config/urls.py::healthz - the deploy-time and Docker HEALTHCHECK
+    target (deployment/healthcheck.py, .github/workflows/ci.yml's
+    post-deploy check). Runs a real database query, unlike the old target
+    ("/", any response including a 4xx counted as healthy) which could
+    report healthy while the database was completely unreachable."""
+
+    def test_healthz_returns_ok_when_database_is_reachable(self):
+        response = self.client.get("/healthz/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_healthz_returns_503_when_database_query_fails(self):
+        from unittest.mock import patch
+
+        with patch("config.urls.connection") as mock_connection:
+            mock_connection.cursor.side_effect = Exception("connection refused")
+            response = self.client.get("/healthz/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["status"], "error")
+
+
 class DocsServingTests(TestCase):
     """config/urls.py's /docs/ route (serve_docs) - the plain-language
     guides in docs/ only lived as files in the repo until this route gave
@@ -1214,3 +1310,38 @@ class TemplateHygieneTests(TestCase):
                 if "\n" in match.group():
                     offenders.append(f"{path.relative_to(templates_dir)}: {match.group()[:60]!r}")
         self.assertEqual(offenders, [], f"Multi-line {{# #}} comment(s) that will leak as text: {offenders}")
+
+
+class ScheduledDatabaseBackupTaskTests(TestCase):
+    """accounts/tasks.py::run_scheduled_database_backup - the Celery Beat
+    wrapper (seeded by accounts/migrations/0013_...) around `manage.py
+    backup_database`. Before this, the recurring backup depended entirely
+    on someone having separately configured a VPS crontab entry - easy to
+    forget, invisible if it was never actually set up."""
+
+    def test_calls_the_backup_management_command(self):
+        from accounts.tasks import run_scheduled_database_backup
+
+        with patch("accounts.tasks.call_command") as mock_call_command:
+            run_scheduled_database_backup()
+        mock_call_command.assert_called_once_with("backup_database")
+
+    def test_command_error_is_logged_not_raised(self):
+        """BACKUP_S3_BUCKET not being set yet is an expected, pre-
+        configuration state (the command itself raises CommandError for
+        it) - this must never surface as a failed/retried Celery task."""
+        from django.core.management.base import CommandError
+
+        from accounts.tasks import run_scheduled_database_backup
+
+        with patch("accounts.tasks.call_command", side_effect=CommandError("BACKUP_S3_BUCKET is not set.")):
+            run_scheduled_database_backup()  # must not raise
+
+    def test_runs_cleanly_against_the_real_command_on_sqlite(self):
+        """End to end, no mocks: on this test suite's own sqlite database
+        (matching local dev), the real command just no-ops with its
+        "not PostgreSQL" message - proves the task's plumbing (import,
+        call_command wiring) works, not just the mocked call."""
+        from accounts.tasks import run_scheduled_database_backup
+
+        run_scheduled_database_backup()  # must not raise

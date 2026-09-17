@@ -8,11 +8,9 @@ from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
-from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import translation
 from django.utils.encoding import force_bytes
-from django.utils.html import strip_tags
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 from django.views.generic import RedirectView, TemplateView
@@ -33,7 +31,6 @@ from accounts.google_auth import (
 from accounts.mfa import (
     MAX_MFA_ATTEMPTS,
     MAX_MFA_RESENDS,
-    OTP_EXPIRY_MINUTES,
     clear_mfa_session,
     mfa_challenge_expired,
     start_mfa_challenge,
@@ -126,21 +123,12 @@ def replay_onboarding(request):
 
 
 def _send_mfa_code_email(request, user, code):
-    """Sends the login verification code, through the same
-    send_tracked_email() path (and EmailLog audit trail) every other real
-    email in the app goes through."""
-    from notifications.emailing import send_tracked_email
+    """Kicks off the login verification code email via Celery instead of
+    blocking this request on an SMTP round-trip - see
+    accounts/tasks.py::send_mfa_code_email_task."""
+    from accounts.tasks import send_mfa_code_email_task
 
-    with translation.override(user.preferred_language):
-        html_body = render_to_string(
-            "accounts/email_mfa_code.html", {"code": code, "expiry_minutes": OTP_EXPIRY_MINUTES}
-        )
-    send_tracked_email(
-        to_email=user.email,
-        subject="[AI Client Portal] Your verification code",
-        text_body=strip_tags(html_body),
-        html_body=html_body,
-    )
+    send_mfa_code_email_task.delay(user.id, code)
 
 
 def _begin_mfa_challenge_if_required(request, user, next_url):
@@ -398,26 +386,18 @@ def notify_self_signup_welcome(user):
 
 
 def _send_password_reset_email(request, user):
-    """Sends the "reset your password" email for one user, through the same
-    send_tracked_email() path (and EmailLog audit trail) every other real
-    email in the app goes through - not Django's own PasswordResetForm.
-    save(), which would bypass EmailLog and the admin-configurable
-    EmailSettings entirely."""
-    from notifications.emailing import send_tracked_email
+    """Kicks off the "reset your password" email via Celery instead of
+    blocking this request on an SMTP round-trip - matches every other
+    notification email in the app (notify() -> send_notification_email
+    .delay()). uid/token are cheap to compute here (no network I/O); the
+    actual send happens in accounts/tasks.py::send_password_reset_email_task,
+    which builds the reset link from settings.SITE_URL since there's no
+    request to call request.build_absolute_uri() on inside a Celery task."""
+    from accounts.tasks import send_password_reset_email_task
 
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
-    reset_url = request.build_absolute_uri(
-        reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
-    )
-    with translation.override(user.preferred_language):
-        html_body = render_to_string("accounts/email_password_reset.html", {"user": user, "reset_url": reset_url})
-    send_tracked_email(
-        to_email=user.email,
-        subject="[AI Client Portal] Reset your password",
-        text_body=strip_tags(html_body),
-        html_body=html_body,
-    )
+    send_password_reset_email_task.delay(user.id, uid, token)
 
 
 def password_reset_request_view(request):

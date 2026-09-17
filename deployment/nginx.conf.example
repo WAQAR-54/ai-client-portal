@@ -16,7 +16,15 @@ server {
     listen 80;
     server_name your-domain.example;  # replace with your real domain
 
-    client_max_body_size 2M;
+    # Must stay >= the largest upload Django will actually accept, or Nginx
+    # 413s the request before Django's own check ever runs. Django's system
+    # default is DEFAULT_MAX_UPLOAD_SIZE_MB (10MB, config/settings.py), and
+    # Admins can raise that per-user/department even higher (Plans & Access
+    # -> Limits -> "Upload size cap", governance/models.py::UsageLimit.
+    # max_upload_size_mb - no app-enforced ceiling on that override). 25M
+    # gives headroom above the 10MB default; raise this further (and
+    # `nginx -s reload`) if an Admin ever configures a higher per-user cap.
+    client_max_body_size 25M;
 
     location /static/ {
         alias /path/to/ai-client-portal/staticfiles/;  # must match STATIC_ROOT; run `manage.py collectstatic` first

@@ -48,8 +48,27 @@ def is_rate_limited(key, *, limit, window_seconds):
 
 
 def client_ip(request):
-    """Same plain REMOTE_ADDR read already used elsewhere in this app
-    (see billing/views.py's GeoIP region lookup) - not X-Forwarded-For
-    aware, matching that existing convention rather than introducing a
-    second, different way to resolve a client's IP."""
+    """The real visitor's IP, not Nginx's own loopback address - this
+    deployment sits behind Cloudflare (orange-cloud DNS) -> Nginx ->
+    Gunicorn (see deployment/nginx.conf.example), so plain REMOTE_ADDR as
+    Django sees it is always Nginx's address, never the visitor's. Before
+    this, EVERY caller of this function (this module's own rate limits,
+    accounts/middleware.py's GeoIP language detection, billing/views.py's
+    GeoIP region detection) was silently treating every visitor as the
+    same one - turning e.g. SIGNUP_RATE_LIMIT into a global cap shared by
+    all 200 users instead of a per-visitor one, and making the public
+    pricing page auto-detect the same (wrong) region for everyone.
+
+    Prefers CF-Connecting-IP - set by Cloudflare itself at its edge, not
+    spoofable by the client, since this app's DNS is Cloudflare-proxied.
+    Falls back to X-Forwarded-For's first entry (set by Nginx's own
+    proxy_set_header) for any request that reaches Django without going
+    through Cloudflare (local dev, or a direct-IP request); REMOTE_ADDR
+    is the final fallback for a request with no proxy in front at all."""
+    cf_connecting_ip = request.META.get("HTTP_CF_CONNECTING_IP", "").strip()
+    if cf_connecting_ip:
+        return cf_connecting_ip
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "")

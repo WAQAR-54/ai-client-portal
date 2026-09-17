@@ -26,7 +26,15 @@ environ.Env.read_env(BASE_DIR / ".env", overwrite=True)
 
 _INSECURE_DEFAULT_KEY = "django-insecure-dev-only-change-me"
 SECRET_KEY = env("SECRET_KEY", default=_INSECURE_DEFAULT_KEY)
-DEBUG = env.bool("DEBUG", default=True)
+# Fails CLOSED (secure) when DEBUG is absent from the environment entirely -
+# matches the schema default already declared above (env = environ.Env(
+# DEBUG=(bool, False))), which this used to silently override with
+# default=True. A production host whose env/.env was ever bootstrapped
+# without explicitly setting DEBUG would otherwise run with full tracebacks
+# (SQL, file paths, potentially secrets) exposed to any visitor who
+# triggers a 500 - local dev's own .env.example sets DEBUG=True explicitly,
+# so this default is never actually needed there either.
+DEBUG = env.bool("DEBUG", default=False)
 ALLOWED_HOSTS = env.list(
     "ALLOWED_HOSTS",
     # Leading-dot entries match any subdomain (Django convention) — safe
@@ -408,6 +416,13 @@ if EMAIL_HOST:
     EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
     EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
     DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
+    # Without this, Django's SMTP backend has NO socket timeout at all - an
+    # unresponsive mail server hangs the connection indefinitely. Now that
+    # every real email send goes through a Celery task (see accounts/tasks.py,
+    # notifications/tasks.py::send_notification_email) rather than blocking
+    # an HTTP request directly, a hang here would instead tie up a Celery
+    # worker slot indefinitely - still worth bounding.
+    EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 # Base URL used to build absolute links inside emails sent from a
 # background task (Celery), where there's no request to call
 # request.build_absolute_uri() on - notifications/emailing.py's

@@ -32,7 +32,7 @@ def _reminder_days_for_invoice(invoice):
     return profile.reminder_days_after_due
 
 
-@shared_task
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=3)
 def sweep_due_invoices():
     """Daily beat task: generate each billable user's NEXT invoice a few
     days before it's due, on a rolling monthly cycle anchored to their own
@@ -45,7 +45,12 @@ def sweep_due_invoices():
 
     Users with zero invoices yet are skipped entirely - their first one
     is accounts.signals.generate_welcome_invoice_on_creation's job, not
-    this sweep's."""
+    this sweep's.
+
+    Per-user failures (InvoiceGenerationError) are already caught below
+    and just counted - autoretry_for only guards against something else
+    going wrong (a DB blip partway through), which used to fail this
+    whole daily sweep silently with no retry until tomorrow."""
     from billing.invoicing import InvoiceGenerationError, generate_invoice_for_user
     from billing.models import DepartmentBillingProfile, Invoice
 
@@ -98,7 +103,7 @@ def sweep_due_invoices():
     return {"generated": generated, "skipped_auto_generate_off": skipped_auto_generate_off, "no_price": no_price}
 
 
-@shared_task
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=3)
 def send_overdue_reminders():
     """Daily beat task: emails each overdue-unpaid invoice's recipient a
     one-time dunning nudge once reminder_days_after_due days have passed

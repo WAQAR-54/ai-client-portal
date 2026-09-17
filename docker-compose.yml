@@ -54,7 +54,14 @@ services:
       # container unreachable via the port mapping below, so bind all
       # interfaces here instead.
       GUNICORN_BIND: 0.0.0.0:8000
-      DEBUG: ${DEBUG:-True}
+      # Fails CLOSED (secure) if the server's own .env doesn't set DEBUG at
+      # all - e.g. bootstrapped by copying .env.example (which ships
+      # DEBUG=True for local dev) without editing this one line. A default
+      # of True here would silently run production with full tracebacks
+      # (SQL, file paths, potentially secrets) exposed to any visitor who
+      # triggers a 500 - never worth risking for the local-dev convenience
+      # of not having to set DEBUG=True explicitly there.
+      DEBUG: ${DEBUG:-False}
     ports:
       - "8000:8000"
     volumes:
@@ -80,7 +87,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
       REDIS_URL: redis://redis:6379/0
-      DEBUG: ${DEBUG:-True}
+      DEBUG: ${DEBUG:-False}
     volumes:
       - media_data:/app/media
     depends_on:
@@ -88,6 +95,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # celery inspect ping round-trips through the real broker (Redis) to
+      # THIS worker process and back - proves it's actually consuming
+      # tasks, not just that the container's PID 1 hasn't exited (which
+      # restart: unless-stopped already covers on its own; this catches
+      # the worker being alive but stuck/hung/lost its broker connection).
+      # Before this, a hung worker had no way to be detected short of
+      # noticing invoices/emails/backups had silently stopped processing.
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME --timeout 10 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 
   beat:
     build: .
@@ -98,7 +118,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
       REDIS_URL: redis://redis:6379/0
-      DEBUG: ${DEBUG:-True}
+      DEBUG: ${DEBUG:-False}
     depends_on:
       db:
         condition: service_healthy

@@ -39,8 +39,13 @@ _EMAIL_TYPE_STYLE = {
 _DEFAULT_EMAIL_STYLE = ("#00aef0", "#e3f6fd", "notifications/_email_content_default.html")
 
 
-@shared_task
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=300, max_retries=3)
 def send_notification_email(notification_id):
+    """Retries up to 3 times with backoff on an unexpected failure - note
+    send_tracked_email() itself already fails open (returns a status
+    tuple, logs to EmailLog, never raises) on an actual SMTP error, so
+    this retry only ever fires for something else going wrong (template
+    rendering, the Notification lookup, etc.)."""
     from notifications.models import Notification
 
     notification = Notification.objects.select_related("user").filter(id=notification_id).first()
@@ -84,7 +89,7 @@ def send_notification_email(notification_id):
     logger.info("Sent notification email %s to %s", notification.id, notification.user.email)
 
 
-@shared_task
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=3)
 def sweep_expiring_demo_plans():
     """Daily beat task: notify users whose demo plan is about to expire or
     has just expired. Blocking access itself does NOT depend on this task

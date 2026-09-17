@@ -81,3 +81,10 @@ per-row popover.
         {% endfor %}
     </tbody>
 </table>
+{% if is_paginated %}
+<div class="pagination-bar">
+    {% if page_obj.has_previous %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&{% endif %}page={{ page_obj.previous_page_number }}">← {% trans "Prev" %}</a>{% endif %}
+    <span class="text-faint">{% blocktrans with number=page_obj.number pages=page_obj.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktrans %}</span>
+    {% if page_obj.has_next %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&{% endif %}page={{ page_obj.next_page_number }}">{% trans "Next" %} →</a>{% endif %}
+</div>
+{% endif %}

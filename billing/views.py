@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages as django_messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -16,6 +16,7 @@ from django.views.generic import TemplateView
 from accounts.geo import country_code_for_ip
 from accounts.models import Department, Team, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
+from accounts.rate_limit import client_ip
 from billing.emails import send_invoice_email, share_url_for_invoice
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_team, generate_invoice_for_user
 from billing.models import (
@@ -143,8 +144,7 @@ class PublicPricingView(TemplateView):
         if requested_region in active_codes:
             region_code = requested_region
         else:
-            ip_address = self.request.META.get("REMOTE_ADDR")
-            region_code = region_for_country(country_code_for_ip(ip_address), active_codes)
+            region_code = region_for_country(country_code_for_ip(client_ip(self.request)), active_codes)
 
         from governance.plans import plan_capability_summary
 
@@ -195,8 +195,7 @@ class MyPlansView(LoginRequiredMixin, TemplateView):
         if requested_region in active_codes:
             region_code = requested_region
         else:
-            ip_address = self.request.META.get("REMOTE_ADDR")
-            region_code = region_for_country(country_code_for_ip(ip_address), active_codes)
+            region_code = region_for_country(country_code_for_ip(client_ip(self.request)), active_codes)
 
         assignment = get_assignment(self.request.user)
         current_plan_id = assignment.plan_id if assignment else None
@@ -755,6 +754,9 @@ class MyInvoicesView(LoginRequiredMixin, TemplateView):
         }
 
 
+_MAX_PAYMENT_PROOF_BYTES = 5 * 1024 * 1024
+
+
 @require_http_methods(["POST"])
 def submit_payment_proof(request, invoice_id):
     if not request.user.is_authenticated:
@@ -769,6 +771,31 @@ def submit_payment_proof(request, invoice_id):
     if not transaction_id and not proof_image:
         django_messages.error(request, "Provide a transaction ID or a payment screenshot.")
         return redirect(default_redirect)
+
+    if proof_image:
+        from django import forms as django_forms
+
+        # Invoice.submit_payment_proof() below saves straight to the model
+        # field via update_fields, bypassing ModelForm/full_clean() - so
+        # ImageField's own built-in validation never actually ran before
+        # this. Without it, ANY file type was accepted and served back from
+        # this app's own origin at invoice_proofs/ - an uploaded .svg (a
+        # valid "image" by extension, but XML that can carry a <script>) is
+        # a stored-XSS vector once opened via the "View proof" link
+        # (invoice_detail.html/_invoices_table.html both open it
+        # target="_blank" from this app's own domain). ImageField().clean()
+        # decodes it with Pillow, which rejects SVG and anything else that
+        # isn't a real raster image - the same check already used for
+        # branding logo/favicon uploads (governance/views.py's
+        # BrandingSettingsView).
+        if proof_image.size > _MAX_PAYMENT_PROOF_BYTES:
+            django_messages.error(request, "That screenshot is too big - keep it under 5 MB.")
+            return redirect(default_redirect)
+        try:
+            django_forms.ImageField().clean(proof_image)
+        except ValidationError:
+            django_messages.error(request, "That doesn't look like a valid image file.")
+            return redirect(default_redirect)
 
     invoice.submit_payment_proof(transaction_id=transaction_id, proof_image=proof_image)
     log_action(request.user, "billing.invoice_payment_submitted", invoice, new_value=invoice.status)

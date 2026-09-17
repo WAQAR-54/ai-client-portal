@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.contrib import admin
+from django.db import connection
+from django.http import JsonResponse
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
@@ -19,6 +21,25 @@ def serve_media(request, path):
     return serve(request, path, document_root=settings.MEDIA_ROOT)
 
 
+def healthz(request):
+    """Deeper than "Gunicorn answered a request" (which is all
+    deployment/healthcheck.py's own default target, "/", ever proved) -
+    actually runs a query against the real database connection, since
+    that's the dependency most likely to be up/down independently of the
+    Django process itself (e.g. Postgres restarting, a connection-pool
+    exhaustion). Deliberately not gated behind DEBUG/auth - both Docker's
+    own HEALTHCHECK and .github/workflows/ci.yml's post-deploy check hit
+    this anonymously, from inside/outside the container respectively.
+    Cheap by design (SELECT 1, no cache/Celery/S3 round-trip) - this
+    needs to answer fast and often, not be a full dependency audit."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception as exc:
+        return JsonResponse({"status": "error", "database": str(exc)}, status=503)
+    return JsonResponse({"status": "ok"})
+
+
 def serve_docs(request, path):
     # Same reasoning as serve_media above - read settings.BASE_DIR inside
     # the view rather than baking it into urlpatterns at import time.
@@ -28,6 +49,7 @@ def serve_docs(request, path):
 
 
 urlpatterns = [
+    path("healthz/", healthz),
     path("admin/", admin.site.urls),
     path("accounts/", include("accounts.urls")),
     path("billing/", include("billing.urls")),

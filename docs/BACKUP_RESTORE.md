@@ -53,24 +53,31 @@ This does not replace a recurring schedule below — it only guarantees a
 fresh backup exists right before the riskiest moment (a new migration
 running), not one at a predictable time of day regardless of deploys.
 
-## Scheduling a recurring one (Railway example)
+## Recurring schedule — now automatic via Celery Beat
 
-Railway does not run this automatically. Set it up as a **Railway Cron
-Job** (a separate service in the same project) — or, on a plain VPS like
-this project's actual host, a standard crontab entry running `docker
-compose exec -T web python manage.py backup_database` on a schedule:
+This used to require someone to separately configure a Railway Cron Job
+or a VPS crontab entry — easy to forget, and invisible if it was never
+actually set up. It's now a regular Celery Beat `PeriodicTask`, seeded by
+`accounts/migrations/0013_seed_daily_backup_schedule.py` exactly like
+this app's other 5 scheduled jobs (invoice sweep, trial-expiry sweep,
+etc.) — no separate cron service to remember, running on the same
+`worker`/`beat` containers `docker-compose.yml` already brings up.
 
-1. In the Railway project, add a new service → "Cron Job" (or a normal
-   service with a cron schedule set in its settings).
-2. Point it at the same repo/image as the main app.
-3. Schedule: `0 3 * * *` (daily at 03:00 UTC — pick an off-peak hour).
-4. Start command: `python manage.py backup_database`
-5. Give that service the same `DATABASE_URL` as the main app, plus the
-   `BACKUP_S3_*` variables above.
+- **Task**: `accounts.tasks.run_scheduled_database_backup` (thin wrapper
+  around the same `backup_database` command, logging — not raising — a
+  `CommandError` when `BACKUP_S3_BUCKET` isn't set yet, so a not-yet-
+  configured bucket never shows up as a failed/retried Celery task).
+- **Schedule**: daily at 03:00 UTC, ahead of every other scheduled job in
+  this app (04:00/04:30/05:00), so a fresh backup exists before any of
+  them run.
+- Editable afterwards from Django admin → Periodic Tasks → "Daily
+  database backup", same as any other scheduled job here — no code
+  change needed to move the time.
 
-Until that service exists, backups do not run — this file existing does
-not mean backups are active. Confirm the cron service is actually
-scheduled after deploying.
+Until `BACKUP_S3_BUCKET`/`BACKUP_S3_ACCESS_KEY_ID`/etc. are actually set
+on the server, this task runs on schedule but does nothing (logs a
+warning and exits) — setting those variables is still a required manual
+step; only the scheduling itself is now automatic.
 
 ## Restore procedure (exact commands)
 

@@ -73,7 +73,7 @@ def assign_default_plan_if_missing(user):
     return assign_plan(user, default_plan, assigned_by=None)
 
 
-def get_plan_status(user):
+def get_plan_status(user, assignment=None):
     """The single source of truth for "where does this user's plan stand
     right now". Returns a dict:
       plan, assignment: the Plan/UserPlanAssignment objects (or None)
@@ -82,8 +82,16 @@ def get_plan_status(user):
       grace_days_remaining: whole days left in the post-expiry grace window
     Purely a read - never mutates anything, so it's safe to call on every
     request (no Celery/cron dependency for the actual blocking behavior;
-    see the module docstring in governance/tasks.py notes for why)."""
-    assignment = get_assignment(user)
+    see the module docstring in governance/tasks.py notes for why).
+
+    `assignment`: pass an already-fetched UserPlanAssignment (e.g. from a
+    queryset that already select_related("plan_assignment__plan")) to
+    skip get_assignment()'s own query entirely - every other caller
+    leaves this None and gets the original single-user behavior
+    unchanged. Added specifically so governance/views.py::UserListView
+    can classify every row on the page without an extra query per user."""
+    if assignment is None:
+        assignment = get_assignment(user)
     if assignment is None:
         return {"plan": None, "assignment": None, "state": "none", "days_remaining": None, "grace_days_remaining": None}
 
@@ -643,17 +651,26 @@ def validate_context_tokens(user, system_prompt, history):
         )
 
 
-def engagement_score(user):
+def engagement_score(user, status=None, used_tokens=None):
     """Simple heuristic for surfacing "engaged demo users worth upgrading":
     (% of their plan's monthly token limit used) / (% of their trial
     elapsed). >1 means burning through their trial faster than time is
     passing - a genuine usage signal, not a scored/ML system. Returns None
-    when it doesn't apply (not on a demo plan, or no token limit set)."""
+    when it doesn't apply (not on a demo plan, or no token limit set).
+
+    `status`: pass an already-computed get_plan_status(user) result to skip
+    its query entirely. `used_tokens`: pass an already-aggregated token sum
+    (e.g. from one batched query across many users) to skip this function's
+    own per-user Message aggregate. Both default to None (computed here) so
+    every other caller's behavior is unchanged - added for
+    governance/views.py::UserListView, which otherwise ran both of these as
+    N separate queries once per row on the page."""
     from django.db.models import F, Sum
 
     from chat.models import Message
 
-    status = get_plan_status(user)
+    if status is None:
+        status = get_plan_status(user)
     plan, assignment = status["plan"], status["assignment"]
     if plan is None or not plan.is_demo or not plan.monthly_token_limit or assignment.expires_at is None:
         return None
@@ -662,12 +679,13 @@ def engagement_score(user):
     elapsed = (timezone.now() - assignment.assigned_at).total_seconds() / 86400
     pct_elapsed = max(elapsed / total_duration, 0.01)
 
-    used = (
-        Message.objects.filter(conversation__user=user, role=Message.Role.ASSISTANT).aggregate(
-            total=Sum(F("input_tokens") + F("output_tokens")),
-        )["total"]
-        or 0
-    )
-    pct_used = used / plan.monthly_token_limit
+    if used_tokens is None:
+        used_tokens = (
+            Message.objects.filter(conversation__user=user, role=Message.Role.ASSISTANT).aggregate(
+                total=Sum(F("input_tokens") + F("output_tokens")),
+            )["total"]
+            or 0
+        )
+    pct_used = used_tokens / plan.monthly_token_limit
 
     return round(pct_used / pct_elapsed, 2)

@@ -1954,6 +1954,44 @@ class AdminListFilteringTests(TestCase):
             self.assertEqual(response.status_code, 403, url_name)
 
 
+class UserListPaginationTests(TestCase):
+    """Users list used to render every matching user on one unpaginated
+    page, with an N+1 query (get_plan_status + engagement_score +
+    count_user_overrides all called per row) - fine at a handful of users,
+    not at the ~200 this app is being scaled up to. paginate_by=50 plus
+    dropping the dead per-row overrides query fixes both; "sort by
+    engagement" deliberately still returns everything unpaginated (a
+    global ranking, not a per-page one) - see get_paginate_by's own
+    docstring in governance/views.py."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="pageadmin@example.com",
+            password="pw12345!",
+            role=User.Role.SUPERADMIN,
+            is_staff=True,
+        )
+        self.client.login(email="pageadmin@example.com", password="pw12345!")
+        for i in range(60):
+            User.objects.create_user(email=f"user{i:02d}@example.com", password="pw12345!")
+
+    def test_users_list_is_paginated_at_50(self):
+        response = self.client.get(reverse("governance:users"))
+        self.assertTrue(response.context["is_paginated"])
+        self.assertEqual(len(response.context["users"]), 50)
+        self.assertEqual(response.context["page_obj"].paginator.count, 61)  # + self.admin
+
+    def test_second_page_reachable_and_preserves_filters(self):
+        response = self.client.get(reverse("governance:users"), {"page": 2, "role": "user"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["role_filter"], "user")
+
+    def test_sort_by_engagement_returns_all_users_unpaginated(self):
+        response = self.client.get(reverse("governance:users"), {"sort": "engagement"})
+        self.assertFalse(response.context["is_paginated"])
+        self.assertEqual(len(response.context["users"]), 61)
+
+
 class ModelPricingUpdateTests(TestCase):
     """update_model_pricing is the one legacy Models-page write action left
     after removing Sync Models (see chat/providers.py / providers/tasks.py

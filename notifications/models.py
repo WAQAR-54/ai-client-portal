@@ -59,6 +59,15 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            # notifications/views.py's unread-count badge
+            # (Notification.objects.filter(user=..., is_read=False).count())
+            # runs on every authenticated page load - without this, Postgres
+            # can only use the FK's own index on user_id and then filter
+            # is_read row-by-row, getting slower as each user's notification
+            # history grows.
+            models.Index(fields=["user", "is_read"], name="notif_user_is_read_idx"),
+        ]
 
     def __str__(self):
         return f"{self.user}: {self.title}"
