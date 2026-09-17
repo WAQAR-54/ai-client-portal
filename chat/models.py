@@ -201,6 +201,18 @@ class Message(models.Model):
     # Research uses this month" with a plain DB filter, the same
     # denormalize-for-counting reasoning as attachment_kind above.
     used_research = models.BooleanField(default=False)
+    # Set on the pending assistant reply when the user explicitly turned on
+    # the composer's "Generate document" toggle for that send
+    # (chat/views.py::post_message) - a DIFFERENT, newer feature from the
+    # existing generate_media(media_mode="document") one-shot flow (that one
+    # never touches these fields; see chat/views.py's own note on the
+    # naming collision). When True, _message_bubble.html renders a compact
+    # doc card (opens the artifact side panel on click) instead of the
+    # full inline markdown text. artifact_title starts as a provisional
+    # truncated-prompt guess and is overwritten in stream_message once the
+    # reply's own "# Heading" is known.
+    is_artifact = models.BooleanField(default=False)
+    artifact_title = models.CharField(max_length=200, blank=True)
     served_from_cache = models.BooleanField(
         default=False,
         help_text="This reply was served from the Redis response cache instead of "

@@ -85,8 +85,21 @@ CODE_OUTPUT_HINT = (
     "and place it before or after the code, not interleaved inside it."
 )
 
+# The composer's "Generate document" toggle (chat/views.py::post_message's
+# document_mode) - a different, newer feature from CODE_OUTPUT_HINT/output_mode
+# above (kept as its own bool param below rather than folded into output_mode,
+# since a document reply can combine with the Code toggle's own hint - e.g. a
+# report that includes a code sample - whereas output_mode is one exclusive
+# choice). Reused by chat/document_generation.py::extract_document_title to
+# pull the panel's title back out of whatever heading the model wrote.
+DOCUMENT_OUTPUT_HINT = (
+    "For THIS message only, write a complete, well-structured document: start "
+    "with a single # Title heading, then organize the body with headings, "
+    "lists, or tables as appropriate."
+)
 
-def build_system_prompt(user, company_name="The Company", agent_persona=None, output_mode=None):
+
+def build_system_prompt(user, company_name="The Company", agent_persona=None, output_mode=None, document_mode=False):
     department = user.department
     department_name = department.name if department else "General"
     department_instructions = ""
@@ -113,4 +126,6 @@ def build_system_prompt(user, company_name="The Company", agent_persona=None, ou
         prompt = f"{prompt}\n\n{persona[1]}"
     if output_mode == "code":
         prompt = f"{prompt}\n\n{CODE_OUTPUT_HINT}"
+    if document_mode:
+        prompt = f"{prompt}\n\n{DOCUMENT_OUTPUT_HINT}"
     return prompt

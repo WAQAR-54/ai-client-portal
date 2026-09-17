@@ -2120,6 +2120,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .artifact-panel-header-left { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .artifact-panel-title { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-panel-body { flex: 1; overflow-y: auto; padding: var(--space-4); font-size: 0.9rem; line-height: 1.7; }
+.artifact-body-actions { display: flex; gap: 0.2rem; margin-bottom: var(--space-3); }
 .chat-header {
     display: flex;
     align-items: center;
@@ -3123,6 +3124,33 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
    of the plain download-link .msg-attachment above, which is still used
    for every other attachment kind (documents). */
 .msg-generated-media { display: block; max-width: min(100%, 420px); max-height: 420px; border-radius: var(--radius-md); margin-top: 0.5rem; border: 1px solid var(--color-border); }
+
+/* Composer's "Generate document" toggle - a message with is_artifact=True
+   renders this compact card instead of its full markdown text; clicking it
+   loads the same content into the artifact side panel (see
+   chat/_artifact_panel_content.html, portalOpenArtifact() in chat_home.html). */
+.doc-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.4rem;
+    cursor: pointer;
+    max-width: 320px;
+}
+.doc-card:hover { border-color: var(--color-text-faint); background: var(--color-surface-muted); }
+.doc-card-icon {
+    width: 30px; height: 30px; border-radius: var(--radius-sm); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--color-surface-muted); color: var(--color-text-muted);
+}
+.doc-card-icon svg { width: 14px; height: 14px; }
+.doc-card-text { min-width: 0; }
+.doc-card-title { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-card-sub { font-size: 0.74rem; color: var(--color-text-faint); display: flex; align-items: center; gap: 0.3rem; margin-top: 0.1rem; }
+.doc-card-sub .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-success); flex-shrink: 0; }
 
 .chat-composer-wrap {
     border-top: 1px solid var(--color-border);

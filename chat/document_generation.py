@@ -53,6 +53,19 @@ def _parsed_blocks(message_content):
                 yield ("p", text)
 
 
+def extract_document_title(content, fallback="Document"):
+    """The artifact panel's title - the reply's own first heading (the
+    model is prompted, via chat/prompts.py::DOCUMENT_OUTPUT_HINT, to always
+    lead with one), reusing this module's own markdown parsing rather than
+    a separate regex pass over raw text. Falls back to `fallback` (the
+    provisional title set from the user's prompt, see chat/views.py::
+    post_message) when the reply has no heading at all - never raises."""
+    for tag, value in _parsed_blocks(content):
+        if tag in _HEADING_TAGS:
+            return value[:200]
+    return fallback
+
+
 def render_message_docx(message) -> bytes:
     from docx import Document
 

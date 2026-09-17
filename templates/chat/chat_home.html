@@ -548,6 +548,12 @@ function portalCloseUpgradeModal() {
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                     </button>
                     <input type="hidden" name="output_mode" id="output-mode-input" value="">
+                    {% if can_generate_document %}
+                    <button type="button" class="attach-btn" id="document-toggle-btn" title="{% trans 'Generate a document — this reply opens in a side panel you can copy, download, and share.' %}" onclick="portalToggleDocumentMode(this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </button>
+                    <input type="hidden" name="document_mode" id="document-mode-input" value="">
+                    {% endif %}
                     {% if can_use_agent_mode %}
                     <details class="export-menu">
                         <summary class="attach-btn no-marker" id="agent-persona-summary" title="{% trans 'Act as a specialized agent for this conversation' %}">
@@ -664,6 +670,20 @@ function portalCloseUpgradeModal() {
         params.delete("starter");
         var qs = params.toString();
         window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+    })();
+    (function() {
+        // The artifact panel's "Copy link" action (chat/_artifact_panel_content.html)
+        // produces a URL with ?artifact=<message_id> - open that message's
+        // doc card automatically on load, same one-time-then-strip pattern
+        // as ?starter= above.
+        var params = new URLSearchParams(window.location.search);
+        var artifactId = params.get("artifact");
+        if (!artifactId) return;
+        var card = document.getElementById("doc-card-" + artifactId);
+        if (card) card.click();
+        params.delete("artifact");
+        var qs2 = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs2 ? "?" + qs2 : ""));
     })();
     </script>
     {% else %}
@@ -787,7 +807,13 @@ function portalCloseUpgradeModal() {
     });
 })();
 
-function portalOpenArtifact() {
+function portalOpenArtifact(title, dotClass, accentColor) {
+    if (title !== undefined) document.getElementById("artifact-panel-title").textContent = title;
+    var dot = document.getElementById("artifact-panel-dot");
+    if (dot && dotClass !== undefined) {
+        dot.className = "provider-dot " + dotClass;
+        dot.style.setProperty("--provider-accent", accentColor || "");
+    }
     document.getElementById("artifact-panel").hidden = false;
 }
 function portalCloseArtifact() {
@@ -819,6 +845,9 @@ function portalResetComposerAttrs() {
     // Code output mode is per-turn too, same reasoning as Research above.
     var codeModeBtn = document.getElementById("code-mode-toggle-btn");
     if (codeModeBtn) codeModeBtn.classList.remove("has-file");
+    // Document mode is per-turn too, same reasoning as Research above.
+    var documentModeBtn = document.getElementById("document-toggle-btn");
+    if (documentModeBtn) documentModeBtn.classList.remove("has-file");
 }
 
 // Research mode toggle (composer footer) - see can_use_research/
@@ -842,6 +871,17 @@ function portalToggleCodeMode(btn) {
     if (!input) return;
     var on = input.value !== "code";
     input.value = on ? "code" : "";
+    btn.classList.toggle("has-file", on);
+}
+
+// Document-mode composer toggle - see chat/prompts.py's DOCUMENT_OUTPUT_HINT
+// and chat:post_message's own "document_mode" POST field. Same one-off,
+// per-message toggle shape as Research/Code above.
+function portalToggleDocumentMode(btn) {
+    var input = document.getElementById("document-mode-input");
+    if (!input) return;
+    var on = input.value !== "on";
+    input.value = on ? "on" : "";
     btn.classList.toggle("has-file", on);
 }
 

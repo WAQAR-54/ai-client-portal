@@ -1,0 +1,25 @@
+{% load chat_extras i18n %}
+<div class="artifact-body-content">
+    <div class="artifact-body-actions">
+        <button type="button" class="msg-action-btn" title="{% trans 'Copy' %}" onclick="portalCopyMessage(this)" data-copy-text="{{ message.content }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button type="button" class="msg-action-btn" title="{% trans 'Copy link' %}" onclick="portalCopyMessage(this)" data-copy-text="{{ request.scheme }}://{{ request.get_host }}{% url 'chat:chat_conversation' conversation_id=message.conversation_id %}?artifact={{ message.id }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </button>
+        {% if can_generate_document %}
+        <details class="export-menu">
+            <summary class="msg-action-btn no-marker" title="{% trans 'Download' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </summary>
+            <div class="export-menu-panel">
+                <a href="{% url 'chat:export_message_document' conversation_id=message.conversation_id message_id=message.id doc_format='docx' %}">{% trans "Word (.docx)" %}</a>
+                <a href="{% url 'chat:export_message_document' conversation_id=message.conversation_id message_id=message.id doc_format='xlsx' %}">{% trans "Excel (.xlsx)" %}</a>
+                <a href="{% url 'chat:export_message_document' conversation_id=message.conversation_id message_id=message.id doc_format='pptx' %}">{% trans "PowerPoint (.pptx)" %}</a>
+                <a href="{% url 'chat:export_message_document' conversation_id=message.conversation_id message_id=message.id doc_format='pdf' %}">{% trans "PDF" %}</a>
+            </div>
+        </details>
+        {% endif %}
+    </div>
+    <div class="msg-markdown">{{ message.content|render_markdown }}</div>
+</div>

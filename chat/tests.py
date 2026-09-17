@@ -1849,6 +1849,165 @@ class MessageDocumentGenerationTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class DocumentModeToggleTests(TestCase):
+    """The composer's "Generate document" toggle (chat/views.py::
+    post_message's document_mode) - a different, newer feature from
+    generate_media(media_mode="document")'s existing one-shot flow, which
+    this never touches. Gated by the same document_generation Plan flag
+    export_message_document already uses."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="test-model",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        self.plan = _grant_premium_plan(self.user, self.model)
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_post_message_sets_is_artifact_and_provisional_title_when_flag_on(self):
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "Draft a report on Q3 sales", "document_mode": "on"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertTrue(pending.is_artifact)
+        self.assertEqual(pending.artifact_title, "Draft a report on Q3 sales")
+
+    def test_post_message_ignores_document_mode_when_flag_off(self):
+        self.plan.feature_flags = {"document_generation": False}
+        self.plan.save(update_fields=["feature_flags"])
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "Draft a report", "document_mode": "on"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+        self.assertFalse(pending.is_artifact)
+        self.assertEqual(pending.artifact_title, "")
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_stream_message_finalizes_title_from_reply_heading(self, mock_get_provider, mock_classify):
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [
+                StreamChunk(text="# Q3 Sales Report\n\nRevenue grew."),
+                StreamChunk(done=True, input_tokens=5, output_tokens=5),
+            ]
+        )
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "Draft a report", "document_mode": "on"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            )
+        )
+        b"".join(response.streaming_content)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.artifact_title, "Q3 Sales Report")
+        self.assertTrue(pending.is_artifact)
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_document_mode_appends_the_document_hint_to_the_system_prompt(self, mock_get_provider, mock_classify):
+        from chat.prompts import DOCUMENT_OUTPUT_HINT
+
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="ok"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+        )
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": conversation.id}),
+            {"content": "Draft a report", "document_mode": "on"},
+        )
+        pending = conversation.messages.get(role=Message.Role.ASSISTANT)
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            )
+        )
+        b"".join(response.streaming_content)
+        _, kwargs = mock_get_provider.return_value.stream_chat.call_args
+        self.assertIn(DOCUMENT_OUTPUT_HINT, kwargs["system_prompt"])
+
+
+class ArtifactPanelViewTests(TestCase):
+    """chat:artifact_panel - the doc card's target for loading its content
+    into the side panel. Ownership-checked and artifact-only, same
+    reasoning as every other per-message view in this file."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
+        self.plan = _grant_premium_plan(self.user)
+        self.client.login(email="u@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+        self.artifact_message = Message.objects.create(
+            conversation=self.conversation,
+            role=Message.Role.ASSISTANT,
+            content="# Report\n\nBody text.",
+            is_artifact=True,
+            artifact_title="Report",
+        )
+
+    def _url(self, message_id=None):
+        return reverse(
+            "chat:artifact_panel",
+            kwargs={"conversation_id": self.conversation.id, "message_id": message_id or self.artifact_message.id},
+        )
+
+    def test_renders_artifact_content(self):
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Body text.")
+
+    def test_404s_for_a_non_artifact_message(self):
+        plain_message = Message.objects.create(
+            conversation=self.conversation, role=Message.Role.ASSISTANT, content="just a normal reply"
+        )
+        response = self.client.get(self._url(plain_message.id))
+        self.assertEqual(response.status_code, 404)
+
+    def test_404s_for_another_users_conversation(self):
+        other_client = Client()
+        other_client.force_login(self.other_user)
+        response = other_client.get(self._url())
+        self.assertEqual(response.status_code, 404)
+
+    def test_download_menu_only_rendered_with_the_feature_flag(self):
+        self.plan.feature_flags = {"document_generation": True}
+        self.plan.save(update_fields=["feature_flags"])
+        response = self.client.get(self._url())
+        self.assertContains(response, "Word (.docx)")
+
+        self.plan.feature_flags = {"document_generation": False}
+        self.plan.save(update_fields=["feature_flags"])
+        response = self.client.get(self._url())
+        self.assertNotContains(response, "Word (.docx)")
+
+
 class ModelSelectionTests(TestCase):
     def setUp(self):
         from django.core.cache import cache

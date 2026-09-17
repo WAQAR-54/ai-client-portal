@@ -235,6 +235,27 @@ def render_message(request, conversation_id, message_id):
 
 
 @login_required
+@require_GET
+def artifact_panel(request, conversation_id, message_id):
+    """Content for the artifact side panel's body - loaded via htmx when a
+    message's doc card (_message_bubble.html) is clicked. 404s for a
+    non-artifact message so this can never be used to peek at a plain
+    reply's content through a different URL than render_message already
+    allows for."""
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    message = get_object_or_404(
+        Message, id=message_id, conversation=conversation, role=Message.Role.ASSISTANT, is_artifact=True
+    )
+    from governance.plans import has_feature
+
+    return render(
+        request,
+        "chat/_artifact_panel_content.html",
+        {"message": message, "can_generate_document": has_feature(request.user, "document_generation")},
+    )
+
+
+@login_required
 @require_feature("upgrade_request")
 @require_http_methods(["POST"])
 def request_upgrade(request):
@@ -446,6 +467,13 @@ def post_message(request, conversation_id):
     if output_mode != "code":
         output_mode = ""
 
+    # Composer's "Generate document" toggle - same re-check pattern as
+    # model_id/research/agent_persona above, gated on the existing
+    # document_generation Plan feature flag (already used for the
+    # per-message export-menu Download action - this toggle is a second,
+    # independent consumer of that same flag, not a new one).
+    document_mode = request.POST.get("document_mode") == "on" and has_feature(request.user, "document_generation")
+
     # Lock the conversation row for the duration of the check+create so two
     # concurrent sends against the same conversation can't both pass the
     # session_limit check before either message is committed. (Postgres
@@ -482,6 +510,12 @@ def post_message(request, conversation_id):
             role=Message.Role.ASSISTANT,
             content="",
             used_research=research,
+            is_artifact=document_mode,
+            # Provisional - overwritten in stream_message once the reply's
+            # own "# Heading" is known (see extract_document_title). Just a
+            # reasonable placeholder for the moment between "pending" and
+            # "the model has actually written something".
+            artifact_title=(content[:60] or "Document") if document_mode else "",
         )
 
     # Built in Python rather than the template's own nested-{% if %} string
@@ -1115,6 +1149,11 @@ def stream_message(request, conversation_id, message_id, token):
     output_mode = request.GET.get("output_mode", "").strip()
     if output_mode != "code":
         output_mode = ""
+    # Composer's "Generate document" toggle - re-validated here too, same
+    # reasoning as output_mode just above (post_message already checked
+    # the document_generation feature flag before setting message.
+    # is_artifact, but this is reached by a direct GET).
+    document_mode = message.is_artifact
 
     # Re-validated here too (not just trusted from post_message having
     # already checked it) since this is reached by a direct GET, same
@@ -1193,7 +1232,9 @@ def stream_message(request, conversation_id, message_id, token):
                 return
             candidates = anthropic_candidates
 
-        system_prompt = build_system_prompt(request.user, agent_persona=agent_persona, output_mode=output_mode)
+        system_prompt = build_system_prompt(
+            request.user, agent_persona=agent_persona, output_mode=output_mode, document_mode=document_mode
+        )
 
         from governance.plans import validate_context_tokens
 
@@ -1224,6 +1265,10 @@ def stream_message(request, conversation_id, message_id, token):
                 cached["input_tokens"] or 0, cached["output_tokens"] or 0
             )
             message.served_from_cache = True
+            if document_mode and cached["text"]:
+                from chat.document_generation import extract_document_title
+
+                message.artifact_title = extract_document_title(cached["text"], fallback=message.artifact_title)
             message.save()
             Conversation.objects.filter(pk=message.conversation_id).update(last_provider_model=candidates[0])
             _notify_if_usage_warning(request.user)
@@ -1276,6 +1321,10 @@ def stream_message(request, conversation_id, message_id, token):
             message.input_tokens = input_tokens
             message.output_tokens = output_tokens
             message.estimated_cost = model_config.estimate_cost(input_tokens or 0, output_tokens or 0)
+            if document_mode and full_text:
+                from chat.document_generation import extract_document_title
+
+                message.artifact_title = extract_document_title(full_text, fallback=message.artifact_title)
             message.save()
             Conversation.objects.filter(pk=message.conversation_id).update(last_provider_model=model_config)
             store_cached_response(

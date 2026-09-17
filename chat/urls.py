@@ -33,6 +33,11 @@ urlpatterns = [
         name="render_message",
     ),
     path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/artifact/",
+        views.artifact_panel,
+        name="artifact_panel",
+    ),
+    path(
         "conversations/<int:conversation_id>/messages/<int:message_id>/edit/",
         views.edit_message,
         name="edit_message",
