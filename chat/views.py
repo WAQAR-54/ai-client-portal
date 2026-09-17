@@ -46,7 +46,7 @@ from governance.limits import (
     get_usage_status,
     validate_upload,
 )
-from providers.models import ProviderModel
+from providers.models import Provider, ProviderModel
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,14 @@ def chat_home(request, conversation_id=None):
     from governance.plans import get_budget_automation_status, get_plan_status, get_request_count_status, has_feature
 
     available_models = models_visible_to_user(request.user)
+    # Sidebar provider filter tabs - deliberately reuses available_models
+    # (already models_visible_to_user's RBAC/region/plan-filtered result)
+    # rather than Provider.objects.filter(is_connected=True) directly, so a
+    # tab for a provider this user isn't actually allowed to use can never
+    # appear.
+    sidebar_providers = Provider.objects.filter(id__in=available_models.values_list("provider_id", flat=True)).order_by(
+        "name"
+    )
     plan_status = get_plan_status(request.user)
     upgrade_plan_choices = Plan.objects.filter(is_active=True, is_visible_to_admins=True).exclude(
         pk=plan_status["plan"].pk if plan_status["plan"] else None,
@@ -101,6 +109,7 @@ def chat_home(request, conversation_id=None):
         "messages_list": _messages_with_switch_dividers(conversation),
         "has_models_available": available_models.exists(),
         "available_models": available_models,
+        "sidebar_providers": sidebar_providers,
         "model_rows": _model_catalog_rows(available_models, upgrade_plan_choices),
         "plan_status": plan_status,
         "budget_automation": get_budget_automation_status(request.user),
@@ -202,7 +211,7 @@ def _model_catalog_rows(available_models, upgrade_plan_choices):
 def _conversation_list_context(request, active_conversation=None):
     """Shared context for the sidebar list, used both on full page loads and
     on the pin/delete htmx partial re-renders."""
-    own_conversations = Conversation.objects.filter(user=request.user)
+    own_conversations = Conversation.objects.filter(user=request.user).select_related("last_provider_model__provider")
     pinned = own_conversations.filter(is_pinned=True).order_by("-pinned_at")
     unpinned = own_conversations.filter(is_pinned=False).order_by("-updated_at")
     return {
@@ -1216,6 +1225,7 @@ def stream_message(request, conversation_id, message_id, token):
             )
             message.served_from_cache = True
             message.save()
+            Conversation.objects.filter(pk=message.conversation_id).update(last_provider_model=candidates[0])
             _notify_if_usage_warning(request.user)
             yield _sse_event("done", "")
             return
@@ -1267,6 +1277,7 @@ def stream_message(request, conversation_id, message_id, token):
             message.output_tokens = output_tokens
             message.estimated_cost = model_config.estimate_cost(input_tokens or 0, output_tokens or 0)
             message.save()
+            Conversation.objects.filter(pk=message.conversation_id).update(last_provider_model=model_config)
             store_cached_response(
                 request.user.id,
                 model_config.id,

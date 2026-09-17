@@ -129,6 +129,15 @@ class Conversation(models.Model):
     pinned_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    # Denormalized from the most recent assistant reply's
+    # Message.provider_model_used - written in chat/views.py::stream_message
+    # at both completion points, not computed from conversation.messages on
+    # every sidebar render (would be an extra query per conversation there).
+    # Used only for the sidebar's provider filter tabs; never affects which
+    # model the NEXT message in this conversation actually uses.
+    last_provider_model = models.ForeignKey(
+        "providers.ProviderModel", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
 
     objects = ActiveConversationManager()
     all_objects = models.Manager()

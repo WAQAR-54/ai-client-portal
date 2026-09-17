@@ -49,6 +49,7 @@
     </a>
 </div>
 {% endif %}
+{% include "chat/_provider_filter_tabs.html" %}
 {% if user|has_feature:"conversation_pin_search" %}
 <div class="filter-search sidebar-conv-search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -71,17 +72,20 @@
     var input = document.getElementById("conv-search-input");
     var listWrap = document.querySelector(".conv-list-wrap");
     var emptyState = document.getElementById("conv-search-empty");
-    if (!input || !listWrap) return;
+    var activeProviderFilter = "";
+    if (!listWrap) return;
 
     function applyFilter() {
-        var query = input.value.trim().toLowerCase();
+        var query = input ? input.value.trim().toLowerCase() : "";
         var anyVisibleAtAll = false;
         listWrap.querySelectorAll(".conv-group").forEach(function(group) {
             var anyVisibleInGroup = false;
             group.querySelectorAll(".conv-item").forEach(function(item) {
                 var titleEl = item.querySelector(".conv-item-link span");
                 var title = titleEl ? titleEl.textContent.toLowerCase() : "";
-                var match = !query || title.indexOf(query) !== -1;
+                var matchesSearch = !query || title.indexOf(query) !== -1;
+                var matchesProvider = !activeProviderFilter || item.dataset.providerSlug === activeProviderFilter;
+                var match = matchesSearch && matchesProvider;
                 item.style.display = match ? "" : "none";
                 if (match) anyVisibleInGroup = true;
             });
@@ -93,12 +97,23 @@
             if (anyVisibleInGroup) anyVisibleAtAll = true;
         });
         var hasAnyGroups = listWrap.querySelectorAll(".conv-group").length > 0;
-        emptyState.style.display = (query && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
+        if (emptyState) {
+            emptyState.style.display = ((query || activeProviderFilter) && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
+        }
     }
 
-    input.addEventListener("input", applyFilter);
-    // Re-apply the current search after the list is refreshed by htmx
-    // (pin/unpin, delete) so filtering survives those swaps.
+    window.portalSetProviderFilter = function(slug, el) {
+        activeProviderFilter = slug;
+        document.querySelectorAll(".provider-filter-tab").forEach(function(tab) {
+            tab.classList.toggle("active", tab === el);
+        });
+        applyFilter();
+    };
+
+    if (input) input.addEventListener("input", applyFilter);
+    // Re-apply the current search/provider filter after the list is
+    // refreshed by htmx (pin/unpin, delete) so filtering survives those
+    // swaps.
     document.body.addEventListener("htmx:afterSwap", function(evt) {
         if (evt.target.id === "conv-list-container" || (evt.target.querySelector && evt.target.querySelector("#conv-list-container"))) {
             applyFilter();

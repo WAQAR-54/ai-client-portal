@@ -713,6 +713,146 @@ class ChatViewTests(TestCase):
         mock_classify.assert_not_called()
 
 
+class ConversationLastProviderModelTests(TestCase):
+    """Conversation.last_provider_model - denormalized so the sidebar's
+    provider filter tabs (chat/_provider_filter_tabs.html) never need an
+    extra query per conversation across its message history."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="test-model",
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        _grant_premium_plan(self.user, self.model)
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_normal_completion_sets_last_provider_model(self, mock_get_provider, mock_classify):
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="hi"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+        )
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, content="hi")
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={"conversation_id": conversation.id, "message_id": pending.id, "token": pending.stream_token},
+            )
+        )
+        b"".join(response.streaming_content)
+
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.last_provider_model, self.model)
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_cache_hit_completion_sets_last_provider_model(self, mock_get_provider, mock_classify):
+        """Same "send the identical prompt twice, second one hits the
+        exact-match cache" technique as ResponseCacheTests - the second
+        stream_message call takes the cache-hit branch, which must set
+        last_provider_model just like the normal-completion branch does."""
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="Paris"), StreamChunk(done=True, input_tokens=10, output_tokens=5)]
+        )
+
+        def send(conversation):
+            Message.objects.create(conversation=conversation, role=Message.Role.USER, content="capital of France?")
+            pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+            response = self.client.get(
+                reverse(
+                    "chat:stream_message",
+                    kwargs={
+                        "conversation_id": conversation.id,
+                        "message_id": pending.id,
+                        "token": pending.stream_token,
+                    },
+                )
+            )
+            b"".join(response.streaming_content)
+
+        conv1 = Conversation.objects.create(user=self.user)
+        conv2 = Conversation.objects.create(user=self.user)
+        send(conv1)
+        send(conv2)
+
+        self.assertEqual(mock_get_provider.return_value.stream_chat.call_count, 1)  # conv2 hit the cache
+        conv2.refresh_from_db()
+        self.assertEqual(conv2.last_provider_model, self.model)
+
+    def test_backfill_migration_derives_from_latest_assistant_message(self):
+        from django.db.models import OuterRef, Subquery
+
+        other_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="older-model"
+        )
+        conversation = Conversation.objects.create(user=self.user)
+        older = Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content="first", provider_model_used=other_model
+        )
+        older.created_at = timezone.now() - timezone.timedelta(hours=1)
+        older.save(update_fields=["created_at"])
+        Message.objects.create(
+            conversation=conversation, role=Message.Role.ASSISTANT, content="second", provider_model_used=self.model
+        )
+        # Simulate the migration's own logic directly against real rows,
+        # rather than re-running django's migration machinery in a test.
+        latest = (
+            Message.objects.filter(conversation=OuterRef("pk"), role="assistant", provider_model_used__isnull=False)
+            .order_by("-created_at")
+            .values("provider_model_used_id")[:1]
+        )
+        Conversation.objects.update(last_provider_model_id=Subquery(latest))
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.last_provider_model, self.model)
+
+
+class ProviderFilterTabsTests(TestCase):
+    """chat_home's sidebar_providers context - must only ever list a
+    provider this user is actually allowed to use (models_visible_to_user),
+    never every connected Provider regardless of RBAC/region/plan."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u2@example.com", password="pw12345!")
+        self.openai_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="m1", is_enabled=True
+        )
+        self.anthropic_model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="m2", is_enabled=True
+        )
+
+    def test_only_allowed_providers_appear_as_tabs(self):
+        _grant_premium_plan(self.user, self.openai_model)  # anthropic NOT granted
+        self.client.login(email="u2@example.com", password="pw12345!")
+        response = self.client.get(reverse("chat:chat_home"))
+        slugs = {p.slug for p in response.context["sidebar_providers"]}
+        self.assertEqual(slugs, {"openai"})
+
+    def test_user_with_no_plan_at_all_sees_every_enabled_providers_tab(self):
+        # A user with NO plan assignment is unrestricted (matches this
+        # app's pre-Plan behavior - see governance/plans.py's own
+        # docstring), so every enabled model's provider should show up.
+        # Every new user auto-gets the seeded default ("Demo") plan via
+        # accounts/signals.py - delete that assignment to get the genuine
+        # no-plan-at-all state the docstring is actually describing.
+        from governance.models import UserPlanAssignment
+
+        UserPlanAssignment.objects.filter(user=self.user).delete()
+        self.client.login(email="u2@example.com", password="pw12345!")
+        response = self.client.get(reverse("chat:chat_home"))
+        slugs = {p.slug for p in response.context["sidebar_providers"]}
+        self.assertEqual(slugs, {"openai", "anthropic"})
+
+
 class ResearchModeTests(TestCase):
     """Research mode (chat/views.py::stream_message's "research" GET flag,
     chat/providers.py's enable_web_search) - only AnthropicProvider ever

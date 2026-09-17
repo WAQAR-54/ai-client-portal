@@ -2738,6 +2738,29 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .mode-item.active { background: var(--secondary); color: var(--secondary-ink); }
 .mode-item svg { width: 15px; height: 15px; flex-shrink: 0; }
 
+/* Sidebar provider filter tabs (chat/_provider_filter_tabs.html) - one tab
+   per provider this user is actually allowed to use (chat_home's
+   sidebar_providers, already RBAC/region/plan-filtered), filtering the
+   conversation list client-side via portalSetProviderFilter - see the
+   applyFilter() JS in chat_home.html, the same client-side mechanism the
+   search box already used, extended rather than duplicated. */
+.provider-filter-tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: var(--space-3); }
+.provider-filter-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border, var(--color-border));
+    cursor: pointer;
+}
+.provider-filter-tab:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
+.provider-filter-tab.active { background: var(--sidebar-hover-bg); color: var(--sidebar-text); font-weight: 600; border-color: transparent; }
+
 /* Compare setup screen - replaces the message thread + composer while a
    user is picking exactly 2 models (see portalSidebarCompareClick /
    portalStartCompareFromSetup below). */

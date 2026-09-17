@@ -1,0 +1,13 @@
+{% load i18n chat_extras %}
+{% if sidebar_providers %}
+<div class="provider-filter-tabs" id="provider-filter-tabs">
+    <button type="button" class="provider-filter-tab active" data-provider-filter="" onclick="portalSetProviderFilter('', this)">
+        {% trans "All chats" %}
+    </button>
+    {% for p in sidebar_providers %}
+    <button type="button" class="provider-filter-tab" data-provider-filter="{{ p.slug }}" onclick="portalSetProviderFilter('{{ p.slug }}', this)">
+        <span class="provider-dot {{ p.slug|provider_dot_class }}" style="--provider-accent:{{ p.accent_color }};"></span>{{ p.name }}
+    </button>
+    {% endfor %}
+</div>
+{% endif %}

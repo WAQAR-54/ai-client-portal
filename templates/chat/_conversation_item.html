@@ -1,5 +1,5 @@
 {% load i18n governance_extras %}
-<li class="conv-item{% if c.is_pinned %} conv-item-pinned{% endif %}">
+<li class="conv-item{% if c.is_pinned %} conv-item-pinned{% endif %}" data-provider-slug="{{ c.last_provider_model.provider.slug|default:'' }}">
     <a href="{% url 'chat:chat_conversation' conversation_id=c.id %}"
        class="conv-item-link{% if c.id == active_conversation_id %} active{% endif %}">
         {% if c.is_pinned %}<span class="pin-dot" title="{% trans 'Pinned' %}"></span>{% endif %}
