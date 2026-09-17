@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% load i18n governance_extras chat_extras %}
 {% block title %}{% trans "Chat" %} — {{ site_branding.site_name }}{% endblock %}
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+{% endblock %}
 
 {% block sidebar %}
 <a class="brand" href="{% url 'accounts:dashboard' %}">{% include "_brand_mark.html" %}</a>
@@ -111,6 +114,16 @@
             tab.classList.toggle("active", tab === el);
         });
         applyFilter();
+        // Also lock the composer's own model choice to this provider, so
+        // sending the next message doesn't need a second, separate model
+        // pick from the dropdown - same "one filter drives both" request
+        // as the sidebar itself. "All chats" (empty slug) restores Smart
+        // Routing (auto-pick across every allowed provider) instead of
+        // leaving behind whatever provider happened to be selected last.
+        var option = slug
+            ? document.querySelector('.model-select-option[data-provider-slug="' + slug + '"]:not(.model-select-option-locked)')
+            : document.querySelector('.model-select-option[data-value=""]');
+        if (option) portalSelectModel(option.getAttribute("data-value"), option.getAttribute("data-label"));
     };
 
     window.portalSetProjectFilter = function(id, el) {
@@ -348,7 +361,7 @@ function portalCloseUpgradeModal() {
                 <button type="button" class="model-select-option is-selected" data-value="" data-label="{{ auto_routing_label }}">{{ auto_routing_label }}</button>
                 {% regroup model_rows by model.provider.name as provider_groups %}
                 {% for group in provider_groups %}
-                <div class="model-select-group-label">{{ group.grouper }}</div>
+                <div class="model-select-group-label">{{ group.grouper|provider_display_name }}</div>
                 {% for row in group.list %}
                 {% if row.locked %}
                 <button type="button" class="model-select-option model-select-option-locked"
@@ -362,7 +375,7 @@ function portalCloseUpgradeModal() {
                     {% if row.required_plan %}<span class="model-select-locked-tier">{{ row.required_plan.name }}</span>{% endif %}
                 </button>
                 {% else %}
-                <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">
+                <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" data-provider-slug="{{ row.model.provider.slug }}">
                     <span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>{{ row.model.display_label }}
                 </button>
                 {% endif %}
@@ -482,7 +495,7 @@ function portalCloseUpgradeModal() {
                 <span class="compare-setup-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>
                 <span class="compare-setup-name">{{ row.model.display_label }}</span>
-                <span class="compare-setup-provider">{{ row.model.provider.name }}</span>
+                <span class="compare-setup-provider">{{ row.model.provider.name|provider_display_name }}</span>
             </div>
             {% endif %}
             {% endfor %}
@@ -604,19 +617,24 @@ function portalCloseUpgradeModal() {
                     </details>
                     <input type="hidden" name="agent_persona" id="agent-persona-input" value="">
                     {% endif %}
-                    {% if can_generate_media or can_generate_document %}
+                    {% if can_generate_media %}
+                    {% comment %}
+                    Document generation deliberately lives ONLY behind the
+                    "Generate document" toggle above (chat/prompts.py's
+                    DOCUMENT_OUTPUT_HINT + Message.is_artifact) now - having
+                    a second, differently-behaved "Generate document (.docx)"
+                    one-shot link here too (no chat reply, immediate forced
+                    download, no re-generate/copy/share) was confusing next
+                    to the new toggle, both nominally doing "generate a
+                    document" for visibly different results.
+                    {% endcomment %}
                     <details class="export-menu">
-                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image, video, or document from the text in the composer' %}">
+                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image or video from the text in the composer' %}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                         </summary>
                         <div class="export-menu-panel">
-                            {% if can_generate_media %}
                             <a href="#" onclick="portalGenerateMedia(event, 'image')">{% trans "Generate image" %}</a>
                             <a href="#" onclick="portalGenerateMedia(event, 'video')">{% trans "Generate video (~1 min)" %}</a>
-                            {% endif %}
-                            {% if can_generate_document %}
-                            <a href="#" onclick="portalGenerateMedia(event, 'document')">{% trans "Generate document (.docx)" %}</a>
-                            {% endif %}
                         </div>
                     </details>
                     {% endif %}
@@ -631,7 +649,7 @@ function portalCloseUpgradeModal() {
                         <button type="button" class="composer-chip is-selected" data-value="" data-label="{{ auto_routing_label }}" onclick="portalSelectModel('', '{{ auto_routing_label|escapejs }}')">{{ auto_routing_label }}</button>
                         {% for row in model_rows %}
                         {% if not row.locked %}
-                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')"><span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>{{ row.model.display_label }}</button>
+                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" data-provider-slug="{{ row.model.provider.slug }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')"><span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>{{ row.model.display_label }}</button>
                         {% endif %}
                         {% endfor %}
                     </div>
@@ -855,6 +873,44 @@ function portalOpenArtifact(title, dotClass, accentColor) {
 function portalCloseArtifact() {
     document.getElementById("artifact-panel").hidden = true;
 }
+
+// Syntax highlighting for fenced code blocks (chat/markdown_utils.py keeps
+// the fence's language class through bleach specifically for this) - runs
+// on load and after every htmx swap that could have introduced new code
+// blocks (a streamed reply finishing, the artifact panel loading content,
+// switching conversations). highlightElement (not highlightAll) so a
+// message already highlighted earlier is never silently re-processed.
+// Also adds a small hover-reveal copy button per block, matching Claude/
+// ChatGPT's own code-block affordance.
+function portalHighlightCodeBlocks(root) {
+    if (typeof hljs === "undefined") return;
+    (root || document).querySelectorAll("pre code:not(.hljs)").forEach(function(block) {
+        hljs.highlightElement(block);
+        var pre = block.closest("pre");
+        if (!pre || pre.querySelector(".code-copy-btn")) return;
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "code-copy-btn";
+        btn.title = "{% trans 'Copy' %}";
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        btn.onclick = function() {
+            navigator.clipboard.writeText(block.textContent).then(function() {
+                btn.classList.add("copied");
+                setTimeout(function() { btn.classList.remove("copied"); }, 1200);
+            });
+        };
+        pre.style.position = "relative";
+        pre.appendChild(btn);
+    });
+}
+document.addEventListener("DOMContentLoaded", function() { portalHighlightCodeBlocks(); });
+// Covers a streamed reply's final render_message swap (post sse:done),
+// the artifact panel loading content, pin/delete/project list refreshes,
+// and switching conversations - every htmx swap that could introduce a
+// new code block. Not hooked to the raw per-chunk SSE stream itself: a
+// fenced code block isn't valid to highlight until it's actually closed,
+// which is exactly what this final swap guarantees.
+document.body.addEventListener("htmx:afterSwap", function(evt) { portalHighlightCodeBlocks(evt.target); });
 </script>
 <script>
 function portalResetComposerAttrs() {

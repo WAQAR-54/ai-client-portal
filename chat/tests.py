@@ -860,6 +860,34 @@ class ProviderFilterTabsTests(TestCase):
         slugs = {p.slug for p in response.context["sidebar_providers"]}
         self.assertEqual(slugs, {"openai", "anthropic"})
 
+    def test_tabs_show_consumer_brand_names_not_provider_company_names(self):
+        """Ordinary chat users know "ChatGPT"/"Claude", not "OpenAI"/
+        "Anthropic" - see chat/templatetags/chat_extras.py::provider_display_name."""
+        _grant_premium_plan(self.user, self.openai_model, self.anthropic_model)
+        self.client.login(email="u2@example.com", password="pw12345!")
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertContains(response, "ChatGPT")
+        self.assertContains(response, "Claude")
+        self.assertNotContains(response, ">OpenAI<")
+        self.assertNotContains(response, ">Anthropic<")
+
+
+class ProviderDisplayNameFilterTests(TestCase):
+    def test_maps_known_providers_to_their_consumer_brand_name(self):
+        from chat.templatetags.chat_extras import provider_display_name
+
+        self.assertEqual(provider_display_name("OpenAI"), "ChatGPT")
+        self.assertEqual(provider_display_name("openai"), "ChatGPT")
+        self.assertEqual(provider_display_name("Anthropic"), "Claude")
+
+    def test_passes_through_an_unmapped_provider_unchanged(self):
+        from chat.templatetags.chat_extras import provider_display_name
+
+        self.assertEqual(provider_display_name("Google Gemini"), "Google Gemini")
+        self.assertEqual(provider_display_name("grok"), "grok")
+        self.assertEqual(provider_display_name(""), "")
+        self.assertIsNone(provider_display_name(None))
+
 
 class ResearchModeTests(TestCase):
     """Research mode (chat/views.py::stream_message's "research" GET flag,
@@ -1321,14 +1349,24 @@ class DocumentGenerationOutputModeTests(TestCase):
         response = self._generate()
         self.assertEqual(response.status_code, 200)
 
-    def test_generate_document_menu_item_shown_only_with_the_feature_flag(self):
-        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
-        self.assertContains(response, "portalGenerateMedia(event, 'document')")
+    def test_can_still_be_invoked_directly_even_though_the_ui_no_longer_links_to_it(self):
+        """The composer no longer has a UI entry point for this specific
+        media_mode (removed - confusingly duplicated the newer, strictly
+        more capable "Generate document" toggle/artifact-panel feature,
+        see chat_home.html's own comment on the removal) - the endpoint
+        and its own gating are otherwise untouched, so this just confirms
+        it still works when reached directly."""
+        with patch("chat.views.get_provider") as mock_get_provider:
+            mock_get_provider.return_value.stream_chat.return_value = iter(
+                [StreamChunk(text="# Memo\n\nok"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+            )
+            response = self._generate("write a memo")
+        self.assertEqual(response.status_code, 200)
 
         self.premium.feature_flags = {"document_generation": False}
         self.premium.save(update_fields=["feature_flags"])
-        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
-        self.assertNotContains(response, "portalGenerateMedia(event, 'document')")
+        response = self._generate("write another memo")
+        self.assertEqual(response.status_code, 403)
 
 
 class CodeOutputModeTests(TestCase):
@@ -2108,6 +2146,25 @@ class MarkdownRenderingTests(TestCase):
 
         html = render_markdown("[click me](javascript:alert(1))")
         self.assertNotIn("javascript:", html)
+
+    def test_fenced_code_language_class_survives_for_client_side_highlighting(self):
+        """The one attribute this module allows through bleach beyond a
+        plain default - needed so chat_home.html's highlight.js call can
+        tell what language a fenced block is."""
+        from chat.markdown_utils import render_markdown
+
+        html = render_markdown("```python\nprint('hi')\n```")
+        self.assertIn('class="language-python"', html)
+
+    def test_class_attribute_is_not_allowed_on_other_tags(self):
+        """bleach's ALLOWED_ATTRS scopes "class" to <code> only - a model
+        reply can't smuggle an arbitrary class onto, say, a <p> or <div>
+        this way (nothing in this app's CSS depends on that being safe,
+        but it should never become an attacker-controlled styling hook)."""
+        from chat.markdown_utils import render_markdown
+
+        html = render_markdown('<p class="evil">text</p>')
+        self.assertNotIn('class="evil"', html)
 
 
 class RenderMessageViewTests(TestCase):

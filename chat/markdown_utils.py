@@ -34,7 +34,15 @@ ALLOWED_TAGS = [
     "th",
     "td",
 ]
-ALLOWED_ATTRS = {"a": ["href", "title"]}
+ALLOWED_ATTRS = {
+    "a": ["href", "title"],
+    # fenced_code puts the fence's language tag here as class="language-xxx"
+    # - kept so the client can syntax-highlight it (see base.html's highlight.js
+    # wiring); bleach's own class-name handling here is a plain allow-list of
+    # the ATTRIBUTE, not of arbitrary values, so this can't be used to smuggle
+    # anything beyond a CSS class string onto the element.
+    "code": ["class"],
+}
 
 
 def render_markdown(text: str) -> str:

@@ -95,7 +95,13 @@ CODE_OUTPUT_HINT = (
 DOCUMENT_OUTPUT_HINT = (
     "For THIS message only, write a complete, well-structured document: start "
     "with a single # Title heading, then organize the body with headings, "
-    "lists, or tables as appropriate."
+    "lists, or tables as appropriate. The platform you are running in "
+    "automatically turns this message into a downloadable Word/Excel/"
+    "PowerPoint/PDF file and displays it in a document viewer for the user - "
+    "this capability already exists and is active right now. Do NOT say you "
+    "are unable to create, generate, or attach files, or ask the user to "
+    "copy/paste the text themselves - that would be incorrect in this "
+    "context. Just write the requested document's content directly."
 )
 
 

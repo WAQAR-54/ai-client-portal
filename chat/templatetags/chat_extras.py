@@ -37,6 +37,27 @@ def plan_has_feature(user, feature_key):
 # for its slug.
 _KNOWN_PROVIDER_SLUGS = {"anthropic", "openai", "gemini", "grok", "deepseek"}
 
+# Consumer-facing product name instead of the underlying API/company name
+# (Provider.name/slug) - ordinary chat users know "ChatGPT" and "Claude",
+# not "OpenAI" and "Anthropic". Deliberately only overrides these two -
+# Gemini/Grok/DeepSeek's existing names already read as consumer-facing.
+# Admin-facing pages (the Providers connection list) intentionally keep
+# the technical name unchanged - matching the real API being connected to
+# matters there, so this filter is never applied there.
+_PROVIDER_CONSUMER_NAMES = {"anthropic": "Claude", "openai": "ChatGPT"}
+
+
+@register.filter(name="provider_display_name")
+def provider_display_name(value):
+    """{{ provider.name|provider_display_name }} or
+    {{ provider.slug|provider_display_name }} - works from either since
+    both happen to lowercase to the same key for the two providers this
+    actually remaps. Falls back to whatever was passed in for every other
+    provider (no mapping needed)."""
+    if not value:
+        return value
+    return _PROVIDER_CONSUMER_NAMES.get(value.strip().lower(), value)
+
 
 @register.filter(name="provider_badge_class")
 def provider_badge_class(slug):

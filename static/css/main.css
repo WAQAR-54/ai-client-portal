@@ -3130,6 +3130,41 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     margin: 0 0 0.8rem;
 }
 .msg-markdown pre code { background: none; border: none; padding: 0; font-size: 0.85em; }
+.code-copy-btn {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms var(--ease);
+}
+.msg-markdown pre:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn svg { width: 13px; height: 13px; }
+.code-copy-btn:hover { background: var(--color-surface-muted); }
+.code-copy-btn.copied { color: var(--color-success); border-color: var(--color-success); }
+
+/* highlight.js token colors - a compact palette tuned to this app's own
+   design tokens rather than loading a full competing theme stylesheet
+   from the CDN (only highlight.js's tokenizer script is loaded; see
+   chat_home.html's extra_head block). Covers the token classes that
+   actually show up across common languages. */
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link { color: var(--secondary); font-weight: 600; }
+.hljs-string, .hljs-attr, .hljs-symbol, .hljs-bullet, .hljs-addition { color: var(--provider-openai); }
+.hljs-title, .hljs-title.function_, .hljs-title.class_, .hljs-built_in { color: var(--provider-gemini); }
+.hljs-number, .hljs-meta { color: var(--provider-grok); }
+.hljs-comment, .hljs-quote, .hljs-deletion { color: var(--color-text-faint); font-style: italic; }
+.hljs-variable, .hljs-template-variable, .hljs-attribute { color: var(--provider-deepseek); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
 .msg-markdown blockquote { margin: 0 0 0.8rem; padding-left: 0.9rem; border-left: 3px solid var(--color-border); color: var(--color-text-muted); }
 .msg-markdown table { border-collapse: collapse; margin: 0 0 0.8rem; font-size: 0.9em; }
 .msg-markdown th, .msg-markdown td { border: 1px solid var(--color-border); padding: 0.4rem 0.6rem; }
