@@ -7,7 +7,15 @@ from django.utils import timezone
 
 from accounts.models import Department, User
 from chat.media_generation import MediaGenerationError
-from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
+from chat.models import (
+    Conversation,
+    Message,
+    MessageFeedback,
+    ModelConfig,
+    Project,
+    PromptTemplate,
+    UserModelPermission,
+)
 from chat.providers import ProviderError, StreamChunk, get_provider
 from chat.router import NoModelAvailableError, classify_complexity, match_routing_rule, select_model_for_user
 from providers.models import Provider, ProviderModel
@@ -2942,3 +2950,131 @@ class VisionAttachmentIntegrationTests(TestCase):
         sent_history = self._upload_image_and_stream(model, mock_get_provider)
         user_turn = sent_history[0]
         self.assertNotIn("images", user_turn)
+
+
+class ProjectTests(TestCase):
+    """chat.models.Project - personal, per-user conversation grouping
+    (like Claude.ai's Projects). Gated by the "projects" USER_CHAT_FEATURES
+    toggle (governance/models.py), not a Plan feature flag."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_create_project(self):
+        response = self.client.post(reverse("chat:create_project"), {"name": "Q3 Sales"})
+        self.assertEqual(response.status_code, 200)
+        project = Project.objects.get(user=self.user)
+        self.assertEqual(project.name, "Q3 Sales")
+
+    def test_create_project_requires_a_name(self):
+        response = self.client.post(reverse("chat:create_project"), {"name": "  "})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Project.objects.filter(user=self.user).exists())
+
+    def test_rename_project(self):
+        project = Project.objects.create(user=self.user, name="Old name")
+        response = self.client.post(
+            reverse("chat:rename_project", kwargs={"project_id": project.id}), {"name": "New name"}
+        )
+        self.assertEqual(response.status_code, 200)
+        project.refresh_from_db()
+        self.assertEqual(project.name, "New name")
+
+    def test_cannot_rename_another_users_project(self):
+        other_project = Project.objects.create(user=self.other_user, name="Not mine")
+        response = self.client.post(
+            reverse("chat:rename_project", kwargs={"project_id": other_project.id}), {"name": "Hijacked"}
+        )
+        self.assertEqual(response.status_code, 404)
+        other_project.refresh_from_db()
+        self.assertEqual(other_project.name, "Not mine")
+
+    def test_delete_project_keeps_its_conversations(self):
+        project = Project.objects.create(user=self.user, name="Doomed")
+        conversation = Conversation.objects.create(user=self.user, project=project)
+        response = self.client.post(reverse("chat:delete_project", kwargs={"project_id": project.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Project.objects.filter(id=project.id).exists())
+        conversation.refresh_from_db()
+        self.assertTrue(Conversation.objects.filter(id=conversation.id).exists())
+        self.assertIsNone(conversation.project)
+
+    def test_cannot_delete_another_users_project(self):
+        other_project = Project.objects.create(user=self.other_user, name="Not mine")
+        response = self.client.post(reverse("chat:delete_project", kwargs={"project_id": other_project.id}))
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Project.objects.filter(id=other_project.id).exists())
+
+    def test_move_conversation_to_project_and_back(self):
+        project = Project.objects.create(user=self.user, name="Q3 Sales")
+        conversation = Conversation.objects.create(user=self.user)
+        response = self.client.post(
+            reverse("chat:move_conversation_to_project", kwargs={"conversation_id": conversation.id}),
+            {"project_id": project.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.project, project)
+
+        self.client.post(
+            reverse("chat:move_conversation_to_project", kwargs={"conversation_id": conversation.id}),
+            {"project_id": ""},
+        )
+        conversation.refresh_from_db()
+        self.assertIsNone(conversation.project)
+
+    def test_cannot_move_a_conversation_into_another_users_project(self):
+        """The re-validation that matters most here: a POSTed project_id
+        for a project that isn't this user's own is silently ignored
+        (falls back to no-project), not trusted blindly - same reasoning as
+        every other POSTed id in chat/views.py."""
+        other_project = Project.objects.create(user=self.other_user, name="Not mine")
+        conversation = Conversation.objects.create(user=self.user)
+        self.client.post(
+            reverse("chat:move_conversation_to_project", kwargs={"conversation_id": conversation.id}),
+            {"project_id": other_project.id},
+        )
+        conversation.refresh_from_db()
+        self.assertIsNone(conversation.project)
+
+    def test_cannot_move_another_users_conversation(self):
+        other_conversation = Conversation.objects.create(user=self.other_user)
+        response = self.client.post(
+            reverse("chat:move_conversation_to_project", kwargs={"conversation_id": other_conversation.id}),
+            {"project_id": ""},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_conversation_with_project_id_lands_grouped(self):
+        project = Project.objects.create(user=self.user, name="Q3 Sales")
+        response = self.client.post(reverse("chat:create_conversation"), {"project_id": project.id})
+        conversation = Conversation.objects.get(user=self.user)
+        self.assertEqual(conversation.project, project)
+        self.assertRedirects(response, reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id}))
+
+    def test_projects_isolated_per_user(self):
+        """User A can never see or manipulate User B's projects."""
+        Project.objects.create(user=self.other_user, name="B's project")
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertEqual(list(response.context["user_projects"]), [])
+
+    def test_conversation_count_reflects_only_active_conversations(self):
+        project = Project.objects.create(user=self.user, name="Q3 Sales")
+        keep = Conversation.objects.create(user=self.user, project=project)
+        deleted = Conversation.objects.create(user=self.user, project=project, is_deleted=True)
+        response = self.client.get(reverse("chat:chat_home"))
+        returned_project = response.context["user_projects"].get(id=project.id)
+        self.assertEqual(returned_project.conversation_count, 1)
+        del keep, deleted
+
+    def test_projects_section_hidden_server_side_when_role_feature_off(self):
+        from governance.models import RoleFeatureToggle
+
+        RoleFeatureToggle.objects.create(role=self.user.role, feature_key="projects", is_enabled=False)
+        Project.objects.create(user=self.user, name="Should be hidden")
+        response = self.client.post(reverse("chat:create_project"), {"name": "Blocked"})
+        self.assertEqual(response.status_code, 403)
+        home_response = self.client.get(reverse("chat:chat_home"))
+        self.assertNotContains(home_response, "Should be hidden")

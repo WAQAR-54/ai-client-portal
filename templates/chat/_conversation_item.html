@@ -1,5 +1,5 @@
 {% load i18n governance_extras %}
-<li class="conv-item{% if c.is_pinned %} conv-item-pinned{% endif %}" data-provider-slug="{{ c.last_provider_model.provider.slug|default:'' }}">
+<li class="conv-item{% if c.is_pinned %} conv-item-pinned{% endif %}" data-provider-slug="{{ c.last_provider_model.provider.slug|default:'' }}" data-project-id="{{ c.project_id|default:'' }}">
     <a href="{% url 'chat:chat_conversation' conversation_id=c.id %}"
        class="conv-item-link{% if c.id == active_conversation_id %} active{% endif %}">
         {% if c.is_pinned %}<span class="pin-dot" title="{% trans 'Pinned' %}"></span>{% endif %}
@@ -17,6 +17,33 @@
                 <svg viewBox="0 0 24 24" fill="{% if c.is_pinned %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
             </button>
         </form>
+        {% endif %}
+        {% if user_projects and request.user|has_feature:"projects" %}
+        <details class="export-menu" onclick="event.stopPropagation();">
+            <summary class="conv-action-btn no-marker" title="{% trans 'Move to project' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </summary>
+            <div class="export-menu-panel">
+                {% for project in user_projects %}
+                <form method="post" action="{% url 'chat:move_conversation_to_project' conversation_id=c.id %}"
+                      hx-post="{% url 'chat:move_conversation_to_project' conversation_id=c.id %}"
+                      hx-target="#conv-list-container" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <input type="hidden" name="project_id" value="{{ project.id }}">
+                    <button type="submit"{% if c.project_id == project.id %} aria-disabled="true"{% endif %}>{{ project.name }}</button>
+                </form>
+                {% endfor %}
+                {% if c.project_id %}
+                <form method="post" action="{% url 'chat:move_conversation_to_project' conversation_id=c.id %}"
+                      hx-post="{% url 'chat:move_conversation_to_project' conversation_id=c.id %}"
+                      hx-target="#conv-list-container" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <input type="hidden" name="project_id" value="">
+                    <button type="submit">{% trans "Remove from project" %}</button>
+                </form>
+                {% endif %}
+            </div>
+        </details>
         {% endif %}
         <form method="post" action="{% url 'chat:delete_conversation' conversation_id=c.id %}"
               hx-post="{% url 'chat:delete_conversation' conversation_id=c.id %}"

@@ -1,0 +1,46 @@
+{% load i18n governance_extras %}
+<div class="projects-section" id="projects-section-container" hx-swap-oob="true">
+{% if request.user|has_feature:"projects" %}
+    <div class="projects-header">
+        <span class="projects-label">{% trans "Projects" %}</span>
+        <button type="button" class="projects-add-btn" onclick="portalToggleNewProjectForm()" title="{% trans 'New project' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+    </div>
+    <form id="new-project-form" class="new-project-form" style="display:none;" method="post" action="{% url 'chat:create_project' %}"
+          hx-post="{% url 'chat:create_project' %}" hx-target="#conv-list-container" hx-swap="outerHTML"
+          hx-on::after-request="this.reset(); this.style.display='none';">
+        {% csrf_token %}
+        <input type="text" name="name" placeholder="{% trans 'Project name' %}" autocomplete="off" maxlength="100">
+    </form>
+    {% for project in user_projects %}
+    <div class="project-item{% if active_project_id == project.id %} active{% endif %}"
+         data-project-filter="{{ project.id }}" onclick="portalSetProjectFilter('{{ project.id }}', this)">
+        <svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span class="project-item-name">{{ project.name }}</span>
+        <span class="project-item-count">{{ project.conversation_count }}</span>
+        <details class="export-menu" onclick="event.stopPropagation();">
+            <summary class="conv-action-btn no-marker">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            </summary>
+            <div class="export-menu-panel">
+                <a href="#" onclick="event.preventDefault(); portalRenameProject({{ project.id }}, '{{ project.name|escapejs }}')">{% trans "Rename" %}</a>
+                <form method="post" action="{% url 'chat:delete_project' project_id=project.id %}"
+                      hx-post="{% url 'chat:delete_project' project_id=project.id %}"
+                      hx-target="#conv-list-container" hx-swap="outerHTML"
+                      hx-confirm="{% trans 'Delete this project? Its conversations are kept, just ungrouped.' %}">
+                    {% csrf_token %}
+                    <button type="submit" style="color:var(--color-danger);">{% trans "Delete" %}</button>
+                </form>
+            </div>
+        </details>
+        <form id="rename-project-form-{{ project.id }}" method="post" action="{% url 'chat:rename_project' project_id=project.id %}"
+              hx-post="{% url 'chat:rename_project' project_id=project.id %}" hx-target="#conv-list-container" hx-swap="outerHTML"
+              style="display:none;">
+            {% csrf_token %}
+            <input type="text" name="name" id="rename-project-name-{{ project.id }}">
+        </form>
+    </div>
+    {% endfor %}
+{% endif %}
+</div>

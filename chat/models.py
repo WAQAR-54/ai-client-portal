@@ -138,6 +138,13 @@ class Conversation(models.Model):
     last_provider_model = models.ForeignKey(
         "providers.ProviderModel", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    # Personal grouping (see Project below) - optional by design, same
+    # "assigning one is optional" philosophy as accounts.User.department.
+    # SET_NULL rather than CASCADE: deleting a Project must never delete
+    # the conversations that were in it.
+    project = models.ForeignKey(
+        "Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
+    )
 
     objects = ActiveConversationManager()
     all_objects = models.Manager()
@@ -147,6 +154,25 @@ class Conversation(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Project(models.Model):
+    """Personal, per-user grouping of Conversations (like Claude.ai's
+    Projects) - deliberately NOT shared across a department/team, unlike
+    most other org-structure concepts in this app (Team, Department).
+    Gated by the "projects" USER_CHAT_FEATURES toggle (governance/models.py),
+    not a Plan feature flag - it costs no provider spend, same category as
+    conversation_pin_search."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_projects")
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
 
 
 class Message(models.Model):

@@ -165,6 +165,7 @@ USER_CHAT_FEATURES = [
     ("onboarding_tour", "Guided onboarding tour"),
     ("code_playground", "Code Playground (standalone, off by default - see its own migration)"),
     ("domain_generator", "Domain Generator (standalone, off by default - see its own migration)"),
+    ("projects", "Personal projects (group conversations)"),
 ]
 
 ROLE_FEATURE_ROLES = ["user", "manager", "admin"]

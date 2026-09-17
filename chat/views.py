@@ -5,6 +5,7 @@ from urllib.parse import quote, urlencode
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,7 +15,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 from sentry_sdk import capture_exception
 
-from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, PromptTemplate
+from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, Project, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
 from chat.document_extraction import (
@@ -210,14 +211,25 @@ def _model_catalog_rows(available_models, upgrade_plan_choices):
 
 def _conversation_list_context(request, active_conversation=None):
     """Shared context for the sidebar list, used both on full page loads and
-    on the pin/delete htmx partial re-renders."""
-    own_conversations = Conversation.objects.filter(user=request.user).select_related("last_provider_model__provider")
+    on the pin/delete/project htmx partial re-renders."""
+    own_conversations = Conversation.objects.filter(user=request.user).select_related(
+        "last_provider_model__provider", "project"
+    )
     pinned = own_conversations.filter(is_pinned=True).order_by("-pinned_at")
     unpinned = own_conversations.filter(is_pinned=False).order_by("-updated_at")
+    # Personal projects (see chat.models.Project) - annotated count uses the
+    # reverse FK at the SQL level (Count/filter), so it stays correct
+    # regardless of which manager touches Conversation elsewhere (the
+    # is_deleted=False filter here matches ActiveConversationManager's own
+    # default exactly, rather than relying on it).
+    user_projects = Project.objects.filter(user=request.user).annotate(
+        conversation_count=Count("conversations", filter=Q(conversations__is_deleted=False))
+    )
     return {
         "pinned_conversations": pinned,
         "grouped_conversations": group_conversations(unpinned),
         "active_conversation_id": active_conversation.id if active_conversation else None,
+        "user_projects": user_projects,
     }
 
 
@@ -304,7 +316,13 @@ def create_conversation(request):
         messages.warning(request, str(exc))
         return redirect("chat:chat_home")
 
-    conversation = Conversation.objects.create(user=request.user, title=_("New conversation"))
+    # So "New chat" from inside a selected project lands already grouped -
+    # re-validated against this user's own projects rather than trusted
+    # from the POST, same reasoning as every other POSTed id in this file.
+    project_id = request.POST.get("project_id", "").strip()
+    project = Project.objects.filter(id=project_id, user=request.user).first() if project_id else None
+
+    conversation = Conversation.objects.create(user=request.user, title=_("New conversation"), project=project)
     url = reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id})
     starter_text = request.POST.get("starter_text", "").strip()
     if starter_text:
@@ -360,6 +378,70 @@ def delete_conversation(request, conversation_id):
             active_conversation=_active_conversation_from_htmx_referrer(request),
         ),
     )
+
+
+def _conv_list_and_projects_response(request):
+    """Shared by every Project CRUD view below: the conv list re-render
+    (in-band, matching toggle_pin/delete_conversation's own hx-target) plus
+    the sidebar's Projects section as an htmx out-of-band swap - project
+    create/rename/delete/move can all change what either partial shows
+    (a new project, a renamed one, a changed per-project conversation
+    count), so both always refresh together rather than drifting stale
+    until the next full page load."""
+    from django.template.loader import render_to_string
+
+    context = _conversation_list_context(request, active_conversation=_active_conversation_from_htmx_referrer(request))
+    html = render_to_string("chat/_conversation_list.html", context, request=request)
+    html += render_to_string("chat/_projects_section.html", context, request=request)
+    return HttpResponse(html)
+
+
+@login_required
+@require_feature("projects")
+@require_http_methods(["POST"])
+def create_project(request):
+    name = request.POST.get("name", "").strip()
+    if not name:
+        return HttpResponseBadRequest("Project name is required")
+    Project.objects.create(user=request.user, name=name[:100])
+    return _conv_list_and_projects_response(request)
+
+
+@login_required
+@require_feature("projects")
+@require_http_methods(["POST"])
+def rename_project(request, project_id):
+    project = get_object_or_404(Project, id=project_id, user=request.user)
+    name = request.POST.get("name", "").strip()
+    if not name:
+        return HttpResponseBadRequest("Project name is required")
+    project.name = name[:100]
+    project.save(update_fields=["name"])
+    return _conv_list_and_projects_response(request)
+
+
+@login_required
+@require_feature("projects")
+@require_http_methods(["POST"])
+def delete_project(request, project_id):
+    project = get_object_or_404(Project, id=project_id, user=request.user)
+    project.delete()  # SET_NULL on Conversation.project - never deletes the conversations themselves
+    return _conv_list_and_projects_response(request)
+
+
+@login_required
+@require_feature("projects")
+@require_http_methods(["POST"])
+def move_conversation_to_project(request, conversation_id):
+    conversation = _owned_conversation_or_404(request, conversation_id)
+    project_id = request.POST.get("project_id", "").strip()
+    # "" (Remove from project) is a valid, deliberate choice, not a missing
+    # param - re-validated against this user's own projects either way,
+    # same reasoning as every other POSTed id in this file.
+    project = Project.objects.filter(id=project_id, user=request.user).first() if project_id else None
+    conversation.project = project
+    conversation.save(update_fields=["project"])
+    return _conv_list_and_projects_response(request)
 
 
 @login_required

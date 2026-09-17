@@ -49,6 +49,7 @@
     </a>
 </div>
 {% endif %}
+{% include "chat/_projects_section.html" %}
 {% include "chat/_provider_filter_tabs.html" %}
 {% if user|has_feature:"conversation_pin_search" %}
 <div class="filter-search sidebar-conv-search">
@@ -73,6 +74,7 @@
     var listWrap = document.querySelector(".conv-list-wrap");
     var emptyState = document.getElementById("conv-search-empty");
     var activeProviderFilter = "";
+    var activeProjectFilter = "";
     if (!listWrap) return;
 
     function applyFilter() {
@@ -85,7 +87,8 @@
                 var title = titleEl ? titleEl.textContent.toLowerCase() : "";
                 var matchesSearch = !query || title.indexOf(query) !== -1;
                 var matchesProvider = !activeProviderFilter || item.dataset.providerSlug === activeProviderFilter;
-                var match = matchesSearch && matchesProvider;
+                var matchesProject = !activeProjectFilter || item.dataset.projectId === activeProjectFilter;
+                var match = matchesSearch && matchesProvider && matchesProject;
                 item.style.display = match ? "" : "none";
                 if (match) anyVisibleInGroup = true;
             });
@@ -98,7 +101,7 @@
         });
         var hasAnyGroups = listWrap.querySelectorAll(".conv-group").length > 0;
         if (emptyState) {
-            emptyState.style.display = ((query || activeProviderFilter) && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
+            emptyState.style.display = ((query || activeProviderFilter || activeProjectFilter) && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
         }
     }
 
@@ -110,16 +113,49 @@
         applyFilter();
     };
 
+    window.portalSetProjectFilter = function(id, el) {
+        activeProjectFilter = (activeProjectFilter === id) ? "" : id;
+        document.querySelectorAll(".project-item").forEach(function(item) {
+            item.classList.toggle("active", item === el && activeProjectFilter !== "");
+        });
+        applyFilter();
+    };
+
     if (input) input.addEventListener("input", applyFilter);
-    // Re-apply the current search/provider filter after the list is
-    // refreshed by htmx (pin/unpin, delete) so filtering survives those
-    // swaps.
+    // Re-apply the current search/provider/project filter after the list
+    // is refreshed by htmx (pin/unpin, delete, project changes) so
+    // filtering survives those swaps.
     document.body.addEventListener("htmx:afterSwap", function(evt) {
         if (evt.target.id === "conv-list-container" || (evt.target.querySelector && evt.target.querySelector("#conv-list-container"))) {
             applyFilter();
         }
     });
 })();
+
+function portalToggleNewProjectForm() {
+    var form = document.getElementById("new-project-form");
+    if (!form) return;
+    var showing = form.style.display !== "none";
+    form.style.display = showing ? "none" : "flex";
+    if (!showing) form.querySelector("input").focus();
+}
+
+// Rename uses a plain browser prompt (matching this composer's already-
+// minimal-UI philosophy for one-off text input) rather than a second
+// inline form, then fills+submits the per-project hidden rename form
+// (already carrying its own hx-post) so htmx's own out-of-band-swap
+// handling stays in the loop, same as calling .requestSubmit() on the
+// composer's own textarea-driven form elsewhere in this file.
+function portalRenameProject(projectId, currentName) {
+    var newName = prompt("{% trans 'Rename project' %}", currentName);
+    if (!newName || newName === currentName) return;
+    var input = document.getElementById("rename-project-name-" + projectId);
+    var form = document.getElementById("rename-project-form-" + projectId);
+    if (input && form) {
+        input.value = newName;
+        form.requestSubmit();
+    }
+}
 </script>
 <div class="app-sidebar-footer">
     <div class="sidebar-user-chip">

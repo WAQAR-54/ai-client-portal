@@ -10,6 +10,14 @@ urlpatterns = [
     path("conversations/<int:conversation_id>/", views.chat_home, name="chat_conversation"),
     path("conversations/<int:conversation_id>/pin/", views.toggle_pin, name="toggle_pin"),
     path("conversations/<int:conversation_id>/delete/", views.delete_conversation, name="delete_conversation"),
+    path("projects/new/", views.create_project, name="create_project"),
+    path("projects/<int:project_id>/rename/", views.rename_project, name="rename_project"),
+    path("projects/<int:project_id>/delete/", views.delete_project, name="delete_project"),
+    path(
+        "conversations/<int:conversation_id>/move-to-project/",
+        views.move_conversation_to_project,
+        name="move_conversation_to_project",
+    ),
     path("conversations/<int:conversation_id>/messages/", views.post_message, name="post_message"),
     path("conversations/<int:conversation_id>/arena-messages/", views.post_arena_message, name="post_arena_message"),
     path(

@@ -2254,6 +2254,26 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 }
 .export-menu-panel a:hover { background: var(--color-surface-muted); text-decoration: none; }
 .export-menu-panel a[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+/* Same look for a <form><button> pair inside the panel (chat/
+   _conversation_item.html's "Move to project" menu, whose options each
+   submit their own POST rather than just navigating like the <a> options
+   above). */
+.export-menu-panel form { display: contents; }
+.export-menu-panel button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+.export-menu-panel button:hover { background: var(--color-surface-muted); }
+.export-menu-panel button[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .export-spinner {
     display: inline-block;
@@ -2812,6 +2832,37 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 }
 .provider-filter-tab:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
 .provider-filter-tab.active { background: var(--sidebar-hover-bg); color: var(--sidebar-text); font-weight: 600; border-color: transparent; }
+
+/* Sidebar Projects section (chat/_projects_section.html) - personal,
+   per-user conversation grouping, gated by the "projects" USER_CHAT_FEATURES
+   toggle. Sits above the provider filter tabs; clicking a project ANDs a
+   third filter into the same client-side applyFilter() those tabs and the
+   search box already share. */
+.projects-section { margin-bottom: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--sidebar-border, var(--color-border)); }
+.projects-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0.1rem 0.4rem; }
+.projects-label { font-size: 0.78rem; font-weight: 600; color: var(--sidebar-text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+.projects-add-btn { background: none; border: none; padding: 0.2rem; color: var(--sidebar-text-muted); cursor: pointer; display: flex; width: auto; }
+.projects-add-btn:hover { color: var(--sidebar-text); }
+.projects-add-btn svg { width: 14px; height: 14px; }
+.new-project-form { margin-bottom: 0.3rem; }
+.new-project-form input { font-size: 0.82rem; padding: 0.35rem 0.5rem; }
+.project-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--sidebar-text-muted);
+}
+.project-item:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
+.project-item.active { background: var(--sidebar-hover-bg); color: var(--sidebar-text); font-weight: 600; }
+.project-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.project-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-item-count { font-size: 0.72rem; color: var(--sidebar-text-muted); flex-shrink: 0; }
+.project-item .conv-action-btn { opacity: 0; flex-shrink: 0; }
+.project-item:hover .conv-action-btn { opacity: 1; }
 
 /* Compare setup screen - replaces the message thread + composer while a
    user is picking exactly 2 models (see portalSidebarCompareClick /
