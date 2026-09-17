@@ -2327,6 +2327,12 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .provider-dot-grok { background: var(--provider-grok); }
 .provider-dot-deepseek { background: var(--provider-deepseek); }
 .provider-dot-default { background: var(--color-text-faint); }
+/* For any provider slug outside the 5 hardcoded above - color comes from an
+   inline --provider-accent custom property set per-element from
+   Provider.accent_color() (see chat/templatetags/chat_extras.py's
+   provider_dot_class/provider_badge_class), not a hand-written rule here.
+   The var()'s own fallback covers the rare case that property is missing. */
+.provider-dot-dynamic { background: var(--provider-accent, var(--color-text-faint)); }
 .model-select-option-locked {
     display: flex;
     align-items: center;
@@ -2499,6 +2505,11 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .model-badge-grok { background: var(--provider-grok-soft); color: var(--provider-grok); }
 .model-badge-deepseek { background: var(--provider-deepseek-soft); color: var(--provider-deepseek); }
 .model-badge-default { background: var(--color-surface-muted); color: var(--color-text-muted); }
+/* Dynamic counterpart to provider-dot-dynamic above - same --provider-accent
+   custom property, with color-mix() standing in for a hand-picked "-soft"
+   background tint (there's no per-provider soft variable to fall back to
+   for a provider outside the hardcoded 5). */
+.model-badge-dynamic { background: color-mix(in srgb, var(--provider-accent, var(--color-text-faint)) 16%, var(--color-surface)); color: var(--provider-accent, var(--color-text-muted)); }
 
 /* Admin Smart Routing Rules list (governance/models.py::RoutingRule) */
 .routing-rule-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: var(--space-4); }

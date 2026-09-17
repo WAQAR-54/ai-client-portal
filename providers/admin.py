@@ -5,7 +5,7 @@ from providers.models import Provider, ProviderModel
 
 @admin.register(Provider)
 class ProviderAdmin(admin.ModelAdmin):
-    list_display = ["name", "slug", "adapter_type", "is_connected", "last_sync_status", "last_synced_at"]
+    list_display = ["name", "slug", "adapter_type", "color_hex", "is_connected", "last_sync_status", "last_synced_at"]
     # api_key_encrypted/api_key_last4 are set-only via Provider.set_api_key()
     # from the Connect flow - never editable as plain admin form fields,
     # which would defeat the point of encrypting it at rest.

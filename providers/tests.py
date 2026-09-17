@@ -158,6 +158,38 @@ class SeedProvidersMigrationTests(TestCase):
         self.assertTrue(all(not p.api_key_encrypted for p in Provider.objects.all()))
 
 
+class ProviderColorTests(TestCase):
+    """Provider.color_hex + accent_color() - lets the chat UI give each
+    provider a visually distinct look without a hand-written CSS rule per
+    provider (see chat/templatetags/chat_extras.py's provider_dot_class/
+    provider_badge_class, which fall back to a *-dynamic class reading this
+    value via an inline --provider-accent style)."""
+
+    def test_backfill_migration_set_the_five_seeded_colors(self):
+        expected = {
+            "anthropic": "#122268",
+            "openai": "#1f9254",
+            "gemini": "#6d5bd0",
+            "grok": "#b4790c",
+            "deepseek": "#0e7c86",
+        }
+        for slug, color_hex in expected.items():
+            self.assertEqual(Provider.objects.get(slug=slug).color_hex, color_hex)
+
+    def test_accent_color_returns_color_hex_when_set(self):
+        provider = Provider.objects.get(slug="openai")
+        self.assertEqual(provider.accent_color(), "#1f9254")
+
+    def test_accent_color_falls_back_to_deterministic_hsl_when_blank(self):
+        provider = Provider.objects.create(name="Mistral", slug="mistral-t1", adapter_type="openai_compatible")
+        self.assertEqual(provider.color_hex, "")
+        color = provider.accent_color()
+        self.assertTrue(color.startswith("hsl("))
+        # Deterministic - same slug always produces the same color, so it
+        # doesn't visibly shift between requests/deploys.
+        self.assertEqual(color, provider.accent_color())
+
+
 class MigrateModelsToProviderModelCommandTests(TestCase):
     """Step 1 of the ModelConfig -> ProviderModel migration (expand-
     migrate-contract). Never touches ModelConfig or the old allowed_

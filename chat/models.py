@@ -249,6 +249,16 @@ class Message(models.Model):
             return self.model_used.provider
         return ""
 
+    @property
+    def provider_color(self):
+        """Provider.accent_color() for this message's provider, or None for
+        a legacy model_used-only message (ModelConfig has no Provider row to
+        read a color from) - callers fall back to the static per-slug CSS
+        classes in that case, same as provider_slug's own legacy branch."""
+        if self.provider_model_used_id:
+            return self.provider_model_used.provider.accent_color()
+        return None
+
 
 class ArenaComparison(models.Model):
     """Compare mode: one user prompt answered by two models at once,

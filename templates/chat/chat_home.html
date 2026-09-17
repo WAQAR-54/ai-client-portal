@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n governance_extras %}
+{% load i18n governance_extras chat_extras %}
 {% block title %}{% trans "Chat" %} — {{ site_branding.site_name }}{% endblock %}
 
 {% block sidebar %}
@@ -311,7 +311,7 @@ function portalCloseUpgradeModal() {
                 </button>
                 {% else %}
                 <button type="button" class="model-select-option" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}">
-                    <span class="provider-dot provider-dot-{{ row.model.provider.slug }}"></span>{{ row.model.display_label }}
+                    <span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>{{ row.model.display_label }}
                 </button>
                 {% endif %}
                 {% endfor %}
@@ -428,7 +428,7 @@ function portalCloseUpgradeModal() {
             {% if not row.locked %}
             <div class="compare-setup-row" data-model-id="{{ row.model.id }}" data-model-label="{{ row.model.display_label }}" onclick="portalToggleCompareSetupOption(this)">
                 <span class="compare-setup-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-                <span class="provider-dot provider-dot-{{ row.model.provider.slug }}"></span>
+                <span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>
                 <span class="compare-setup-name">{{ row.model.display_label }}</span>
                 <span class="compare-setup-provider">{{ row.model.provider.name }}</span>
             </div>
@@ -573,7 +573,7 @@ function portalCloseUpgradeModal() {
                         <button type="button" class="composer-chip is-selected" data-value="" data-label="{{ auto_routing_label }}" onclick="portalSelectModel('', '{{ auto_routing_label|escapejs }}')">{{ auto_routing_label }}</button>
                         {% for row in model_rows %}
                         {% if not row.locked %}
-                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')"><span class="provider-dot provider-dot-{{ row.model.provider.slug }}"></span>{{ row.model.display_label }}</button>
+                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')"><span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>{{ row.model.display_label }}</button>
                         {% endif %}
                         {% endfor %}
                     </div>

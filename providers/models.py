@@ -81,12 +81,34 @@ class Provider(models.Model):
     last_sync_status = models.CharField(max_length=20, choices=SyncStatus.choices, default=SyncStatus.NEVER)
     last_sync_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Optional - the 5 originally-seeded providers are backfilled to match
+    # static/css/main.css's existing --provider-* hardcoded values (see
+    # accent_color() below for what happens when it's blank). A SuperAdmin
+    # can override it for any provider from the admin.
+    color_hex = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text="e.g. #1f9254. Leave blank to auto-generate a distinct color from the provider's slug.",
+    )
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return self.name
+
+    def accent_color(self):
+        """The color this provider's chat bubbles/badges/dots render with -
+        color_hex if a SuperAdmin set one, otherwise a color deterministically
+        derived from the slug so a newly-connected provider never falls back
+        to the flat gray .provider-dot-default just because nobody has
+        visited the admin to pick a color for it yet."""
+        if self.color_hex:
+            return self.color_hex
+        import hashlib
+
+        hue = int(hashlib.md5(self.slug.encode()).hexdigest(), 16) % 360
+        return f"hsl({hue}, 55%, 42%)"
 
     def set_api_key(self, raw_key):
         """Encrypts and stores `raw_key`, and separately stores just its

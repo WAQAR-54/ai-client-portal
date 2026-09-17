@@ -27,6 +27,31 @@ def plan_has_feature(user, feature_key):
     return plan_level_has_feature(user, feature_key)
 
 
+# The 5 providers static/css/main.css has a hand-written .model-badge-{slug}/
+# .provider-dot-{slug} pair for today (see main.css ~2324-2329, ~2496-2501).
+# Any OTHER slug (a newly-connected provider, or a custom OpenAI-compatible
+# one) falls through to the *-dynamic classes below, which read their color
+# from an inline --provider-accent custom property (Provider.accent_color())
+# instead of a hardcoded CSS rule - so a 6th+ provider is never stuck with
+# the flat gray *-default look just because no CSS rule was hand-written
+# for its slug.
+_KNOWN_PROVIDER_SLUGS = {"anthropic", "openai", "gemini", "grok", "deepseek"}
+
+
+@register.filter(name="provider_badge_class")
+def provider_badge_class(slug):
+    if not slug:
+        return "model-badge-default"
+    return f"model-badge-{slug}" if slug in _KNOWN_PROVIDER_SLUGS else "model-badge-dynamic"
+
+
+@register.filter(name="provider_dot_class")
+def provider_dot_class(slug):
+    if not slug:
+        return "provider-dot-default"
+    return f"provider-dot-{slug}" if slug in _KNOWN_PROVIDER_SLUGS else "provider-dot-dynamic"
+
+
 @register.filter(name="to_offset")
 def to_offset(pct):
     """Circumference-100 SVG ring: dashoffset needed to reveal `pct`

@@ -1,11 +1,11 @@
-{% load i18n %}
+{% load i18n chat_extras %}
 {% include "chat/_message_bubble.html" with message=user_message %}
 <div id="arena-{{ comparison.id }}">
     <div class="arena-label">{% blocktrans with a=comparison.model_a.display_label b=comparison.model_b.display_label %}Comparing {{ a }} + {{ b }}{% endblocktrans %}</div>
     <div class="arena-grid">
         <div class="arena-pane" id="arena-pane-a-{{ comparison.id }}">
             <div class="arena-head">
-                <span class="provider-dot provider-dot-{{ comparison.model_a.provider.slug }}"></span>
+                <span class="provider-dot {{ comparison.model_a.provider.slug|provider_dot_class }}" style="--provider-accent:{{ comparison.model_a.provider.accent_color }};"></span>
                 <span class="arena-model-name">{{ comparison.model_a.display_label }}</span>
             </div>
             <div class="arena-body">
@@ -23,7 +23,7 @@
         </div>
         <div class="arena-pane" id="arena-pane-b-{{ comparison.id }}">
             <div class="arena-head">
-                <span class="provider-dot provider-dot-{{ comparison.model_b.provider.slug }}"></span>
+                <span class="provider-dot {{ comparison.model_b.provider.slug|provider_dot_class }}" style="--provider-accent:{{ comparison.model_b.provider.accent_color }};"></span>
                 <span class="arena-model-name">{{ comparison.model_b.display_label }}</span>
             </div>
             <div class="arena-body">
