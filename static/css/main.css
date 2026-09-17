@@ -2062,6 +2062,18 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .usage-metric-warning { font-size: 0.74rem; margin-top: 0.25rem; color: var(--warn); }
 .usage-metric:has(.usage-bar-danger) .usage-metric-warning { color: var(--color-danger); }
 
+/* .chat-shell wraps .chat-panel + the artifact panel side by side - see
+   templates/chat/chat_home.html. Takes over the flex:1/min-height:0 role
+   .chat-panel used to have directly inside main.main-bleed (a column
+   flex container); .chat-panel's own rules below are unchanged, just now
+   flexed inside this row instead. */
+.chat-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+}
 .chat-panel {
     flex: 1;
     min-width: 0;
@@ -2069,6 +2081,45 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     flex-direction: column;
     overflow: hidden;
 }
+/* Artifact panel (chat/_artifact_panel_content.html renders into
+   #artifact-panel-body) - resizable, RTL-safe via logical properties
+   (inset-inline-start/border-inline-start flip automatically instead of
+   needing a [dir="rtl"] override), width persisted to localStorage by the
+   inline script in chat_home.html. */
+.artifact-panel {
+    flex-shrink: 0;
+    width: var(--artifact-width, 420px);
+    min-width: 320px;
+    max-width: 720px;
+    border-inline-start: 1px solid var(--color-border);
+    background: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+.artifact-panel[hidden] { display: none; }
+.artifact-resize-handle {
+    position: absolute;
+    inset-inline-start: -4px;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: col-resize;
+    z-index: 1;
+}
+.artifact-resize-handle:hover { background: var(--color-border); }
+.artifact-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+.artifact-panel-header-left { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.artifact-panel-title { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-panel-body { flex: 1; overflow-y: auto; padding: var(--space-4); font-size: 0.9rem; line-height: 1.7; }
 .chat-header {
     display: flex;
     align-items: center;
@@ -3393,6 +3444,18 @@ form.htmx-request:not(#composer-form) {
     }
 
     .chat-panel { min-height: calc(100vh - 54px); }
+    /* Full-width overlay instead of squeezing beside .chat-panel - there's
+       no room for both side by side below the sidebar's own 900px
+       breakpoint. */
+    .artifact-panel {
+        position: fixed;
+        inset: 54px 0 0 0;
+        width: 100%;
+        max-width: none;
+        z-index: 25;
+        border-inline-start: none;
+    }
+    .artifact-resize-handle { display: none; }
 
     /* The hamburger drawer's own footer already has Settings/Logout -
        the floating profile-avatar dropdown is redundant clutter here. */

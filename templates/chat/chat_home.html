@@ -296,6 +296,7 @@ function portalCloseUpgradeModal() {
     });
 })();
 </script>
+<div class="chat-shell">
 <section class="chat-panel">
     <header class="chat-header">
         {% if conversation %}
@@ -738,6 +739,61 @@ function portalCloseUpgradeModal() {
     </div>
     {% endif %}
 </section>
+<aside class="artifact-panel" id="artifact-panel" hidden>
+    <div class="artifact-resize-handle" id="artifact-resize-handle"></div>
+    <div class="artifact-panel-header">
+        <div class="artifact-panel-header-left">
+            <span class="provider-dot" id="artifact-panel-dot"></span>
+            <span class="artifact-panel-title" id="artifact-panel-title"></span>
+        </div>
+        <button type="button" class="msg-action-btn" id="artifact-close-btn" onclick="portalCloseArtifact()" title="{% trans 'Close' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+    </div>
+    <div class="artifact-panel-body" id="artifact-panel-body"></div>
+</aside>
+</div>
+<script>
+(function() {
+    var wrap = document.getElementById("artifact-panel");
+    var handle = document.getElementById("artifact-resize-handle");
+    if (!wrap || !handle) return;
+
+    var savedWidth = null;
+    try { savedWidth = localStorage.getItem("portalArtifactWidth"); } catch (e) {}
+    if (savedWidth) document.documentElement.style.setProperty("--artifact-width", savedWidth + "px");
+
+    var dragging = false;
+    handle.addEventListener("mousedown", function() {
+        dragging = true;
+        document.body.style.userSelect = "none";
+    });
+    document.addEventListener("mousemove", function(evt) {
+        if (!dragging) return;
+        var rect = wrap.getBoundingClientRect();
+        var isRtl = getComputedStyle(document.documentElement).direction === "rtl";
+        var newWidth = isRtl ? (evt.clientX - rect.left) : (rect.right - evt.clientX);
+        var clamped = Math.max(320, Math.min(720, newWidth));
+        document.documentElement.style.setProperty("--artifact-width", clamped + "px");
+    });
+    document.addEventListener("mouseup", function() {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = "";
+        try {
+            var current = getComputedStyle(document.documentElement).getPropertyValue("--artifact-width");
+            localStorage.setItem("portalArtifactWidth", parseInt(current, 10));
+        } catch (e) {}
+    });
+})();
+
+function portalOpenArtifact() {
+    document.getElementById("artifact-panel").hidden = false;
+}
+function portalCloseArtifact() {
+    document.getElementById("artifact-panel").hidden = true;
+}
+</script>
 <script>
 function portalResetComposerAttrs() {
     var form = document.getElementById("composer-form");
