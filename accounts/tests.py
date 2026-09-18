@@ -1289,10 +1289,10 @@ class DashboardAdminSetupChecklistTests(TestCase):
 
 class DashboardUsageAndPlansTests(TestCase):
     """DashboardView now also shows the user's own plan/usage (reusing
-    chat/_usage_widget.html) and a Plans grid (reusing billing/
-    _plan_cards.html) directly on the post-login landing page, rather
-    than only inside the chat page's small header popover / a separate
-    billing:my_plans page."""
+    chat/_usage_widget.html) directly on the post-login landing page,
+    rather than only inside the chat page's small header popover. A
+    Plans grid was tried here too and explicitly removed per feedback -
+    billing:my_plans stays the one place for that."""
 
     def setUp(self):
         self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
@@ -1303,14 +1303,6 @@ class DashboardUsageAndPlansTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Your plan")
         self.assertContains(response, "Your usage")
-
-    def test_renders_the_plans_grid(self):
-        from governance.models import Plan
-
-        Plan.objects.filter(is_active=True, is_demo=False).exists()
-        response = self.client.get(reverse("accounts:dashboard"))
-        self.assertIn("my_plans", response.context)
-        self.assertIn("rows", response.context["my_plans"])
 
     def test_your_plan_card_shows_what_it_includes(self):
         """The same per-plan capability checklist the Plans grid below

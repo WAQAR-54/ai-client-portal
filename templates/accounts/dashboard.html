@@ -43,16 +43,6 @@
     </div>
 </div>
 
-{% if my_plans.rows %}
-<div class="card mt-4">
-    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.5rem;">
-        <h2 style="margin-bottom:0;">{% trans "Plans" %}</h2>
-        <span class="text-muted" style="font-size:0.9rem;">{{ my_plans.region.flag }} {{ my_plans.region.label }} ({{ my_plans.region.currency }})</span>
-    </div>
-    {% include "billing/_plan_cards.html" with rows=my_plans.rows region=my_plans.region %}
-</div>
-{% endif %}
-
 {% if admin_setup_checklist %}
 <div class="card mt-4">
     <h2 style="margin-bottom:0.25rem;">{% trans "Finish setting up your department" %}</h2>
