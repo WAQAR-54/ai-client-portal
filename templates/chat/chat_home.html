@@ -857,6 +857,10 @@ function portalCloseUpgradeModal() {
     handle.addEventListener("mousedown", function() {
         dragging = true;
         document.body.style.userSelect = "none";
+        // The panel's own width transition (for the open/close slide) would
+        // otherwise fight a live drag - every mousemove would visibly lag
+        // ~280ms behind the cursor instead of tracking it 1:1.
+        wrap.classList.add("dragging");
     });
     document.addEventListener("mousemove", function(evt) {
         if (!dragging) return;
@@ -870,6 +874,7 @@ function portalCloseUpgradeModal() {
         if (!dragging) return;
         dragging = false;
         document.body.style.userSelect = "";
+        wrap.classList.remove("dragging");
         try {
             var current = getComputedStyle(document.documentElement).getPropertyValue("--artifact-width");
             localStorage.setItem("portalArtifactWidth", parseInt(current, 10));

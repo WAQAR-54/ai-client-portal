@@ -2096,8 +2096,29 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     display: flex;
     flex-direction: column;
     position: relative;
+    opacity: 1;
+    overflow: hidden;
+    transition: width 280ms var(--ease-spring), min-width 280ms var(--ease-spring), opacity 200ms var(--ease), border-color 280ms var(--ease);
 }
-.artifact-panel[hidden] { display: none; }
+/* Overrides the UA stylesheet's own [hidden] { display: none } - stays a
+   flex item (so the width transition below actually has something to
+   animate) and just collapses to zero width instead. Without this
+   override the panel would appear/disappear with the abrupt, un-Claude-
+   like snap every other native display:none toggle on this page has -
+   deliberately singled out here since this is the one that's on screen
+   the longest and most central to the document feature. */
+.artifact-panel[hidden] {
+    display: flex;
+    width: 0;
+    min-width: 0;
+    opacity: 0;
+    border-color: transparent;
+    pointer-events: none;
+}
+/* Live-dragging the resize handle sets --artifact-width on every
+   mousemove - the open/close transition above would otherwise make the
+   panel visibly lag ~280ms behind the cursor instead of tracking it. */
+.artifact-panel.dragging { transition: none; }
 .artifact-resize-handle {
     position: absolute;
     inset-inline-start: -4px;
@@ -2106,6 +2127,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     width: 8px;
     cursor: col-resize;
     z-index: 1;
+    transition: background-color 150ms var(--ease);
 }
 .artifact-resize-handle:hover { background: var(--color-border); }
 .artifact-panel-header {
@@ -2289,8 +2311,8 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
    - a checkmark that's only visible once toggled on, rather than a whole
    second highlight style; reuses .export-menu-panel a's own look/hover. */
 .menu-toggle-item { display: flex; align-items: center; gap: 0.5rem; }
-.menu-toggle-item .menu-check { width: 14px; height: 14px; flex-shrink: 0; visibility: hidden; color: var(--secondary); }
-.menu-toggle-item.active .menu-check { visibility: visible; }
+.menu-toggle-item .menu-check { width: 14px; height: 14px; flex-shrink: 0; color: var(--secondary); opacity: 0; transform: scale(0.6); transition: opacity 150ms var(--ease-spring), transform 150ms var(--ease-spring); }
+.menu-toggle-item.active .menu-check { opacity: 1; transform: scale(1); }
 /* Same look for a <form><button> pair inside the panel (chat/
    _conversation_item.html's "Move to project" menu, whose options each
    submit their own POST rather than just navigating like the <a> options
@@ -2308,6 +2330,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
+    transition: background-color 120ms var(--ease);
 }
 .export-menu-panel button:hover { background: var(--color-surface-muted); }
 .export-menu-panel button[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
@@ -2866,6 +2889,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     background: transparent;
     border: 1px solid var(--sidebar-border, var(--color-border));
     cursor: pointer;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease);
 }
 .provider-filter-tab:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
 .provider-filter-tab.active { background: var(--sidebar-hover-bg); color: var(--sidebar-text); font-weight: 600; border-color: transparent; }
@@ -2892,13 +2916,14 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     cursor: pointer;
     font-size: 0.85rem;
     color: var(--sidebar-text-muted);
+    transition: background-color 150ms var(--ease), color 150ms var(--ease);
 }
 .project-item:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
 .project-item.active { background: var(--sidebar-hover-bg); color: var(--sidebar-text); font-weight: 600; }
 .project-icon { width: 14px; height: 14px; flex-shrink: 0; }
 .project-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-item-count { font-size: 0.72rem; color: var(--sidebar-text-muted); flex-shrink: 0; }
-.project-item .conv-action-btn { opacity: 0; flex-shrink: 0; }
+.project-item .conv-action-btn { opacity: 0; flex-shrink: 0; transition: opacity 150ms var(--ease); }
 .project-item:hover .conv-action-btn { opacity: 1; }
 
 /* Compare setup screen - replaces the message thread + composer while a
@@ -3262,6 +3287,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     margin-top: 0.4rem;
     cursor: pointer;
     max-width: 320px;
+    transition: border-color 150ms var(--ease), background-color 150ms var(--ease);
 }
 .doc-card:hover { border-color: var(--color-text-faint); background: var(--color-surface-muted); }
 .doc-card-icon {
