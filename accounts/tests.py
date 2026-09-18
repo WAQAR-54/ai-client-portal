@@ -1312,6 +1312,24 @@ class DashboardUsageAndPlansTests(TestCase):
         self.assertIn("my_plans", response.context)
         self.assertIn("rows", response.context["my_plans"])
 
+    def test_your_plan_card_shows_what_it_includes(self):
+        """The same per-plan capability checklist the Plans grid below
+        already shows for every plan, reused here for just the one this
+        user is actually on - not just the bare plan name/badge."""
+        from django.utils.html import escape
+
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertTrue(response.context["current_plan_capabilities"])
+        for cap in response.context["current_plan_capabilities"]:
+            self.assertContains(response, escape(cap["label"]))
+
+    def test_your_plan_card_has_no_capability_list_with_no_plan(self):
+        from governance.models import UserPlanAssignment
+
+        UserPlanAssignment.objects.filter(user=self.user).delete()
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertEqual(response.context["current_plan_capabilities"], [])
+
     def test_does_not_crash_for_a_user_with_no_plan_assigned(self):
         from governance.models import UserPlanAssignment
 

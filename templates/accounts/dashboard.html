@@ -29,6 +29,11 @@
             {% endif %}
         </p>
         {% if plan_status.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem; margin-bottom:0;">{{ plan_status.plan.description }}</p>{% endif %}
+        {% if current_plan_capabilities %}
+        <div class="plan-capabilities" style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
+            {% include "billing/_plan_capability_list.html" with capabilities=current_plan_capabilities %}
+        </div>
+        {% endif %}
         {% else %}
         <p class="text-faint" style="margin:0;">{% trans "No plan assigned yet." %}</p>
         {% endif %}

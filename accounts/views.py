@@ -471,7 +471,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from billing.views import my_plans_context
         from governance.limits import get_usage_status
-        from governance.plans import get_plan_status
+        from governance.plans import get_plan_status, plan_capability_summary
 
         context = super().get_context_data(**kwargs)
         context["user"] = self.request.user
@@ -481,7 +481,15 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         # the chat page's small header "Usage" popover) and billing/
         # _plan_cards.html (previously only on billing:my_plans), not a
         # second differently-behaved copy of either.
-        context["plan_status"] = get_plan_status(self.request.user)
+        plan_status = get_plan_status(self.request.user)
+        context["plan_status"] = plan_status
+        # "What's included" on the current plan itself - the SAME per-
+        # plan capability list the Plans grid below already shows for
+        # every plan (billing/_plan_capability_list.html), reused here for
+        # just the one the user is actually on.
+        context["current_plan_capabilities"] = (
+            plan_capability_summary(plan_status["plan"]) if plan_status["plan"] else []
+        )
         context["usage"] = get_usage_status(self.request.user)
         context["my_plans"] = my_plans_context(self.request)
         return context
