@@ -12,6 +12,42 @@
     <p class="mt-4"><a href="{% url 'chat:chat_home' %}" class="btn">{% trans "Open Chat" %} →</a></p>
 </div>
 
+<div class="dashboard-cards-row mt-4">
+    <div class="card">
+        <h2 style="margin-bottom:0.75rem;">{% trans "Your plan" %}</h2>
+        {% if plan_status.plan %}
+        <p style="margin:0;">
+            <span class="badge">{{ plan_status.plan.name }}</span>
+            {% if plan_status.state == "grace" %}
+            <span class="badge badge-danger" style="margin-left:0.4rem;">{% blocktrans with days=plan_status.grace_days_remaining %}Trial ended — {{ days }}d left{% endblocktrans %}</span>
+            {% elif plan_status.state == "expired" %}
+            <span class="badge badge-danger" style="margin-left:0.4rem;">{% trans "Trial ended" %}</span>
+            {% elif plan_status.days_remaining is not None %}
+            <span class="badge badge-muted" style="margin-left:0.4rem;">{% blocktrans with days=plan_status.days_remaining %}{{ days }}d left{% endblocktrans %}</span>
+            {% else %}
+            <span class="badge badge-success" style="margin-left:0.4rem;">{% trans "Active" %}</span>
+            {% endif %}
+        </p>
+        {% if plan_status.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem; margin-bottom:0;">{{ plan_status.plan.description }}</p>{% endif %}
+        {% else %}
+        <p class="text-faint" style="margin:0;">{% trans "No plan assigned yet." %}</p>
+        {% endif %}
+    </div>
+    <div class="card">
+        {% include "chat/_usage_widget.html" %}
+    </div>
+</div>
+
+{% if my_plans.rows %}
+<div class="card mt-4">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.5rem;">
+        <h2 style="margin-bottom:0;">{% trans "Plans" %}</h2>
+        <span class="text-muted" style="font-size:0.9rem;">{{ my_plans.region.flag }} {{ my_plans.region.label }} ({{ my_plans.region.currency }})</span>
+    </div>
+    {% include "billing/_plan_cards.html" with rows=my_plans.rows region=my_plans.region %}
+</div>
+{% endif %}
+
 {% if admin_setup_checklist %}
 <div class="card mt-4">
     <h2 style="margin-bottom:0.25rem;">{% trans "Finish setting up your department" %}</h2>

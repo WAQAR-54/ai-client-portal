@@ -176,47 +176,56 @@ class PublicPricingView(TemplateView):
         }
 
 
+def my_plans_context(request):
+    """The rows/region/current_plan_id that back the plan-cards grid
+    (billing/_plan_cards.html) - shared by MyPlansView below and chat_home
+    (chat/views.py), which embeds the same grid on the empty-state welcome
+    screen rather than duplicating this lookup a second, differently-
+    behaved way. Pricing uses the SAME region-detection PublicPricingView
+    uses (a returning, already-signed-up visitor still gets the region-
+    appropriate price, not a second different lookup)."""
+    from governance.plans import get_assignment, plan_capability_summary
+
+    active_codes = _active_region_codes()
+    requested_region = request.GET.get("region", "").strip().upper()
+    if requested_region in active_codes:
+        region_code = requested_region
+    else:
+        region_code = region_for_country(country_code_for_ip(client_ip(request)), active_codes)
+
+    assignment = get_assignment(request.user)
+    current_plan_id = assignment.plan_id if assignment else None
+
+    plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
+    prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
+    rows = [
+        {
+            "plan": plan,
+            "price_row": prices.get(plan.id),
+            "is_current": plan.id == current_plan_id,
+            "capabilities": plan_capability_summary(plan),
+        }
+        for plan in plans
+    ]
+
+    return {
+        "region": _region_dict(region_code),
+        "rows": rows,
+        "current_plan_id": current_plan_id,
+    }
+
+
 class MyPlansView(LoginRequiredMixin, TemplateView):
-    """Logged-in "choose/change your plan" page - pricing per the SAME
-    region-detection PublicPricingView uses (a returning, already-signed-
-    up visitor still gets the region-appropriate price, not a second
-    different lookup), plus which plan this user is CURRENTLY on. Every
-    other plan gets a "Checkout" button (checkout_plan below) - picking
-    one only ever creates an unpaid Invoice; the plan itself never
-    changes here. See checkout_plan's own docstring for why."""
+    """Logged-in "choose/change your plan" page - see my_plans_context
+    above for the actual data. Every other plan gets a "Checkout" button
+    (checkout_plan below) - picking one only ever creates an unpaid
+    Invoice; the plan itself never changes here. See checkout_plan's own
+    docstring for why."""
 
     template_name = "billing/my_plans.html"
 
     def get_context_data(self, **kwargs):
-        from governance.plans import get_assignment, plan_capability_summary
-
-        active_codes = _active_region_codes()
-        requested_region = self.request.GET.get("region", "").strip().upper()
-        if requested_region in active_codes:
-            region_code = requested_region
-        else:
-            region_code = region_for_country(country_code_for_ip(client_ip(self.request)), active_codes)
-
-        assignment = get_assignment(self.request.user)
-        current_plan_id = assignment.plan_id if assignment else None
-
-        plans = list(Plan.objects.filter(is_active=True, is_demo=False).order_by("-is_default", "name"))
-        prices = {rp.plan_id: rp for rp in RegionalPrice.objects.filter(plan__in=plans, region_code=region_code)}
-        rows = [
-            {
-                "plan": plan,
-                "price_row": prices.get(plan.id),
-                "is_current": plan.id == current_plan_id,
-                "capabilities": plan_capability_summary(plan),
-            }
-            for plan in plans
-        ]
-
-        return super().get_context_data(**kwargs) | {
-            "region": _region_dict(region_code),
-            "rows": rows,
-            "current_plan_id": current_plan_id,
-        }
+        return super().get_context_data(**kwargs) | my_plans_context(self.request)
 
 
 @login_required

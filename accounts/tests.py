@@ -1287,6 +1287,40 @@ class DashboardAdminSetupChecklistTests(TestCase):
         self.assertNotContains(response, "Set up your billing profile")
 
 
+class DashboardUsageAndPlansTests(TestCase):
+    """DashboardView now also shows the user's own plan/usage (reusing
+    chat/_usage_widget.html) and a Plans grid (reusing billing/
+    _plan_cards.html) directly on the post-login landing page, rather
+    than only inside the chat page's small header popover / a separate
+    billing:my_plans page."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_renders_plan_and_usage_cards(self):
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Your plan")
+        self.assertContains(response, "Your usage")
+
+    def test_renders_the_plans_grid(self):
+        from governance.models import Plan
+
+        Plan.objects.filter(is_active=True, is_demo=False).exists()
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertIn("my_plans", response.context)
+        self.assertIn("rows", response.context["my_plans"])
+
+    def test_does_not_crash_for_a_user_with_no_plan_assigned(self):
+        from governance.models import UserPlanAssignment
+
+        UserPlanAssignment.objects.filter(user=self.user).delete()
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No plan assigned yet.")
+
+
 class TemplateHygieneTests(TestCase):
     """Static scans across every template file - catch a whole bug class at
     once instead of one regression test per file it happens to bite next."""

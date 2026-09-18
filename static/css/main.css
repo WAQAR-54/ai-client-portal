@@ -1000,6 +1000,17 @@ main { animation: page-fade-in 240ms var(--ease); }
    than one top-level card (Retention & Provider Approval, Data Handling)
    needs this or they render with zero gap between them, edges touching. */
 main .card + .card { margin-top: var(--space-5); }
+/* accounts/dashboard.html's "Your plan" + usage cards, side by side. */
+.dashboard-cards-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.dashboard-cards-row .card { margin-top: 0; }
+/* Same "drop the border/margin meant for separating from a conversation
+   list above" reasoning as .usage-widget-card's own override just above -
+   here the widget sits directly inside a plain, already-padded .card
+   instead, so it needs the same reset without also inheriting that
+   class's smaller padding/muted background (tuned for a compact popover,
+   not a full page card matching its sibling "Your plan" card). */
+.dashboard-cards-row .usage-widget { padding: 0; margin-top: 0; border-top: none; }
+@media (max-width: 700px) { .dashboard-cards-row { grid-template-columns: 1fr; } }
 
 /* A dense multi-column <table> inside an overflow-x:auto wrapper (Audit
    Logs, Limits, Usage & Cost, Feedback, ...) IS scrollable on mobile, but

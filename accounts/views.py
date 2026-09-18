@@ -469,9 +469,21 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = "accounts/dashboard.html"
 
     def get_context_data(self, **kwargs):
+        from billing.views import my_plans_context
+        from governance.limits import get_usage_status
+        from governance.plans import get_plan_status
+
         context = super().get_context_data(**kwargs)
         context["user"] = self.request.user
         context["admin_setup_checklist"] = self._admin_setup_checklist(self.request.user)
+        # Usage-as-cards + Plans, right on the landing page after login -
+        # reuses chat/_usage_widget.html (previously only reachable via
+        # the chat page's small header "Usage" popover) and billing/
+        # _plan_cards.html (previously only on billing:my_plans), not a
+        # second differently-behaved copy of either.
+        context["plan_status"] = get_plan_status(self.request.user)
+        context["usage"] = get_usage_status(self.request.user)
+        context["my_plans"] = my_plans_context(self.request)
         return context
 
     @staticmethod
