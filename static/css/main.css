@@ -2119,7 +2119,27 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 }
 .artifact-panel-header-left { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .artifact-panel-title { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.artifact-panel-body { flex: 1; overflow-y: auto; padding: var(--space-4); font-size: 0.9rem; line-height: 1.7; }
+.artifact-panel-status { font-size: 0.74rem; color: var(--color-text-faint); flex-shrink: 0; }
+.artifact-panel-body-wrap { position: relative; flex: 1; overflow-y: auto; }
+.artifact-panel-body { padding: var(--space-4); font-size: 0.9rem; line-height: 1.7; animation: artifact-fade-in 220ms var(--ease); }
+@keyframes artifact-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+/* Shown via hx-indicator="#artifact-loading" - htmx adds .htmx-request
+   directly to this element while the doc card's request is in flight
+   (same convention as .sidebar-skeleton/.fetch-spinner elsewhere in this
+   app), covering the moment between opening the panel and its real
+   content arriving on every open, not just the first. */
+.artifact-loading {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: center;
+    color: var(--color-text-faint);
+    font-size: 0.85rem;
+    background: var(--color-surface);
+}
+.artifact-loading.htmx-request { display: flex; }
 .artifact-body-actions { display: flex; gap: 0.2rem; margin-bottom: var(--space-3); }
 .chat-header {
     display: flex;
@@ -2254,6 +2274,17 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 }
 .export-menu-panel a:hover { background: var(--color-surface-muted); text-decoration: none; }
 .export-menu-panel a[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+/* Composer-footer menus (More options/Agent/Generate image-video) sit near
+   the bottom of .chat-panel, which clips overflow (see .chat-shell/
+   .chat-panel above, needed for the artifact panel layout) - opening
+   downward like every other .export-menu-panel on this page put them
+   past that clipped boundary with nowhere to actually render, so they'd
+   open and immediately appear to vanish. These open upward instead. */
+.composer-footer .export-menu-panel {
+    top: auto;
+    bottom: calc(100% + 0.5rem);
+    transform-origin: bottom right;
+}
 /* Checkable menu items (composer's "More options" - Research/Code mode)
    - a checkmark that's only visible once toggled on, rather than a whole
    second highlight style; reuses .export-menu-panel a's own look/hover. */

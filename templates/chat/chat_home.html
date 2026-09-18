@@ -652,19 +652,16 @@ function portalCloseUpgradeModal() {
                     {% endif %}
                     {% if can_select_model %}
                     {% comment %}
-                    A handful of quick-pick chips for fast access, syncing with the fuller header
-                    dropdown above (portalSelectModel in the script below is the single source of
-                    truth both write to) - locked models aren't offered here since a chip has no
-                    room for the "upgrade to unlock" affordance the dropdown already handles.
+                    The quick-pick chips that used to live here were a
+                    second, visually duplicate model selector right below
+                    the header's own Smart Routing dropdown (which already
+                    does the same job) - removed as clutter rather than
+                    kept in sync with two controls for one piece of state.
+                    portalSelectModel (script below) still writes to
+                    #model-select alone now; .compare-active-pill below is
+                    unrelated (Compare mode's own status pill, not a model
+                    picker) and stays.
                     {% endcomment %}
-                    <div class="composer-chips">
-                        <button type="button" class="composer-chip is-selected" data-value="" data-label="{{ auto_routing_label }}" onclick="portalSelectModel('', '{{ auto_routing_label|escapejs }}')">{{ auto_routing_label }}</button>
-                        {% for row in model_rows %}
-                        {% if not row.locked %}
-                        <button type="button" class="composer-chip" data-value="{{ row.model.id }}" data-label="{{ row.model.display_label }}" data-provider-slug="{{ row.model.provider.slug }}" onclick="portalSelectModel('{{ row.model.id }}', '{{ row.model.display_label|escapejs }}')"><span class="provider-dot {{ row.model.provider.slug|provider_dot_class }}" style="--provider-accent:{{ row.model.provider.accent_color }};"></span>{{ row.model.display_label }}</button>
-                        {% endif %}
-                        {% endfor %}
-                    </div>
                     <div class="compare-active-pill" id="compareActivePill" style="display:none;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/></svg>
                         <span id="compareActivePillLabel"></span>
@@ -831,12 +828,19 @@ function portalCloseUpgradeModal() {
         <div class="artifact-panel-header-left">
             <span class="provider-dot" id="artifact-panel-dot"></span>
             <span class="artifact-panel-title" id="artifact-panel-title"></span>
+            <span class="artifact-panel-status" id="artifact-panel-status"></span>
         </div>
         <button type="button" class="msg-action-btn" id="artifact-close-btn" onclick="portalCloseArtifact()" title="{% trans 'Close' %}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
     </div>
-    <div class="artifact-panel-body" id="artifact-panel-body"></div>
+    <div class="artifact-panel-body-wrap">
+        <div class="artifact-loading" id="artifact-loading">
+            <span class="typing-dots"><span></span><span></span><span></span></span>
+            {% trans "Loading document…" %}
+        </div>
+        <div class="artifact-panel-body" id="artifact-panel-body"></div>
+    </div>
 </aside>
 </div>
 <script>
@@ -880,11 +884,22 @@ function portalOpenArtifact(title, dotClass, accentColor) {
         dot.className = "provider-dot " + dotClass;
         dot.style.setProperty("--provider-accent", accentColor || "");
     }
+    var status = document.getElementById("artifact-panel-status");
+    if (status) status.textContent = "{% trans 'Loading…' %}";
     document.getElementById("artifact-panel").hidden = false;
 }
 function portalCloseArtifact() {
     document.getElementById("artifact-panel").hidden = true;
 }
+// Flips the header status from "Loading…" to "Ready" once the doc card's
+// hx-get actually lands - htmx:afterSwap on the panel body specifically
+// (not any other swap on the page).
+document.body.addEventListener("htmx:afterSwap", function(evt) {
+    if (evt.target.id === "artifact-panel-body") {
+        var status = document.getElementById("artifact-panel-status");
+        if (status) status.textContent = "{% trans 'Ready' %}";
+    }
+});
 
 // Syntax highlighting for fenced code blocks (chat/markdown_utils.py keeps
 // the fence's language class through bleach specifically for this) - runs
