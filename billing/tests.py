@@ -1110,6 +1110,14 @@ class InvoicePaymentVerificationTests(TestCase):
         response = self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
         self.assertEqual(response.status_code, 403)
 
+    def test_admin_cannot_reject_other_departments_invoice(self):
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.post(reverse("billing:reject_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
+        self.assertEqual(response.status_code, 403)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PENDING_VERIFICATION)
+        self.assertIsNone(self.invoice.verified_by)
+
     def test_superadmin_can_verify_any_invoice_htmx(self):
         self.client.login(email="super@example.com", password="pw12345!")
         response = self.client.post(

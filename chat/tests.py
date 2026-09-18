@@ -3203,3 +3203,81 @@ class ProjectTests(TestCase):
         self.assertEqual(response.status_code, 403)
         home_response = self.client.get(reverse("chat:chat_home"))
         self.assertNotContains(home_response, "Should be hidden")
+
+
+class TenantIsolationTests(TestCase):
+    """Multi-tenant isolation regression suite: User B must never be able to
+    read or write into User A's conversation by guessing/reusing a
+    conversation_id, on the write endpoints that didn't already have a
+    dedicated cross-user test elsewhere in this file (post_message,
+    post_arena_message, pick_arena_winner, generate_media - see
+    ChatViewTests/ArenaCompareModeTests/MediaGenerationTests for the rest,
+    which already assert this per-view)."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@example.com", password="pw12345!")
+        self.attacker = User.objects.create_user(email="attacker@example.com", password="pw12345!")
+        self.model_a = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"), model_id="iso-model-a", is_enabled=True
+        )
+        self.model_b = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="anthropic"), model_id="iso-model-b", is_enabled=True
+        )
+        _grant_premium_plan(self.attacker, self.model_a, self.model_b)
+        self.conversation = Conversation.objects.create(user=self.owner)
+        self.client.login(email="attacker@example.com", password="pw12345!")
+
+    def test_cannot_post_message_into_another_users_conversation(self):
+        response = self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "hijacked"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(self.conversation.messages.exists())
+
+    def test_cannot_post_arena_message_into_another_users_conversation(self):
+        response = self.client.post(
+            reverse("chat:post_arena_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "hijacked", "model_a_id": self.model_a.id, "model_b_id": self.model_b.id},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(self.conversation.messages.exists())
+
+    def test_cannot_pick_arena_winner_in_another_users_conversation(self):
+        from chat.models import ArenaComparison
+
+        user_message = Message.objects.create(conversation=self.conversation, role=Message.Role.USER, content="hi")
+        response_a = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="a")
+        response_b = Message.objects.create(conversation=self.conversation, role=Message.Role.ASSISTANT, content="b")
+        comparison = ArenaComparison.objects.create(
+            conversation=self.conversation,
+            user_message=user_message,
+            response_a=response_a,
+            response_b=response_b,
+            model_a=self.model_a,
+            model_b=self.model_b,
+        )
+        response = self.client.post(
+            reverse(
+                "chat:pick_arena_winner",
+                kwargs={"conversation_id": self.conversation.id, "comparison_id": comparison.id},
+            ),
+            {"picked_message_id": str(response_a.id)},
+        )
+        self.assertEqual(response.status_code, 404)
+        comparison.refresh_from_db()
+        self.assertIsNone(comparison.picked_id)
+
+    @patch("chat.media_generation.generate_image", return_value=b"fake-png-bytes")
+    def test_cannot_generate_media_into_another_users_conversation(self, mock_generate_image):
+        self.attacker_plan = _grant_premium_plan(self.attacker)
+        self.attacker_plan.feature_flags = {"media_generation": True}
+        self.attacker_plan.monthly_media_generation_limit = 5
+        self.attacker_plan.save(update_fields=["feature_flags", "monthly_media_generation_limit"])
+        response = self.client.post(
+            reverse("chat:generate_media", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "hijacked image", "media_mode": "image"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(self.conversation.messages.exists())
+        mock_generate_image.assert_not_called()

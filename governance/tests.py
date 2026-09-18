@@ -33,6 +33,7 @@ from governance.plans import (
     effective_playground_daily_limit,
     estimate_plan_margin,
     region_allowed_provider_model_ids,
+    get_assignment,
     get_budget_automation_status,
     validate_context_tokens,
 )
@@ -2084,6 +2085,62 @@ class DepartmentTemplatesAdminTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_admin_cannot_view_another_departments_templates(self):
+        other_department = Department.objects.create(name="Marketing")
+        other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=other_department,
+            is_staff=True,
+        )
+        self.client.logout()
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.get(
+            reverse("governance:department_templates", kwargs={"department_id": self.department.id})
+        )
+        self.assertEqual(response.status_code, 403)
+        del other_admin
+
+    def test_admin_cannot_create_a_template_for_another_department(self):
+        other_department = Department.objects.create(name="Marketing")
+        User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=other_department,
+            is_staff=True,
+        )
+        self.client.logout()
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:department_templates", kwargs={"department_id": self.department.id}),
+            {"name": "Hijacked", "content": "x"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(PromptTemplate.objects.filter(name="Hijacked").exists())
+
+    def test_admin_cannot_delete_another_departments_template(self):
+        other_department = Department.objects.create(name="Marketing")
+        User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=other_department,
+            is_staff=True,
+        )
+        template = PromptTemplate.objects.create(department=self.department, name="Old", content="x")
+        self.client.logout()
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse(
+                "governance:delete_department_template",
+                kwargs={"department_id": self.department.id, "template_id": template.id},
+            )
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(PromptTemplate.objects.filter(id=template.id).exists())
+
 
 class RoleHierarchyAccessControlTests(TestCase):
     """Real attacker-style checks for the role hierarchy prompt's Section 4
@@ -2998,6 +3055,88 @@ class RoleHierarchyAccessControlTests(TestCase):
         self.assertEqual(response.status_code, 403)
         response = self.client.post(reverse("governance:add_department"), {"name": "Nope"})
         self.assertEqual(response.status_code, 403)
+
+    # --- resolve_upgrade_request / UpgradeRequestListView: had zero test
+    # coverage before this suite - an Admin must never see or resolve
+    # another department's pending upgrade request by guessing its id. ---
+
+    def _make_upgrade_request(self, user):
+        from governance.models import UpgradeRequest
+
+        return UpgradeRequest.objects.create(user=user, current_plan=None, message="please upgrade")
+
+    def test_admin_upgrade_requests_list_excludes_another_department(self):
+        request_a = self._make_upgrade_request(self.user_a)
+        request_b = self._make_upgrade_request(self.user_b)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:upgrade_requests"))
+        requests = list(response.context["upgrade_requests"])
+        self.assertIn(request_a, requests)
+        self.assertNotIn(request_b, requests)
+
+    def test_admin_can_resolve_own_departments_upgrade_request(self):
+        from governance.models import UpgradeRequest
+
+        request_a = self._make_upgrade_request(self.user_a)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:resolve_upgrade_request", kwargs={"request_id": request_a.id}), {"action": "approve"}
+        )
+        self.assertEqual(response.status_code, 302)
+        request_a.refresh_from_db()
+        self.assertEqual(request_a.status, UpgradeRequest.Status.APPROVED)
+        self.assertEqual(request_a.resolved_by, self.admin_a)
+
+    def test_admin_cannot_resolve_another_departments_upgrade_request(self):
+        from governance.models import UpgradeRequest
+
+        request_b = self._make_upgrade_request(self.user_b)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:resolve_upgrade_request", kwargs={"request_id": request_b.id}), {"action": "approve"}
+        )
+        self.assertEqual(response.status_code, 403)
+        request_b.refresh_from_db()
+        self.assertEqual(request_b.status, UpgradeRequest.Status.PENDING)
+
+    def test_superadmin_can_resolve_any_departments_upgrade_request(self):
+        from governance.models import UpgradeRequest
+
+        request_b = self._make_upgrade_request(self.user_b)
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:resolve_upgrade_request", kwargs={"request_id": request_b.id}), {"action": "approve"}
+        )
+        self.assertEqual(response.status_code, 302)
+        request_b.refresh_from_db()
+        self.assertEqual(request_b.status, UpgradeRequest.Status.APPROVED)
+
+    # --- bulk_change_plan: a manipulated user_ids list must not be able to
+    # reach another department's users, even by including their id
+    # alongside legitimate own-department ids. ---
+
+    def test_bulk_change_plan_silently_excludes_another_departments_user(self):
+        target_plan = Plan.objects.create(name="Bulk Target Plan")
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.post(
+            reverse("governance:bulk_change_plan"),
+            {"user_ids": [str(self.user_a.id), str(self.user_b.id)], "plan_id": str(target_plan.id)},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(get_assignment(self.user_a).plan, target_plan)
+        other_assignment = get_assignment(self.user_b)
+        self.assertNotEqual(other_assignment.plan if other_assignment else None, target_plan)
+
+    # --- global_search: an Admin's search results must never surface
+    # another department's users, even though Plan (global config) legitimately
+    # appears for everyone. ---
+
+    def test_global_search_user_results_exclude_another_department(self):
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:global_search"), {"q": "user"})
+        users = list(response.context["results_users"])
+        self.assertIn(self.user_a, users)
+        self.assertNotIn(self.user_b, users)
 
 
 class FeatureVisibilityTests(TestCase):
