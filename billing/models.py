@@ -1,4 +1,5 @@
 import secrets
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -8,6 +9,10 @@ from django.utils import timezone
 from accounts.models import Department
 from billing.tax_rules import tax_rule_for_country
 from governance.models import Plan
+
+# Refund & Cancellation Policy section 1: full refund, no questions asked,
+# within this many days of first payment on an invoice.
+REFUND_WINDOW_DAYS = 7
 
 
 class RegionalPrice(models.Model):
@@ -162,6 +167,12 @@ class Invoice(models.Model):
         # is always a human decision, never the user's own claim.
         PENDING_VERIFICATION = "pending_verification", "Pending verification"
         PAID = "paid", "Paid"
+        # There is no payment-gateway integration anywhere in this app -
+        # every payment is a manual proof-of-payment review (see
+        # verify_payment above), so a refund can only ever be an in-app
+        # record of the decision; the money itself moves back outside the
+        # app. See RefundRequest below and mark_refunded().
+        REFUNDED = "refunded", "Refunded"
 
     # Nullable: a department-less user (see billing.invoicing.
     # generate_invoice_for_user) is still billable directly - invoicing
@@ -236,6 +247,15 @@ class Invoice(models.Model):
     # doesn't get reminded again even if still overdue afterward.
     reminder_sent_at = models.DateTimeField(null=True, blank=True)
 
+    # Set by mark_refunded() below - who approved the refund and when,
+    # and how much (may be less than `total` for a partial refund, though
+    # the self-service/auto-approved path always refunds the full amount).
+    refunded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    refunded_at = models.DateTimeField(null=True, blank=True)
+    refund_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
     class Meta:
         ordering = ["-issue_date", "-id"]
 
@@ -286,6 +306,60 @@ class Invoice(models.Model):
         self.verified_by = verifier
         self.verified_at = timezone.now()
         self.save(update_fields=["status", "verified_by", "verified_at"])
+
+    def is_within_money_back_window(self):
+        """The 7-day, no-questions-asked refund window (Refund & Cancellation
+        Policy section 1) - counted from verified_at (when the payment was
+        actually confirmed), not issue_date/created_at, since that's the
+        real "first payment" moment. Only ever true for a PAID invoice."""
+        if self.status != self.Status.PAID or self.verified_at is None:
+            return False
+        return timezone.now() - self.verified_at <= timedelta(days=REFUND_WINDOW_DAYS)
+
+    def mark_refunded(self, *, by, amount=None):
+        self.status = self.Status.REFUNDED
+        self.refunded_by = by
+        self.refunded_at = timezone.now()
+        self.refund_amount = amount if amount is not None else self.total
+        self.save(update_fields=["status", "refunded_by", "refunded_at", "refund_amount"])
+
+
+class RefundRequest(models.Model):
+    """A client's request to refund one invoice - either auto-approved
+    immediately (invoice.is_within_money_back_window()) or left PENDING
+    for an Admin/SuperAdmin to decide (the "documented service failure"
+    and billing-dispute cases in the policy, sections 4 and 9), styled
+    after governance.models.UpgradeRequest's own pending/approved/
+    rejected shape. Approval is what actually calls Invoice.mark_refunded()
+    - this row is the request+decision record, not the refund itself."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="refund_requests")
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    reason = models.TextField(blank=True)
+    requested_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    # True when the 7-day window auto-approved this on creation - kept
+    # distinct from an Admin's own approved decision, so the admin-facing
+    # list/audit trail can tell "no one had to review this" from "an
+    # Admin reviewed and approved it" at a glance.
+    auto_approved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    admin_notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Refund request for {self.invoice.invoice_number} ({self.status})"
 
 
 def billing_profile_for_invoice(invoice):

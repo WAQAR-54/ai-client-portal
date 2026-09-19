@@ -55,7 +55,7 @@ def sweep_due_invoices():
     from billing.models import DepartmentBillingProfile, Invoice
 
     today = timezone.localdate()
-    generated = skipped_auto_generate_off = no_price = 0
+    generated = skipped_auto_generate_off = no_price = skipped_cancelled = 0
 
     recipient_ids = (
         Invoice.objects.filter(recipient_user__isnull=False).values_list("recipient_user_id", flat=True).distinct()
@@ -74,6 +74,15 @@ def sweep_due_invoices():
 
         user = latest.recipient_user
         if user is None:
+            continue
+
+        # Refund & Cancellation Policy section 5: cancelling stops FUTURE
+        # billing - the user keeps access to what they already paid for
+        # (nothing here revokes that), this just skips generating the
+        # next cycle's invoice. See billing.views.cancel_plan/resume_plan.
+        assignment = getattr(user, "plan_assignment", None)
+        if assignment is not None and assignment.cancelled_at is not None:
+            skipped_cancelled += 1
             continue
 
         if user.department_id:
@@ -95,12 +104,18 @@ def sweep_due_invoices():
             continue
 
     logger.info(
-        "Invoice sweep: %d generated, %d skipped (auto-generate off), %d skipped (no price)",
+        "Invoice sweep: %d generated, %d skipped (auto-generate off), %d skipped (cancelled), %d skipped (no price)",
         generated,
         skipped_auto_generate_off,
+        skipped_cancelled,
         no_price,
     )
-    return {"generated": generated, "skipped_auto_generate_off": skipped_auto_generate_off, "no_price": no_price}
+    return {
+        "generated": generated,
+        "skipped_auto_generate_off": skipped_auto_generate_off,
+        "skipped_cancelled": skipped_cancelled,
+        "no_price": no_price,
+    }
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=3)

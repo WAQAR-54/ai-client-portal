@@ -28,7 +28,7 @@
 
 <div class="invoice-page-frame">
 <div class="card no-print" style="margin-bottom:var(--space-4); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
-    <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' %}badge-muted{% else %}badge-danger{% endif %}" style="font-size:0.85rem;">
+    <span class="badge {% if invoice.status == 'paid' %}badge-success{% elif invoice.status == 'pending_verification' or invoice.status == 'refunded' %}badge-muted{% else %}badge-danger{% endif %}" style="font-size:0.85rem;">
         {{ invoice.get_status_display }}
     </span>
     <div style="display:flex; gap:0.5rem;">
@@ -53,6 +53,30 @@
 {% elif invoice.status == 'paid' and invoice.verified_by %}
 <div class="card mt-4 no-print">
     <p class="text-muted" style="margin:0;">{% blocktrans with who=invoice.verified_by.email when=invoice.verified_at|date:"Y-m-d H:i" %}Verified paid by {{ who }} on {{ when }}.{% endblocktrans %}</p>
+</div>
+{% elif invoice.status == 'refunded' %}
+<div class="card mt-4 no-print">
+    <p class="text-muted" style="margin:0;">{% blocktrans with currency=invoice.currency amount=invoice.refund_amount when=invoice.refunded_at|date:"Y-m-d H:i" %}Refunded {{ currency }} {{ amount }} on {{ when }}.{% endblocktrans %}</p>
+</div>
+{% endif %}
+
+{% if is_recipient and invoice.status == 'paid' %}
+<div class="card mt-4 no-print">
+    {% if invoice.refund_requests.all|length and invoice.refund_requests.all.0.status == 'pending' %}
+    <p class="text-muted" style="margin:0;">{% trans "Refund request submitted — waiting for an admin to review it." %}</p>
+    {% else %}
+    <h2 style="margin-bottom:0.5rem;">{% trans "Request a refund" %}</h2>
+    <p class="text-faint" style="font-size:0.85rem; margin-top:0;">{% trans "Within 7 days of payment: refunded automatically, no questions asked. After that: reviewed by an admin." %}</p>
+    <form method="post" action="{% url 'billing:request_refund' invoice_id=invoice.id %}" style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap;">
+        {% csrf_token %}
+        <input type="hidden" name="next_invoice_id" value="{{ invoice.id }}">
+        <div style="flex:1; min-width:220px;">
+            <label for="reason_detail">{% trans "Reason (only needed outside the 7-day window)" %}</label>
+            <input class="input" type="text" name="reason" id="reason_detail" style="margin:0;">
+        </div>
+        <button type="submit" class="btn-ghost">{% trans "Request refund" %}</button>
+    </form>
+    {% endif %}
 </div>
 {% endif %}
 

@@ -35,6 +35,8 @@ _EMAIL_TYPE_STYLE = {
     # their own accent colors on the same default layout.
     "admin_change": ("#5b5fc7", "#eceafd", "notifications/_email_content_default.html"),
     "invoice_payment_submitted": ("#0f9b8e", "#e1f5f3", "notifications/_email_content_default.html"),
+    "refund_requested": ("#0f9b8e", "#e1f5f3", "notifications/_email_content_default.html"),
+    "refund_decision": ("#1e9a6c", "#e3f5ec", "notifications/_email_content_default.html"),
 }
 _DEFAULT_EMAIL_STYLE = ("#00aef0", "#e3f6fd", "notifications/_email_content_default.html")
 

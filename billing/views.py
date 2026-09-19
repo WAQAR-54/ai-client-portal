@@ -11,7 +11,7 @@ from django.utils import timezone, translation
 from django.utils.dateparse import parse_date
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
-from django.views.generic import TemplateView
+from django.views.generic import ListView, TemplateView
 
 from accounts.geo import country_code_for_ip
 from accounts.models import Department, Team, User
@@ -23,6 +23,7 @@ from billing.models import (
     DepartmentBillingProfile,
     Invoice,
     OrganizationBillingProfile,
+    RefundRequest,
     RegionalPrice,
     UserBillingProfile,
     billing_profile_for_invoice,
@@ -212,6 +213,7 @@ def my_plans_context(request):
         "region": _region_dict(region_code),
         "rows": rows,
         "current_plan_id": current_plan_id,
+        "current_assignment": assignment,
     }
 
 
@@ -755,10 +757,22 @@ class MyInvoicesView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         profile, _created = UserBillingProfile.objects.get_or_create(user=self.request.user)
-        return super().get_context_data(**kwargs) | {
-            "invoices": Invoice.objects.filter(recipient_user=self.request.user)
+        invoices = list(
+            Invoice.objects.filter(recipient_user=self.request.user)
             .select_related("plan", "department")
-            .order_by("-issue_date", "-id"),
+            .prefetch_related("refund_requests")
+            .order_by("-issue_date", "-id")
+        )
+        # Attached here rather than looked up in the template - at most one
+        # PENDING request can exist per invoice at a time (request_refund
+        # refuses a second one while one's still open), so this is a
+        # single flag per invoice, not a list to render.
+        for invoice in invoices:
+            invoice.pending_refund_request = next(
+                (rr for rr in invoice.refund_requests.all() if rr.status == RefundRequest.Status.PENDING), None
+            )
+        return super().get_context_data(**kwargs) | {
+            "invoices": invoices,
             "my_billing_profile": profile,
         }
 
@@ -832,6 +846,205 @@ def submit_payment_proof(request, invoice_id):
     return redirect(default_redirect)
 
 
+@login_required
+@require_http_methods(["POST"])
+def request_refund(request, invoice_id):
+    """Refund & Cancellation Policy sections 1/4/9: full refund, no
+    questions asked, within REFUND_WINDOW_DAYS of first payment - handled
+    entirely here, auto-approved on the spot. Outside that window, this
+    creates a PENDING RefundRequest for an Admin to decide (the
+    documented-service-failure and billing-dispute cases), rather than
+    refunding or refusing outright."""
+    from notifications.models import NotificationType
+    from notifications.notify import notify
+
+    invoice = get_object_or_404(Invoice, id=invoice_id, recipient_user=request.user)
+    default_redirect = _safe_next_url(request, reverse("billing:my_invoices"))
+    if invoice.status != Invoice.Status.PAID:
+        django_messages.error(request, _("Only a paid invoice can be refunded."))
+        return redirect(default_redirect)
+    if invoice.refund_requests.filter(status=RefundRequest.Status.PENDING).exists():
+        django_messages.info(request, _("A refund request for this invoice is already pending review."))
+        return redirect(default_redirect)
+
+    reason = request.POST.get("reason", "").strip()
+    refund_request = RefundRequest.objects.create(
+        invoice=invoice,
+        requested_by=request.user,
+        reason=reason,
+        requested_amount=invoice.total,
+    )
+
+    if invoice.is_within_money_back_window():
+        invoice.mark_refunded(by=request.user)
+        refund_request.status = RefundRequest.Status.APPROVED
+        refund_request.auto_approved = True
+        refund_request.resolved_at = timezone.now()
+        refund_request.save(update_fields=["status", "auto_approved", "resolved_at"])
+        log_action(request.user, "billing.refund_auto_approved", invoice, new_value=str(invoice.total))
+
+        with translation.override(request.user.preferred_language):
+            title = _("Refund processed for invoice %(number)s") % {"number": invoice.invoice_number}
+            body = _(
+                "Your refund of %(currency)s %(amount)s has been processed - it should appear back on your "
+                "original payment method within 5-10 business days."
+            ) % {"currency": invoice.currency, "amount": invoice.total}
+        notify(
+            request.user, NotificationType.REFUND_DECISION, title=title, body=body, metadata={"invoice_id": invoice.id}
+        )
+        django_messages.success(request, _("Refund approved - you're within the 7-day money-back window."))
+    else:
+        log_action(request.user, "billing.refund_requested", invoice, new_value=reason)
+        for manager in _invoice_managers(invoice):
+            with translation.override(manager.preferred_language):
+                title = _("Refund requested for invoice %(number)s") % {"number": invoice.invoice_number}
+                body = _(
+                    "%(email)s requested a refund for %(currency)s %(total)s outside the 7-day window - "
+                    "review it in Billing, Refund Requests."
+                ) % {"email": request.user.email, "currency": invoice.currency, "total": invoice.total}
+            notify(
+                manager,
+                NotificationType.REFUND_REQUESTED,
+                title=title,
+                body=body,
+                metadata={"invoice_id": invoice.id, "refund_request_id": refund_request.id},
+            )
+        django_messages.success(
+            request, _("Refund request submitted - you're outside the 7-day window, so an admin will review it.")
+        )
+    return redirect(default_redirect)
+
+
+def _scoped_pending_refund_requests(request):
+    qs = RefundRequest.objects.select_related("invoice", "invoice__department", "requested_by").filter(
+        status=RefundRequest.Status.PENDING
+    )
+    if _is_scoped_admin(request.user):
+        qs = qs.filter(invoice__department_id=request.user.department_id)
+    return qs
+
+
+def _get_scoped_refund_request_or_403(request, request_id):
+    refund_request = get_object_or_404(RefundRequest.objects.select_related("invoice"), id=request_id)
+    invoice = refund_request.invoice
+    if _is_scoped_admin(request.user) and (
+        invoice.department_id is None or invoice.department_id != request.user.department_id
+    ):
+        raise PermissionDenied("That refund request is outside your scope.")
+    return refund_request
+
+
+class RefundRequestListView(AdminRequiredMixin, ListView):
+    template_name = "billing/refund_requests.html"
+    context_object_name = "refund_requests"
+
+    def get_queryset(self):
+        return _scoped_pending_refund_requests(self.request)
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def resolve_refund_request(request, request_id):
+    from notifications.models import NotificationType
+    from notifications.notify import notify
+
+    refund_request = _get_scoped_refund_request_or_403(request, request_id)
+    if refund_request.status != RefundRequest.Status.PENDING:
+        return redirect("billing:refund_requests")
+
+    invoice = refund_request.invoice
+    action = request.POST.get("action")
+    refund_request.resolved_by = request.user
+    refund_request.resolved_at = timezone.now()
+    refund_request.admin_notes = request.POST.get("admin_notes", "").strip()
+
+    if action == "approve":
+        refund_request.status = RefundRequest.Status.APPROVED
+        refund_request.save(update_fields=["status", "resolved_by", "resolved_at", "admin_notes"])
+        invoice.mark_refunded(by=request.user, amount=refund_request.requested_amount)
+        log_action(request.user, "billing.refund_approved", invoice, new_value=str(refund_request.requested_amount))
+        title = _("Your refund request was approved")
+        body = _("Your refund of %(currency)s %(amount)s for invoice %(number)s has been approved and processed.") % {
+            "currency": invoice.currency,
+            "amount": refund_request.requested_amount,
+            "number": invoice.invoice_number,
+        }
+    else:
+        refund_request.status = RefundRequest.Status.REJECTED
+        refund_request.save(update_fields=["status", "resolved_by", "resolved_at", "admin_notes"])
+        log_action(request.user, "billing.refund_rejected", invoice, new_value=refund_request.admin_notes)
+        title = _("Your refund request was not approved")
+        body = _("Your refund request for invoice %(number)s was reviewed and not approved.") % {
+            "number": invoice.invoice_number
+        }
+        if refund_request.admin_notes:
+            body = f"{body} {refund_request.admin_notes}"
+
+    if invoice.recipient_user_id:
+        with translation.override(invoice.recipient_user.preferred_language):
+            notify(
+                invoice.recipient_user,
+                NotificationType.REFUND_DECISION,
+                title=title,
+                body=body,
+                metadata={"invoice_id": invoice.id},
+            )
+
+    if request.headers.get("HX-Request"):
+        return render(
+            request,
+            "billing/_refund_requests_table.html",
+            {"refund_requests": _scoped_pending_refund_requests(request)},
+        )
+    return redirect("billing:refund_requests")
+
+
+@login_required
+@require_http_methods(["POST"])
+def cancel_plan(request):
+    """Refund & Cancellation Policy section 5 - stops future billing
+    (billing.tasks.sweep_due_invoices skips a cancelled assignment) without
+    changing the current plan itself; access continues for whatever period
+    was already paid for."""
+    from notifications.models import NotificationType
+    from notifications.notify import notify
+    from governance.plans import get_assignment
+
+    assignment = get_assignment(request.user)
+    if assignment is None or assignment.cancelled_at is not None:
+        return redirect("billing:my_plans")
+
+    assignment.cancelled_at = timezone.now()
+    assignment.save(update_fields=["cancelled_at"])
+    log_action(request.user, "user.plan_cancelled", assignment.plan)
+
+    with translation.override(request.user.preferred_language):
+        title = _("Your plan has been cancelled")
+        body = _(
+            "Future billing has been stopped. You'll keep access to the %(plan)s plan until the period "
+            "you've already paid for ends."
+        ) % {"plan": assignment.plan.name}
+    notify(request.user, NotificationType.PLAN_CHANGE, title=title, body=body)
+    django_messages.success(request, _("Your plan is cancelled. No further invoices will be generated."))
+    return redirect("billing:my_plans")
+
+
+@login_required
+@require_http_methods(["POST"])
+def resume_plan(request):
+    from governance.plans import get_assignment
+
+    assignment = get_assignment(request.user)
+    if assignment is None or assignment.cancelled_at is None:
+        return redirect("billing:my_plans")
+
+    assignment.cancelled_at = None
+    assignment.save(update_fields=["cancelled_at"])
+    log_action(request.user, "user.plan_cancellation_reversed", assignment.plan)
+    django_messages.success(request, _("Your plan is active again - billing will continue as normal."))
+    return redirect("billing:my_plans")
+
+
 def _can_view_invoice(user, invoice):
     """Who's allowed to open one invoice's detail page: the person it's
     billed to, always; otherwise the same Admin(-own-department)/
@@ -863,7 +1076,8 @@ class InvoiceDetailView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         invoice = get_object_or_404(
-            Invoice.objects.select_related("department", "plan", "recipient_user"), id=kwargs["invoice_id"]
+            Invoice.objects.select_related("department", "plan", "recipient_user").prefetch_related("refund_requests"),
+            id=kwargs["invoice_id"],
         )
         if not _can_view_invoice(self.request.user, invoice):
             raise PermissionDenied("You don't have access to this invoice.")

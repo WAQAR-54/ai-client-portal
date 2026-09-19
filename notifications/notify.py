@@ -63,6 +63,15 @@ def notification_action_url(notification):
             if invoice_id
             else reverse("billing:invoices")
         )
+    if notification.notification_type == NotificationType.REFUND_REQUESTED:
+        return reverse("billing:refund_requests")
+    if notification.notification_type == NotificationType.REFUND_DECISION:
+        invoice_id = meta.get("invoice_id")
+        return (
+            reverse("billing:invoice_detail", kwargs={"invoice_id": invoice_id})
+            if invoice_id
+            else reverse("billing:my_invoices")
+        )
     if notification.notification_type == NotificationType.ADMIN_CHANGE:
         return reverse("accounts:profile")
     if notification.notification_type == NotificationType.ACCOUNT_CREATED:

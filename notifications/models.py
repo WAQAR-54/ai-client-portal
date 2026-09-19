@@ -23,6 +23,13 @@ class NotificationType(models.TextChoices):
     MODEL_SYNC_AVAILABLE = "model_sync_available", "New models available to sync"
     ACCOUNT_CREATED = "account_created", "Account created"
     INVOICE_PAYMENT_SUBMITTED = "invoice_payment_submitted", "Invoice payment submitted"
+    # Refund & Cancellation Policy feature - REFUND_REQUESTED goes to the
+    # Admins who manage the invoice (mirrors INVOICE_PAYMENT_SUBMITTED's own
+    # notify-the-managers pattern); REFUND_DECISION goes to the client who
+    # asked for it, whether it was auto-approved (7-day window), or an
+    # Admin approved/rejected it.
+    REFUND_REQUESTED = "refund_requested", "Refund requested"
+    REFUND_DECISION = "refund_decision", "Refund request decision"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see
@@ -38,6 +45,8 @@ EMAIL_TOGGLE_LABELS = [
     (NotificationType.MODEL_SYNC_AVAILABLE, "New AI models are available to sync"),
     (NotificationType.ACCOUNT_CREATED, "Your account was created"),
     (NotificationType.INVOICE_PAYMENT_SUBMITTED, "A client submitted invoice payment proof"),
+    (NotificationType.REFUND_REQUESTED, "A client requested a refund"),
+    (NotificationType.REFUND_DECISION, "Your refund request was decided"),
 ]
 
 
@@ -91,6 +100,8 @@ class NotificationPreference(models.Model):
     email_model_sync_available = models.BooleanField(default=True)
     email_account_created = models.BooleanField(default=True)
     email_invoice_payment_submitted = models.BooleanField(default=True)
+    email_refund_requested = models.BooleanField(default=True)
+    email_refund_decision = models.BooleanField(default=True)
 
     def wants_email(self, notification_type):
         return getattr(self, f"email_{notification_type}", True)

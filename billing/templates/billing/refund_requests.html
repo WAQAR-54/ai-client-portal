@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Refund Requests" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card scroll-shadow" style="overflow-x:auto;">
+    <h1>{% trans "Refund Requests" %}</h1>
+    <p>{% trans "Refund requests outside the 7-day money-back window - each one needs a decision (documented service failure, billing dispute, or otherwise)." %}</p>
+    {% include "billing/_refund_requests_table.html" %}
+</div>
+{% endblock %}

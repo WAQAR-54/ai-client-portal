@@ -18,6 +18,7 @@ from billing.models import (
     DepartmentBillingProfile,
     Invoice,
     OrganizationBillingProfile,
+    RefundRequest,
     RegionalPrice,
     UserBillingProfile,
 )
@@ -2428,3 +2429,220 @@ class DeleteInvoiceTests(TestCase):
         response = self.client.get(reverse("billing:invoices"))
         self.assertContains(response, "hx-confirm=")
         self.assertNotContains(response, "portalConfirmSubmit")
+
+
+class RequestRefundTests(TestCase):
+    """billing.views.request_refund - Refund & Cancellation Policy
+    sections 1 (7-day money-back window, auto-approved) and 4/9
+    (outside the window, an Admin has to decide)."""
+
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.other_user = User.objects.create_user(email="other@example.com", password="pw12345!")
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.invoice = generate_invoice_for_user(self.user, plan=self.plan)
+        self.invoice.verify_payment(self.admin)
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def _url(self):
+        return reverse("billing:request_refund", kwargs={"invoice_id": self.invoice.id})
+
+    def test_within_window_auto_approves_and_refunds(self):
+        response = self.client.post(self._url())
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.REFUNDED)
+        self.assertEqual(self.invoice.refund_amount, self.invoice.total)
+        self.assertEqual(self.invoice.refunded_by, self.user)
+
+        refund_request = RefundRequest.objects.get(invoice=self.invoice)
+        self.assertEqual(refund_request.status, RefundRequest.Status.APPROVED)
+        self.assertTrue(refund_request.auto_approved)
+
+    def test_within_window_notifies_the_client(self):
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(self._url())
+        self.assertTrue(
+            Notification.objects.filter(user=self.user, notification_type=NotificationType.REFUND_DECISION).exists()
+        )
+
+    def test_outside_window_creates_a_pending_request_without_refunding(self):
+        self.invoice.verified_at = timezone.now() - timedelta(days=10)
+        self.invoice.save(update_fields=["verified_at"])
+
+        response = self.client.post(self._url(), {"reason": "Service was down for a week"})
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+
+        refund_request = RefundRequest.objects.get(invoice=self.invoice)
+        self.assertEqual(refund_request.status, RefundRequest.Status.PENDING)
+        self.assertFalse(refund_request.auto_approved)
+        self.assertEqual(refund_request.reason, "Service was down for a week")
+
+    def test_outside_window_notifies_admins(self):
+        from notifications.models import Notification, NotificationType
+
+        self.invoice.verified_at = timezone.now() - timedelta(days=10)
+        self.invoice.save(update_fields=["verified_at"])
+        self.client.post(self._url())
+        self.assertTrue(
+            Notification.objects.filter(user=self.admin, notification_type=NotificationType.REFUND_REQUESTED).exists()
+        )
+
+    def test_cannot_request_refund_on_an_unpaid_invoice(self):
+        self.invoice.status = Invoice.Status.UNPAID
+        self.invoice.save(update_fields=["status"])
+        self.client.post(self._url())
+        self.assertFalse(RefundRequest.objects.filter(invoice=self.invoice).exists())
+
+    def test_cannot_request_refund_twice_while_one_is_pending(self):
+        self.invoice.verified_at = timezone.now() - timedelta(days=10)
+        self.invoice.save(update_fields=["verified_at"])
+        self.client.post(self._url())
+        self.client.post(self._url())
+        self.assertEqual(RefundRequest.objects.filter(invoice=self.invoice).count(), 1)
+
+    def test_cannot_request_a_refund_on_someone_elses_invoice(self):
+        self.client.logout()
+        self.client.login(email="other@example.com", password="pw12345!")
+        response = self.client.post(self._url())
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(RefundRequest.objects.filter(invoice=self.invoice).exists())
+
+
+class ResolveRefundRequestTests(TestCase):
+    def setUp(self):
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.department = Department.objects.create(name="Sales")
+        self.other_department = Department.objects.create(name="Support")
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.department,
+        )
+        self.other_admin = User.objects.create_user(
+            email="otheradmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            is_staff=True,
+            department=self.other_department,
+        )
+        self.recipient = User.objects.create_user(
+            email="recipient@example.com", password="pw12345!", department=self.department
+        )
+        self.department.plan = self.plan
+        self.department.save(update_fields=["plan"])
+        DepartmentBillingProfile.objects.create(department=self.department, is_tax_exempt=True)
+        self.invoice = generate_invoice_for_department(self.department, recipient_user=self.recipient)
+        self.invoice.verify_payment(self.superadmin)
+        self.invoice.verified_at = timezone.now() - timedelta(days=10)
+        self.invoice.save(update_fields=["verified_at"])
+        self.refund_request = RefundRequest.objects.create(
+            invoice=self.invoice, requested_by=self.recipient, requested_amount=self.invoice.total
+        )
+
+    def _url(self):
+        return reverse("billing:resolve_refund_request", kwargs={"request_id": self.refund_request.id})
+
+    def test_admin_can_approve(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"action": "approve"})
+        self.assertRedirects(response, reverse("billing:refund_requests"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.REFUNDED)
+        self.refund_request.refresh_from_db()
+        self.assertEqual(self.refund_request.status, RefundRequest.Status.APPROVED)
+        self.assertEqual(self.refund_request.resolved_by, self.admin)
+
+    def test_admin_can_reject(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"action": "reject", "admin_notes": "Not a service failure"})
+        self.assertRedirects(response, reverse("billing:refund_requests"))
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.refund_request.refresh_from_db()
+        self.assertEqual(self.refund_request.status, RefundRequest.Status.REJECTED)
+        self.assertEqual(self.refund_request.admin_notes, "Not a service failure")
+
+    def test_decision_notifies_the_recipient(self):
+        from notifications.models import Notification, NotificationType
+
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.post(self._url(), {"action": "approve"})
+        self.assertTrue(
+            Notification.objects.filter(
+                user=self.recipient, notification_type=NotificationType.REFUND_DECISION
+            ).exists()
+        )
+
+    def test_scoped_admin_cannot_resolve_another_departments_refund_request(self):
+        self.client.login(email="otheradmin@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"action": "approve"})
+        self.assertEqual(response.status_code, 403)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+
+    def test_superadmin_can_resolve_any_departments_refund_request(self):
+        self.client.login(email="super@example.com", password="pw12345!")
+        response = self.client.post(self._url(), {"action": "approve"})
+        self.assertEqual(response.status_code, 302)
+
+    def test_resolving_an_already_resolved_request_is_a_no_op(self):
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.post(self._url(), {"action": "approve"})
+        response = self.client.post(self._url(), {"action": "reject"})
+        self.assertRedirects(response, reverse("billing:refund_requests"))
+        self.refund_request.refresh_from_db()
+        self.assertEqual(self.refund_request.status, RefundRequest.Status.APPROVED)
+
+
+class CancelPlanTests(TestCase):
+    def setUp(self):
+        from governance.plans import assign_plan
+
+        self.plan = Plan.objects.create(name="Growth")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        assign_plan(self.user, self.plan)
+        self.client.login(email="u@example.com", password="pw12345!")
+
+    def test_cancel_sets_cancelled_at(self):
+        response = self.client.post(reverse("billing:cancel_plan"))
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.user.plan_assignment.refresh_from_db()
+        self.assertIsNotNone(self.user.plan_assignment.cancelled_at)
+
+    def test_cancel_writes_audit_log(self):
+        from governance.models import AuditLog
+
+        self.client.post(reverse("billing:cancel_plan"))
+        self.assertTrue(AuditLog.objects.filter(action_type="user.plan_cancelled").exists())
+
+    def test_resume_clears_cancelled_at(self):
+        self.client.post(reverse("billing:cancel_plan"))
+        response = self.client.post(reverse("billing:resume_plan"))
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.user.plan_assignment.refresh_from_db()
+        self.assertIsNone(self.user.plan_assignment.cancelled_at)
+
+    def test_cancelled_plan_is_skipped_by_the_invoice_sweep(self):
+        invoice = generate_invoice_for_user(self.user, plan=self.plan)
+        invoice.due_date = timezone.localdate() - timedelta(days=28)
+        invoice.save(update_fields=["due_date"])
+        self.client.post(reverse("billing:cancel_plan"))
+
+        result = sweep_due_invoices()
+        self.assertEqual(result["skipped_cancelled"], 1)
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user).count(), 1)

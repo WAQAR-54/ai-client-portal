@@ -587,6 +587,14 @@ class UserPlanAssignment(models.Model):
         related_name="+",
         help_text="Null if this was an automatic default assignment rather than an explicit admin action.",
     )
+    # Self-service cancellation (Refund & Cancellation Policy section 5) -
+    # set by billing.views.cancel_plan, cleared by resume_plan. Presence
+    # alone is the signal: billing.tasks.sweep_due_invoices skips
+    # generating this user's next invoice while it's set, so cancelling
+    # stops future billing without needing a separate status field or an
+    # immediate plan change - they keep what they have until the period
+    # they already paid for runs out, per the policy's own wording.
+    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.user} -> {self.plan}"

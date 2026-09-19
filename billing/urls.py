@@ -49,8 +49,13 @@ urlpatterns = [
     path("share/<str:token>/pdf/", views.public_invoice_pdf_view, name="public_invoice_pdf"),
     path("my-invoices/", views.MyInvoicesView.as_view(), name="my_invoices"),
     path("my-invoices/<int:invoice_id>/submit-proof/", views.submit_payment_proof, name="submit_payment_proof"),
+    path("my-invoices/<int:invoice_id>/request-refund/", views.request_refund, name="request_refund"),
     path("my-invoices/billing-profile/", views.update_my_billing_profile, name="update_my_billing_profile"),
     path("my-plans/", views.MyPlansView.as_view(), name="my_plans"),
     path("my-plans/checkout/", views.checkout_plan, name="checkout_plan"),
     path("my-plans/request-access/", views.request_plan_access, name="request_plan_access"),
+    path("my-plans/cancel/", views.cancel_plan, name="cancel_plan"),
+    path("my-plans/resume/", views.resume_plan, name="resume_plan"),
+    path("refund-requests/", views.RefundRequestListView.as_view(), name="refund_requests"),
+    path("refund-requests/<int:request_id>/resolve/", views.resolve_refund_request, name="resolve_refund_request"),
 ]
