@@ -137,6 +137,20 @@ class VisionMessageFormattingTests(TestCase):
         self.assertEqual(parts[0], {"text": "what's this?"})
         self.assertEqual(parts[1], {"inline_data": {"mime_type": "image/png", "data": self.image["data"]}})
 
+    def test_gemini_calls_retry_transient_failures(self):
+        """Unlike OpenAI/Anthropic (SDK-native max_retries=5), Gemini is
+        called via plain `requests` - production-readiness audit gap:
+        no retry at all, so one dropped connection/5xx/429 failed the
+        whole reply immediately. Fixed via a shared Session with a
+        mounted Retry adapter (chat/providers.py::_RETRYING_SESSION)."""
+        from chat.providers import _RETRYING_SESSION
+
+        adapter = _RETRYING_SESSION.get_adapter("https://generativelanguage.googleapis.com")
+        retry = adapter.max_retries
+        self.assertEqual(retry.total, 5)
+        self.assertIn(429, retry.status_forcelist)
+        self.assertIn(503, retry.status_forcelist)
+
 
 class MessageStreamTokenTests(TestCase):
     """Message.stream_token - the unguessable per-message credential

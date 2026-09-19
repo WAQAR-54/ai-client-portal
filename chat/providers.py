@@ -17,6 +17,29 @@ from dataclasses import dataclass
 from typing import Iterator
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Gemini is called directly via `requests` (no vendor SDK, see
+# GeminiProvider's own docstring) - OpenAI/Anthropic's SDKs already retry
+# transient failures on their own (max_retries=5, set where each client is
+# built below), so this gives the raw-requests path the same resilience
+# instead of failing immediately on the first dropped connection/5xx/429.
+# Retries the CONNECTION/initial response only, same limitation every one
+# of these retry strategies has for a streamed response - a connection
+# that drops mid-stream, after headers already came back, isn't retried.
+_RETRYING_SESSION = requests.Session()
+_RETRYING_SESSION.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=Retry(
+            total=5,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["POST"],
+        )
+    ),
+)
 
 
 @dataclass
@@ -272,7 +295,7 @@ class GeminiProvider(AIProvider):
         # tool, but wiring it up is out of scope for this pass.
         url = f"{self._BASE_URL}/models/{model_name}:streamGenerateContent"
         try:
-            resp = requests.post(
+            resp = _RETRYING_SESSION.post(
                 url,
                 params={"key": self._api_key(), "alt": "sse"},
                 json=self._body(messages, system_prompt),
@@ -302,7 +325,7 @@ class GeminiProvider(AIProvider):
     def complete(self, messages, model_name, system_prompt="", enable_web_search=False):
         url = f"{self._BASE_URL}/models/{model_name}:generateContent"
         try:
-            resp = requests.post(
+            resp = _RETRYING_SESSION.post(
                 url,
                 params={"key": self._api_key()},
                 json=self._body(messages, system_prompt),
