@@ -268,6 +268,19 @@ class Message(models.Model):
     # pending assistant ones, so nothing has to special-case which rows
     # need it - same reasoning as billing.models.Invoice.share_token.
     stream_token = models.CharField(max_length=48, unique=True, null=True, blank=True, editable=False)
+    # Claimed atomically at the top of stream_message's event_stream() and
+    # released in its finally block (see chat/views.py) - closes a real gap
+    # found in the production-readiness audit: without this, two concurrent
+    # GETs to the same stream URL (a double-tab, or htmx's sse-connect
+    # auto-reconnecting while a previous connection is still technically
+    # live after a network blip) both passed the old `content=""` guard and
+    # both called the provider independently, doubling the actual provider
+    # cost for one logical reply with a last-write-wins race on the saved
+    # content/tokens. generation_started_at lets a stale claim (the process
+    # that set it crashed/was killed before its finally ran) be reclaimed
+    # after STALE_GENERATION_TIMEOUT instead of wedging the message forever.
+    is_generating = models.BooleanField(default=False)
+    generation_started_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at"]

@@ -319,7 +319,7 @@ class GeminiProvider(AIProvider):
                     input_tokens = usage.get("promptTokenCount")
                     output_tokens = usage.get("candidatesTokenCount")
             yield StreamChunk(done=True, input_tokens=input_tokens, output_tokens=output_tokens)
-        except requests.RequestException as exc:
+        except (requests.RequestException, json.JSONDecodeError) as exc:
             raise ProviderError(str(exc)) from exc
 
     def complete(self, messages, model_name, system_prompt="", enable_web_search=False):
@@ -338,7 +338,7 @@ class GeminiProvider(AIProvider):
                 return ""
             parts = candidates[0].get("content", {}).get("parts", [])
             return "".join(p.get("text", "") for p in parts)
-        except requests.RequestException as exc:
+        except (requests.RequestException, json.JSONDecodeError) as exc:
             raise ProviderError(str(exc)) from exc
 
 

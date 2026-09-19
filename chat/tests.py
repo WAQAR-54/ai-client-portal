@@ -1,4 +1,5 @@
 import tempfile
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 from django.test import Client, TestCase, override_settings
@@ -74,6 +75,161 @@ class ProviderRegistryTests(TestCase):
 
         openai_row = Provider.objects.get(slug="openai")
         self.assertIsInstance(get_provider(openai_row), OpenAICompatibleProvider)
+
+
+class ProviderFailureModeTests(TestCase):
+    """Every provider wraps its whole call in a blanket `except Exception ->
+    ProviderError` (chat/providers.py) - so from the app's perspective a
+    timeout, a rate limit, an auth failure and a malformed response are all
+    the SAME outcome: ProviderError, with the real detail only in str(exc)
+    for logging/Sentry, never shown to the user (see chat/views.py's
+    stream_message, which shows a generic message on ProviderError). These
+    tests exist to prove that collapse actually holds for each provider/each
+    failure kind - not to prove differentiated handling, because there isn't
+    any by design."""
+
+    def _provider_row(self, adapter_type):
+        from providers.models import Provider
+
+        row = Provider(slug=adapter_type, name=adapter_type, adapter_type=adapter_type)
+        row.set_api_key("fake-test-key")
+        return row
+
+    # -- OpenAI-compatible (also covers Grok/DeepSeek - same class) --
+
+    def test_openai_stream_wraps_timeout_as_provider_error(self):
+        import openai
+
+        from chat.providers import OpenAICompatibleProvider
+
+        provider = OpenAICompatibleProvider(self._provider_row("openai_compatible"))
+        with patch.object(provider, "_client") as mock_client:
+            mock_client.return_value.chat.completions.create.side_effect = openai.APITimeoutError(request=MagicMock())
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "gpt-4o"))
+
+    def test_openai_stream_wraps_rate_limit_as_provider_error(self):
+        import httpx2 as httpx
+        import openai
+
+        from chat.providers import OpenAICompatibleProvider
+
+        provider = OpenAICompatibleProvider(self._provider_row("openai_compatible"))
+        response = httpx.Response(429, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"))
+        with patch.object(provider, "_client") as mock_client:
+            mock_client.return_value.chat.completions.create.side_effect = openai.RateLimitError(
+                "rate limited", response=response, body=None
+            )
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "gpt-4o"))
+
+    def test_openai_complete_wraps_auth_failure_as_provider_error(self):
+        import httpx2 as httpx
+        import openai
+
+        from chat.providers import OpenAICompatibleProvider
+
+        provider = OpenAICompatibleProvider(self._provider_row("openai_compatible"))
+        response = httpx.Response(401, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"))
+        with patch.object(provider, "_client") as mock_client:
+            mock_client.return_value.chat.completions.create.side_effect = openai.AuthenticationError(
+                "invalid key", response=response, body=None
+            )
+            with self.assertRaises(ProviderError):
+                provider.complete([{"role": "user", "content": "hi"}], "gpt-4o")
+
+    def test_openai_stream_wraps_malformed_chunk_as_provider_error(self):
+        """A chunk missing the shape the loop expects (no .choices attr)
+        must not surface as a raw AttributeError."""
+        from chat.providers import OpenAICompatibleProvider
+
+        provider = OpenAICompatibleProvider(self._provider_row("openai_compatible"))
+        broken_chunk = MagicMock(usage=None)
+        del broken_chunk.choices  # accessing .choices now raises AttributeError
+        with patch.object(provider, "_client") as mock_client:
+            mock_client.return_value.chat.completions.create.return_value = iter([broken_chunk])
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "gpt-4o"))
+
+    # -- Anthropic --
+
+    def test_anthropic_stream_wraps_timeout_as_provider_error(self):
+        import anthropic
+
+        from chat.providers import AnthropicProvider
+
+        provider = AnthropicProvider(self._provider_row("anthropic"))
+        with patch.object(provider, "_client") as mock_client:
+            mock_client.return_value.messages.stream.side_effect = anthropic.APITimeoutError(request=MagicMock())
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "claude-3"))
+
+    def test_anthropic_stream_wraps_overloaded_error_as_provider_error(self):
+        """Anthropic's 529 overloaded response - a real, observed failure
+        mode distinct from a plain rate limit."""
+        import httpx2 as httpx
+        import anthropic
+
+        from chat.providers import AnthropicProvider
+
+        provider = AnthropicProvider(self._provider_row("anthropic"))
+        response = httpx.Response(529, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+        with patch.object(provider, "_client") as mock_client:
+            mock_client.return_value.messages.stream.side_effect = anthropic.OverloadedError(
+                "overloaded", response=response, body=None
+            )
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "claude-3"))
+
+    # -- Gemini (raw requests, no SDK) --
+
+    def test_gemini_stream_wraps_timeout_as_provider_error(self):
+        import requests
+
+        from chat.providers import GeminiProvider
+
+        provider = GeminiProvider(self._provider_row("gemini"))
+        with patch("chat.providers._RETRYING_SESSION.post", side_effect=requests.Timeout("timed out")):
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "gemini-pro"))
+
+    def test_gemini_stream_wraps_http_error_status_as_provider_error(self):
+        from chat.providers import GeminiProvider
+
+        provider = GeminiProvider(self._provider_row("gemini"))
+        fake_response = MagicMock()
+        fake_response.raise_for_status.side_effect = __import__("requests").HTTPError("429 rate limited")
+        with patch("chat.providers._RETRYING_SESSION.post", return_value=fake_response):
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "gemini-pro"))
+
+    def test_gemini_stream_wraps_malformed_json_line_as_provider_error(self):
+        """Regression test for the real gap this audit found: GeminiProvider
+        only caught requests.RequestException, so a malformed SSE data line
+        (json.loads failing) used to escape as a raw JSONDecodeError instead
+        of a ProviderError - skipping the friendly-message/logging/Sentry
+        path in chat/views.py::stream_message entirely, since that only
+        catches ProviderError."""
+        from chat.providers import GeminiProvider
+
+        provider = GeminiProvider(self._provider_row("gemini"))
+        fake_response = MagicMock()
+        fake_response.raise_for_status.return_value = None
+        fake_response.iter_lines.return_value = ["data: {not valid json"]
+        with patch("chat.providers._RETRYING_SESSION.post", return_value=fake_response):
+            with self.assertRaises(ProviderError):
+                list(provider.stream_chat([{"role": "user", "content": "hi"}], "gemini-pro"))
+
+    def test_gemini_complete_wraps_malformed_json_as_provider_error(self):
+        from chat.providers import GeminiProvider
+
+        provider = GeminiProvider(self._provider_row("gemini"))
+        fake_response = MagicMock()
+        fake_response.raise_for_status.return_value = None
+        fake_response.json.side_effect = __import__("json").JSONDecodeError("bad", "doc", 0)
+        with patch("chat.providers._RETRYING_SESSION.post", return_value=fake_response):
+            with self.assertRaises(ProviderError):
+                provider.complete([{"role": "user", "content": "hi"}], "gemini-pro")
 
 
 class VisionMessageFormattingTests(TestCase):
@@ -657,6 +813,122 @@ class ChatViewTests(TestCase):
         self.assertNotIn("event: error", body)
         pending.refresh_from_db()
         self.assertEqual(pending.content, "The assistant hit a problem generating a response. Please try again.")
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_concurrent_stream_request_does_not_call_the_provider_twice(self, mock_get_provider, mock_classify):
+        """Regression test for the real gap this audit found: stream_message
+        had no locking, so a duplicate tab or an htmx reconnect racing a
+        still-live connection for the SAME pending message both passed the
+        old content="" guard and both called the provider - doubling the
+        real cost of one logical reply. Simulated here by pre-claiming the
+        message (as if another request got there first) before hitting the
+        stream URL."""
+        working_provider = MagicMock()
+        working_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="reply"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+        )
+        mock_get_provider.return_value = working_provider
+
+        conversation = Conversation.objects.create(user=self.user)
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        Message.objects.filter(pk=pending.id).update(is_generating=True, generation_started_at=timezone.now())
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={
+                    "conversation_id": conversation.id,
+                    "message_id": pending.id,
+                    "token": pending.stream_token,
+                },
+            )
+        )
+        body = b"".join(response.streaming_content).decode()
+
+        working_provider.stream_chat.assert_not_called()
+        self.assertEqual(body, "")
+        pending.refresh_from_db()
+        self.assertEqual(pending.content, "")
+        self.assertTrue(pending.is_generating)  # the OTHER (simulated) request still owns this claim
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_stale_generation_claim_can_be_reclaimed(self, mock_get_provider, mock_classify):
+        """A claim from a process that crashed/was killed before its finally
+        ran must not wedge the message forever - it's reclaimable once
+        older than STALE_GENERATION_TIMEOUT."""
+        from chat.views import STALE_GENERATION_TIMEOUT
+
+        working_provider = MagicMock()
+        working_provider.stream_chat.return_value = iter(
+            [StreamChunk(text="reply"), StreamChunk(done=True, input_tokens=1, output_tokens=1)]
+        )
+        mock_get_provider.return_value = working_provider
+
+        conversation = Conversation.objects.create(user=self.user)
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+        stale_time = timezone.now() - STALE_GENERATION_TIMEOUT - timedelta(minutes=1)
+        Message.objects.filter(pk=pending.id).update(is_generating=True, generation_started_at=stale_time)
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={
+                    "conversation_id": conversation.id,
+                    "message_id": pending.id,
+                    "token": pending.stream_token,
+                },
+            )
+        )
+        body = b"".join(response.streaming_content).decode()
+
+        working_provider.stream_chat.assert_called_once()
+        self.assertIn("reply", body)
+        pending.refresh_from_db()
+        self.assertEqual(pending.content, "reply")
+        self.assertFalse(pending.is_generating)
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_client_disconnect_persists_partial_text_and_releases_claim(self, mock_get_provider, mock_classify):
+        """A dropped connection mid-stream must not leave the message
+        wedged: is_generating has to be released, and whatever text had
+        already streamed should be saved rather than silently lost (which
+        would otherwise force a full, re-billed retry on the next reload)."""
+        working_provider = MagicMock()
+        working_provider.stream_chat.return_value = iter(
+            [
+                StreamChunk(text="Hello "),
+                StreamChunk(text="world"),
+                StreamChunk(done=True, input_tokens=2, output_tokens=2),
+            ]
+        )
+        mock_get_provider.return_value = working_provider
+
+        conversation = Conversation.objects.create(user=self.user)
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        response = self.client.get(
+            reverse(
+                "chat:stream_message",
+                kwargs={
+                    "conversation_id": conversation.id,
+                    "message_id": pending.id,
+                    "token": pending.stream_token,
+                },
+            )
+        )
+        # response.streaming_content is `map(make_bytes, response._iterator)` -
+        # map objects don't expose .close(), so simulate the WSGI server
+        # closing the connection by closing the real underlying generator.
+        first_event = next(response.streaming_content).decode()
+        self.assertIn("Hello", first_event)
+        response._iterator.close()
+
+        pending.refresh_from_db()
+        self.assertFalse(pending.is_generating)
+        self.assertEqual(pending.content, "Hello ")
 
     @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")

@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import timedelta
 from urllib.parse import quote, urlencode
 
 from django.contrib.auth.decorators import login_required
@@ -1208,6 +1209,15 @@ def _strip_images(history):
     return [{k: v for k, v in turn.items() if k != "images"} for turn in history]
 
 
+# How long a claimed-but-unfinished generation (Message.is_generating=True)
+# is trusted before being treated as abandoned - see stream_message's claim
+# logic below. Comfortably longer than any single provider call's own
+# timeout*retries (60s timeout, up to 5 SDK-internal retries) so a claim
+# is never reclaimed out from under a request that's still legitimately
+# running.
+STALE_GENERATION_TIMEOUT = timedelta(minutes=10)
+
+
 @login_required
 @require_GET
 def stream_message(request, conversation_id, message_id, token):
@@ -1227,6 +1237,41 @@ def stream_message(request, conversation_id, message_id, token):
         content="",
         stream_token=token,
     )
+
+    # Atomically claim this pending reply before doing any provider work.
+    # Without this, two concurrent GETs to this same URL - a duplicate tab,
+    # or htmx's sse-connect auto-reconnecting while a previous connection is
+    # still technically alive after a network blip - would both pass the
+    # content="" filter above and both call the provider independently,
+    # doubling the real provider cost for one logical reply. A claim older
+    # than STALE_GENERATION_TIMEOUT is treated as abandoned (the process
+    # that held it crashed before releasing it) and can be re-claimed rather
+    # than wedging the message forever.
+    stale_cutoff = timezone.now() - STALE_GENERATION_TIMEOUT
+    claimed = (
+        Message.objects.filter(pk=message.id, content="")
+        .filter(Q(is_generating=False) | Q(generation_started_at__lt=stale_cutoff))
+        .update(is_generating=True, generation_started_at=timezone.now())
+    )
+    if not claimed:
+
+        def already_claimed_stream():
+            message.refresh_from_db()
+            if message.content:
+                # Already finished by the connection that won the race (or
+                # by an earlier request entirely) - hand back what's there
+                # instead of leaving this connection hanging.
+                yield _sse_event("message", message.content)
+                yield _sse_event("done", "")
+            # else: another connection is generating this same reply right
+            # now. Say nothing and let THAT connection's own "done" event
+            # resolve it - a manual refresh picks up the finished content
+            # if this particular tab never sees it complete.
+
+        response = StreamingHttpResponse(already_claimed_stream(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response
 
     history = _history_with_attachments(conversation, exclude_message_id=message.id)
     requested_model_id = request.GET.get("model_id", "").strip()
@@ -1260,7 +1305,13 @@ def stream_message(request, conversation_id, message_id, token):
     if agent_persona not in AGENT_PERSONAS or not has_feature(request.user, "agent_mode"):
         agent_persona = ""
 
-    def event_stream():
+    # Mutable holder so the outer finally (below) can see the latest partial
+    # text generated so far, from inside the nested generator's per-candidate
+    # loop - a plain closed-over local wouldn't be reassignable from there
+    # without `nonlocal` scattered through an unrelated loop.
+    partial_text = {"text": ""}
+
+    def _generate_reply():
         # Every exit path below saves *something* to message.content and
         # then yields "done" — never a separate "error" event. An SSE event
         # literally named "error" collides with EventSource's own reserved
@@ -1383,6 +1434,7 @@ def stream_message(request, conversation_id, message_id, token):
         for attempt_index, model_config in enumerate(candidates):
             provider = get_provider(model_config.provider)
             full_text = ""
+            partial_text["text"] = ""
             input_tokens = output_tokens = None
             is_last_candidate = attempt_index == len(candidates) - 1
             history_for_model = history if model_config.supports_vision else _strip_images(history)
@@ -1393,6 +1445,7 @@ def stream_message(request, conversation_id, message_id, token):
                 ):
                     if chunk.text:
                         full_text += chunk.text
+                        partial_text["text"] = full_text
                         yield _sse_event("message", chunk.text)
                     if chunk.done:
                         input_tokens, output_tokens = chunk.input_tokens, chunk.output_tokens
@@ -1438,6 +1491,26 @@ def stream_message(request, conversation_id, message_id, token):
             _notify_if_usage_warning(request.user)
             yield _sse_event("done", "")
             return
+
+    def event_stream():
+        try:
+            yield from _generate_reply()
+        finally:
+            # Always release the claim. If content is still "" here, none
+            # of _generate_reply's own save points got the chance to run -
+            # most commonly because the client disconnected mid-stream
+            # (Django/WSGI closes the generator, raising GeneratorExit at
+            # whichever yield was in flight; that propagates through
+            # `yield from` and still lands here, since Python always runs a
+            # pending finally on generator close). Persist whatever partial
+            # text had been generated so far instead of leaving the row
+            # wedged at content="" with is_generating stuck True - a reload
+            # then shows the partial answer as-is rather than hanging or
+            # silently re-running (and re-billing) the whole request.
+            Message.objects.filter(pk=message.id, content="", is_generating=True).update(
+                content=partial_text["text"], is_generating=False
+            )
+            Message.objects.filter(pk=message.id, is_generating=True).update(is_generating=False)
 
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
