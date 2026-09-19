@@ -127,3 +127,40 @@ See `notifications/management/commands/send_deploy_notification.py` and
 the two SSH steps that call it in `.github/workflows/ci.yml`. Uses
 whatever's already configured on Email Logs → Settings (or the `EMAIL_*`
 env fallback) — no separate secrets needed in GitHub Actions.
+
+## Running natively (no Docker)
+
+Also a fully supported path — this is how the app itself was actually
+built and tested day to day. Falls back automatically to SQLite and
+Django's local-memory cache when `DATABASE_URL`/`REDIS_URL` aren't set,
+so none of Postgres/Redis/Docker are required just to run the app or its
+tests locally.
+
+```sh
+python -m venv venv
+source venv/Scripts/activate   # Windows: venv\Scripts\activate
+pip install -r requirements-dev.txt   # includes requirements.txt + black/flake8/pip-audit
+cp .env.example .env
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+The app is at http://localhost:8000/. As with the Docker path, chat won't
+work until you connect a real AI provider key from Admin → Providers.
+
+### Running tests
+
+```sh
+python manage.py test              # the whole suite
+python manage.py test chat         # one app
+python manage.py test chat.tests.ChatViewTests   # one test class
+black --check .                    # formatting (matches CI's lint job)
+flake8                             # linting (matches CI's lint job)
+```
+
+Tests always run against SQLite regardless of what `DATABASE_URL` is set
+to locally (Django creates a throwaway test database per run) - no
+Postgres/Redis needed to run the suite. CI (`.github/workflows/ci.yml`)
+runs the same three commands, plus `pip-audit`, against a real Postgres
+service container before anything can deploy.
