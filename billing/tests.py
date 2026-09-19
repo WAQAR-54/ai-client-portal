@@ -846,6 +846,24 @@ class InvoiceListViewTests(TestCase):
         self.assertContains(response, self.invoice.invoice_number)
         self.assertNotContains(response, self.other_invoice.invoice_number)
 
+    def test_list_is_paginated_past_50_invoices(self):
+        """Production-readiness audit gap: this list had no pagination
+        at all - an admin-wide, unfiltered invoice history would
+        eventually mean loading every invoice the org has ever
+        generated onto one page. 2 invoices already exist from setUp;
+        top up to 51 total so a second page genuinely exists."""
+        for _ in range(49):
+            generate_invoice_for_department(self.department, recipient_user=self.recipient)
+
+        self.client.login(email="super@example.com", password="pw12345!")
+        page1 = self.client.get(reverse("billing:invoices"))
+        self.assertEqual(len(page1.context["page_obj"]), 50)
+        self.assertTrue(page1.context["is_paginated"])
+        self.assertContains(page1, "Page 1 of 2")
+
+        page2 = self.client.get(reverse("billing:invoices"), {"page": 2})
+        self.assertEqual(len(page2.context["page_obj"]), 1)
+
     def test_admin_can_toggle_own_department_invoice_status(self):
         self.client.login(email="admin@example.com", password="pw12345!")
         response = self.client.post(reverse("billing:toggle_invoice_status", kwargs={"invoice_id": self.invoice.id}))

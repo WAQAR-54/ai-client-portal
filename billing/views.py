@@ -4,6 +4,7 @@ from django.contrib import messages as django_messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -488,10 +489,31 @@ def _eligible_recipients(request):
     return qs.order_by("department__name", "email")
 
 
+INVOICES_PER_PAGE = 50
+
+
+def _querystring_without(request, *exclude_keys):
+    """Current GET querystring with the given keys stripped - used to
+    build pagination links that preserve whatever filter is active. Kept
+    local rather than importing governance's private equivalent across
+    an app boundary (same reasoning as _decimal_or_none above)."""
+    qd = request.GET.copy()
+    for key in exclude_keys:
+        qd.pop(key, None)
+    return qd.urlencode()
+
+
 def _invoices_context(request):
     """Shared by InvoiceListView and the htmx re-render after a toggle/
     verify/reject, same reasoning as governance's _models_table_context:
-    every action respects whatever department filter was already showing."""
+    every action respects whatever department filter was already showing.
+    Paginated for the same reason AuditLogListView already is - an
+    unbounded `.all()` here would eventually mean loading every invoice
+    the whole org has ever generated on one page. The htmx action views
+    (toggle/verify/reject/delete) POST with no querystring at all, so
+    they always land back on page 1 after an action - already true for
+    the department filter today (also GET-param-based), not a new
+    regression this introduces."""
     qs = Invoice.objects.select_related("department", "plan", "recipient_user").order_by("-issue_date", "-id")
     departments = None
     selected_department = ""
@@ -502,8 +524,14 @@ def _invoices_context(request):
         selected_department = request.GET.get("department", "").strip()
         if selected_department.isdigit():
             qs = qs.filter(department_id=int(selected_department))
+
+    paginator = Paginator(qs, INVOICES_PER_PAGE)
+    page_obj = paginator.get_page(request.GET.get("page"))
     return {
-        "invoices": qs,
+        "invoices": page_obj,
+        "page_obj": page_obj,
+        "is_paginated": paginator.num_pages > 1,
+        "querystring_without_page": _querystring_without(request, "page"),
         "departments": departments,
         "selected_department": selected_department,
         "eligible_recipients": _eligible_recipients(request),
