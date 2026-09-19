@@ -10,6 +10,22 @@ from django.core.exceptions import PermissionDenied
 
 from accounts.models import User
 
+# Real N+1 found in the production-readiness audit: has_feature (the
+# template filter wrapping user_has_feature/role_has_feature below) is
+# called once per row in list templates like _conversation_item.html - with
+# no memoization, that's one identical RoleFeatureToggle query per row, for
+# the exact same (role, feature_key) pair every time (measured: +1 query
+# per conversation on the chat sidebar, scaling linearly with the list
+# length). Memoized per-request (accounts.middleware.get_request_cache) -
+# NOT via Django's cross-request cache framework, which was the first
+# approach tried here and had a real correctness problem: a role/feature
+# toggle is a live access-control decision, so caching it across requests
+# either goes stale for a TTL after an admin flips it, or - as actually
+# observed switching this back - leaks a cached answer from one Django
+# TestCase into a later, unrelated one (LocMemCache isn't rolled back by
+# TestCase's transaction rollback the way the DB is). A request-scoped dict
+# can't have either problem: it never outlives the request that built it.
+
 
 def role_has_feature(role, feature_key):
     """True unless a SuperAdmin explicitly turned this feature off for this
@@ -20,8 +36,19 @@ def role_has_feature(role, feature_key):
 
     if role == User.Role.SUPERADMIN:
         return True
+
+    from accounts.middleware import get_request_cache
+
+    request_cache = get_request_cache()
+    cache_key = ("role_has_feature", role, feature_key)
+    if request_cache is not None and cache_key in request_cache:
+        return request_cache[cache_key]
+
     toggle = RoleFeatureToggle.objects.filter(role=role, feature_key=feature_key).first()
-    return toggle is None or toggle.is_enabled
+    result = toggle is None or toggle.is_enabled
+    if request_cache is not None:
+        request_cache[cache_key] = result
+    return result
 
 
 def user_has_feature(user, feature_key):

@@ -462,6 +462,35 @@ class RouterTests(TestCase):
         selected = select_model_for_user(self.user, ProviderModel.Tier.DEFAULT)
         self.assertEqual(selected, self.economy)
 
+    def test_fallback_candidates_never_include_a_plan_forbidden_model(self):
+        """Phase 1B of the audit: provider failover (chat/views.py::
+        stream_message tries each of select_model_candidates() in order on
+        ProviderError) must never bypass plan/permission rules just because
+        it's a fallback tier rather than the first pick. _allowed_models_for_
+        user() is applied per-tier inside select_model_candidates - this
+        proves that holds for every tier in the returned list, not just the
+        first one."""
+        from chat.router import select_model_candidates
+
+        premium = ProviderModel.objects.create(
+            provider=self.economy.provider,
+            model_id="premium-model",
+            tier=ProviderModel.Tier.PREMIUM,
+            output_price_per_mtok=20,
+            is_enabled=True,
+        )
+        # Granted on the Plan (so it WOULD be a legitimate fallback
+        # candidate)...
+        self.user.plan_assignment.plan.allowed_provider_models.add(premium)
+        # ...but explicitly denied for this specific user.
+        UserModelPermission.objects.create(user=self.user, provider_model=premium, is_allowed=False)
+
+        candidates = select_model_candidates(self.user, ProviderModel.Tier.PREMIUM)
+
+        self.assertNotIn(premium, candidates)
+        self.assertIn(self.default, candidates)
+        self.assertIn(self.economy, candidates)
+
 
 class RoutingRuleMatchingTests(TestCase):
     """chat.router.match_routing_rule - the deterministic-heuristic layer
@@ -590,6 +619,52 @@ class ChatViewTests(TestCase):
         self.client.logout()
         response = self.client.post(reverse("chat:create_conversation"))
         self.assertEqual(response.status_code, 302)
+
+    def test_conversation_list_query_count_does_not_scale_with_list_length(self):
+        """Regression test for a real N+1 the audit measured directly:
+        _conversation_item.html's `{{ request.user|has_feature:"..." }}`
+        calls (governance/features.py::role_has_feature, 7 distinct feature
+        keys checked on this page) ran one uncached RoleFeatureToggle query
+        PER ROW for each key - measured 79 queries for 30 conversations,
+        109 for 60 (exactly +1 per row). role_has_feature now caches each
+        (role, feature_key) answer for the rest of that request, so only
+        the FIRST row of each of those 7 keys should ever hit the table -
+        row count above 1 must not add more RoleFeatureToggle queries.
+
+        Counts only queries against that one table (not the page's total
+        query count, which includes other, unrelated per-scenario noise
+        this fix was never meant to touch) - and uses a second, independent
+        user/session for the "many conversations" case rather than reusing
+        self.user, so nothing about request order or prior warm caches can
+        make one measurement look artificially cheaper than the other."""
+        from django.core.cache import cache
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def role_feature_toggle_query_count(queries):
+            return sum(1 for q in queries if "rolefeaturetoggle" in q["sql"].lower())
+
+        cache.clear()
+        Conversation.objects.create(user=self.user, title="only one")
+        with CaptureQueriesContext(connection) as small:
+            response = self.client.get(reverse("chat:chat_home"))
+        self.assertEqual(response.status_code, 200)
+
+        cache.clear()
+        many_user = User.objects.create_user(email="many@example.com", password="pw12345!")
+        _grant_premium_plan(many_user, self.model)
+        self.client.login(email="many@example.com", password="pw12345!")
+        for i in range(14):
+            Conversation.objects.create(user=many_user, title=f"extra {i}")
+        with CaptureQueriesContext(connection) as large:
+            response = self.client.get(reverse("chat:chat_home"))
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(
+            role_feature_toggle_query_count(small.captured_queries),
+            role_feature_toggle_query_count(large.captured_queries),
+            "RoleFeatureToggle query count scaled with conversation count (1 -> 15) - the N+1 regressed",
+        )
 
     def test_create_and_view_conversation(self):
         response = self.client.post(reverse("chat:create_conversation"))

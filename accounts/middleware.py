@@ -21,6 +21,31 @@ from accounts.rate_limit import client_ip
 # across requests handled concurrently by the same async/threaded worker.
 _current_request_id: ContextVar[str] = ContextVar("current_request_id", default="-")
 
+# A plain dict that lives for exactly one request - see get_request_cache()
+# below.
+_request_local_cache: ContextVar = ContextVar("request_local_cache", default=None)
+
+
+def get_request_cache():
+    """A dict scoped to exactly one request, for memoizing small, read-
+    mostly lookups that would otherwise run once per row on a list template
+    (e.g. governance/features.py::role_has_feature, called once per
+    conversation row per feature key - a real N+1 the audit measured
+    directly). Deliberately NOT a cross-request cache (Django's cache
+    framework, a TTL, etc.): a role/feature toggle is a live access-control
+    decision, and a cross-request cache either goes stale for its whole TTL
+    after an admin flips it, or - as found while first building this with
+    Django's cache backend - leaks a cached answer from one Django TestCase
+    into a later, unrelated one, since LocMemCache isn't rolled back by
+    TestCase's transaction rollback the way the DB is. Scoping the cache to
+    one request's ContextVar sidesteps both: it can never outlive the
+    request that populated it, in production or in a test.
+
+    Returns None outside of a request (a management command, a direct
+    Python call in a test with no self.client.get/post involved) - callers
+    must treat that as "don't memoize this call", not as a cache miss."""
+    return _request_local_cache.get()
+
 
 class RequestIDMiddleware:
     """Generates a short id for every request and makes it available to
@@ -53,7 +78,16 @@ class RequestIDMiddleware:
         request.id = uuid.uuid4().hex[:16]
         token = _current_request_id.set(request.id)
         sentry_sdk.set_tag("request_id", request.id)
-        response = self.get_response(request)
+        # Unlike _current_request_id below, this dict is only ever read
+        # during synchronous template rendering inside get_response() itself
+        # (role_has_feature has no reason to run inside stream_message's
+        # lazy SSE generator) - a plain try/finally around get_response() is
+        # correct here, no close()-hook needed.
+        cache_token = _request_local_cache.set({})
+        try:
+            response = self.get_response(request)
+        finally:
+            _request_local_cache.reset(cache_token)
         response["X-Request-ID"] = request.id
         # NOT a finally around get_response(): for a StreamingHttpResponse
         # (chat/views.py::stream_message), get_response() returns the
