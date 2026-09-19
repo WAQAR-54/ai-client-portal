@@ -1,0 +1,82 @@
+{% load i18n %}
+{% comment %}
+Fragment swapped in for #intel-feed. Every state renders something explicit -
+never a blank area. Freshness is labelled exactly as retrieved: "Just
+retrieved" only when THIS request fetched it; otherwise "Cached" or "Older
+copy". Titles/sources are plain text (autoescaped); links only ever come from
+live_intelligence.safe_url (http/https).
+{% endcomment %}
+<div id="intel-feed" aria-live="polite" data-intel-state="{{ overall }}">
+    {% if overall == "disabled" %}
+    <p class="intel-status">{% trans "Live intelligence is turned off." %}</p>
+
+    {% else %}
+    <div class="intel-cards">
+        {% for card in cards %}
+        <article class="intel-card" data-intel-card="{{ card.key }}" data-intel-card-state="{{ card.state }}">
+            <h3 class="intel-card-title">{{ card.label }}</h3>
+            <p class="intel-card-blurb">{{ card.blurb }}</p>
+            <p class="intel-card-meta">
+                {% if card.state == "live" %}{% trans "Just retrieved" %}
+                {% elif card.state == "cached" %}{% blocktrans with age=card.age %}Cached · last updated {{ age }} ago{% endblocktrans %}
+                {% elif card.state == "stale" %}{% blocktrans with age=card.age %}Older copy · from {{ age }} ago{% endblocktrans %}
+                {% elif card.state == "empty" %}{% trans "No current stories" %}
+                {% else %}{% trans "Unavailable" %}{% endif %}
+            </p>
+            {% if card.count %}
+            <p class="intel-card-count">{% blocktrans count counter=card.count %}{{ counter }} story{% plural %}{{ counter }} stories{% endblocktrans %}</p>
+            {% endif %}
+            <form method="post" action="{% url 'chat:create_conversation' %}" class="intel-card-action">
+                {% csrf_token %}
+                <input type="hidden" name="intel" value="{{ card.key }}">
+                <button type="submit" class="btn btn-ghost btn-small" {% if not card.count %}disabled{% endif %}>{% trans "View" %}<span class="sr-only"> {{ card.label }}</span></button>
+            </form>
+        </article>
+        {% endfor %}
+    </div>
+
+    <div class="intel-statusbar">
+        <p class="intel-status" role="status">
+            {% if overall == "live" %}{% trans "Retrieved just now." %}
+            {% elif overall == "cached" %}{% blocktrans with age=overall_age %}Showing cached information - last updated {{ age }} ago.{% endblocktrans %}
+            {% elif overall == "stale" %}{% blocktrans with age=overall_age %}Couldn't refresh - showing information from {{ age }} ago.{% endblocktrans %}
+            {% elif overall == "empty" %}{% trans "No current intelligence available." %}
+            {% else %}{% trans "Unable to retrieve current news. Try again shortly." %}{% endif %}
+            {% if refresh_note %}<span class="intel-note">{{ refresh_note }}</span>{% endif %}
+        </p>
+        <button type="button" class="btn btn-ghost btn-small intel-refresh"
+                hx-post="{% url 'chat:live_intelligence_refresh' %}" hx-target="#intel-feed" hx-swap="outerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' hx-disabled-elt="this">
+            {% trans "Refresh intelligence" %}
+        </button>
+    </div>
+
+    {% endif %}
+</div>
+{% comment %}
+Headlines are delivered out-of-band into #intel-headlines (which sits BELOW the
+quick commands in the shell) so one request fills both places while keeping the
+order cards -> quick commands -> latest headlines. Empty on purpose when there
+is nothing to show, so a refresh also clears stale headlines.
+{% endcomment %}
+<div id="intel-headlines" class="intel-headlines-wrap" hx-swap-oob="true">
+{% if headlines %}
+    <h3 class="intel-headlines-title">{% blocktrans with title=headlines_title %}Latest: {{ title }}{% endblocktrans %}</h3>
+    <ul class="intel-headlines">
+        {% for story in headlines %}
+        <li class="intel-headline">
+            <span class="intel-headline-title">{{ story.title }}</span>
+            <span class="intel-headline-meta">
+                {{ story.source }}{% if story.age %} · {{ story.age }} {% trans "ago" %}{% endif %}
+                · <a href="{{ story.url }}" target="_blank" rel="noopener noreferrer nofollow">{% trans "Read source" %}<span class="sr-only"> {% trans "(opens in a new tab)" %}</span></a>
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    <form method="post" action="{% url 'chat:create_conversation' %}" class="intel-report-form">
+        {% csrf_token %}
+        <input type="hidden" name="intel" value="brief">
+        <button type="submit" class="btn btn-small">{% trans "Generate full report" %}</button>
+    </form>
+{% endif %}
+</div>

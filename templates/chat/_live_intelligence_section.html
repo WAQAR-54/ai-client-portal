@@ -1,0 +1,38 @@
+{% load i18n %}
+{% comment %}
+Static shell only - rendered instantly with the page and never touches a news
+source. The headlines load afterwards via htmx (hx-trigger="load") from
+chat:live_intelligence, so a slow or dead feed can only ever affect this
+section, never /chat/ itself. Quick commands POST to create_conversation like
+the existing quick-start cards; the retrieved data is attached server-side.
+{% endcomment %}
+<section class="chat-intel" aria-labelledby="chat-intel-title">
+    <div class="chat-intel-head">
+        <h2 id="chat-intel-title" class="chat-intel-title">{% trans "Live intelligence" %}</h2>
+        <p class="chat-intel-sub">{% trans "Stay up to date with technology, AI, developer and security news, from public sources retrieved on demand." %}</p>
+    </div>
+
+    <div id="intel-feed" hx-get="{% url 'chat:live_intelligence' %}" hx-trigger="load" hx-swap="outerHTML" aria-live="polite" aria-busy="true">
+        <div class="intel-cards" aria-hidden="true">
+            <div class="intel-card intel-card-loading"></div>
+            <div class="intel-card intel-card-loading"></div>
+            <div class="intel-card intel-card-loading"></div>
+        </div>
+        <p class="intel-status">{% trans "Loading current headlines…" %}</p>
+    </div>
+
+    <div class="intel-commands" role="group" aria-label="{% trans 'Quick commands' %}">
+        <div class="intel-commands-label">{% trans "Quick commands" %}</div>
+        <div class="intel-chips">
+            {% for key, label in live_commands %}
+            <form method="post" action="{% url 'chat:create_conversation' %}" class="intel-chip-form">
+                {% csrf_token %}
+                <input type="hidden" name="intel" value="{{ key }}">
+                <button type="submit" class="intel-chip">{{ label }}</button>
+            </form>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="intel-headlines" class="intel-headlines-wrap"></div>
+</section>

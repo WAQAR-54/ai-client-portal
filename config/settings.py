@@ -319,6 +319,11 @@ if "test" in sys.argv:
 # Internationalization
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
+# Live Intelligence (chat/live_intelligence.py) - real headlines from public
+# news feeds for the chat home page and one-click briefs. Set to False to turn
+# the whole feature off (no outbound fetches; the home section says so).
+LIVE_INTELLIGENCE_ENABLED = env.bool("LIVE_INTELLIGENCE_ENABLED", default=True)
+
 USE_I18N = True
 
 # UI label translation only (buttons/menus/headings) - never the AI's own

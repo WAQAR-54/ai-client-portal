@@ -18,20 +18,10 @@ Two rules keep this honest:
 
 import django
 from django.utils import timezone
-from django.utils.timesince import timesince
 
+from chat.utils import age_label
 from config.health import check_database, check_redis
 from providers.errors import describe
-
-
-def age_label(moment):
-    """ "18 minutes", "1 week" - the single largest unit, without "ago"
-    (the template adds the translated word). Empty for a missing moment."""
-    if not moment:
-        return ""
-    age = timesince(moment).split(",")[0].replace(" ", " ")
-    return age if not age.startswith("0 ") else "less than a minute"
-
 
 # How many of the newest model-routed replies to look through for "last
 # activity". Bounded so this dashboard query costs the same at 10 thousand

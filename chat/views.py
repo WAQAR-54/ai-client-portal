@@ -4,6 +4,7 @@ from datetime import timedelta
 from urllib.parse import quote, urlencode
 
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q
@@ -36,9 +37,10 @@ from chat.router import (
     models_visible_to_user,
     select_model_candidates,
 )
-from chat.utils import group_conversations
+from chat import live_intelligence
+from chat.utils import age_label, group_conversations
 from governance.audit import log_action
-from governance.features import require_feature
+from governance.features import require_feature, user_has_feature
 from governance.limits import (
     UploadRejected,
     UsageLimitExceeded,
@@ -126,6 +128,10 @@ def chat_home(request, conversation_id=None):
         "agent_personas": [(key, label) for key, (label, _instruction) in AGENT_PERSONAS.items()],
         "can_request_upgrade": bool(plan_status["plan"]),
         "upgrade_plan_choices": upgrade_plan_choices,
+        # Only the flags - the headlines themselves load separately (see
+        # live_intelligence_feed), so /chat/ never waits on a news source.
+        "live_intelligence_enabled": live_intelligence.enabled(),
+        "live_commands": [(key, label) for key, label in live_intelligence.COMMANDS],
     }
     return render(request, "chat/chat_home.html", context)
 
@@ -380,6 +386,88 @@ def search_conversations(request):
     )
 
 
+# Categories shown as cards on the chat home page. Deliberately three: the
+# home page is an AI chat workspace first, not a news site - developer news
+# and GitHub trends are still one click away via the quick commands.
+INTEL_CARD_KEYS = ("technology", "ai", "security")
+INTEL_HEADLINES = 4
+INTEL_REFRESH_COOLDOWN_SECONDS = 60
+
+
+def _intel_card(key, result):
+    meta = live_intelligence.CATEGORIES[key]
+    stories = result["stories"]
+    return {
+        "key": key,
+        "label": meta["label"],
+        "blurb": meta["blurb"],
+        "state": result["state"],
+        "count": len(stories),
+        "age": age_label(result["fetched_at"]),
+    }
+
+
+def _intel_context(force=False):
+    """Everything the Live Intelligence fragment renders. Each card is a
+    separate category result, so one failing source set degrades only its own
+    card. `headlines` are the newest stories of the first card's category."""
+    results = {key: live_intelligence.get_category(key, force=force) for key in INTEL_CARD_KEYS}
+    cards = [_intel_card(key, results[key]) for key in INTEL_CARD_KEYS]
+    first = results[INTEL_CARD_KEYS[0]]
+    headlines = [{**story, "age": age_label(story["published"])} for story in first["stories"][:INTEL_HEADLINES]]
+    states = {c["state"] for c in cards}
+    if not live_intelligence.enabled():
+        overall = "disabled"
+    elif "live" in states:
+        overall = "live"
+    elif "cached" in states:
+        overall = "cached"
+    elif "stale" in states:
+        overall = "stale"
+    elif states == {"empty"}:
+        overall = "empty"
+    else:
+        overall = "unavailable"
+    fetched = [r["fetched_at"] for r in results.values() if r["fetched_at"]]
+    return {
+        "cards": cards,
+        "headlines": headlines,
+        "headlines_title": live_intelligence.CATEGORIES[INTEL_CARD_KEYS[0]]["title"],
+        "overall": overall,
+        "overall_age": age_label(min(fetched)) if fetched else "",
+        "commands": live_intelligence.COMMANDS,
+    }
+
+
+@login_required
+@require_feature("live_intelligence")
+@require_GET
+def live_intelligence_feed(request):
+    """The home page's Live Intelligence content, loaded by htmx AFTER the
+    page has rendered (see _live_intelligence_section.html) - so /chat/
+    itself never waits on, or can be broken by, a news source. Served from
+    cache when fresh; a cold cache fetches the few feeds in parallel with
+    short timeouts, and every failure mode renders a message, not an error."""
+    return render(request, "chat/_live_intelligence_feed.html", _intel_context())
+
+
+@login_required
+@require_feature("live_intelligence")
+@require_http_methods(["POST"])
+def live_intelligence_refresh(request):
+    """ "Refresh intelligence". Only claims "updated" if it actually refetched:
+    limited to one real refresh per user per minute (cache.add is atomic), so
+    a click-happy user can't turn this into outbound request spam, and a
+    refresh inside the cooldown says so instead of pretending."""
+    try:
+        allowed = cache.add(f"liveintel:refresh:{request.user.id}", 1, INTEL_REFRESH_COOLDOWN_SECONDS)
+    except Exception:
+        allowed = False
+    context = _intel_context(force=allowed)
+    context["refresh_note"] = "" if allowed else _("Already refreshed moments ago - try again in a minute.")
+    return render(request, "chat/_live_intelligence_feed.html", context)
+
+
 @login_required
 @require_GET
 def render_message(request, conversation_id, message_id):
@@ -472,8 +560,23 @@ def create_conversation(request):
     conversation = Conversation.objects.create(user=request.user, title=_("New conversation"), project=project)
     url = reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id})
     starter_text = request.POST.get("starter_text", "").strip()
+    # A Live Intelligence quick command (see live_intelligence.COMMANDS):
+    # whitelisted here and re-validated again in post_message - never trusted
+    # from the URL it round-trips through. Ignored (plain starter) when the
+    # feature is off, so a command can never send an ungrounded "today's
+    # news" question that the model would answer from memory.
+    intel = request.POST.get("intel", "").strip()
+    intel_allowed = (
+        intel in live_intelligence.VALID_KEYS
+        and live_intelligence.enabled()
+        and user_has_feature(request.user, "live_intelligence")
+    )
+    if intel_allowed:
+        starter_text = live_intelligence.prompt_for(intel)
     if starter_text:
         url = f"{url}?starter={quote(starter_text)}"
+        if intel_allowed:
+            url = f"{url}&intel={quote(intel)}"
     return redirect(url)
 
 
@@ -671,6 +774,16 @@ def post_message(request, conversation_id):
     # but a POSTed "research=on" shouldn't be trusted just because the UI
     # that would normally set it wasn't shown.
     research = request.POST.get("research") == "on" and has_feature(request.user, "research")
+    # Live Intelligence quick command - same validation as create_conversation;
+    # stored on the pending assistant row (not just the stream URL) so
+    # Regenerate stays grounded. See chat.models.Message.live_intel.
+    live_intel = request.POST.get("live_intel", "").strip()
+    if not (
+        live_intel in live_intelligence.VALID_KEYS
+        and live_intelligence.enabled()
+        and user_has_feature(request.user, "live_intelligence")
+    ):
+        live_intel = ""
     if research:
         try:
             check_research_monthly_limit(request.user)
@@ -745,6 +858,7 @@ def post_message(request, conversation_id):
             role=Message.Role.ASSISTANT,
             content="",
             used_research=research,
+            live_intel=live_intel,
             is_artifact=document_mode,
             # Provisional - overwritten in stream_message once the reply's
             # own "# Heading" is known (see extract_document_title). Just a
@@ -1061,11 +1175,24 @@ def edit_message(request, conversation_id, message_id):
         except UsageLimitExceeded as exc:
             return render(request, "chat/_limit_exceeded.html", {"message": str(exc)}, status=429)
 
+        # An edited Live Intelligence question stays grounded: without this
+        # the new reply would answer "today's news" from the model's memory.
+        # Read BEFORE the delete below wipes the replies that carry it.
+        inherited_intel = (
+            Message.objects.filter(conversation=conversation, id__gt=message.id, role=Message.Role.ASSISTANT)
+            .exclude(live_intel="")
+            .values_list("live_intel", flat=True)
+            .first()
+            or ""
+        )
         Message.objects.filter(conversation=conversation, id__gte=message.id).delete()
         Conversation.objects.filter(pk=conversation.pk).update(updated_at=timezone.now())
         new_user_message = Message.objects.create(conversation=conversation, role=Message.Role.USER, content=content)
         pending_assistant_message = Message.objects.create(
-            conversation=conversation, role=Message.Role.ASSISTANT, content=""
+            conversation=conversation,
+            role=Message.Role.ASSISTANT,
+            content="",
+            live_intel=inherited_intel if live_intelligence.enabled() else "",
         )
 
     prior_messages = list(conversation.messages.exclude(id__in=[new_user_message.id, pending_assistant_message.id]))
@@ -1535,6 +1662,23 @@ def stream_message(request, conversation_id, message_id, token):
         system_prompt = build_system_prompt(
             request.user, agent_persona=agent_persona, output_mode=output_mode, document_mode=document_mode
         )
+
+        # Live Intelligence quick command: retrieve (cache-first) and hand the
+        # model ONLY those stories as reference data. If nothing could be
+        # retrieved, do NOT call the model at all - asked for "today's news"
+        # with no data, it would invent plausible headlines. A fixed reply is
+        # saved instead (same "save something, then done" contract as every
+        # other exit path here).
+        if message.live_intel:
+            groups, retrieved_at = live_intelligence.get_stories_for_command(message.live_intel)
+            if not groups:
+                message.content = live_intelligence.NO_DATA_REPLY
+                message.save(update_fields=["content"])
+                yield _sse_event("message", live_intelligence.NO_DATA_REPLY)
+                yield _sse_event("done", "")
+                return
+            grounding = live_intelligence.build_grounding_block(groups, retrieved_at)
+            system_prompt = system_prompt + "\n\n" + grounding
 
         from governance.plans import validate_context_tokens
 

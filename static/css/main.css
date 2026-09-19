@@ -4331,3 +4331,77 @@ table.data tbody th.sys-rowhead {
     }
     .sys-status-head { flex-direction: column; align-items: flex-start; }
 }
+
+/* ==========================================================================
+   Chat home - Live intelligence (secondary to the chat itself: sits under the
+   welcome + quick cards, above the composer). Own classes; tokens only.
+   ========================================================================== */
+.sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+/* Room for three cards without widening the chat column on pages that
+   don't have the section. */
+.chat-hero:has(.chat-intel) { max-width: 780px; }
+
+.chat-intel { margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+.chat-intel-head { margin-bottom: var(--space-3); }
+.chat-intel-title { margin: 0; font-size: var(--text-sm); font-weight: 700; letter-spacing: 0.01em; }
+.chat-intel-sub { margin: 2px 0 0; font-size: var(--text-xs); color: var(--color-text-muted); max-width: 560px; line-height: 1.5; }
+
+.intel-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.intel-card {
+    display: flex; flex-direction: column; gap: 2px; min-height: 132px; padding: 14px 16px;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.intel-card-loading { background: var(--color-surface-muted); border-style: dashed; box-shadow: none; }
+.intel-card-title { margin: 0; font-size: var(--text-sm); font-weight: 700; }
+.intel-card-blurb { margin: 0; font-size: var(--text-xs); color: var(--color-text-muted); }
+.intel-card-meta { margin: 6px 0 0; font-size: 11.5px; color: var(--color-text-muted); }
+.intel-card-count { margin: 0; font-size: 11.5px; color: var(--color-text-muted); }
+.intel-card-action { margin-top: auto; padding-top: var(--space-2); }
+.intel-card[data-intel-card-state="unavailable"] .intel-card-title,
+.intel-card[data-intel-card-state="empty"] .intel-card-title { color: var(--color-text-muted); }
+
+.intel-statusbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); }
+.intel-status { margin: 0; font-size: var(--text-xs); color: var(--color-text-muted); }
+.intel-note { display: block; color: var(--color-text-muted); }
+.intel-refresh[disabled] { opacity: 0.6; cursor: progress; }
+
+.intel-headlines-wrap { margin-top: var(--space-4); }
+.intel-headlines-wrap:empty { display: none; }
+.intel-headlines-title { margin: 0 0 var(--space-2); font-size: var(--text-xs); font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.intel-headlines { list-style: none; margin: 0; padding: 0; }
+.intel-headline { padding: 9px 0; border-bottom: 1px solid var(--color-border); }
+.intel-headline:last-child { border-bottom: 0; }
+.intel-headline-title { display: block; font-size: var(--text-sm); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.intel-headline-meta { display: block; margin-top: 2px; font-size: 11.5px; color: var(--color-text-muted); }
+.intel-headline-meta a { color: var(--color-text); text-decoration: underline; text-underline-offset: 2px; }
+.intel-headline-meta a:hover { color: var(--color-text); }
+.intel-report-form { margin-top: var(--space-3); }
+
+.intel-commands { margin-top: var(--space-4); }
+.intel-commands-label { margin-bottom: var(--space-2); font-size: var(--text-xs); font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.intel-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.intel-chip-form { display: contents; }
+.intel-chip {
+    padding: 6px 12px; border: 1px solid var(--color-border); border-radius: 999px;
+    background: var(--color-surface); color: var(--color-text); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.intel-chip:hover { background: var(--color-surface-muted); border-color: var(--accent-dim); }
+.intel-chip:focus-visible, .intel-refresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 900px) {
+    .intel-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* An odd last card fills the row instead of leaving a half-empty one. */
+    .intel-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+    .intel-cards { grid-template-columns: minmax(0, 1fr); }
+    .intel-card { min-height: 0; }
+    .intel-statusbar { flex-direction: column; align-items: flex-start; }
+    .intel-chip { padding: 8px 12px; }
+}
+.intel-card-action button[disabled] { opacity: 0.45; cursor: not-allowed; }
+.intel-card-action button[disabled]:hover { background: transparent; color: inherit; border-color: inherit; }

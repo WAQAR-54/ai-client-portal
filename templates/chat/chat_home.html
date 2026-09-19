@@ -630,6 +630,7 @@ function portalCloseUpgradeModal() {
                     </details>
                     {% if can_use_research %}<input type="hidden" name="research" id="research-input" value="">{% endif %}
                     <input type="hidden" name="output_mode" id="output-mode-input" value="">
+                    <input type="hidden" name="live_intel" id="live-intel-input" value="">
                     {% if can_use_agent_mode %}
                     <details class="export-menu">
                         <summary class="attach-btn no-marker" id="agent-persona-summary" title="{% trans 'Act as a specialized agent for this conversation' %}">
@@ -745,6 +746,30 @@ function portalCloseUpgradeModal() {
             textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
             textarea.focus();
         }
+        // A Live Intelligence quick command (?intel=<key>): tag the message so
+        // the server grounds it in freshly retrieved stories, then send it
+        // once automatically - it is a one-click command. The server
+        // re-validates the key; the hidden field is cleared again by the
+        // composer's own after-request reset, so a later message is normal.
+        var intel = params.get("intel");
+        if (intel) {
+            var intelInput = document.getElementById("live-intel-input");
+            var composer = document.getElementById("composer-form");
+            if (intelInput && composer) {
+                intelInput.value = intel;
+                var attempts = 0;
+                (function send() {
+                    // htmx must be up, or requestSubmit() would do a plain
+                    // full-page POST instead of the htmx one.
+                    if (window.htmx || attempts++ > 40) {
+                        if (window.htmx) composer.requestSubmit();
+                        return;
+                    }
+                    setTimeout(send, 50);
+                })();
+            }
+        }
+        params.delete("intel");
         params.delete("starter");
         var qs = params.toString();
         window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
@@ -810,6 +835,9 @@ function portalCloseUpgradeModal() {
                 {% trans "New conversation" %}
             </button>
         </form>
+        {% if live_intelligence_enabled and user|has_feature:"live_intelligence" %}
+        {% include "chat/_live_intelligence_section.html" %}
+        {% endif %}
     </div>
     {% comment %}
     A real, working composer on the empty state too - not just the quick-start

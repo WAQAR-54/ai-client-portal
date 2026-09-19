@@ -166,6 +166,7 @@ USER_CHAT_FEATURES = [
     ("code_playground", "Code Playground (standalone, off by default - see its own migration)"),
     ("domain_generator", "Domain Generator (standalone, off by default - see its own migration)"),
     ("projects", "Personal projects (group conversations)"),
+    ("live_intelligence", "Live Intelligence (current tech/AI/security headlines + one-click briefs)"),
 ]
 
 ROLE_FEATURE_ROLES = ["user", "manager", "admin"]

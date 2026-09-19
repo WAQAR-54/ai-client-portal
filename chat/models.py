@@ -281,6 +281,13 @@ class Message(models.Model):
     # after STALE_GENERATION_TIMEOUT instead of wedging the message forever.
     is_generating = models.BooleanField(default=False)
     generation_started_at = models.DateTimeField(null=True, blank=True)
+    # Set on the pending assistant reply when the user ran a Live Intelligence
+    # quick command (chat/live_intelligence.py; one of its VALID_KEYS, else
+    # blank). Stored on the row rather than only in the stream URL so that
+    # Regenerate - which re-streams the same row - is grounded in freshly
+    # retrieved stories again, instead of silently answering "today's news"
+    # from the model's memory.
+    live_intel = models.CharField(max_length=20, blank=True, default="")
 
     class Meta:
         ordering = ["created_at"]

@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.utils.timesince import timesince
 from django.utils.translation import gettext as _
 
 
@@ -43,3 +44,14 @@ def group_conversations(conversations):
         bucket_index[label].append(conversation)
 
     return buckets
+
+
+def age_label(moment):
+    """ "18 minutes", "1 week" - the single largest unit of how long ago
+    `moment` was, without the word "ago" (templates add the translated
+    one). Empty for a missing moment; "less than a minute" under a minute.
+    Shared by the governance System status panel and Live Intelligence."""
+    if not moment:
+        return ""
+    age = timesince(moment).split(",")[0].replace(" ", " ")
+    return age if not age.startswith("0 ") else "less than a minute"
