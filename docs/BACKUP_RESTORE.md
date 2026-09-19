@@ -128,47 +128,67 @@ when you're already down.**
 matches the 14-30 day range agreed with the client; no code or config
 change needed.
 
-**The actual `pg_dump`/`pg_restore`/S3 path (steps above) is still
-untested.** The environment this project is built in has no PostgreSQL
-server and no S3-compatible bucket credentials — `backup_database.py`
-itself checks for a PostgreSQL engine and refuses to run against anything
-else, so it cannot be exercised here at all, not even to see it fail
-cleanly. This has not changed since this doc was first written.
+**The real `pg_dump`/`pg_restore` path was tested for real against
+production, 2026-09-19.** Directly on the production VPS (SSH, see
+`docs/PRODUCTION_ACCESS.md`), against the actual live `ai_client_portal`
+Postgres database - not a substitute, not a different engine:
 
-**One real gap this did surface and fix**: the production Docker image
-installed `libpq5` (the client *library*, for psycopg2) but never
-`postgresql-client` (the package that actually provides the `pg_dump`
-binary) — so `backup_database` would have failed with "command not
-found" the very first time anything tried to run it, pre-deploy backup
-included. Fixed in the `Dockerfile`'s runtime stage. Still worth knowing:
-Debian bookworm's default `postgresql-client` package is v15, one major
-version behind the `db` service's `postgres:16` — pg_dump one version
-behind its server is normally fine for a plain dump, but isn't the same
-guarantee as a matched version.
+1. `pg_dump "$DATABASE_URL" --format=custom --file=/tmp/restore-test.dump`
+   run inside the running `web` container - the exact command/flags
+   `backup_database.py::_dump()` uses - against the real production
+   database. Produced a 292 KB custom-format dump.
+2. `CREATE DATABASE ai_client_portal_restore_test` on the **same** Postgres
+   instance - a second, throwaway database, never the real one.
+3. `pg_restore --dbname ... --no-owner` into that throwaway database. One
+   harmless warning surfaced and is worth knowing about: the container's
+   `pg_dump`/`pg_restore` client is 17.11 (current Debian default). Server is
+   `postgres:16.15` - client newer than server. The dump's restore preamble
+   included `SET transaction_timeout = 0;` (a directive that only exists on
+   Postgres 17+ servers), which the 16 server didn't recognize -
+   `pg_restore` logged "errors ignored on restore: 1" and continued; exit
+   code 0. Optional cleanup: pin `postgresql-client-16` in the `Dockerfile`
+   to match the server exactly and silence this, though it did not affect
+   the restored data at all (confirmed by step 4).
+4. Compared row counts between the live database and the restored copy
+   across `accounts_user`, `chat_conversation`, `chat_message`, and
+   `billing_invoice` - **all four matched exactly** (7/21/137/2). Spot-checked
+   three real user rows' actual field values (id/email/role/is_active/
+   date_joined) between the live database and the restored copy -
+   **byte-for-byte identical**. (Not reproduced here since this repo is
+   public and those are real users' email addresses - re-run the same
+   check yourself if you need to see it again.)
+5. Dropped the throwaway database and deleted every temp file (both the
+   container's own `/tmp` and the VPS host's `/tmp`) immediately after.
+   Production itself was never written to at any point - confirmed
+   `accounts_user` count unchanged (7) and all 5 containers still healthy
+   afterward.
 
-**What *was* tested for real, 2026-08-30, as a partial substitute**: a
-logical backup/restore cycle against this environment's actual SQLite dev
-database, using Django's own `dumpdata`/`loaddata` (engine-agnostic, no
-`pg_dump` involved) rather than the production command:
+**This is now a real, verified recovery time**: dump 292 KB in a few
+seconds, restore in a few seconds, at today's data volume. Re-run this
+whenever data volume grows enough that the timing might meaningfully
+change, and once `BACKUP_S3_BUCKET`/etc. are actually set (see below) -
+this test exercised the dump/restore mechanics directly, not the S3
+upload/download leg, since those variables aren't configured on the
+server yet.
 
-1. `python manage.py dumpdata --exclude auth.permission --exclude
-   contenttypes --exclude sessions.session --exclude admin.logentry` against
-   the real `db.sqlite3` → 8 real rows across `accounts.user`,
-   `axes.accessattempt`, `axes.accesslog`, `governance.auditlog`.
-2. Built a fresh schema in a completely separate, throwaway SQLite file
-   (`migrate --run-syncdb` against a different `DATABASE_URL`).
-3. `loaddata` the dump into that throwaway database → "Installed 8
-   object(s) from 1 fixture(s)".
-4. Compared row counts table-by-table between the original and the
-   restored database — all four tables matched exactly — and spot-checked
-   the one real user row's actual field values (email/role/is_active),
-   which matched byte-for-byte.
-5. Deleted the throwaway database and dump file afterward.
+**One real gap this surfaced**: `BACKUP_S3_BUCKET` (and the other
+`BACKUP_S3_*` variables) are **not set on the production server**. The
+daily Celery Beat task and the pre-deploy backup step have been running on
+schedule this whole time but doing nothing for real (logging a warning and
+exiting, exactly as designed to fail-open rather than block deploys) -
+**no actual off-server backup has ever been created yet.** Setting those
+variables on the server is the one remaining step between "the mechanism
+works" (now proven above) and "backups are actually happening."
 
-This proves the underlying restore *concept* (a dump taken now, loaded
-into an empty database, recovers the original data exactly) but is **not**
-a substitute for testing the real command. Per the spec's own requirement
-("do a real test restore once... not just files sitting there untested"):
-**run steps 1-3 in the Restore procedure section above, for real, against
-a staging Postgres database with real S3 credentials, before trusting this
-in an actual emergency.**
+**Earlier gap, already fixed**: the production Docker image installed
+`libpq5` (the client *library*, for psycopg2) but never `postgresql-client`
+(the package that actually provides the `pg_dump` binary) - so
+`backup_database` would have failed with "command not found" the very
+first time anything tried to run it, pre-deploy backup included. Fixed in
+the `Dockerfile`'s runtime stage.
+
+**What was tested earlier, 2026-08-30, before Postgres/S3 access existed**:
+a logical backup/restore cycle against SQLite dev data via Django's own
+`dumpdata`/`loaddata` - superseded by the real test above, kept here for
+the record. 8 rows across 4 tables, restored into a fresh throwaway SQLite
+file, row counts and one user row's fields matched exactly, then deleted.
