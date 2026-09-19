@@ -56,6 +56,19 @@ if not DEBUG and SECRET_KEY == _INSECURE_DEFAULT_KEY and "test" not in sys.argv:
         "SECRET_KEY is not set. Generate a real one and set it in the environment before running with DEBUG=False."
     )
 
+# Explicit production/development switch, independent of DEBUG itself -
+# unlike SECRET_KEY, a real deploy's DEBUG/SECRET_KEY values alone aren't a
+# reliable enough signal here (a local .env can easily carry a non-default
+# placeholder SECRET_KEY too). docker-compose.yml/the server's own .env sets
+# ENVIRONMENT=production explicitly; everything else (including CI, which
+# runs with DEBUG=True on purpose - see ci.yml) defaults to "development".
+ENVIRONMENT = env("ENVIRONMENT", default="development")
+if ENVIRONMENT == "production" and DEBUG and "test" not in sys.argv:
+    raise ImproperlyConfigured(
+        "DEBUG=True with ENVIRONMENT=production - refusing to start. DEBUG=True hands any visitor who triggers "
+        "an error a full traceback (source paths, SQL, settings). Set DEBUG=False before deploying."
+    )
+
 
 # Application definition
 
@@ -399,8 +412,31 @@ LOGGING = {
             "backupCount": 3,
             "formatter": "verbose",
         },
+        # governance/error_alerts.py::AsyncAdminEmailHandler - same job as
+        # Django's built-in AdminEmailHandler (email settings.ADMINS on
+        # every unhandled 500, using Django's own SafeExceptionReporterFilter
+        # traceback formatting), except the actual send is dispatched through
+        # a Celery task (notifications/tasks.py::send_admin_error_alert)
+        # instead of blocking the request on synchronous SMTP. A no-op
+        # whenever ADMINS is empty, so a fresh deploy that hasn't set it yet
+        # just logs to console/file as before.
+        "mail_admins": {
+            "level": "ERROR",
+            "class": "governance.error_alerts.AsyncAdminEmailHandler",
+        },
     },
     "root": {"handlers": ["console", "file"], "level": "INFO"},
+    "loggers": {
+        # This is the exact logger Django's request-handling machinery
+        # writes to on every unhandled exception during a view (see
+        # django.core.handlers.exception.handle_uncaught_exception) -
+        # propagate=True so it still reaches console/file via "root" too.
+        "django.request": {
+            "handlers": ["mail_admins"],
+            "level": "ERROR",
+            "propagate": True,
+        },
+    },
 }
 (BASE_DIR / "logs").mkdir(exist_ok=True)
 
@@ -445,6 +481,19 @@ if not EMAIL_HOST:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
         pass  # non-interactive/redirected stdout in some environments doesn't support reconfigure
+
+# Who gets notified when an unhandled exception reaches a real request (see
+# governance/error_alerts.py, wired to the "django.request" logger in
+# LOGGING above) - a comma-separated list of "Name:email" pairs, e.g.
+# ADMINS="Ops:ops@example.com,Founder:founder@example.com".
+# Empty by default: a fresh deploy that hasn't set this yet just skips
+# alerting rather than emailing no one and erroring on the send.
+ADMINS = [tuple(pair.split(":", 1)) for pair in env.list("ADMINS", default=[]) if ":" in pair]
+# The From address on those alert emails; SMTP servers often reject a
+# message whose From doesn't match an authenticated sender, so this
+# defaults to whatever DEFAULT_FROM_EMAIL already resolved to above
+# rather than Django's own "root@localhost" default.
+SERVER_EMAIL = env("SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
 
 # Error monitoring — only active once SENTRY_DSN is set in .env. Silent no-op otherwise.
 SENTRY_DSN = env("SENTRY_DSN", default="")

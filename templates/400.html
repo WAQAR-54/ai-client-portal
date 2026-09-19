@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Bad request" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px; margin:10vh auto; text-align:center;">
+    <div class="empty-icon-badge" style="width:48px; height:48px; margin:0 auto 1rem; background:var(--color-danger-soft); color:var(--color-danger);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <h1 style="margin-bottom:0.4rem;">{% trans "Bad request" %}</h1>
+    <p class="text-muted">{% trans "That request couldn't be understood. Nothing was changed." %}</p>
+    <a href="{% if user.is_authenticated %}{% url 'accounts:dashboard' %}{% else %}{% url 'accounts:login' %}{% endif %}" class="btn mt-3" style="text-decoration:none; display:inline-block;">
+        {% trans "Back to safety" %}
+    </a>
+</div>
+{% endblock %}

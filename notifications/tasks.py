@@ -89,6 +89,20 @@ def send_notification_email(notification_id):
     logger.info("Sent notification email %s to %s", notification.id, notification.user.email)
 
 
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=300, max_retries=3)
+def send_admin_error_alert(subject, text_body):
+    """Dispatched by governance/error_alerts.py::AsyncAdminEmailHandler for
+    every unhandled 500 - one email per settings.ADMINS entry, reusing the
+    same low-level send/EmailLog path as every other outbound email in the
+    app rather than Django's own synchronous mail_admins()."""
+    from notifications.emailing import send_tracked_email
+
+    for _name, email in settings.ADMINS:
+        sent, error = send_tracked_email(to_email=email, subject=subject, text_body=text_body)
+        if not sent:
+            logger.warning("Admin error alert to %s failed: %s", email, error)
+
+
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=3)
 def sweep_expiring_demo_plans():
     """Daily beat task: notify users whose demo plan is about to expire or

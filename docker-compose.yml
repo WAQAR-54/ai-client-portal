@@ -62,6 +62,13 @@ services:
       # triggers a 500 - never worth risking for the local-dev convenience
       # of not having to set DEBUG=True explicitly there.
       DEBUG: ${DEBUG:-False}
+      # This compose file is only ever used for the real deployed stack
+      # (see the file-level comment above) - config/settings.py's
+      # DEBUG=True-in-production startup guard reads this, so it defaults
+      # to "production" here specifically, the opposite of local dev's
+      # bare `manage.py runserver` (which never sets it and stays
+      # "development").
+      ENVIRONMENT: ${ENVIRONMENT:-production}
     ports:
       - "8000:8000"
     volumes:
@@ -88,6 +95,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
       REDIS_URL: redis://redis:6379/0
       DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
     volumes:
       - media_data:/app/media
     depends_on:
@@ -119,6 +127,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_client_portal}:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/${POSTGRES_DB:-ai_client_portal}
       REDIS_URL: redis://redis:6379/0
       DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
     depends_on:
       db:
         condition: service_healthy

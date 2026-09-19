@@ -1176,6 +1176,110 @@ class ErrorPageTests(TestCase):
         html = loader.get_template("500.html").render()
         self.assertIn("Something went wrong", html)
 
+    def test_400_renders_custom_template(self):
+        """A request with a Host header outside ALLOWED_HOSTS raises
+        DisallowedHost (a SuspiciousOperation subclass), which Django turns
+        into a 400 via django.views.defaults.bad_request - the one status
+        of the four that had no custom template before this change."""
+        self.client.raise_request_exception = False
+        response = self.client.get("/", HTTP_HOST="not-an-allowed-host.example")
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Bad request", status_code=400)
+
+
+class DebugInProductionStartupGuardTests(TestCase):
+    """config/settings.py's ENVIRONMENT+DEBUG guard - this is module-level
+    code that runs at settings-import time, so it can't be exercised via
+    override_settings (settings are already imported by then). A real
+    subprocess proves it actually refuses to start, not just that the
+    `if` exists."""
+
+    def _run_manage_check(self, **extra_env):
+        import os
+        import subprocess
+        import sys
+
+        from django.conf import settings
+
+        env = {**os.environ, **{k: str(v) for k, v in extra_env.items()}}
+        return subprocess.run(
+            [sys.executable, "manage.py", "check"],
+            cwd=settings.BASE_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_refuses_to_start_with_debug_true_in_production(self):
+        # The repo's own local .env always sets DEBUG=True (and takes
+        # precedence over any shell env var per settings.py's own
+        # read_env(overwrite=True) - see its comment), so this only needs
+        # to add ENVIRONMENT=production to reproduce a real deploy that
+        # forgot to flip DEBUG off.
+        result = self._run_manage_check(ENVIRONMENT="production")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DEBUG=True with ENVIRONMENT=production", result.stderr)
+
+    def test_debug_true_outside_production_is_unaffected(self):
+        result = self._run_manage_check(ENVIRONMENT="development")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+@override_settings(ADMINS=[("Test Admin", "admin@example.com")])
+class AdminErrorAlertTests(TestCase):
+    """governance/error_alerts.py::AsyncAdminEmailHandler + notifications/
+    tasks.py::send_admin_error_alert - the async replacement for Django's
+    synchronous AdminEmailHandler, wired to the "django.request" logger in
+    config/settings.py's LOGGING dict."""
+
+    def test_send_mail_dispatches_the_celery_task_instead_of_sending_directly(self):
+        from governance.error_alerts import AsyncAdminEmailHandler
+
+        with patch("notifications.tasks.send_admin_error_alert.delay") as mock_delay:
+            AsyncAdminEmailHandler().send_mail("ERROR: boom", "full traceback text")
+        mock_delay.assert_called_once_with("ERROR: boom", "full traceback text")
+
+    @override_settings(ADMINS=[])
+    def test_send_mail_is_a_no_op_with_no_admins_configured(self):
+        from governance.error_alerts import AsyncAdminEmailHandler
+
+        with patch("notifications.tasks.send_admin_error_alert.delay") as mock_delay:
+            AsyncAdminEmailHandler().send_mail("ERROR: boom", "full traceback text")
+        mock_delay.assert_not_called()
+
+    def test_task_emails_every_configured_admin(self):
+        from notifications.models import EmailLog
+        from notifications.tasks import send_admin_error_alert
+
+        send_admin_error_alert("ERROR: boom", "full traceback text")
+        log = EmailLog.objects.get(recipient="admin@example.com")
+        self.assertEqual(log.status, EmailLog.Status.SENT)
+        self.assertEqual(log.subject, "ERROR: boom")
+
+    @override_settings(DEBUG=False)
+    def test_a_real_unhandled_exception_emails_admins_without_showing_the_user_anything_internal(self):
+        """End-to-end: a genuine unhandled exception during a real request
+        must reach an admin's inbox (via the logging handler above) while
+        the user who triggered it only ever sees the branded 500 page -
+        never a traceback, a file path, or any other internal detail."""
+        from notifications.models import EmailLog
+
+        self.client.raise_request_exception = False
+        with patch("accounts.views.DashboardView.get_context_data", side_effect=RuntimeError("boom in dashboard")):
+            User.objects.create_user(email="u@example.com", password="pw12345!")
+            self.client.login(email="u@example.com", password="pw12345!")
+            response = self.client.get(reverse("accounts:dashboard"))
+
+        self.assertEqual(response.status_code, 500)
+        self.assertContains(response, "Something went wrong", status_code=500)
+        self.assertNotIn(b"boom in dashboard", response.content)
+        self.assertNotIn(b"Traceback", response.content)
+
+        log = EmailLog.objects.get(recipient="admin@example.com")
+        self.assertEqual(log.status, EmailLog.Status.SENT)
+        self.assertIn("Internal Server Error", log.subject)
+
 
 class HealthzTests(TestCase):
     """config/urls.py::healthz - the deploy-time and Docker HEALTHCHECK
