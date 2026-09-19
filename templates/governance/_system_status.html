@@ -1,0 +1,121 @@
+{% load i18n %}
+{% comment %}
+SuperAdmin-only. Data comes from governance/system_status.py::build_system_status
+and is real (SELECT 1, a bounded Redis PING, stored provider sync fields,
+django_celery_beat's PeriodicTask rows) - nothing here is hardcoded, and nothing
+raw from a failure (exception text, Redis URL, provider error text) is rendered.
+{% endcomment %}
+<section class="sys-status" aria-labelledby="sys-status-title">
+    <header class="sys-status-head">
+        <h2 id="sys-status-title" class="sys-status-title">{% trans "System status" %}</h2>
+        <span class="sys-status-meta">{% blocktrans with age=system_status.checked_age %}Checked {{ age }} ago{% endblocktrans %}</span>
+    </header>
+
+    <div class="sys-grid">
+        {% for card in system_status.cards %}
+        <article class="sys-card" data-card="{{ card.key }}">
+            <div class="sys-card-top">
+                <span class="sys-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        {% if card.icon == "application" %}<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                        {% elif card.icon == "database" %}<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                        {% elif card.icon == "redis" %}<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        {% else %}<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>{% endif %}
+                    </svg>
+                </span>
+                <span class="sys-card-label">{{ card.label }}</span>
+                <span class="badge badge-{{ card.tone }} sys-badge">{{ card.badge }}</span>
+            </div>
+            <div class="sys-card-detail">{{ card.detail }}</div>
+            {% if card.foot %}<div class="sys-card-foot">{{ card.foot }}</div>{% endif %}
+        </article>
+        {% endfor %}
+    </div>
+
+    <div class="sys-panels">
+        <article class="card sys-panel" data-panel="providers">
+            <header class="sys-panel-head">
+                <h3 class="sys-panel-title">{% trans "AI providers" %}</h3>
+                {% with p=system_status.providers %}
+                {% if p.total %}
+                <span class="sys-panel-summary">
+                    {{ p.total }} {% trans "connected" %} · {{ p.healthy }} {% trans "healthy" %}{% if p.attention %} · <strong class="sys-attn">{{ p.attention }} {% trans "need attention" %}</strong>{% endif %}{% if p.unverified %} · {{ p.unverified }} {% trans "not verified" %}{% endif %}
+                </span>
+                {% endif %}
+                {% endwith %}
+            </header>
+            <p class="sys-panel-note">{% trans "Last known status, from each provider's most recent model sync - not a live check." %}</p>
+
+            {% if system_status.providers.rows %}
+            <div class="sys-table-wrap">
+                <table class="data sys-table sys-providers">
+                    <colgroup><col class="col-provider"><col><col></colgroup>
+                    <thead><tr><th>{% trans "Provider" %}</th><th>{% trans "Status" %}</th><th>{% trans "Last sync" %}</th></tr></thead>
+                    <tbody>
+                        {% for row in system_status.providers.rows %}
+                        <tr data-provider="{{ row.slug }}">
+                            <td>
+                                <span class="sys-name">{{ row.name }}</span>
+                                {% if row.state == "failed" and row.reason %}<span class="sys-reason">{% trans "Reason:" %} {{ row.reason }}</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if row.state == "healthy" %}<span class="badge badge-success sys-badge">{% trans "Healthy" %}</span>
+                                {% elif row.state == "failed" %}<span class="badge badge-danger sys-badge">{% trans "Failed" %}</span>
+                                {% else %}<span class="badge badge-muted sys-badge">{% trans "Not verified" %}</span>{% endif %}
+                            </td>
+                            <td class="mono sys-when">{% if row.age %}{{ row.age }} {% trans "ago" %}{% else %}<span class="sys-muted">{% trans "Never synced" %}</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="sys-empty">
+                <strong>{% trans "No providers configured" %}</strong>
+                <span>{% trans "Connect one on the Providers page to see its status here." %}</span>
+            </div>
+            {% endif %}
+        </article>
+
+        <article class="card sys-panel" data-panel="jobs">
+            <header class="sys-panel-head">
+                <h3 class="sys-panel-title">{% trans "Background jobs" %}</h3>
+                {% if system_status.jobs.total %}
+                <span class="sys-panel-summary">
+                    {{ system_status.jobs.total }} {% trans "scheduled" %}{% if system_status.jobs.last_dispatch_age %} · {% trans "last dispatched" %} {{ system_status.jobs.last_dispatch_age }} {% trans "ago" %}{% else %} · {% trans "no execution recorded yet" %}{% endif %}
+                </span>
+                {% endif %}
+            </header>
+            <p class="sys-panel-note">{% trans "Reflects when the scheduler last dispatched each task. Whether a run succeeded isn't recorded yet." %}</p>
+
+            {% if system_status.jobs.rows %}
+            <div class="sys-table-wrap">
+                <table class="data sys-table sys-jobs">
+                    <colgroup><col class="col-task"><col class="col-status"><col class="col-when"><col class="col-runs"><col class="col-enabled"></colgroup>
+                    <thead><tr><th>{% trans "Task" %}</th><th>{% trans "Status" %}</th><th>{% trans "Last run" %}</th><th class="sys-num">{% trans "Runs" %}</th><th>{% trans "Enabled" %}</th></tr></thead>
+                    <tbody>
+                        {% for row in system_status.jobs.rows %}
+                        <tr data-job-state="{{ row.state }}">
+                            <td class="sys-task"><span class="sys-trunc" title="{{ row.name }} ({{ row.task }})">{{ row.name }}</span></td>
+                            <td data-label="{% trans 'Status' %}">
+                                {% if row.state == "active" %}<span class="badge badge-info sys-badge">{% trans "Active" %}</span>
+                                {% elif row.state == "disabled" %}<span class="badge badge-muted sys-badge">{% trans "Disabled" %}</span>
+                                {% else %}<span class="badge badge-muted sys-badge">{% trans "Not run yet" %}</span>{% endif %}
+                            </td>
+                            <td class="mono sys-when" data-label="{% trans 'Last run' %}">{% if row.age %}{{ row.age }} {% trans "ago" %}{% else %}<span class="sys-muted">{% trans "No run recorded" %}</span>{% endif %}</td>
+                            <td class="mono sys-num" data-label="{% trans 'Runs' %}">{{ row.run_count }}</td>
+                            <td data-label="{% trans 'Enabled' %}">{% if row.enabled %}{% trans "Yes" %}{% else %}<span class="sys-muted">{% trans "No" %}</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="sys-empty">
+                <strong>{% trans "No scheduled tasks" %}</strong>
+                <span>{% trans "No periodic tasks are registered with the scheduler." %}</span>
+            </div>
+            {% endif %}
+        </article>
+    </div>
+</section>

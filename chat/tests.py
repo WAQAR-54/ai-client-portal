@@ -3334,6 +3334,55 @@ class ResponseCacheTests(TestCase):
         self.assertFalse(msg2.served_from_cache)
 
 
+class MessageGenerationStateSchemaTests(TestCase):
+    """Message.is_generating/generation_started_at (the stream_message
+    duplicate-claim fix) shipped as migration 0023. A local dev DB that was
+    never re-migrated crashed the chat page with "no such column" - a
+    stale-file problem no test database can reproduce, since tests always
+    build the schema fresh from migrations. What CAN be pinned: the model
+    and its migrations agree (so a future field can't ship without one),
+    the columns really exist, and a fresh message starts un-claimed."""
+
+    def test_models_and_migrations_agree(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        try:
+            call_command("makemigrations", "--check", "--dry-run", stdout=StringIO(), stderr=StringIO())
+        except (SystemExit, CommandError) as exc:
+            self.fail(f"a model change is missing its migration: {exc}")
+
+    def test_generation_state_columns_exist_in_the_database(self):
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            columns = {col.name for col in connection.introspection.get_table_description(cursor, "chat_message")}
+        self.assertIn("is_generating", columns)
+        self.assertIn("generation_started_at", columns)
+
+    def test_a_new_message_starts_unclaimed(self):
+        user = User.objects.create_user(email="schema@example.com", password="pw12345!")
+        message = Message.objects.create(conversation=Conversation.objects.create(user=user), role="assistant")
+        message.refresh_from_db()
+        self.assertFalse(message.is_generating)
+        self.assertIsNone(message.generation_started_at)
+
+    def test_conversation_page_with_messages_loads(self):
+        user = User.objects.create_user(email="schemapage@example.com", password="pw12345!")
+        conversation = Conversation.objects.create(user=user)
+        Message.objects.create(conversation=conversation, role="user", content="hello there")
+        Message.objects.create(conversation=conversation, role="assistant", content="general kenobi")
+        self.client.login(email="schemapage@example.com", password="pw12345!")
+
+        response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "hello there")
+        self.assertContains(response, "general kenobi")
+
+
 class ResponseCacheFailOpenTests(TestCase):
     """chat/response_cache.py promises "Never raises: a Redis hiccup should
     degrade to no caching, not break chat". The behaviour was correct by

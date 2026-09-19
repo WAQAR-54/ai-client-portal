@@ -189,73 +189,7 @@
 </div>
 
 {% if system_status %}
-<div class="admin-eyebrow" style="margin-top: var(--space-6);">
-    {% blocktrans with checked=system_status.checked_at|timesince %}System status - checked {{ checked }} ago{% endblocktrans %}
-</div>
-<div class="kpi-grid">
-    <div class="kpi-card">
-        <div class="kpi-label">{% trans "Database" %}</div>
-        <div class="kpi-value">
-            {% if system_status.db_ok %}<span class="badge badge-success">{% trans "OK" %}</span>{% else %}<span class="badge badge-danger">{% trans "Unreachable" %}</span>{% endif %}
-        </div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">{% trans "Cache / Redis" %}</div>
-        <div class="kpi-value">
-            {% if not system_status.cache_configured %}<span class="badge badge-muted">{% trans "Not configured" %}</span>
-            {% elif system_status.cache_ok %}<span class="badge badge-success">{% trans "OK" %}</span>
-            {% else %}<span class="badge badge-danger">{% trans "Unreachable" %}</span>{% endif %}
-        </div>
-    </div>
-</div>
-
-<div class="chart-row mt-4">
-    <div class="card chart-card">
-        <div class="card-title">{% trans "AI providers" %}</div>
-        <div class="card-body">
-        <p class="text-muted" style="font-size:var(--text-xs);">{% trans "As of each provider's last model sync (manual Resync, or the daily sweep) - not a live probe." %}</p>
-        {% if system_status.providers %}
-        <table class="data">
-            <thead><tr><th>{% trans "Provider" %}</th><th>{% trans "Last sync" %}</th><th>{% trans "Status" %}</th></tr></thead>
-            <tbody>
-                {% for provider in system_status.providers %}
-                <tr>
-                    <td>{{ provider.name }}</td>
-                    <td class="mono">{% if provider.last_synced_at %}{{ provider.last_synced_at|timesince }} {% trans "ago" %}{% else %}{% trans "Never" %}{% endif %}</td>
-                    <td>
-                        {% if provider.last_sync_status == "success" %}<span class="badge badge-success">{% trans "OK" %}</span>
-                        {% elif provider.last_sync_status == "failed" %}<span class="badge badge-danger" title="{{ provider.last_sync_error }}">{% trans "Failed" %}</span>
-                        {% else %}<span class="badge badge-muted">{% trans "Never synced" %}</span>{% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="text-muted">{% trans "No providers connected yet." %}</p>
-        {% endif %}
-        </div>
-    </div>
-    <div class="card chart-card">
-        <div class="card-title">{% trans "Background jobs" %}</div>
-        <div class="card-body">
-        <p class="text-muted" style="font-size:var(--text-xs);">{% trans "As of each task's last run - Celery/Beat's own scheduling, not a live worker probe." %}</p>
-        <table class="data">
-            <thead><tr><th>{% trans "Task" %}</th><th>{% trans "Last run" %}</th><th>{% trans "Total runs" %}</th><th>{% trans "Enabled" %}</th></tr></thead>
-            <tbody>
-                {% for task in system_status.tasks %}
-                <tr>
-                    <td>{{ task.name }}</td>
-                    <td class="mono">{% if task.last_run_at %}{{ task.last_run_at|timesince }} {% trans "ago" %}{% else %}{% trans "Never" %}{% endif %}</td>
-                    <td class="mono">{{ task.total_run_count }}</td>
-                    <td>{% if task.enabled %}<span class="badge badge-success">{% trans "Yes" %}</span>{% else %}<span class="badge badge-muted">{% trans "No" %}</span>{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        </div>
-    </div>
-</div>
+{% include "governance/_system_status.html" %}
 {% endif %}
 
 {{ chart_daily_labels|json_script:"chart-daily-labels" }}

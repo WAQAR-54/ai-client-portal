@@ -478,11 +478,11 @@ class GovernanceRBACAndAuditTests(TestCase):
         self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:dashboard"))
         self.assertIsNotNone(response.context["system_status"])
-        self.assertContains(response, "AI providers")
-        self.assertContains(response, "Background jobs")
-        self.assertContains(response, "Database")
+        for label in ("System status", "AI providers", "Background jobs", "Database", "Redis", "Application"):
+            self.assertContains(response, label)
+        self.assertEqual(len(response.context["system_status"]["cards"]), 4)
 
-    def test_dashboard_system_status_reports_a_connected_providers_last_sync(self):
+    def test_dashboard_system_status_lists_only_connected_providers(self):
         from providers.models import Provider
 
         provider = Provider.objects.get(slug="anthropic")
@@ -493,42 +493,19 @@ class GovernanceRBACAndAuditTests(TestCase):
 
         self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:dashboard"))
-        providers_shown = {p.slug for p in response.context["system_status"]["providers"]}
-        self.assertIn("anthropic", providers_shown)
+        shown = {row["slug"] for row in response.context["system_status"]["providers"]["rows"]}
+        self.assertIn("anthropic", shown)
+        self.assertEqual(shown, set(Provider.objects.filter(is_connected=True).values_list("slug", flat=True)))
 
-    def test_dashboard_system_status_reports_a_failed_sync_distinctly(self):
-        from providers.models import Provider
-
-        provider = Provider.objects.get(slug="openai")
-        provider.is_connected = True
-        provider.last_sync_status = Provider.SyncStatus.FAILED
-        provider.last_sync_error = "invalid API key"
-        provider.save(update_fields=["is_connected", "last_sync_status", "last_sync_error"])
-
-        self.client.login(email="superadmin@example.com", password="pw12345!")
-        response = self.client.get(reverse("governance:dashboard"))
-        self.assertContains(response, "Failed")
-
-    def test_dashboard_system_status_lists_periodic_tasks(self):
+    def test_dashboard_system_status_lists_every_periodic_task(self):
         from django_celery_beat.models import PeriodicTask
 
         self.client.login(email="superadmin@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:dashboard"))
-        tasks_shown = {t.name for t in response.context["system_status"]["tasks"]}
-        real_task_names = set(PeriodicTask.objects.values_list("name", flat=True))
-        self.assertTrue(real_task_names)
-        self.assertEqual(tasks_shown, real_task_names)
-
-    def test_dashboard_system_status_does_not_query_a_disconnected_provider(self):
-        """Only connected providers are worth showing status for - a
-        never-connected Provider row isn't a health signal, just noise."""
-        from providers.models import Provider
-
-        self.client.login(email="superadmin@example.com", password="pw12345!")
-        response = self.client.get(reverse("governance:dashboard"))
-        providers_shown = {p.slug for p in response.context["system_status"]["providers"]}
-        disconnected = set(Provider.objects.filter(is_connected=False).values_list("slug", flat=True))
-        self.assertFalse(providers_shown & disconnected)
+        shown = {row["name"] for row in response.context["system_status"]["jobs"]["rows"]}
+        real = set(PeriodicTask.objects.values_list("name", flat=True))
+        self.assertTrue(real)
+        self.assertEqual(shown, real)
 
     def test_disabling_code_playground_for_admin_hides_it_from_admins_dashboard(self):
         """The reported bug: turning "code_playground" off for the admin
@@ -4328,3 +4305,328 @@ class ReportsTests(TestCase):
         self.client.login(email="reportengadmin@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:dashboard"))
         self.assertNotIn(b"Revenue Report", response.content)
+
+
+class SystemStatusBackendTests(TestCase):
+    """governance/system_status.py - the data behind the dashboard's System
+    status section. Each state is exercised for real where practical (a
+    genuinely refused Redis connection; a genuine TCP round trip to a tiny
+    in-process server that speaks enough RESP to answer PING) and via
+    patching only where a real failure can't be produced safely."""
+
+    def _superadmin(self, email):
+        User.objects.create_user(email=email, password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True)
+        self.client.login(email=email, password="pw12345!")
+
+    # -- Redis: three distinct states ------------------------------------
+
+    def test_redis_not_configured_when_no_url(self):
+        from governance.system_status import check_redis
+
+        self.assertEqual(check_redis("")["state"], "not_configured")
+
+    def test_redis_unavailable_when_configured_but_unreachable(self):
+        """A REAL connection attempt to a closed port, not a mock. A URL
+        being set must never be mistaken for a healthy Redis."""
+        from governance.system_status import check_redis
+
+        result = check_redis("redis://127.0.0.1:1/0")
+        self.assertEqual(result["state"], "unavailable")
+        self.assertIsNone(result["latency_ms"])
+
+    def test_redis_healthy_when_a_real_ping_round_trips(self):
+        """Real TCP and the real redis client, against a minimal server that
+        answers each command with +PONG. This is NOT a real Redis server, so
+        it proves the probe's own logic and timeout plumbing, not any
+        particular Redis version's behaviour."""
+        import re
+        import socket
+        import threading
+
+        from governance.system_status import check_redis
+
+        command = re.compile(rb"\*\d+\r\n(?:\$\d+\r\n[^\r]*\r\n)+")
+        word = re.compile(rb"\$\d+\r\n([^\r]*)\r\n")
+
+        def reply_for(raw_command):
+            name = word.findall(raw_command)[0].upper()
+            if name == b"HELLO":
+                return b"%1\r\n$5\r\nproto\r\n:3\r\n"  # RESP3 handshake map, as a real server sends
+            if name == b"PING":
+                return b"+PONG\r\n"
+            return b"+OK\r\n"  # CLIENT SETINFO etc.
+
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(5)
+        port = server.getsockname()[1]
+
+        def serve():
+            server.settimeout(5)
+            try:
+                conn, _addr = server.accept()
+            except OSError:
+                return
+            with conn:
+                conn.settimeout(5)
+                while True:
+                    try:
+                        data = conn.recv(4096)
+                    except OSError:
+                        return
+                    if not data:
+                        return
+                    for raw_command in command.findall(data):
+                        conn.sendall(reply_for(raw_command))
+
+        threading.Thread(target=serve, daemon=True).start()
+        try:
+            result = check_redis(f"redis://127.0.0.1:{port}/0")
+        finally:
+            server.close()
+        self.assertEqual(result["state"], "healthy")
+        self.assertIsNotNone(result["latency_ms"])
+
+    def test_redis_probe_is_time_bounded(self):
+        from governance.system_status import REDIS_PROBE_TIMEOUT_SECONDS, check_redis
+
+        with patch("redis.Redis.from_url") as from_url:
+            from_url.return_value.ping.return_value = True
+            check_redis("redis://example.invalid:6379/0")
+        kwargs = from_url.call_args.kwargs
+        self.assertEqual(kwargs["socket_connect_timeout"], REDIS_PROBE_TIMEOUT_SECONDS)
+        self.assertEqual(kwargs["socket_timeout"], REDIS_PROBE_TIMEOUT_SECONDS)
+
+    def test_redis_credentials_never_reach_the_rendered_page(self):
+        from django.test import override_settings
+
+        self._superadmin("rsuper@example.com")
+        with override_settings(REDIS_URL="redis://:hunter2-secret@127.0.0.1:1/0"):
+            response = self.client.get(reverse("governance:dashboard"))
+        self.assertEqual(response.context["system_status"]["redis"]["state"], "unavailable")
+        self.assertNotContains(response, "hunter2-secret")
+        self.assertNotContains(response, "127.0.0.1:1")
+        self.assertContains(response, "Connection failed")
+
+    def test_redis_not_configured_card_in_the_page(self):
+        from django.test import override_settings
+
+        self._superadmin("rsuper2@example.com")
+        with override_settings(REDIS_URL=""):
+            page = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(page, "No Redis configuration detected")
+        self.assertContains(page, "Not configured")
+
+    # -- Database --------------------------------------------------------
+
+    def test_database_healthy_reports_the_real_engine(self):
+        from django.db import connection
+
+        from governance.system_status import check_database
+
+        result = check_database()
+        self.assertEqual(result["state"], "healthy")
+        expected = {"sqlite": "SQLite", "postgresql": "PostgreSQL"}.get(connection.vendor, connection.vendor.title())
+        self.assertEqual(result["engine"], expected)
+        self.assertGreaterEqual(result["latency_ms"], 0)
+
+    def test_database_unavailable_hides_the_underlying_error(self):
+        from governance.system_status import check_database
+
+        with patch("governance.system_status.connection") as mock_connection:
+            mock_connection.vendor = "postgresql"
+            mock_connection.cursor.side_effect = Exception("FATAL: password authentication failed for user portal")
+            result = check_database()
+        self.assertEqual(result["state"], "unavailable")
+        self.assertNotIn("password", str(result))
+
+    # -- Providers -------------------------------------------------------
+
+    def _connect(self, slug, status, error="", synced=True):
+        from providers.models import Provider
+
+        provider = Provider.objects.get(slug=slug)
+        provider.is_connected = True
+        provider.last_sync_status = status
+        provider.last_sync_error = error
+        provider.last_synced_at = timezone.now() - timezone.timedelta(minutes=18) if synced else None
+        provider.save(update_fields=["is_connected", "last_sync_status", "last_sync_error", "last_synced_at"])
+
+    def _only_connected(self, *slugs):
+        from providers.models import Provider
+
+        Provider.objects.exclude(slug__in=slugs).update(is_connected=False)
+
+    def test_provider_states_and_summary_counts(self):
+        from governance.system_status import check_providers
+        from providers.models import Provider
+
+        self._connect("openai", Provider.SyncStatus.FAILED, "Error code: 401 - Incorrect API key provided")
+        self._connect("gemini", Provider.SyncStatus.SUCCESS)
+        self._connect("anthropic", Provider.SyncStatus.NEVER, synced=False)
+        self._only_connected("openai", "gemini", "anthropic")
+
+        result = check_providers()
+        states = {r["slug"]: r["state"] for r in result["rows"]}
+        self.assertEqual(states, {"openai": "failed", "gemini": "healthy", "anthropic": "never"})
+        self.assertEqual((result["total"], result["healthy"], result["attention"], result["unverified"]), (3, 1, 1, 1))
+
+    def test_never_synced_provider_says_not_verified_not_healthy(self):
+        from providers.models import Provider
+
+        self._connect("anthropic", Provider.SyncStatus.NEVER, synced=False)
+        self._only_connected("anthropic")
+        self._superadmin("psuper@example.com")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "Not verified")
+        self.assertContains(response, "Never synced")
+
+    def test_failed_provider_shows_a_safe_category_never_the_raw_error(self):
+        from providers.models import Provider
+
+        raw = "Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-proj-abcdef123456'}}"
+        self._connect("openai", Provider.SyncStatus.FAILED, raw)
+        self._only_connected("openai")
+        self._superadmin("psuper2@example.com")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "Reason: Authentication error")
+        self.assertContains(response, "Failed")
+        self.assertNotContains(response, "sk-proj")
+        self.assertNotContains(response, "Incorrect API key")
+
+    def test_error_classification_vocabulary(self):
+        from governance.system_status import classify_provider_error
+
+        cases = {
+            "Error code: 401 - bad key": "Authentication error",
+            "HTTP 403": "Authentication error",
+            "403 Forbidden": "",  # no status/http prefix and no keyword: not guessed at
+            "Error code: 429 - slow down": "Rate limited or quota exceeded",
+            "You exceeded your current quota": "Rate limited or quota exceeded",
+            "Connection error.": "Network error or timeout",
+            "Request timed out": "Network error or timeout",
+            "Error code: 503 - upstream": "Provider service error",
+            "something entirely unrecognised": "",
+            "": "",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(classify_provider_error(raw), expected, raw)
+
+    def test_failed_provider_with_unrecognised_error_has_no_reason(self):
+        from governance.system_status import check_providers
+        from providers.models import Provider
+
+        self._connect("openai", Provider.SyncStatus.FAILED, "something entirely unrecognised")
+        self._only_connected("openai")
+        self.assertEqual(check_providers()["rows"][0]["reason"], "")
+
+    def test_no_connected_providers_renders_an_empty_state(self):
+        from providers.models import Provider
+
+        Provider.objects.update(is_connected=False)
+        self._superadmin("psuper3@example.com")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "No providers configured")
+
+    # -- Background jobs -------------------------------------------------
+
+    def _task(self, name, *, enabled=True, last_run=None, runs=0, task="app.tasks.thing"):
+        from django_celery_beat.models import IntervalSchedule, PeriodicTask
+
+        schedule, _created = IntervalSchedule.objects.get_or_create(every=1, period=IntervalSchedule.DAYS)
+        return PeriodicTask.objects.create(
+            name=name, task=task, interval=schedule, enabled=enabled, last_run_at=last_run, total_run_count=runs
+        )
+
+    def _clear_tasks(self):
+        from django_celery_beat.models import PeriodicTask
+
+        PeriodicTask.objects.all().delete()
+
+    def test_job_states_follow_the_data_and_never_claim_health(self):
+        from governance.system_status import check_jobs
+
+        self._clear_tasks()
+        self._task("Never ran", last_run=None)
+        self._task("Has run", last_run=timezone.now() - timezone.timedelta(hours=2), runs=5)
+        self._task("Switched off", enabled=False)
+
+        result = check_jobs()
+        states = {r["name"]: r["state"] for r in result["rows"]}
+        self.assertEqual(states, {"Never ran": "never_run", "Has run": "active", "Switched off": "disabled"})
+        self.assertEqual((result["total"], result["enabled"], result["disabled"], result["never_run"]), (3, 2, 1, 1))
+        # The data cannot tell a successful run from a failed one, so no
+        # such state may exist.
+        self.assertNotIn("failed", states.values())
+        self.assertNotIn("healthy", states.values())
+
+    def test_enabled_but_never_run_is_not_shown_as_active(self):
+        self._clear_tasks()
+        self._task("Fresh job")
+        self._superadmin("jsuper@example.com")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, 'data-job-state="never_run"')
+        self.assertContains(response, "Not run yet")
+        self.assertContains(response, "No run recorded")
+        self.assertNotContains(response, 'data-job-state="active"')
+
+    def test_last_dispatch_age_uses_the_most_recent_run(self):
+        from governance.system_status import check_jobs
+
+        self._clear_tasks()
+        self._task("Older", last_run=timezone.now() - timezone.timedelta(days=3), runs=1)
+        self._task("Newer", last_run=timezone.now() - timezone.timedelta(hours=1), runs=1)
+        self.assertEqual(check_jobs()["last_dispatch_age"], "1 hour")
+
+    def test_long_task_name_is_kept_whole_with_a_tooltip(self):
+        self._clear_tasks()
+        long_name = "Daily connected-provider model resync and retired-model reconciliation sweep"
+        self._task(long_name, task="providers.tasks.sync_all_connected_providers")
+        self._superadmin("jsuper2@example.com")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, long_name)
+        self.assertContains(response, f'title="{long_name} (providers.tasks.sync_all_connected_providers)"')
+        self.assertContains(response, "sys-trunc")  # truncation is CSS; the full text stays in the DOM
+
+    def test_no_periodic_tasks_renders_an_empty_state(self):
+        self._clear_tasks()
+        self._superadmin("jsuper3@example.com")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "No scheduled tasks")
+        self.assertEqual(response.context["system_status"]["jobs"]["total"], 0)
+
+    # -- Permissions and cost --------------------------------------------
+
+    def test_scoped_admin_gets_no_system_data_at_all(self):
+        from providers.models import Provider
+
+        self._connect("openai", Provider.SyncStatus.FAILED, "Error code: 401")
+        department = Department.objects.create(name="Scoped")
+        User.objects.create_user(
+            email="scopedadmin@example.com",
+            password="pw12345!",
+            role=User.Role.ADMIN,
+            department=department,
+            is_staff=True,
+        )
+        self.client.login(email="scopedadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["system_status"])
+        for leaked in ("System status", "Authentication error", "Daily database backup", "sys-card"):
+            self.assertNotContains(response, leaked)
+
+    def test_regular_user_cannot_reach_the_dashboard_at_all(self):
+        User.objects.create_user(email="plainuser@example.com", password="pw12345!")
+        self.client.login(email="plainuser@example.com", password="pw12345!")
+        self.assertEqual(self.client.get(reverse("governance:dashboard")).status_code, 403)
+
+    def test_building_the_status_is_a_handful_of_queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from governance.system_status import build_system_status
+
+        with CaptureQueriesContext(connection) as ctx:
+            build_system_status()
+        self.assertLessEqual(len(ctx.captured_queries), 4)
