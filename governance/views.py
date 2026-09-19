@@ -297,6 +297,69 @@ def global_search(request):
     )
 
 
+def _system_operational_status():
+    """SuperAdmin-only dashboard panel - the production-readiness audit's
+    biggest identified operational blind spot: no visibility anywhere
+    into provider health or Celery job status. Deliberately built ENTIRELY
+    from data that already exists and is already cheap to read:
+    - DB/cache reachability - the exact same lightweight round-trip
+      config/urls.py::healthz_deep already does (that endpoint isn't
+      touched - this just runs the same kind of check on its own, so the
+      dashboard doesn't need to make an internal HTTP call to itself).
+    - Provider health - providers.models.Provider.last_sync_status/
+      last_synced_at/last_sync_error, already written by every sync
+      (providers/services.py::sync_provider, both the manual "Resync"
+      button and the daily Celery sweep). This is real signal, but it's
+      from the last SYNC (a model-list refresh), not a live probe of
+      right now - labelled "as of" in the template, never as live.
+    - Background jobs - django_celery_beat.PeriodicTask.last_run_at/
+      total_run_count, restart-surviving DB-persisted fields already
+      relied on elsewhere in this project as authoritative evidence Beat
+      is actually firing tasks (more reliable than a container log tail,
+      which resets on every deploy).
+
+    Deliberately does NOT: ping Celery's broker (a live inspect() call
+    could hang if the broker/worker is down - exactly the "don't make the
+    dashboard depend on a slow external system" case the audit warned
+    against), call any AI provider API (a real request costs money and
+    could be slow), or track per-request latency/failure/retry counts
+    (no such instrumentation exists anywhere yet - adding it is a
+    genuinely separate, larger project: every chat provider call site
+    would need to record an outcome somewhere, not just this dashboard
+    reading one)."""
+    from django.conf import settings
+    from django.core.cache import cache
+    from django.db import connection
+    from django_celery_beat.models import PeriodicTask
+
+    from providers.models import Provider
+
+    db_ok = True
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception:
+        db_ok = False
+
+    cache_configured = bool(settings.REDIS_URL)
+    cache_ok = None
+    if cache_configured:
+        try:
+            cache.set("dashboard_health_probe", "1", timeout=5)
+            cache_ok = cache.get("dashboard_health_probe") == "1"
+        except Exception:
+            cache_ok = False
+
+    return {
+        "checked_at": timezone.now(),
+        "db_ok": db_ok,
+        "cache_configured": cache_configured,
+        "cache_ok": cache_ok,
+        "providers": list(Provider.objects.filter(is_connected=True).order_by("name")),
+        "tasks": list(PeriodicTask.objects.order_by("name")),
+    }
+
+
 class DashboardView(AdminRequiredMixin, TemplateView):
     template_name = "governance/dashboard.html"
 
@@ -504,6 +567,12 @@ class DashboardView(AdminRequiredMixin, TemplateView):
             "playground_models": ProviderModel.objects.filter(is_enabled=True).select_related("provider"),
             "domain_searches_today": domain_searches_today,
             "domain_generator_models": ProviderModel.objects.filter(is_enabled=True).select_related("provider"),
+            # Org-wide infrastructure status - SuperAdmin-only, same scoping
+            # convention this template already uses for "Manage role
+            # access" etc. A department-scoped Admin doesn't get it: it's
+            # not department data, and Provider credentials/Celery
+            # internals aren't part of their scope.
+            "system_status": _system_operational_status() if self.request.user.is_superadmin else None,
         }
 
 

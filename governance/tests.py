@@ -463,6 +463,73 @@ class GovernanceRBACAndAuditTests(TestCase):
         response = self.client.get(reverse("governance:dashboard"))
         self.assertContains(response, "Models enabled in Domain Generator")
 
+    def test_dashboard_hides_system_status_panel_from_scoped_admin(self):
+        """System status (Pillar 6 of the remaining audit: no provider/
+        Celery visibility anywhere in the admin) is org-wide infrastructure
+        data, not department data - a scoped Admin doesn't get it, same
+        convention as the model-toggle sections above."""
+        self.client.login(email="admin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertIsNone(response.context["system_status"])
+        self.assertNotContains(response, "AI providers")
+        self.assertNotContains(response, "Background jobs")
+
+    def test_dashboard_shows_system_status_panel_for_superadmin(self):
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertIsNotNone(response.context["system_status"])
+        self.assertContains(response, "AI providers")
+        self.assertContains(response, "Background jobs")
+        self.assertContains(response, "Database")
+
+    def test_dashboard_system_status_reports_a_connected_providers_last_sync(self):
+        from providers.models import Provider
+
+        provider = Provider.objects.get(slug="anthropic")
+        provider.is_connected = True
+        provider.last_sync_status = Provider.SyncStatus.SUCCESS
+        provider.last_synced_at = timezone.now()
+        provider.save(update_fields=["is_connected", "last_sync_status", "last_synced_at"])
+
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        providers_shown = {p.slug for p in response.context["system_status"]["providers"]}
+        self.assertIn("anthropic", providers_shown)
+
+    def test_dashboard_system_status_reports_a_failed_sync_distinctly(self):
+        from providers.models import Provider
+
+        provider = Provider.objects.get(slug="openai")
+        provider.is_connected = True
+        provider.last_sync_status = Provider.SyncStatus.FAILED
+        provider.last_sync_error = "invalid API key"
+        provider.save(update_fields=["is_connected", "last_sync_status", "last_sync_error"])
+
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(response, "Failed")
+
+    def test_dashboard_system_status_lists_periodic_tasks(self):
+        from django_celery_beat.models import PeriodicTask
+
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        tasks_shown = {t.name for t in response.context["system_status"]["tasks"]}
+        real_task_names = set(PeriodicTask.objects.values_list("name", flat=True))
+        self.assertTrue(real_task_names)
+        self.assertEqual(tasks_shown, real_task_names)
+
+    def test_dashboard_system_status_does_not_query_a_disconnected_provider(self):
+        """Only connected providers are worth showing status for - a
+        never-connected Provider row isn't a health signal, just noise."""
+        from providers.models import Provider
+
+        self.client.login(email="superadmin@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:dashboard"))
+        providers_shown = {p.slug for p in response.context["system_status"]["providers"]}
+        disconnected = set(Provider.objects.filter(is_connected=False).values_list("slug", flat=True))
+        self.assertFalse(providers_shown & disconnected)
+
     def test_disabling_code_playground_for_admin_hides_it_from_admins_dashboard(self):
         """The reported bug: turning "code_playground" off for the admin
         role in Feature Visibility had no effect, because Admin's access
