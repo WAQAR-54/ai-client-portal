@@ -80,16 +80,16 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | `chat/templatetags/chat_extras.py` | Template filters: `render_markdown`, `to_offset` (usage-ring animation ke liye) | `_message_bubble.html`, `_usage_ring.html` use karte hain |
 | `chat/document_extraction.py` | Uploaded file (PDF/Word/Excel/text) se text nikalta hai aur `[BEGIN/END ATTACHED DOCUMENT]` delimiters mein wrap karta hai — **prompt-injection defense**: model ko instruction di jati hai ke ye sirf reference data hai, commands nahi. Real payload se tested (`chat/tests.py::AttachmentContextInPromptTests`) | `chat/views.py::post_message` call karta hai |
 | `chat/export.py` | Conversation ko PDF/Markdown/plain-text mein export karta hai — Markdown formatting PDF mein properly render hoti hai, raw syntax nahi | `chat/views.py` ke export views use karte hain |
-| `chat/model_sync.py` | Har provider ke live models-list API (`GET /v1/models` waghera) se real model IDs fetch karta hai — chat-capable models filter karta hai (embeddings/whisper/dall-e waghera hata deta hai). OpenAI ke against **real API se verified**; Anthropic key abhi tak available nahi hui isliye wo path untested hai | `governance/views.py::sync_models_preview`/`sync_models_import` isko call karte hain |
+| ~~`chat/model_sync.py`~~ | **Ye file ab exist nahi karti** — model-sync poora `providers` app (section 4 dekhein) mein migrate ho gaya hai (`providers/services.py::sync_provider` + per-provider adapters). Real-time verification: Anthropic (chat streaming AND model-listing dono), OpenAI, Gemini — sab 2026-09-19 ko real API calls se confirmed | — |
 | `chat/response_cache.py` | Exact-match response caching — Redis (ya `LocMemCache` agar Redis nahi hai) mein user+model+poori history ka hash key bana kar 1-hour TTL ke sath store karta hai. Alag users kabhi cache share nahi karte | `chat/views.py::stream_message` isko check/store dono ke liye call karta hai |
 | `chat/tasks.py` | Daily Celery task — naye providers models discover hone par admins ko notify karta hai (`notify()` call), khud kuch enable nahi karta | `notifications/notify.py` use karta hai; Celery Beat se schedule hota hai |
 | `chat/providers.py` | **4 providers ka common interface**: OpenAI (+ Grok/DeepSeek, same `OpenAICompatibleProvider` class kyunke wire format identical hai), Anthropic, Gemini — sab `ProviderError` mein wrap hoti hain, retry/timeout sab jagah configured (OpenAI/Grok/Anthropic ke SDK ka apna `max_retries=5`; Gemini raw `requests` se call hota hai isliye `_RETRYING_SESSION` — shared `requests.Session` + `Retry` adapter — 2026-09-19 mein add hui, pehle Gemini ka koi retry nahi tha). Koi bhi provider fail ho to user ko friendly fallback message milta hai, raw error kabhi nahi | `chat/views.py` aur `chat/router.py` use karte hain |
-| `chat/router.py` | Smart routing (kaunsa model use hoga) — **ab user ke Plan ke allowed_models se restrict hota hai** (`governance/plans.py::effective_allowed_model_ids`), phir UserModelPermission overrides | `chat/views.py` use karta hai |
+| `chat/router.py` | Smart routing (kaunsa model use hoga) — **ab user ke Plan ke allowed_models se restrict hota hai** (`governance/plans.py::effective_allowed_provider_model_ids` — ProviderModel-based, legacy `effective_allowed_model_ids` nahi), phir UserModelPermission overrides | `chat/views.py` use karta hai |
 | `chat/prompts.py` | System prompt banane ka logic (base prompt + department-specific instructions + attached-document delimiter instruction) | `governance.models.SystemPromptVersion` import karta hai |
 | `chat/views.py` | **Sabse bari file.** Chat home, message send/receive, streaming (SSE), file upload/download, pin/unpin, soft-delete, sidebar search, `request_upgrade`, message edit (regenerates forward) / regenerate (replaces in place), feedback, export, prompt templates, response caching, usage-warning notification trigger | `governance/limits.py`, `governance/plans.py`, `chat/router.py`, `chat/providers.py`, `chat/response_cache.py`, `chat/export.py`, `notifications/notify.py` — sab yahan milte hain |
 | `chat/urls.py` | `/chat/`, `/chat/conversations/...` (edit/regenerate/feedback/export sab isi ke andar), `/chat/templates/`, `/chat/request-upgrade/` | `config/urls.py` mein include hai |
 | `chat/admin.py` | Django admin mein ModelConfig/Conversation/Message dikhane ka config | Sirf `/admin/` ke liye |
-| `chat/management/commands/seed_models.py` | Purana command jo shuru mein kuch AI models seed karta tha — ab admin "Sync Models" button (real API se) ya "Add model" form se model add kar sakta hai (`governance:models` page) | `chat/models.py` ka `ModelConfig` use karta hai |
+| `chat/management/commands/seed_models.py` | Purana command jo shuru mein kuch legacy `ModelConfig` rows seed karta tha — ab naya real provider connect karna ho to `providers:list` page se (real API key paste karo), legacy `ModelConfig` list `governance:models` par hai (plain CRUD, koi sync nahi) | `chat/models.py` ka `ModelConfig` use karta hai |
 | `templates/chat/chat_home.html` | **Poora chat interface** — sidebar (search box + pinned/grouped conversations + usage widget + request-upgrade button) + panel (messages + composer + model dropdown). Mobile par sidebar ek slide-in drawer ban jata hai (hamburger icon) | `chat:chat_home` URL |
 | `templates/chat/_conversation_list.html` | Sidebar ki conversation list ka fragment (Pinned section + date-grouped sections) — pin/delete ke baad isi ko htmx se refresh kiya jata hai | `chat_home.html` include karta hai, `toggle_pin`/`delete_conversation` views isko re-render karte hain |
 | `templates/chat/_conversation_item.html` | Ek conversation ki row (pin icon + delete icon) | `_conversation_list.html` include karta hai |
@@ -105,7 +105,26 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 4. `governance` app — Admin Dashboard + Plan/Tier System (poora control yahan hai)
+## 4. `providers` app — AI Provider Connections (org-wide credentials + model registry)
+
+**Responsibility:** `chat.models.ModelConfig` + env-var API keys ki jagah ye app hai — real, admin-connected API keys (encrypted DB mein) + per-provider live model-list sync. **Note:** `chat/model_sync.py` naam ki file ab exist nahi karti, aur `governance:sync_models_preview`/`sync_models_import` URLs bhi nahi hain — purana architecture tha, poora is app mein migrate ho gaya (`providers/management/commands/migrate_models_to_provider_model.py`). 4 providers connected/available: **Anthropic (Claude)**, **OpenAI-compatible** (OpenAI khud + Grok + DeepSeek — same adapter class, kyunke wire format identical hai), **Gemini** — teenon 2026-09-19 ko real API calls se verified (Anthropic ka chat streaming AND model-listing dono, production ke real connected key se).
+
+| File | Kaam | Kis se link hai |
+|---|---|---|
+| `providers/models.py` | **`Provider`** (name/slug/`adapter_type`/`region`/`base_url`/encrypted `api_key_encrypted`+`api_key_last4`/`sync_status`), **`ProviderModel`** (model_id/pricing/`is_enabled`/`is_manager_assignable`/`supports_vision`) | `governance.Plan.allowed_provider_models` M2M isko reference karta hai |
+| `providers/adapters/base.py` | `BaseProviderAdapter` — har adapter ka common interface (`test_connection`, `fetch_models`), `ProviderAPIError` | Har adapter subclass isko extend karta hai |
+| `providers/adapters/anthropic.py`, `openai_compatible.py`, `gemini.py` | Per-provider model-LISTING adapters (connect-time key test + "Sync Models" ke liye) — **ye `chat/providers.py` ke chat-STREAMING adapters se ALAG file hain**, dono ka kaam alag hai (listing vs actual chat call) | `providers/services.py::sync_provider` isko call karta hai |
+| `providers/adapters/sanitize.py` | Error messages se accidentally leak hui API key ko hata deta hai (agar koi exception message mein raw key aa jaye) | `providers/services.py`, adapters isko call karte hain |
+| `providers/services.py` | `sync_provider()` — adapter ka `fetch_models()` result ko `ProviderModel` rows mein reconcile karta hai. Naya model kabhi auto-enable nahi hota | `providers/views.py::connect_provider`/`resync_provider`, `providers/tasks.py` dono isko call karte hain |
+| `providers/tasks.py` | `sync_all_connected_providers` — daily Celery Beat task, har connected provider ko resync karta hai | Beat schedule (data migration se seed) |
+| `providers/views.py` | `ProviderListView`, `connect_provider` (key paste + `test_connection` + `sync_provider`), `approve_provider`/`reject_provider` (SuperAdmin approval step), `resync_provider`, `disconnect_provider`, `update_provider_region`, `toggle_provider_model`/`_manager_assignable`/`_vision` | `providers/services.py`, `governance.audit.log_action` |
+| `providers/urls.py` | `/providers/`, `/providers/<id>/connect\|approve\|reject\|resync\|disconnect\|region/`, `/providers/models/<id>/toggle...` | `config/urls.py` mein include hai |
+| `providers/admin.py` | Django admin config | Sirf `/admin/` ke liye |
+| `templates/providers/list.html` + `_provider_card.html` | Har provider ka card — connect form (key paste), connected-status, resync/disconnect buttons, models list toggle | `providers:list` URL |
+
+---
+
+## 5. `governance` app — Admin Dashboard + Plan/Tier System (poora control yahan hai)
 
 **Responsibility:** Admin ke liye sab kuch — users manage karna, **Plans (tier-based access control)**, models/pricing, per-user permissions, usage/upload limits, upgrade requests, audit logs, department + system prompts, charts, search/filter.
 
@@ -118,7 +137,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | `governance/error_alerts.py` | **Naya file (2026-09-19).** `AsyncAdminEmailHandler` — koi bhi unhandled 500 error hone par `settings.ADMINS` ko Celery task ke zariye email jata hai (Django ka apna `mail_admins` synchronous hota, request thread block kar deta) | `config/settings.py::LOGGING`'s `django.request` logger isko use karta hai |
 | `governance/audit.py` | `log_action()` helper — har admin action (role change, plan change, model enable, lockout, login, password change, refund, cancellation, waghera) yahan se AuditLog mein likha jata hai | `governance/views.py`, `accounts/signals.py`, `billing/views.py` isko call karte hain |
 | `governance/templatetags/governance_extras.py` | `dict_get` filter — templates mein ek dict ko variable-key se lookup karne ke liye (e.g. Users list mein har row ka plan-status) | `_users_table.html` use karta hai |
-| `governance/views.py` | **Sabse bari file is app ki.** Dashboard (charts + org usage ring), Users list (search/filter + Plan column + bulk plan-assign + **overrides badge/view/clear**), **Plans CRUD**, **Upgrade Requests**, Models (add/pricing/enable + search/filter + **Sync Models**), Model Permissions, Limits (CRUD + search), Departments (CRUD + search + **department templates**), Audit Logs (search/filter/pagination), System Prompt, **Feedback review**, **Usage export (CSV/Excel/monthly summary)** | `chat.models`, `accounts.models`, `governance.plans` — sab import karta hai |
+| `governance/views.py` | **Sabse bari file is app ki.** Dashboard (charts + org usage ring), Users list (search/filter + Plan column + bulk plan-assign + **overrides badge/view/clear**), **Plans CRUD**, **Upgrade Requests**, legacy Models (`ModelConfig` add/pricing/enable + search/filter — **naye AI provider connect karna ho to `providers:list` par jao, ye sirf legacy list hai**), Model Permissions, Limits (CRUD + search), Departments (CRUD + search + **department templates**), Audit Logs (search/filter/pagination), System Prompt, **Feedback review**, **Usage export (CSV/Excel/monthly summary)** | `chat.models`, `accounts.models`, `governance.plans` — sab import karta hai |
 | `governance/urls.py` | `/governance/...` sab routes — including `/governance/plans/`, `/governance/upgrade-requests/`, `/governance/users/<id>/change-plan/`, `/governance/users/bulk-change-plan/`, `/governance/users/<id>/overrides/` (view/clear), `/governance/models/sync/`, `/governance/usage/export.csv\|.xlsx`, `/governance/feedback/` | `config/urls.py` mein include hai |
 | `governance/admin.py` | Django admin mein ye models dikhane ka config | Sirf `/admin/` ke liye (fallback/advanced use) |
 | `templates/governance/dashboard.html` | Overview + Charts (Chart.js, 14-day zero-filled data, empty-states) + **org-wide usage ring** | `governance:dashboard` URL |
@@ -126,7 +145,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | `templates/governance/plans.html` + `plan_form.html` | **Plan management** — list + create/edit form (limits, allowed-models checkboxes, feature-flag checkboxes, default/visibility toggles) | `governance:plans`, `plan_new`, `plan_edit` URLs |
 | `templates/governance/_plan_downgrade_confirm.html` | Jab admin kisi user ko aisay plan par downgrade kare jiski limit already cross ho chuki ho, ye confirmation step dikhata hai | `governance:change_user_plan` view isko render karta hai |
 | `templates/governance/upgrade_requests.html` | Pending self-service upgrade requests — Approve (Users page pe le jata hai, pre-filtered) / Dismiss | `governance:upgrade_requests` URL |
-| `templates/governance/models.html` + `_models_table.html` + `model_sync.html` | AI Models list — add/pricing/enable/disable, search/status filter, **Sync Models** (real provider API se checklist, admin select karta hai kaunse enable karne hain) | `governance:models`, `sync_models_preview` URLs |
+| `templates/governance/models.html` + `_models_table.html` | Legacy `ModelConfig` list — add/pricing/enable/disable, search/status filter. **Koi sync button nahi hai — real provider connect/sync `providers:list` page par hai** (section 4) | `governance:models` URL |
 | `templates/governance/model_permissions.html` | Ek specific model ke liye "kaun use kar sakta hai" (per-user override, Plan ke upar) | `governance:model_permissions` URL |
 | `templates/governance/limits.html` + `_limits_table.html` + `limit_form.html` | Usage/Upload limits (per-user/department override) ki list (search) + add/edit form | `governance:limits`, `limit_new`, `limit_edit` URLs |
 | `templates/governance/user_overrides.html` | Ek user ke personal `UsageLimit`/`UserModelPermission` overrides dikhata hai + "Clear all overrides" button (Plan defaults par wapas) | `governance:user_overrides` URL — Users list ke "N custom overrides — view/clear" link se |
@@ -138,7 +157,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 5. `billing` app — Invoices, Regional Pricing, Refund & Cancellation
+## 6. `billing` app — Invoices, Regional Pricing, Refund & Cancellation
 
 **Responsibility:** Invoice generation (manual + recurring monthly sweep), payment verification (manual proof-of-payment — koi real payment gateway nahi hai), regional pricing, self-service plan checkout, **refund requests** aur **plan cancellation** (2026-09-19 mein add hua).
 
@@ -165,9 +184,9 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 6. `notifications` app — In-app Bell + Email Notifications
+## 7. `notifications` app — In-app Bell + Email Notifications
 
-**Responsibility:** In-app notification bell, email sending (via Celery), per-user per-type email opt-out. Zero tests before Phase 6 — now has 22.
+**Responsibility:** In-app notification bell, email sending (via Celery), per-user per-type email opt-out. Zero tests before Phase 6 — now has 62 (refund/cancellation triggers aur baaki hardening passes ne badhaya, 2026-09-19 tak).
 
 | File | Kaam | Kis se link hai |
 |---|---|---|
@@ -176,13 +195,13 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | `notifications/tasks.py` | `send_notification_email` (Celery task — branded HTML email render+send), `sweep_expiring_demo_plans` (daily Beat task — trial-expiring/trial-expired notify) | `notify()` `.delay()` karta hai; Beat schedule `django-celery-beat` se DB mein hai |
 | `notifications/views.py` | Bell dropdown fragment, mark-read/mark-all-read, Settings ka preferences form | `notifications/urls.py` se wire hain |
 | `notifications/urls.py` | `/notifications/bell/`, `/mark-all-read/`, `/preferences/` | `config/urls.py` mein include hai |
-| `notifications/tests.py` | **22 tests** — `notify()` khud, usage-warning trigger, admin-change/plan-change triggers (real views ke zariye), trial-expiring/expired sweep (dedup-on-rerun sameet), bell dropdown, preference opt-out. Ye file Phase 6 se pehle exist hi nahi karti thi | `python manage.py test notifications` |
+| `notifications/tests.py` | **62 tests** (12 test classes) — `notify()` khud, usage-warning trigger, admin-change/plan-change triggers (real views ke zariye), refund/cancellation triggers, trial-expiring/expired sweep (dedup-on-rerun sameet), bell dropdown, preference opt-out. Ye file Phase 6 se pehle exist hi nahi karti thi | `python manage.py test notifications` |
 | `templates/notifications/_bell_dropdown.html` | Bell icon + unread badge + dropdown list | `templates/base.html` include karta hai (har page par visible) |
 | `templates/notifications/email_generic.html` | Har notification email ka branded HTML template (portal ke colors/logo consistent) | `notifications/tasks.py::send_notification_email` render karta hai |
 
 ---
 
-## 7. Shared/Layout files
+## 8. Shared/Layout files
 
 | File | Kaam |
 |---|---|
@@ -191,7 +210,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 8. Naya kaam karte waqt kahan jayein (cheat-sheet)
+## 9. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |
 |---|---|
@@ -221,7 +240,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 9. Data flow example — "User message bhejta hai"
+## 10. Data flow example — "User message bhejta hai"
 
 ```
 User composer form submit karta hai (chat_home.html)
@@ -239,13 +258,13 @@ chat/urls.py → chat/views.py::post_message
 chat/urls.py → chat/views.py::stream_message
         │
         ├─→ chat/router.py::classify_complexity() + select_model_candidates()
-        │       └─→ governance/plans.py::effective_allowed_model_ids()   (Plan ke allowed_models se restrict)
+        │       └─→ governance/plans.py::effective_allowed_provider_model_ids()   (Plan ke allowed_models se restrict)
         ├─→ chat/prompts.py::build_system_prompt()  (governance.SystemPromptVersion se department prompt)
         ├─→ chat/providers.py::get_provider()        (OpenAI/Anthropic ko actual call, retry-safe)
         └─→ Message.save()  (final reply + tokens + cost DB mein)
 ```
 
-## 10. Data flow example — "Admin kisi user ka Plan change karta hai"
+## 11. Data flow example — "Admin kisi user ka Plan change karta hai"
 
 ```
 Admin Users page par ek row ka "Change" button click karta hai
@@ -260,7 +279,7 @@ governance/urls.py → governance/views.py::change_user_plan
         └─→ governance/audit.py::log_action()    ("user.plan_change" audit trail mein)
 ```
 
-## 11. Data flow example — "5 galat password attempts"
+## 12. Data flow example — "5 galat password attempts"
 
 ```
 User login form 5 baar galat password se submit karta hai
@@ -273,7 +292,7 @@ django-axes (AxesStandaloneBackend, AUTHENTICATION_BACKENDS mein sabse pehle)
         │       └─→ accounts/signals.py::_log_axes_lockout()          (audit log: "auth.lockout", IP included)
 ```
 
-## 12. Data flow example — "User apni usage limit ke 85% par pohonch jata hai"
+## 13. Data flow example — "User apni usage limit ke 85% par pohonch jata hai"
 
 ```
 chat/views.py::post_message ek message save karne ke baad
