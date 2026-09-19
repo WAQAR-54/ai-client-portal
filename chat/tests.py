@@ -891,6 +891,45 @@ class ChatViewTests(TestCase):
 
     @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
     @patch("chat.views.get_provider")
+    def test_provider_failure_is_captured_with_provider_and_model_tags_only(self, mock_get_provider, mock_classify):
+        """Remaining-audit Sentry-context finding: every ProviderError
+        shares one stack, so without explicit tags Sentry can't filter by
+        provider/model. Tags must be slugs/ids only - never the prompt, and
+        never leak onto the wider scope past this one capture."""
+        import sentry_sdk
+
+        mock_get_provider.return_value.stream_chat.side_effect = ProviderError("upstream said: secret prompt text")
+        conversation = Conversation.objects.create(user=self.user)
+        Message.objects.create(conversation=conversation, role=Message.Role.USER, content="my private question")
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        seen_tags = {}
+
+        def fake_capture(exc):
+            seen_tags.update(sentry_sdk.get_current_scope()._tags)
+
+        with patch("chat.views.capture_exception", side_effect=fake_capture):
+            response = self.client.get(
+                reverse(
+                    "chat:stream_message",
+                    kwargs={
+                        "conversation_id": conversation.id,
+                        "message_id": pending.id,
+                        "token": pending.stream_token,
+                    },
+                )
+            )
+            b"".join(response.streaming_content)
+
+        self.assertEqual(seen_tags.get("ai.provider"), "openai")
+        self.assertEqual(seen_tags.get("ai.model"), "test-model")
+        for value in seen_tags.values():
+            self.assertNotIn("private", str(value))
+            self.assertNotIn("secret", str(value))
+        self.assertNotIn("ai.provider", sentry_sdk.get_current_scope()._tags)
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
     def test_concurrent_stream_request_does_not_call_the_provider_twice(self, mock_get_provider, mock_classify):
         """Regression test for the real gap this audit found: stream_message
         had no locking, so a duplicate tab or an htmx reconnect racing a
@@ -3293,6 +3332,90 @@ class ResponseCacheTests(TestCase):
         self.assertEqual(calls2, 1)  # different prior history -> no false hit
         self.assertEqual(msg2.content, "reply B")
         self.assertFalse(msg2.served_from_cache)
+
+
+class ResponseCacheFailOpenTests(TestCase):
+    """chat/response_cache.py promises "Never raises: a Redis hiccup should
+    degrade to no caching, not break chat". The behaviour was correct by
+    code inspection but untested (remaining-audit finding) - this pins it
+    down at the unit level, then once through the real stream view so
+    "the request still completes" is proven, not just "the helper returns
+    None"."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def test_store_then_get_round_trips(self):
+        from chat.response_cache import get_cached_response, store_cached_response
+
+        history = [{"role": "user", "content": "hi"}]
+        store_cached_response(1, 7, "sys", history, text="hello", input_tokens=3, output_tokens=4)
+        cached = get_cached_response(1, 7, "sys", history)
+        self.assertEqual(cached, {"text": "hello", "input_tokens": 3, "output_tokens": 4})
+
+    def test_miss_returns_none(self):
+        from chat.response_cache import get_cached_response
+
+        self.assertIsNone(get_cached_response(1, 7, "sys", [{"role": "user", "content": "never stored"}]))
+
+    def test_backend_failure_on_read_is_treated_as_a_miss(self):
+        from chat.response_cache import get_cached_response
+
+        with patch("chat.response_cache.cache.get", side_effect=ConnectionError("redis down")):
+            with self.assertLogs("chat.response_cache", level="ERROR"):
+                result = get_cached_response(1, 7, "sys", [{"role": "user", "content": "hi"}])
+        self.assertIsNone(result)
+
+    def test_backend_failure_on_write_does_not_raise(self):
+        from chat.response_cache import store_cached_response
+
+        with patch("chat.response_cache.cache.set", side_effect=ConnectionError("redis down")):
+            with self.assertLogs("chat.response_cache", level="ERROR"):
+                store_cached_response(
+                    1, 7, "sys", [{"role": "user", "content": "hi"}], text="x", input_tokens=1, output_tokens=1
+                )
+
+    @patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT)
+    @patch("chat.views.get_provider")
+    def test_chat_still_completes_when_the_cache_backend_is_down(self, mock_get_provider, mock_classify):
+        user = User.objects.create_user(email="failopen@example.com", password="pw12345!")
+        model = ProviderModel.objects.create(
+            provider=Provider.objects.get(slug="openai"),
+            model_id="failopen-model",
+            tier=ProviderModel.Tier.DEFAULT,
+            input_price_per_mtok=1,
+            output_price_per_mtok=2,
+            is_enabled=True,
+        )
+        _grant_premium_plan(user, model)
+        self.client.login(email="failopen@example.com", password="pw12345!")
+        mock_get_provider.return_value.stream_chat.return_value = iter(
+            [StreamChunk(text="still works"), StreamChunk(done=True, input_tokens=2, output_tokens=2)]
+        )
+        conversation = Conversation.objects.create(user=user)
+        pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+        with patch("chat.response_cache.cache.get", side_effect=ConnectionError("redis down")), patch(
+            "chat.response_cache.cache.set", side_effect=ConnectionError("redis down")
+        ):
+            response = self.client.get(
+                reverse(
+                    "chat:stream_message",
+                    kwargs={
+                        "conversation_id": conversation.id,
+                        "message_id": pending.id,
+                        "token": pending.stream_token,
+                    },
+                )
+            )
+            body = b"".join(response.streaming_content).decode()
+
+        self.assertIn("still works", body)
+        pending.refresh_from_db()
+        self.assertEqual(pending.content, "still works")
+        self.assertFalse(pending.served_from_cache)
 
 
 class ConversationExportTests(TestCase):

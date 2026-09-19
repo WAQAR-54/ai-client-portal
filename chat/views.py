@@ -14,7 +14,7 @@ from django.utils import timezone, translation
 from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
-from sentry_sdk import capture_exception
+from sentry_sdk import capture_exception, new_scope
 
 from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, Project, PromptTemplate
 from chat.prompts import build_system_prompt
@@ -1606,7 +1606,17 @@ def stream_message(request, conversation_id, message_id, token):
                     model_config.provider,
                     model_config.model_id,
                 )
-                capture_exception(exc)
+                # Tagged (not just logged) so Sentry can filter/group by
+                # provider and model - every ProviderError shares the same
+                # stack, so without these an Anthropic overload and an
+                # OpenAI auth failure land in one undifferentiated issue.
+                # Slugs/ids only: never the prompt, reply, or the upstream
+                # exception text as a tag. request_id is already a scope tag
+                # (accounts.middleware.RequestIDMiddleware).
+                with new_scope() as scope:
+                    scope.set_tag("ai.provider", model_config.provider.slug)
+                    scope.set_tag("ai.model", model_config.model_id)
+                    capture_exception(exc)
                 message.content = full_text or "The assistant hit a problem generating a response. Please try again."
                 message.provider_model_used = model_config
                 message.save(update_fields=["content", "provider_model_used"])
