@@ -499,6 +499,7 @@ SERVER_EMAIL = env("SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
 SENTRY_DSN = env("SENTRY_DSN", default="")
 if SENTRY_DSN and "test" not in sys.argv:
     import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
     from sentry_sdk.integrations.django import DjangoIntegration
 
     def _sentry_before_send(event, hint):
@@ -513,7 +514,13 @@ if SENTRY_DSN and "test" not in sys.argv:
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
-        integrations=[DjangoIntegration()],
+        # CeleryIntegration: production-readiness audit gap - "Celery task
+        # failures" was explicitly asked for when Sentry was first wired up,
+        # but only DjangoIntegration was actually added. Without this, a
+        # task that exhausts its retries (autoretry_for=(Exception,), see
+        # e.g. notifications/tasks.py) only ever logged to console/file -
+        # Sentry never saw it.
+        integrations=[DjangoIntegration(), CeleryIntegration()],
         environment=env("SENTRY_ENVIRONMENT", default="development"),
         traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
         # PII/data-scrubbing, tightened beyond the SDK defaults:
