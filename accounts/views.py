@@ -578,6 +578,9 @@ class ProfilePasswordView(LoginRequiredMixin, TemplateView):
         if password_form.is_valid():
             password_form.save()
             update_session_auth_hash(request, password_form.user)
+            from governance.audit import log_action
+
+            log_action(actor=request.user, action_type="user.password_change", target=request.user)
             messages.success(request, translation.gettext("Password changed."))
             return redirect("accounts:profile")
         preference, _ = NotificationPreference.objects.get_or_create(user=request.user)

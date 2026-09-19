@@ -338,6 +338,74 @@ class LoginRateLimitTests(TestCase):
         self.assertRedirects(response, reverse("accounts:dashboard"))
 
 
+class LoginAuditTests(TestCase):
+    """accounts/signals.py::_log_successful_login - fires from Django's
+    own user_logged_in signal, so it catches every real login entry
+    point uniformly, not just the plain password form."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="person@example.com", password="pw12345!")
+
+    def test_successful_login_is_audited(self):
+        from governance.models import AuditLog
+
+        self.client.post(reverse("accounts:login"), {"username": "person@example.com", "password": "pw12345!"})
+        log = AuditLog.objects.get(action_type="auth.login")
+        self.assertEqual(log.actor, self.user)
+        self.assertEqual(log.target_id, str(self.user.id))
+
+    def test_failed_login_is_not_audited_as_a_login(self):
+        from governance.models import AuditLog
+
+        self.client.post(reverse("accounts:login"), {"username": "person@example.com", "password": "wrong"})
+        self.assertFalse(AuditLog.objects.filter(action_type="auth.login").exists())
+
+
+@override_settings(AXES_ENABLED=True)
+class AxesLockoutAuditTests(TestCase):
+    """accounts/signals.py::_log_axes_lockout, connected via
+    connect_axes_signals() in AccountsConfig.ready() - untested before
+    this, despite existing since axes was wired up. AXES_ENABLED is
+    False by default during `manage.py test` (config/settings.py:
+    "test" not in sys.argv) so axes itself doesn't track attempts unless
+    explicitly turned back on here."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def test_lockout_is_audited_for_a_real_account(self):
+        from axes.utils import reset
+
+        from governance.models import AuditLog
+
+        user = User.objects.create_user(email="target@example.com", password="pw12345!")
+        for _ in range(6):
+            self.client.post(reverse("accounts:login"), {"username": "target@example.com", "password": "wrong"})
+        logs = AuditLog.objects.filter(action_type="auth.lockout")
+        self.assertTrue(logs.exists())
+        log = logs.first()
+        self.assertIsNone(log.actor)
+        self.assertEqual(log.target_type, "User")
+        self.assertEqual(log.target_id, str(user.id))
+        reset(username="target@example.com")
+
+    def test_lockout_is_audited_for_a_nonexistent_account(self):
+        from axes.utils import reset
+
+        from governance.models import AuditLog
+
+        for _ in range(6):
+            self.client.post(reverse("accounts:login"), {"username": "nobody-real@example.com", "password": "wrong"})
+        logs = AuditLog.objects.filter(action_type="auth.lockout")
+        self.assertTrue(logs.exists())
+        log = logs.first()
+        self.assertIsNone(log.actor)
+        self.assertEqual(log.target_id, "None")
+        reset(username="nobody-real@example.com")
+
+
 class SignupTests(TestCase):
     def setUp(self):
         from django.core.cache import cache
@@ -604,6 +672,34 @@ class ProfileTests(TestCase):
         self.assertRedirects(response, reverse("accounts:profile"))
         self.client.logout()
         self.assertTrue(self.client.login(email="u@example.com", password="a-new-strong-password-9"))
+
+    def test_change_password_writes_audit_log_without_the_password_itself(self):
+        from governance.models import AuditLog
+
+        self.client.post(
+            reverse("accounts:profile_password"),
+            {
+                "old_password": "pw12345!",
+                "new_password1": "a-new-strong-password-9",
+                "new_password2": "a-new-strong-password-9",
+            },
+        )
+        log = AuditLog.objects.get(action_type="user.password_change")
+        self.assertEqual(log.actor, self.user)
+        self.assertNotIn("a-new-strong-password-9", log.old_value + log.new_value)
+
+    def test_failed_password_change_is_not_audited(self):
+        from governance.models import AuditLog
+
+        self.client.post(
+            reverse("accounts:profile_password"),
+            {
+                "old_password": "wrong-password",
+                "new_password1": "a-new-strong-password-9",
+                "new_password2": "a-new-strong-password-9",
+            },
+        )
+        self.assertFalse(AuditLog.objects.filter(action_type="user.password_change").exists())
 
     def test_change_password_wrong_current_password_rejected(self):
         response = self.client.post(

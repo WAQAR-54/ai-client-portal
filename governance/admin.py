@@ -34,3 +34,12 @@ class AuditLogAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Without this, a Django-admin superuser could still delete audit
+        # rows via the admin UI's "Delete selected" action/object page -
+        # has_add_permission/has_change_permission alone don't cover
+        # delete. The model's own delete() override (governance/models.py)
+        # would raise anyway if this somehow got bypassed, but blocking it
+        # here means the delete option/confirmation page never even shows.
+        return False

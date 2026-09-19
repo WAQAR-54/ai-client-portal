@@ -1105,6 +1105,20 @@ class InvoicePaymentVerificationTests(TestCase):
         self.assertEqual(self.invoice.status, Invoice.Status.UNPAID)
         self.assertEqual(self.invoice.verified_by, self.admin)
 
+    def test_verify_and_reject_write_audit_log_entries(self):
+        from governance.models import AuditLog
+
+        self.client.login(email="admin@example.com", password="pw12345!")
+        self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
+        verify_log = AuditLog.objects.get(action_type="billing.invoice_payment_verified")
+        self.assertEqual(verify_log.actor, self.admin)
+        self.assertEqual(verify_log.target_id, str(self.invoice.id))
+
+        self.client.post(reverse("billing:reject_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
+        reject_log = AuditLog.objects.get(action_type="billing.invoice_payment_rejected")
+        self.assertEqual(reject_log.actor, self.admin)
+        self.assertEqual(reject_log.target_id, str(self.invoice.id))
+
     def test_admin_cannot_verify_other_departments_invoice(self):
         self.client.login(email="otheradmin@example.com", password="pw12345!")
         response = self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
@@ -2359,10 +2373,17 @@ class DeleteInvoiceTests(TestCase):
         return reverse("billing:delete_invoice", kwargs={"invoice_id": self.invoice.id})
 
     def test_superadmin_can_delete(self):
+        from governance.models import AuditLog
+
+        invoice_id = self.invoice.id
         self.client.login(email="super@example.com", password="pw12345!")
         response = self.client.post(self._url())
         self.assertRedirects(response, reverse("billing:invoices"))
-        self.assertFalse(Invoice.objects.filter(id=self.invoice.id).exists())
+        self.assertFalse(Invoice.objects.filter(id=invoice_id).exists())
+
+        log = AuditLog.objects.get(action_type="billing.invoice_delete")
+        self.assertEqual(log.actor, self.superadmin)
+        self.assertEqual(log.target_id, str(invoice_id))
 
     def test_admin_cannot_delete(self):
         self.client.login(email="admin@example.com", password="pw12345!")

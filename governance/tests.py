@@ -2129,6 +2129,56 @@ class AdminListFilteringTests(TestCase):
             self.assertEqual(response.status_code, 403, url_name)
 
 
+class AuditLogImmutabilityTests(TestCase):
+    """AuditLog rows must be create-only - "who did what when" stops being
+    trustworthy the moment anyone (a bug, a shell, an over-permissioned
+    admin) can edit or delete a row after the fact."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.log = AuditLog.objects.create(
+            actor=self.user, action_type="user.role_change", target_type="User", target_id=str(self.user.id)
+        )
+
+    def test_cannot_save_an_existing_row(self):
+        self.log.action_type = "tampered"
+        with self.assertRaises(ValueError):
+            self.log.save()
+
+    def test_cannot_delete_a_row_instance(self):
+        with self.assertRaises(ValueError):
+            self.log.delete()
+        self.assertTrue(AuditLog.objects.filter(id=self.log.id).exists())
+
+    def test_cannot_bulk_delete(self):
+        with self.assertRaises(ValueError):
+            AuditLog.objects.filter(id=self.log.id).delete()
+        self.assertTrue(AuditLog.objects.filter(id=self.log.id).exists())
+
+    def test_creating_a_new_row_still_works(self):
+        AuditLog.objects.create(actor=self.user, action_type="user.create", target_type="User", target_id="99")
+        self.assertEqual(AuditLog.objects.count(), 2)
+
+    def test_deleting_the_actor_nulls_the_fk_without_raising(self):
+        """The one legitimate case that touches an existing row: Django's
+        own SET_NULL cascade (AuditLog.actor's on_delete) needs to null
+        this FK when the referenced User is deleted - that must keep
+        working even though direct edits/deletes are blocked."""
+        self.user.delete()
+        self.log.refresh_from_db()
+        self.assertIsNone(self.log.actor)
+
+    def test_admin_delete_permission_is_denied(self):
+        from django.contrib.admin.sites import site
+
+        admin_instance = site._registry[AuditLog]
+        superuser = User.objects.create_superuser(email="root@example.com", password="pw12345!")
+        request = type("Req", (), {"user": superuser})()
+        self.assertFalse(admin_instance.has_delete_permission(request))
+        self.assertFalse(admin_instance.has_add_permission(request))
+        self.assertFalse(admin_instance.has_change_permission(request))
+
+
 class UserListPaginationTests(TestCase):
     """Users list used to render every matching user on one unpaginated
     page, with an N+1 query (get_plan_status + engagement_score +

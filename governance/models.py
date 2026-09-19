@@ -627,6 +627,22 @@ class UpgradeRequest(models.Model):
         return f"{self.user} wants an upgrade ({self.status})"
 
 
+class _ImmutableAuditLogQuerySet(models.QuerySet):
+    """Blocks bulk deletion too - QuerySet.delete() talks to the database
+    directly and never calls a model instance's delete(), so AuditLog's
+    own override below wouldn't otherwise catch
+    AuditLog.objects.filter(...).delete(). Deliberately does NOT override
+    update(): Django's own deletion collector needs it to null out this
+    FK on other models (actor's on_delete=SET_NULL) when a referenced
+    User is deleted - blocking that would break user deletion for any
+    admin who has ever appeared in the audit log, which is effectively
+    every admin. The instance-level save() override below still blocks
+    the direct "edit a row's contents" path."""
+
+    def delete(self):
+        raise ValueError("AuditLog rows are immutable - they can never be deleted.")
+
+
 class AuditLog(models.Model):
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
     action_type = models.CharField(max_length=100)
@@ -635,6 +651,8 @@ class AuditLog(models.Model):
     old_value = models.TextField(blank=True)
     new_value = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
+
+    objects = _ImmutableAuditLogQuerySet.as_manager()
 
     class Meta:
         ordering = ["-timestamp"]
@@ -653,6 +671,20 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.actor} {self.action_type} {self.target_type}:{self.target_id}"
+
+    def save(self, *args, **kwargs):
+        # Immutable once created: nothing about "who did what when" should
+        # ever be editable after the fact, or the trail itself becomes
+        # untrustworthy. AuditLogAdmin below already blocks edits through
+        # the Django admin UI - this is the same rule enforced at the
+        # model layer, so it holds for a shell, a management command, or
+        # any other code path too, not just that one UI.
+        if self.pk is not None:
+            raise ValueError("AuditLog rows are immutable - they can be created, never updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("AuditLog rows are immutable - they can never be deleted.")
 
 
 class RoleFeatureToggle(models.Model):

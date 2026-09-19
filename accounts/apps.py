@@ -9,3 +9,4 @@ class AccountsConfig(AppConfig):
         from accounts import signals
 
         signals.connect_axes_signals()
+        signals.connect_login_signal()

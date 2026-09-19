@@ -71,7 +71,25 @@ def _log_axes_lockout(sender, request, username, ip_address, **kwargs):
     )
 
 
+def _log_successful_login(sender, request, user, **kwargs):
+    """Every successful login, written to the audit log - fires from
+    Django's own auth.login() (django.contrib.auth.signals.user_logged_in),
+    so this catches every real entry point uniformly (password login,
+    post-MFA login, Google sign-in) without duplicating a log_action()
+    call into each one separately."""
+    from accounts.rate_limit import client_ip
+    from governance.audit import log_action
+
+    log_action(actor=user, action_type="auth.login", target=user, new_value=f"ip={client_ip(request)}")
+
+
 def connect_axes_signals():
     from axes.signals import user_locked_out
 
     user_locked_out.connect(_log_axes_lockout, dispatch_uid="accounts.log_axes_lockout")
+
+
+def connect_login_signal():
+    from django.contrib.auth.signals import user_logged_in
+
+    user_logged_in.connect(_log_successful_login, dispatch_uid="accounts.log_successful_login")
