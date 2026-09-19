@@ -27,6 +27,15 @@ jobs:
       - name: black --check
         run: black --check .
 
+      - name: pip-audit (dependency vulnerability scan)
+        # Blocking, same as flake8/black above - a known CVE in a pinned
+        # dependency is worth stopping deploy over until it's reviewed and
+        # patched, not just reported after the fact. Dependabot (see
+        # .github/dependabot.yml) is the other half of this: it opens the
+        # PR that bumps the pinned version; this is what actually enforces
+        # you don't ship past it in the meantime.
+        run: pip-audit -r requirements.txt
+
   test:
     runs-on: ubuntu-latest
 

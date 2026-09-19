@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # Security patches land on their own, immediately reviewable PRs -
+      # everything else (routine version bumps with no CVE behind them)
+      # batches into one PR a week so this doesn't turn into a dozen
+      # separate low-value PRs to triage.
+      routine-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
