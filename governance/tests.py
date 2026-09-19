@@ -2766,6 +2766,31 @@ class RoleHierarchyAccessControlTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_reassigning_the_same_plan_twice_does_not_duplicate_notification_or_corrupt_history(self):
+        """Regression test for the remaining-audit pass: change_user_plan
+        used to call assign_plan()/notify()/log_action unconditionally on
+        every POST, even a double-click resubmitting the SAME plan_id -
+        which would also have overwritten previous_plan with the plan the
+        user was already on, corrupting that history field."""
+        from notifications.models import Notification, NotificationType
+
+        plan = Plan.objects.create(name="Test Plan B")
+        self.client.login(email="admina@example.com", password="pw12345!")
+        url = reverse("governance:change_user_plan", kwargs={"user_id": self.user_a.id})
+
+        self.client.post(url, {"plan_id": plan.id})
+        self.user_a.plan_assignment.refresh_from_db()
+        previous_plan_after_first = self.user_a.plan_assignment.previous_plan_id
+
+        self.client.post(url, {"plan_id": plan.id})
+        self.user_a.plan_assignment.refresh_from_db()
+
+        self.assertEqual(self.user_a.plan_assignment.previous_plan_id, previous_plan_after_first)
+        self.assertEqual(
+            Notification.objects.filter(user=self.user_a, notification_type=NotificationType.PLAN_CHANGE).count(),
+            1,
+        )
+
     def test_admin_cannot_view_another_departments_user_overrides(self):
         self.client.login(email="admina@example.com", password="pw12345!")
         response = self.client.get(reverse("governance:user_overrides", kwargs={"user_id": self.user_b.id}))

@@ -1339,6 +1339,34 @@ class PaymentSubmittedNotificationTests(TestCase):
         self.assertIn(self.superadmin.id, notified_users)
         self.assertNotIn(self.own_admin.id, notified_users)
 
+    def test_resubmitting_the_same_proof_does_not_duplicate_notifications(self):
+        """Regression test for the remaining-audit pass: a double-click/
+        retried submit_payment_proof POST used to be able to notify every
+        manager twice. The invoice moves to PENDING_VERIFICATION on the
+        first submission, so a second POST (sequentially, which is what
+        SQLite/the test client can actually exercise - true concurrent-
+        request locking is Postgres-only, same caveat as everywhere else
+        this pattern is used) must be a no-op, not a second round of
+        notifications."""
+        self.client.login(email="recipient@example.com", password="pw12345!")
+        self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-1"},
+        )
+        first_count = self.Notification.objects.filter(
+            notification_type=self.NotificationType.INVOICE_PAYMENT_SUBMITTED
+        ).count()
+        self.assertGreater(first_count, 0)
+
+        self.client.post(
+            reverse("billing:submit_payment_proof", kwargs={"invoice_id": self.invoice.id}),
+            {"transaction_id": "TXN-1-retry"},
+        )
+        second_count = self.Notification.objects.filter(
+            notification_type=self.NotificationType.INVOICE_PAYMENT_SUBMITTED
+        ).count()
+        self.assertEqual(second_count, first_count)
+
 
 class MyInvoicesViewTests(TestCase):
     def setUp(self):
@@ -2598,6 +2626,24 @@ class RequestRefundTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(RefundRequest.objects.filter(invoice=self.invoice).exists())
 
+    def test_requesting_refund_twice_in_a_row_does_not_double_refund_or_notify(self):
+        """Regression test for the remaining-audit pass: a double-click on
+        Request Refund (within the auto-approve window) used to be able to
+        create two RefundRequests and refund twice, since the status check
+        and the mutation weren't locked together. Sequential retry is what
+        SQLite/the test client can exercise - the true concurrent-request
+        race additionally needs select_for_update(), Postgres-only, same
+        caveat as everywhere else this pattern is used."""
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(self._url())
+        self.client.post(self._url())
+        self.assertEqual(RefundRequest.objects.filter(invoice=self.invoice).count(), 1)
+        self.assertEqual(
+            Notification.objects.filter(user=self.user, notification_type=NotificationType.REFUND_DECISION).count(),
+            1,
+        )
+
 
 class ResolveRefundRequestTests(TestCase):
     def setUp(self):
@@ -2683,12 +2729,22 @@ class ResolveRefundRequestTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
     def test_resolving_an_already_resolved_request_is_a_no_op(self):
+        from notifications.models import Notification, NotificationType
+
         self.client.login(email="admin@example.com", password="pw12345!")
         self.client.post(self._url(), {"action": "approve"})
         response = self.client.post(self._url(), {"action": "reject"})
         self.assertRedirects(response, reverse("billing:refund_requests"))
         self.refund_request.refresh_from_db()
         self.assertEqual(self.refund_request.status, RefundRequest.Status.APPROVED)
+        # Not just the status - the double-resolve (double-click) must not
+        # have sent a second REFUND_DECISION notification either.
+        self.assertEqual(
+            Notification.objects.filter(
+                user=self.recipient, notification_type=NotificationType.REFUND_DECISION
+            ).count(),
+            1,
+        )
 
 
 class CancelPlanTests(TestCase):
@@ -2719,6 +2775,30 @@ class CancelPlanTests(TestCase):
         self.assertRedirects(response, reverse("billing:my_plans"))
         self.user.plan_assignment.refresh_from_db()
         self.assertIsNone(self.user.plan_assignment.cancelled_at)
+
+    def test_cancelling_twice_in_a_row_sends_only_one_notification(self):
+        """Regression test for the remaining-audit pass: a double-click on
+        Cancel plan used to be able to pass the "not already cancelled"
+        check twice before either commit, sending two notifications."""
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(reverse("billing:cancel_plan"))
+        self.client.post(reverse("billing:cancel_plan"))
+        self.assertEqual(
+            Notification.objects.filter(user=self.user, notification_type=NotificationType.PLAN_CANCELLATION).count(),
+            1,
+        )
+
+    def test_resuming_twice_in_a_row_sends_only_one_notification(self):
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(reverse("billing:cancel_plan"))
+        self.client.post(reverse("billing:resume_plan"))
+        self.client.post(reverse("billing:resume_plan"))
+        self.assertEqual(
+            Notification.objects.filter(user=self.user, notification_type=NotificationType.PLAN_CANCELLATION).count(),
+            2,  # one for the cancel, one for the (single) resume
+        )
 
     def test_cancelled_plan_is_skipped_by_the_invoice_sweep(self):
         invoice = generate_invoice_for_user(self.user, plan=self.plan)

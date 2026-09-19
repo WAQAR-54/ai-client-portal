@@ -877,8 +877,20 @@ def submit_payment_proof(request, invoice_id):
             django_messages.error(request, "That doesn't look like a valid image file.")
             return redirect(default_redirect)
 
-    invoice.submit_payment_proof(transaction_id=transaction_id, proof_image=proof_image)
-    log_action(request.user, "billing.invoice_payment_submitted", invoice, new_value=invoice.status)
+    # Re-check under lock, not just the earlier plain read at the top of
+    # this view: two near-simultaneous submits (double-click, a retried
+    # request) could otherwise both pass that first status check before
+    # either commits, both moving the invoice to PENDING_VERIFICATION and
+    # both notifying every manager - a real gap found in the remaining-
+    # audit pass. select_for_update() is a no-op on SQLite/dev, same as
+    # the identical pattern in chat/views.py::post_message and
+    # checkout_plan above.
+    with transaction.atomic():
+        invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        if invoice.status != Invoice.Status.UNPAID:
+            return redirect(default_redirect)
+        invoice.submit_payment_proof(transaction_id=transaction_id, proof_image=proof_image)
+        log_action(request.user, "billing.invoice_payment_submitted", invoice, new_value=invoice.status)
 
     from notifications.models import NotificationType
     from notifications.notify import notify
@@ -915,31 +927,44 @@ def request_refund(request, invoice_id):
     from notifications.models import NotificationType
     from notifications.notify import notify
 
-    invoice = get_object_or_404(Invoice, id=invoice_id, recipient_user=request.user)
     default_redirect = _safe_next_url(request, reverse("billing:my_invoices"))
-    if invoice.status != Invoice.Status.PAID:
-        django_messages.error(request, _("Only a paid invoice can be refunded."))
-        return redirect(default_redirect)
-    if invoice.refund_requests.filter(status=RefundRequest.Status.PENDING).exists():
-        django_messages.info(request, _("A refund request for this invoice is already pending review."))
-        return redirect(default_redirect)
 
-    reason = request.POST.get("reason", "").strip()
-    refund_request = RefundRequest.objects.create(
-        invoice=invoice,
-        requested_by=request.user,
-        reason=reason,
-        requested_amount=invoice.total,
-    )
+    # The whole check-then-create-then-mutate sequence is locked, not just
+    # the initial read: two near-simultaneous refund clicks could otherwise
+    # both pass "no pending request yet" before either commits its INSERT,
+    # creating two RefundRequests (and, in the auto-approved window,
+    # refunding twice) - a real gap found in the remaining-audit pass.
+    # select_for_update() is a no-op on SQLite/dev, same as the identical
+    # pattern used above in submit_payment_proof/checkout_plan.
+    with transaction.atomic():
+        invoice = get_object_or_404(Invoice.objects.select_for_update(), id=invoice_id, recipient_user=request.user)
+        if invoice.status != Invoice.Status.PAID:
+            django_messages.error(request, _("Only a paid invoice can be refunded."))
+            return redirect(default_redirect)
+        if invoice.refund_requests.filter(status=RefundRequest.Status.PENDING).exists():
+            django_messages.info(request, _("A refund request for this invoice is already pending review."))
+            return redirect(default_redirect)
 
-    if invoice.is_within_money_back_window():
-        invoice.mark_refunded(by=request.user)
-        refund_request.status = RefundRequest.Status.APPROVED
-        refund_request.auto_approved = True
-        refund_request.resolved_at = timezone.now()
-        refund_request.save(update_fields=["status", "auto_approved", "resolved_at"])
-        log_action(request.user, "billing.refund_auto_approved", invoice, new_value=str(invoice.total))
+        reason = request.POST.get("reason", "").strip()
+        refund_request = RefundRequest.objects.create(
+            invoice=invoice,
+            requested_by=request.user,
+            reason=reason,
+            requested_amount=invoice.total,
+        )
 
+        auto_approved = invoice.is_within_money_back_window()
+        if auto_approved:
+            invoice.mark_refunded(by=request.user)
+            refund_request.status = RefundRequest.Status.APPROVED
+            refund_request.auto_approved = True
+            refund_request.resolved_at = timezone.now()
+            refund_request.save(update_fields=["status", "auto_approved", "resolved_at"])
+            log_action(request.user, "billing.refund_auto_approved", invoice, new_value=str(invoice.total))
+        else:
+            log_action(request.user, "billing.refund_requested", invoice, new_value=reason)
+
+    if auto_approved:
         with translation.override(request.user.preferred_language):
             title = _("Refund processed for invoice %(number)s") % {"number": invoice.invoice_number}
             body = _(
@@ -951,7 +976,6 @@ def request_refund(request, invoice_id):
         )
         django_messages.success(request, _("Refund approved - you're within the 7-day money-back window."))
     else:
-        log_action(request.user, "billing.refund_requested", invoice, new_value=reason)
         for manager in _invoice_managers(invoice):
             with translation.override(manager.preferred_language):
                 title = _("Refund requested for invoice %(number)s") % {"number": invoice.invoice_number}
@@ -1005,21 +1029,37 @@ def resolve_refund_request(request, request_id):
     from notifications.models import NotificationType
     from notifications.notify import notify
 
-    refund_request = _get_scoped_refund_request_or_403(request, request_id)
-    if refund_request.status != RefundRequest.Status.PENDING:
-        return redirect("billing:refund_requests")
-
-    invoice = refund_request.invoice
+    # _get_scoped_refund_request_or_403 does the permission check on an
+    # unlocked read; re-fetch and lock before acting so two admins (or one
+    # admin double-clicking) resolving the SAME request at once can't both
+    # pass the PENDING check and both mutate/notify - a real gap found in
+    # the remaining-audit pass. select_for_update() is a no-op on
+    # SQLite/dev, same as the identical pattern used elsewhere in this file.
+    _get_scoped_refund_request_or_403(request, request_id)
     action = request.POST.get("action")
-    refund_request.resolved_by = request.user
-    refund_request.resolved_at = timezone.now()
-    refund_request.admin_notes = request.POST.get("admin_notes", "").strip()
+    with transaction.atomic():
+        refund_request = get_object_or_404(
+            RefundRequest.objects.select_for_update().select_related("invoice"), id=request_id
+        )
+        if refund_request.status != RefundRequest.Status.PENDING:
+            return redirect("billing:refund_requests")
+
+        invoice = refund_request.invoice
+        refund_request.resolved_by = request.user
+        refund_request.resolved_at = timezone.now()
+        refund_request.admin_notes = request.POST.get("admin_notes", "").strip()
+
+        if action == "approve":
+            refund_request.status = RefundRequest.Status.APPROVED
+            refund_request.save(update_fields=["status", "resolved_by", "resolved_at", "admin_notes"])
+            invoice.mark_refunded(by=request.user, amount=refund_request.requested_amount)
+            log_action(request.user, "billing.refund_approved", invoice, new_value=str(refund_request.requested_amount))
+        else:
+            refund_request.status = RefundRequest.Status.REJECTED
+            refund_request.save(update_fields=["status", "resolved_by", "resolved_at", "admin_notes"])
+            log_action(request.user, "billing.refund_rejected", invoice, new_value=refund_request.admin_notes)
 
     if action == "approve":
-        refund_request.status = RefundRequest.Status.APPROVED
-        refund_request.save(update_fields=["status", "resolved_by", "resolved_at", "admin_notes"])
-        invoice.mark_refunded(by=request.user, amount=refund_request.requested_amount)
-        log_action(request.user, "billing.refund_approved", invoice, new_value=str(refund_request.requested_amount))
         title = _("Your refund request was approved")
         body = _("Your refund of %(currency)s %(amount)s for invoice %(number)s has been approved and processed.") % {
             "currency": invoice.currency,
@@ -1027,9 +1067,6 @@ def resolve_refund_request(request, request_id):
             "number": invoice.invoice_number,
         }
     else:
-        refund_request.status = RefundRequest.Status.REJECTED
-        refund_request.save(update_fields=["status", "resolved_by", "resolved_at", "admin_notes"])
-        log_action(request.user, "billing.refund_rejected", invoice, new_value=refund_request.admin_notes)
         title = _("Your refund request was not approved")
         body = _("Your refund request for invoice %(number)s was reviewed and not approved.") % {
             "number": invoice.invoice_number
@@ -1075,15 +1112,23 @@ def cancel_plan(request):
     was already paid for."""
     from notifications.models import NotificationType
     from notifications.notify import notify
-    from governance.plans import get_assignment
+    from governance.models import UserPlanAssignment
 
-    assignment = get_assignment(request.user)
-    if assignment is None or assignment.cancelled_at is not None:
-        return _safe_plan_redirect(request)
+    # Locked re-check, not the plain get_assignment() read: two near-
+    # simultaneous cancel clicks could otherwise both pass "not already
+    # cancelled" before either commits, both notifying - a real gap found
+    # in the remaining-audit pass. select_for_update() is a no-op on
+    # SQLite/dev, same as the identical pattern used elsewhere in this file.
+    with transaction.atomic():
+        assignment = (
+            UserPlanAssignment.objects.select_for_update().select_related("plan").filter(user=request.user).first()
+        )
+        if assignment is None or assignment.cancelled_at is not None:
+            return _safe_plan_redirect(request)
 
-    assignment.cancelled_at = timezone.now()
-    assignment.save(update_fields=["cancelled_at"])
-    log_action(request.user, "user.plan_cancelled", assignment.plan)
+        assignment.cancelled_at = timezone.now()
+        assignment.save(update_fields=["cancelled_at"])
+        log_action(request.user, "user.plan_cancelled", assignment.plan)
 
     with translation.override(request.user.preferred_language):
         title = _("Your plan has been cancelled")
@@ -1101,15 +1146,18 @@ def cancel_plan(request):
 def resume_plan(request):
     from notifications.models import NotificationType
     from notifications.notify import notify
-    from governance.plans import get_assignment
+    from governance.models import UserPlanAssignment
 
-    assignment = get_assignment(request.user)
-    if assignment is None or assignment.cancelled_at is None:
-        return _safe_plan_redirect(request)
+    with transaction.atomic():
+        assignment = (
+            UserPlanAssignment.objects.select_for_update().select_related("plan").filter(user=request.user).first()
+        )
+        if assignment is None or assignment.cancelled_at is None:
+            return _safe_plan_redirect(request)
 
-    assignment.cancelled_at = None
-    assignment.save(update_fields=["cancelled_at"])
-    log_action(request.user, "user.plan_cancellation_reversed", assignment.plan)
+        assignment.cancelled_at = None
+        assignment.save(update_fields=["cancelled_at"])
+        log_action(request.user, "user.plan_cancellation_reversed", assignment.plan)
 
     with translation.override(request.user.preferred_language):
         title = _("Your plan is active again")

@@ -1068,6 +1068,14 @@ def change_user_plan(request, user_id):
 
     old_assignment = get_assignment(target)
     old_plan_name = old_assignment.plan.name if old_assignment else "—"
+    # A double-click/retried POST re-submitting the SAME plan_id is a
+    # no-op, not a fresh change - real gap found in the remaining-audit
+    # pass: without this, assign_plan() would overwrite previous_plan with
+    # the plan the user is ALREADY on (corrupting that history) and send a
+    # second "your plan changed" notification for nothing. A genuinely
+    # different plan_id still goes through normally.
+    if old_assignment is not None and old_assignment.plan_id == plan.id:
+        return redirect("governance:users")
     assign_plan(target, plan, assigned_by=request.user)
     log_action(request.user, "user.plan_change", target, old_value=old_plan_name, new_value=plan.name)
     _notify_plan_change(target, plan)
@@ -1089,6 +1097,9 @@ def bulk_change_plan(request):
     # users this way, it just silently has no effect on ids outside scope.
     for target in _scope_users(request, User.objects.filter(id__in=user_ids)):
         old_assignment = get_assignment(target)
+        # Same no-op-on-already-this-plan guard as change_user_plan above.
+        if old_assignment is not None and old_assignment.plan_id == plan.id:
+            continue
         old_plan_name = old_assignment.plan.name if old_assignment else "—"
         assign_plan(target, plan, assigned_by=request.user)
         log_action(request.user, "user.plan_change", target, old_value=old_plan_name, new_value=f"{plan.name} (bulk)")
