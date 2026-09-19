@@ -1423,7 +1423,7 @@ class HealthzTests(TestCase):
     def test_healthz_returns_503_when_database_query_fails(self):
         from unittest.mock import patch
 
-        with patch("config.urls.connection") as mock_connection:
+        with patch("config.health.connection") as mock_connection:
             mock_connection.cursor.side_effect = Exception("connection refused")
             response = self.client.get("/healthz/")
         self.assertEqual(response.status_code, 503)
