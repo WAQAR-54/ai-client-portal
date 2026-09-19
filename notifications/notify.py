@@ -65,6 +65,8 @@ def notification_action_url(notification):
         )
     if notification.notification_type == NotificationType.REFUND_REQUESTED:
         return reverse("billing:refund_requests")
+    if notification.notification_type == NotificationType.PLAN_CANCELLATION:
+        return reverse("billing:my_plans")
     if notification.notification_type == NotificationType.REFUND_DECISION:
         invoice_id = meta.get("invoice_id")
         return (

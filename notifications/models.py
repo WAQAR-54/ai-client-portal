@@ -30,6 +30,13 @@ class NotificationType(models.TextChoices):
     # Admin approved/rejected it.
     REFUND_REQUESTED = "refund_requested", "Refund requested"
     REFUND_DECISION = "refund_decision", "Refund request decision"
+    # Its own type rather than reusing PLAN_CHANGE - a cancellation/resume
+    # isn't actually a plan change (the plan itself never changes; only
+    # future billing does), and PLAN_CHANGE's own badge label ("Plan
+    # changed") plus its email content template's "New plan" box
+    # (notifications/_email_content_plan_change.html) would otherwise
+    # show on a cancellation confirmation that has no new plan to show.
+    PLAN_CANCELLATION = "plan_cancellation", "Plan cancellation"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see
@@ -47,6 +54,7 @@ EMAIL_TOGGLE_LABELS = [
     (NotificationType.INVOICE_PAYMENT_SUBMITTED, "A client submitted invoice payment proof"),
     (NotificationType.REFUND_REQUESTED, "A client requested a refund"),
     (NotificationType.REFUND_DECISION, "Your refund request was decided"),
+    (NotificationType.PLAN_CANCELLATION, "Your plan is cancelled or resumed"),
 ]
 
 
@@ -102,6 +110,7 @@ class NotificationPreference(models.Model):
     email_invoice_payment_submitted = models.BooleanField(default=True)
     email_refund_requested = models.BooleanField(default=True)
     email_refund_decision = models.BooleanField(default=True)
+    email_plan_cancellation = models.BooleanField(default=True)
 
     def wants_email(self, notification_type):
         return getattr(self, f"email_{notification_type}", True)

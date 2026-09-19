@@ -999,6 +999,16 @@ def resolve_refund_request(request, request_id):
     return redirect("billing:refund_requests")
 
 
+def _safe_plan_redirect(request):
+    """cancel_plan/resume_plan are posted to from both My Plans and the
+    dashboard's "Your plan" card - send the user back to whichever one
+    they were actually on, restricted to this fixed pair of named URLs
+    (never an open redirect off an arbitrary posted path)."""
+    if request.POST.get("next") == "dashboard":
+        return redirect("accounts:dashboard")
+    return redirect("billing:my_plans")
+
+
 @login_required
 @require_http_methods(["POST"])
 def cancel_plan(request):
@@ -1012,7 +1022,7 @@ def cancel_plan(request):
 
     assignment = get_assignment(request.user)
     if assignment is None or assignment.cancelled_at is not None:
-        return redirect("billing:my_plans")
+        return _safe_plan_redirect(request)
 
     assignment.cancelled_at = timezone.now()
     assignment.save(update_fields=["cancelled_at"])
@@ -1024,25 +1034,32 @@ def cancel_plan(request):
             "Future billing has been stopped. You'll keep access to the %(plan)s plan until the period "
             "you've already paid for ends."
         ) % {"plan": assignment.plan.name}
-    notify(request.user, NotificationType.PLAN_CHANGE, title=title, body=body)
+    notify(request.user, NotificationType.PLAN_CANCELLATION, title=title, body=body)
     django_messages.success(request, _("Your plan is cancelled. No further invoices will be generated."))
-    return redirect("billing:my_plans")
+    return _safe_plan_redirect(request)
 
 
 @login_required
 @require_http_methods(["POST"])
 def resume_plan(request):
+    from notifications.models import NotificationType
+    from notifications.notify import notify
     from governance.plans import get_assignment
 
     assignment = get_assignment(request.user)
     if assignment is None or assignment.cancelled_at is None:
-        return redirect("billing:my_plans")
+        return _safe_plan_redirect(request)
 
     assignment.cancelled_at = None
     assignment.save(update_fields=["cancelled_at"])
     log_action(request.user, "user.plan_cancellation_reversed", assignment.plan)
+
+    with translation.override(request.user.preferred_language):
+        title = _("Your plan is active again")
+        body = _("Billing will continue as normal for the %(plan)s plan.") % {"plan": assignment.plan.name}
+    notify(request.user, NotificationType.PLAN_CANCELLATION, title=title, body=body)
     django_messages.success(request, _("Your plan is active again - billing will continue as normal."))
-    return redirect("billing:my_plans")
+    return _safe_plan_redirect(request)
 
 
 def _can_view_invoice(user, invoice):

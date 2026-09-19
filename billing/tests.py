@@ -2646,3 +2646,35 @@ class CancelPlanTests(TestCase):
         result = sweep_due_invoices()
         self.assertEqual(result["skipped_cancelled"], 1)
         self.assertEqual(Invoice.objects.filter(recipient_user=self.user).count(), 1)
+
+    def test_cancel_notifies_with_its_own_type_not_plan_change(self):
+        """Not NotificationType.PLAN_CHANGE - a cancellation isn't a plan
+        change (the plan itself never changes), and reusing that type
+        would show a misleading "New plan" box on the confirmation email
+        (see notifications/_email_content_plan_change.html)."""
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(reverse("billing:cancel_plan"))
+        notification = Notification.objects.get(user=self.user)
+        self.assertEqual(notification.notification_type, NotificationType.PLAN_CANCELLATION)
+        self.assertNotEqual(notification.notification_type, NotificationType.PLAN_CHANGE)
+        self.assertIn("cancelled", notification.title.lower())
+
+    def test_resume_also_sends_a_confirmation_notification(self):
+        from notifications.models import Notification, NotificationType
+
+        self.client.post(reverse("billing:cancel_plan"))
+        self.client.post(reverse("billing:resume_plan"))
+        notification = Notification.objects.filter(
+            user=self.user, notification_type=NotificationType.PLAN_CANCELLATION
+        ).latest("created_at")
+        self.assertIn("active again", notification.title.lower())
+
+    def test_cancel_can_redirect_back_to_the_dashboard(self):
+        response = self.client.post(reverse("billing:cancel_plan"), {"next": "dashboard"})
+        self.assertRedirects(response, reverse("accounts:dashboard"))
+
+    def test_resume_can_redirect_back_to_the_dashboard(self):
+        self.client.post(reverse("billing:cancel_plan"))
+        response = self.client.post(reverse("billing:resume_plan"), {"next": "dashboard"})
+        self.assertRedirects(response, reverse("accounts:dashboard"))

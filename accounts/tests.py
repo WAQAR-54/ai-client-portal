@@ -1530,6 +1530,35 @@ class DashboardUsageAndPlansTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No plan assigned yet.")
 
+    def test_your_plan_card_shows_cancel_plan_for_a_paid_plan(self):
+        """billing.views.cancel_plan/resume_plan, reachable from the
+        dashboard's "Your plan" card too, not just billing:my_plans."""
+        from governance.models import Plan
+        from governance.plans import assign_plan
+
+        paid_plan = Plan.objects.create(name="Growth", is_demo=False)
+        assign_plan(self.user, paid_plan)
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Cancel plan")
+        self.assertContains(response, reverse("billing:cancel_plan"))
+
+    def test_your_plan_card_shows_resume_once_cancelled(self):
+        from governance.models import Plan
+        from governance.plans import assign_plan
+
+        paid_plan = Plan.objects.create(name="Growth", is_demo=False)
+        assign_plan(self.user, paid_plan)
+        self.client.post(reverse("billing:cancel_plan"))
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Resume plan")
+        self.assertContains(response, "Cancelled")
+
+    def test_demo_plan_has_no_cancel_button(self):
+        """A Demo/trial plan is free (no payment taken) - nothing to
+        cancel, per the Refund & Cancellation Policy's own framing."""
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertNotContains(response, "Cancel plan")
+
 
 class TemplateHygieneTests(TestCase):
     """Static scans across every template file - catch a whole bug class at
