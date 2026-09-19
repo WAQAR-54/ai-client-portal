@@ -96,6 +96,10 @@
             <label for="max_context_tokens">{% trans "Max context tokens" %}</label>
             <input class="input" type="number" name="max_context_tokens" id="max_context_tokens" value="{{ plan.max_context_tokens|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
         </div>
+        <div>
+            <label for="max_messages_per_minute">{% trans "Max messages/minute" %}</label>
+            <input class="input" type="number" name="max_messages_per_minute" id="max_messages_per_minute" value="{{ plan.max_messages_per_minute|default_if_none:"" }}" placeholder="{{ unlimited_placeholder }}">
+        </div>
     </div>
 
     <div class="form-section-label">{% trans "Features" %}</div>

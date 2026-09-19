@@ -3281,3 +3281,35 @@ class TenantIsolationTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(self.conversation.messages.exists())
         mock_generate_image.assert_not_called()
+
+
+class MessageBurstLimitIntegrationTests(TestCase):
+    """End-to-end: chat:post_message actually returns 429 once a Plan's
+    max_messages_per_minute is hit - governance.tests.MessageBurstLimitTests
+    covers check_message_burst_limit itself in isolation; this proves the
+    real HTTP path (post_message -> check_usage_limits) wires it in."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="burst@example.com", password="pw12345!")
+        self.premium = _grant_premium_plan(self.user)
+        self.premium.max_messages_per_minute = 2
+        self.premium.save(update_fields=["max_messages_per_minute"])
+        self.client.login(email="burst@example.com", password="pw12345!")
+        self.conversation = Conversation.objects.create(user=self.user)
+
+    def _post(self, content="hi"):
+        return self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}), {"content": content}
+        )
+
+    def test_third_message_within_a_minute_is_rate_limited(self):
+        self.assertEqual(self._post("one").status_code, 200)
+        self.assertEqual(self._post("two").status_code, 200)
+        response = self._post("three")
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(response, "too quickly", status_code=429)
+        # The rejected third message was never actually saved.
+        self.assertEqual(self.conversation.messages.filter(role=Message.Role.USER).count(), 2)

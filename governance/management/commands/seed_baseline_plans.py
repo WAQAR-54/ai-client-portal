@@ -92,6 +92,7 @@ PLANS = [
         "monthly_budget_cap": Decimal("2.00"),
         "max_requests_per_period": 10,
         "period": "day",
+        "max_messages_per_minute": 5,
         "max_context_tokens": 4000,
         "auto_upgrade_threshold_spend": None,
         "feature_flags": {
@@ -120,6 +121,7 @@ PLANS = [
         "monthly_budget_cap": Decimal("20.00"),
         "max_requests_per_period": 50,
         "period": "day",
+        "max_messages_per_minute": 15,
         "max_context_tokens": 16000,
         "auto_upgrade_threshold_spend": None,
         "feature_flags": {
@@ -148,6 +150,7 @@ PLANS = [
         "monthly_budget_cap": Decimal("50.00"),
         "max_requests_per_period": 200,
         "period": "day",
+        "max_messages_per_minute": 30,
         "max_context_tokens": 64000,
         "auto_upgrade_threshold_spend": None,
         "feature_flags": {
@@ -178,6 +181,7 @@ PLANS = [
         "monthly_budget_cap": None,
         "max_requests_per_period": 1000,
         "period": "day",
+        "max_messages_per_minute": 60,
         "max_context_tokens": 128000,
         "auto_upgrade_threshold_spend": None,
         "feature_flags": {

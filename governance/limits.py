@@ -162,7 +162,7 @@ def check_usage_limits(user, conversation):
     """Raise UsageLimitExceeded if sending another message would (or already
     does) violate the user's effective daily/monthly/session/budget caps,
     or if their Plan has expired past its grace window."""
-    from governance.plans import check_request_count_limit, get_plan_status
+    from governance.plans import check_message_burst_limit, check_request_count_limit, get_plan_status
 
     # Lazy import: billing imports governance.models.Plan at module level,
     # so a module-level import here would be circular.
@@ -186,6 +186,10 @@ def check_usage_limits(user, conversation):
     # below - see governance/plans.py::check_request_count_limit for why
     # both are enforced rather than one replacing the other.
     check_request_count_limit(user, conversation)
+    # Short-window burst cap (messages/minute) - see check_message_burst_limit's
+    # own docstring for why this is separate from the day/session/month
+    # counter above.
+    check_message_burst_limit(user)
 
     limit = _effective_limit(user)
     if limit is None:

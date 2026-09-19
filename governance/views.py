@@ -1205,6 +1205,7 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
         plan.monthly_budget_cap = _parse_decimal(request.POST.get("monthly_budget_cap"))
         plan.max_requests_per_period = _int_or_none(request.POST.get("max_requests_per_period"))
         plan.period = request.POST.get("period") or None
+        plan.max_messages_per_minute = _int_or_none(request.POST.get("max_messages_per_minute"))
         plan.max_context_tokens = _int_or_none(request.POST.get("max_context_tokens"))
         plan.feature_flags = {key: request.POST.get(f"flag_{key}") == "on" for key, _label in KNOWN_FEATURE_FLAGS}
         plan.is_active = request.POST.get("is_active") == "on"

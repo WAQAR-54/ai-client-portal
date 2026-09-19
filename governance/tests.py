@@ -192,6 +192,61 @@ class PlanRestructureTests(TestCase):
         self.assertFalse(plan.has_feature("tools"))
 
 
+class MessageBurstLimitTests(TestCase):
+    """governance/plans.py::check_message_burst_limit - the short-window
+    (60s) burst cap, separate from max_requests_per_period above (whose
+    shortest window is a full day) and cache-backed rather than a DB
+    query (see accounts/rate_limit.py::is_rate_limited)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(email="burst@example.com", password="pw12345!")
+
+    def _plan(self, **overrides):
+        defaults = {"name": "BurstPlan", "max_messages_per_minute": None}
+        defaults.update(overrides)
+        plan = Plan.objects.create(**defaults)
+        assign_plan(self.user, plan)
+        return plan
+
+    def test_no_cap_configured_is_unrestricted(self):
+        from governance.plans import check_message_burst_limit
+
+        self._plan()
+        for _ in range(10):
+            check_message_burst_limit(self.user)  # should never raise
+
+    def test_raises_once_the_per_minute_cap_is_hit(self):
+        from governance.plans import check_message_burst_limit
+
+        self._plan(max_messages_per_minute=3)
+        check_message_burst_limit(self.user)
+        check_message_burst_limit(self.user)
+        check_message_burst_limit(self.user)
+        with self.assertRaises(UsageLimitExceeded):
+            check_message_burst_limit(self.user)
+
+    def test_is_isolated_per_user(self):
+        from governance.plans import check_message_burst_limit
+
+        plan = self._plan(max_messages_per_minute=1)
+        other_user = User.objects.create_user(email="burst2@example.com", password="pw12345!")
+        assign_plan(other_user, plan)
+
+        check_message_burst_limit(self.user)
+        with self.assertRaises(UsageLimitExceeded):
+            check_message_burst_limit(self.user)
+        check_message_burst_limit(other_user)  # a different user's own 60s window, should not raise
+
+    def test_no_plan_assigned_is_unrestricted(self):
+        from governance.plans import check_message_burst_limit
+
+        for _ in range(10):
+            check_message_burst_limit(self.user)  # should never raise
+
+
 class RestructurePlansCommandTests(TestCase):
     """The one-time rename/extend command - dry-run must never write,
     --apply must rename Standard/Premium IN PLACE (same id) so existing

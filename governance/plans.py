@@ -597,6 +597,28 @@ def check_request_count_limit(user, conversation):
         )
 
 
+def check_message_burst_limit(user):
+    """Raise UsageLimitExceeded if this user has already sent
+    plan.max_messages_per_minute messages within the last 60 seconds -
+    a short-window burst/rate limit, deliberately separate from
+    check_request_count_limit above (whose shortest window is a full
+    calendar day, so it does nothing against a tight posting loop within
+    a single minute). Cache-backed (accounts.rate_limit.is_rate_limited),
+    not a DB query, since this needs to be cheap on every single message."""
+    from accounts.rate_limit import is_rate_limited
+    from governance.limits import UsageLimitExceeded
+
+    plan = get_plan_status(user)["plan"]
+    if plan is None or plan.max_messages_per_minute is None:
+        return
+
+    if is_rate_limited(f"chat_post:{user.id}", limit=plan.max_messages_per_minute, window_seconds=60):
+        raise UsageLimitExceeded(
+            f"You're sending messages too quickly (limit: {plan.max_messages_per_minute} per minute). "
+            "Wait a moment and try again."
+        )
+
+
 def get_request_count_status(user, conversation=None):
     """Read-only {used, cap, window_label} snapshot of this user's request-
     count usage against their Plan's max_requests_per_period, or None if

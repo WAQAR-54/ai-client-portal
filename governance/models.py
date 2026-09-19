@@ -345,6 +345,16 @@ class Plan(models.Model):
         blank=True,
         help_text="Which window max_requests_per_period counts against.",
     )
+    # Short-window burst cap, independent of max_requests_per_period above -
+    # that one's shortest window is a full day, so it does nothing to stop
+    # a tight posting loop within a single minute. Null = no burst cap
+    # (matches every other limit field's null-means-unlimited convention
+    # here) - see governance/plans.py::check_message_burst_limit.
+    max_messages_per_minute = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max chat messages within any 60-second window. Null = no burst cap.",
+    )
     max_context_tokens = models.PositiveIntegerField(
         null=True,
         blank=True,
