@@ -16,23 +16,13 @@ Two rules keep this honest:
   free-text error. Failures are reduced to a fixed vocabulary here.
 """
 
-import logging
 import re
-import time
 
 import django
-from django.conf import settings
-from django.db import connection
 from django.utils import timezone
 from django.utils.timesince import timesince
 
-logger = logging.getLogger(__name__)
-
-# Bounded on purpose: redis-py has no default timeout, so a blackholed
-# host would otherwise hang the dashboard for the OS's TCP timeout.
-REDIS_PROBE_TIMEOUT_SECONDS = 2
-
-_ENGINE_LABELS = {"sqlite": "SQLite", "postgresql": "PostgreSQL"}
+from config.health import check_database, check_redis
 
 
 def age_label(moment):
@@ -40,56 +30,8 @@ def age_label(moment):
     (the template adds the translated word). Empty for a missing moment."""
     if not moment:
         return ""
-    age = timesince(moment).split(",")[0].replace("\xa0", " ")
+    age = timesince(moment).split(",")[0].replace(" ", " ")
     return age if not age.startswith("0 ") else "less than a minute"
-
-
-def check_database():
-    engine = _ENGINE_LABELS.get(connection.vendor, connection.vendor.title())
-    started = time.perf_counter()
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-    except Exception as exc:
-        logger.warning("Dashboard database probe failed: %s", type(exc).__name__)
-        return {"state": "unavailable", "engine": engine, "latency_ms": None}
-    return {"state": "healthy", "engine": engine, "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
-
-
-def check_redis(redis_url=None):
-    """Three distinct states, never collapsed:
-    not_configured - no REDIS_URL at all (the intentional local-dev setup:
-                     LocMemCache + Celery eager, see config/settings.py)
-    unavailable    - a URL is set but a real PING didn't succeed
-    healthy        - a real PING succeeded
-    Configured-but-unreachable is *not* healthy just because a URL exists."""
-    url = settings.REDIS_URL if redis_url is None else redis_url
-    if not url:
-        return {"state": "not_configured", "latency_ms": None}
-
-    import redis
-
-    client = None
-    started = time.perf_counter()
-    try:
-        client = redis.Redis.from_url(
-            url,
-            socket_connect_timeout=REDIS_PROBE_TIMEOUT_SECONDS,
-            socket_timeout=REDIS_PROBE_TIMEOUT_SECONDS,
-        )
-        client.ping()
-    except Exception as exc:
-        # Class name only: the message can contain the host, and a URL
-        # with a password is one bad format string away from being logged.
-        logger.warning("Dashboard Redis probe failed: %s", type(exc).__name__)
-        return {"state": "unavailable", "latency_ms": None}
-    finally:
-        if client is not None:
-            try:
-                client.close()
-            except Exception:
-                pass
-    return {"state": "healthy", "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
 
 
 _HTTP_STATUS = re.compile(r"(?:error code|status(?: code)?|http)[:\s]+(\d{3})", re.IGNORECASE)

@@ -1481,8 +1481,10 @@ class VerifySentryCommandTests(TestCase):
 
 class HealthzDeepTests(TestCase):
     """config/urls.py::healthz_deep - the slower sibling that also checks
-    Redis, kept off the hot healthz() path on purpose (see its own
-    docstring)."""
+    Redis, kept off the hot healthz() path on purpose. Both endpoints are
+    ANONYMOUS, so besides reporting state correctly they must never echo an
+    exception message (a host, a Redis URL that may carry a password, a
+    database error naming a user)."""
 
     def test_returns_ok_with_database_and_cache_reachable(self):
         response = self.client.get("/healthz/deep/")
@@ -1491,37 +1493,89 @@ class HealthzDeepTests(TestCase):
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["database"], "ok")
 
-    def test_returns_503_when_database_query_fails(self):
+    def test_returns_503_when_database_query_fails_without_leaking_the_error(self):
         from unittest.mock import patch
 
-        with patch("config.urls.connection") as mock_connection:
-            mock_connection.cursor.side_effect = Exception("connection refused")
+        with patch("config.health.connection") as mock_connection:
+            mock_connection.vendor = "postgresql"
+            mock_connection.cursor.side_effect = Exception('FATAL: password authentication failed for user "portal"')
             response = self.client.get("/healthz/deep/")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["status"], "error")
+        self.assertEqual(response.json()["database"], "unavailable")
+        self.assertNotIn("portal", response.content.decode())
 
-    def test_returns_503_when_redis_is_configured_but_unreachable(self):
-        from unittest.mock import patch
+    def test_returns_503_when_redis_is_configured_but_unreachable_without_leaking(self):
+        """A REAL refused/timed-out connection, not a mock, with a password in
+        the URL - which must not appear in the anonymous response."""
+        from django.test import override_settings
 
-        with patch("config.urls.settings") as mock_settings, patch("django.core.cache.cache") as mock_cache:
-            mock_settings.REDIS_URL = "redis://example.invalid:6379/0"
-            mock_cache.set.side_effect = Exception("connection refused")
+        with override_settings(REDIS_URL="redis://:hunter2-secret@127.0.0.1:1/0"):
             response = self.client.get("/healthz/deep/")
         self.assertEqual(response.status_code, 503)
         body = response.json()
         self.assertEqual(body["status"], "error")
-        self.assertIn("connection refused", body["redis"])
+        self.assertEqual(body["redis"], "unavailable")
+        self.assertNotIn("hunter2-secret", response.content.decode())
+        self.assertNotIn("127.0.0.1", response.content.decode())
+
+    def test_returns_promptly_when_redis_is_unavailable(self):
+        """The whole reason the probe is bounded: a dead Redis must not turn
+        a monitoring poll into a hang."""
+        import time
+
+        from django.test import override_settings
+
+        from config.health import REDIS_PROBE_TIMEOUT_SECONDS
+
+        started = time.monotonic()
+        with override_settings(REDIS_URL="redis://127.0.0.1:1/0"):
+            self.client.get("/healthz/deep/")
+        self.assertLess(time.monotonic() - started, REDIS_PROBE_TIMEOUT_SECONDS + 3)
+
+    def test_returns_503_when_the_redis_probe_times_out(self):
+        from unittest.mock import patch
+
+        from django.test import override_settings
+        from redis.exceptions import TimeoutError as RedisTimeout
+
+        with override_settings(REDIS_URL="redis://example.invalid:6379/0"), patch("redis.Redis.from_url") as from_url:
+            from_url.return_value.ping.side_effect = RedisTimeout("Timeout reading from socket")
+            response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["redis"], "unavailable")
+
+    def test_reports_ok_when_redis_answers_ping(self):
+        from unittest.mock import patch
+
+        from django.test import override_settings
+
+        with override_settings(REDIS_URL="redis://example.invalid:6379/0"), patch("redis.Redis.from_url") as from_url:
+            from_url.return_value.ping.return_value = True
+            response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["redis"], "ok")
 
     def test_reports_redis_not_configured_in_local_dev(self):
         """REDIS_URL is blank locally (LocMemCache, see config/settings.py) -
-        that's a normal, healthy state, not a failure."""
-        from unittest.mock import patch
+        a normal, healthy state, and distinct from "unavailable"."""
+        from django.test import override_settings
 
-        with patch("config.urls.settings") as mock_settings:
-            mock_settings.REDIS_URL = ""
+        with override_settings(REDIS_URL=""):
             response = self.client.get("/healthz/deep/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+        self.assertEqual(response.json()["redis"], "not_configured")
+
+    def test_plain_healthz_does_not_leak_a_database_error_either(self):
+        from unittest.mock import patch
+
+        with patch("config.health.connection") as mock_connection:
+            mock_connection.vendor = "postgresql"
+            mock_connection.cursor.side_effect = Exception('connection to server at "10.0.0.5" failed')
+            response = self.client.get("/healthz/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"status": "error", "database": "unavailable"})
 
 
 class RequestIDTests(TestCase):

@@ -4321,14 +4321,14 @@ class SystemStatusBackendTests(TestCase):
     # -- Redis: three distinct states ------------------------------------
 
     def test_redis_not_configured_when_no_url(self):
-        from governance.system_status import check_redis
+        from config.health import check_redis
 
         self.assertEqual(check_redis("")["state"], "not_configured")
 
     def test_redis_unavailable_when_configured_but_unreachable(self):
         """A REAL connection attempt to a closed port, not a mock. A URL
         being set must never be mistaken for a healthy Redis."""
-        from governance.system_status import check_redis
+        from config.health import check_redis
 
         result = check_redis("redis://127.0.0.1:1/0")
         self.assertEqual(result["state"], "unavailable")
@@ -4343,7 +4343,7 @@ class SystemStatusBackendTests(TestCase):
         import socket
         import threading
 
-        from governance.system_status import check_redis
+        from config.health import check_redis
 
         command = re.compile(rb"\*\d+\r\n(?:\$\d+\r\n[^\r]*\r\n)+")
         word = re.compile(rb"\$\d+\r\n([^\r]*)\r\n")
@@ -4388,7 +4388,7 @@ class SystemStatusBackendTests(TestCase):
         self.assertIsNotNone(result["latency_ms"])
 
     def test_redis_probe_is_time_bounded(self):
-        from governance.system_status import REDIS_PROBE_TIMEOUT_SECONDS, check_redis
+        from config.health import REDIS_PROBE_TIMEOUT_SECONDS, check_redis
 
         with patch("redis.Redis.from_url") as from_url:
             from_url.return_value.ping.return_value = True
@@ -4422,7 +4422,7 @@ class SystemStatusBackendTests(TestCase):
     def test_database_healthy_reports_the_real_engine(self):
         from django.db import connection
 
-        from governance.system_status import check_database
+        from config.health import check_database
 
         result = check_database()
         self.assertEqual(result["state"], "healthy")
@@ -4431,9 +4431,9 @@ class SystemStatusBackendTests(TestCase):
         self.assertGreaterEqual(result["latency_ms"], 0)
 
     def test_database_unavailable_hides_the_underlying_error(self):
-        from governance.system_status import check_database
+        from config.health import check_database
 
-        with patch("governance.system_status.connection") as mock_connection:
+        with patch("config.health.connection") as mock_connection:
             mock_connection.vendor = "postgresql"
             mock_connection.cursor.side_effect = Exception("FATAL: password authentication failed for user portal")
             result = check_database()

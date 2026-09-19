@@ -1,9 +1,10 @@
 from django.conf import settings
 from django.contrib import admin
-from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
+
+from config.health import HEALTHY, NOT_CONFIGURED, check_database, check_redis
 
 
 def serve_media(request, path):
@@ -32,11 +33,9 @@ def healthz(request):
     this anonymously, from inside/outside the container respectively.
     Cheap by design (SELECT 1, no cache/Celery/S3 round-trip) - this
     needs to answer fast and often, not be a full dependency audit."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-    except Exception as exc:
-        return JsonResponse({"status": "error", "database": str(exc)}, status=503)
+    if check_database()["state"] != HEALTHY:
+        # Fixed string, never the exception: this endpoint is anonymous.
+        return JsonResponse({"status": "error", "database": "unavailable"}, status=503)
     return JsonResponse({"status": "ok"})
 
 
@@ -61,31 +60,13 @@ def healthz_deep(request):
     storage configured (see docs/BACKUP_RESTORE.md), only local disk
     that already has to be writable for the process to have started at
     all, so there's nothing distinct left to verify there."""
-    checks = {}
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        checks["database"] = "ok"
-    except Exception as exc:
-        checks["database"] = str(exc)
-
-    if settings.REDIS_URL:
-        try:
-            from django.core.cache import cache
-
-            cache.set("healthz_deep_probe", "1", timeout=5)
-            if cache.get("healthz_deep_probe") != "1":
-                raise RuntimeError("Redis round-trip returned an unexpected value.")
-            checks["redis"] = "ok"
-        except Exception as exc:
-            checks["redis"] = str(exc)
-    else:
-        checks["redis"] = "not configured (LocMemCache in use, e.g. local dev)"
-
-    healthy = checks["database"] == "ok" and checks["redis"] in (
-        "ok",
-        "not configured (LocMemCache in use, e.g. local dev)",
-    )
+    database = check_database()["state"]
+    redis_state = check_redis()["state"]
+    checks = {
+        "database": "ok" if database == HEALTHY else database,
+        "redis": "ok" if redis_state == HEALTHY else redis_state,
+    }
+    healthy = database == HEALTHY and redis_state in (HEALTHY, NOT_CONFIGURED)
     return JsonResponse({"status": "ok" if healthy else "error", **checks}, status=200 if healthy else 503)
 
 
