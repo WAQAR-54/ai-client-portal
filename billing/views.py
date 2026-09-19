@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -248,15 +249,43 @@ def checkout_plan(request):
     =False - that flag exists specifically so a SuperAdmin can require a
     sales conversation for a higher tier instead of instant checkout; a
     direct POST bypassing the "Contact us" button in the UI must not be
-    able to route around that."""
+    able to route around that.
+
+    Idempotent against a double-click/refresh/retry: if the user already
+    has an open (unpaid or pending-verification) invoice for this exact
+    plan, this hands back THAT invoice instead of generating a new one -
+    real gap found in the production-readiness audit, since nothing here
+    checked before creating. A plan the user already has a PAID or
+    REFUNDED invoice for is unaffected - switching plans, or re-
+    subscribing after a refund, must still create a fresh invoice.
+    select_for_update() on the user's own row (Postgres only, same no-op-
+    on-SQLite caveat as the identical pattern in chat/views.py::
+    post_message) closes the true concurrent-request race: two near-
+    simultaneous POSTs otherwise both pass the "no open invoice yet" check
+    before either commits its INSERT."""
     plan = get_object_or_404(
         Plan, id=request.POST.get("plan_id"), is_active=True, is_demo=False, self_checkout_enabled=True
     )
-    try:
-        invoice = generate_invoice_for_user(request.user, plan=plan)
-    except InvoiceGenerationError as exc:
-        django_messages.error(request, str(exc))
-        return redirect("billing:my_plans")
+
+    with transaction.atomic():
+        User.objects.select_for_update().get(pk=request.user.pk)
+        existing_invoice = Invoice.objects.filter(
+            recipient_user=request.user,
+            plan=plan,
+            status__in=[Invoice.Status.UNPAID, Invoice.Status.PENDING_VERIFICATION],
+        ).first()
+        if existing_invoice is not None:
+            django_messages.info(
+                request,
+                _("You already have an open invoice for the %(plan)s plan - here it is.") % {"plan": plan.name},
+            )
+            return redirect("billing:my_invoices")
+
+        try:
+            invoice = generate_invoice_for_user(request.user, plan=plan)
+        except InvoiceGenerationError as exc:
+            django_messages.error(request, str(exc))
+            return redirect("billing:my_plans")
 
     success, _error = send_invoice_email(invoice)
     if success:

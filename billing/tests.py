@@ -1397,6 +1397,71 @@ class CheckoutPlanTests(TestCase):
         invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
         self.assertEqual(invoice.status, Invoice.Status.UNPAID)
 
+    def test_checkout_twice_in_a_row_does_not_create_a_duplicate_invoice(self):
+        """Regression test for the production-readiness audit: a double-
+        click, a browser refresh resubmitting the POST, or a retried
+        request all look like this to the server - the SAME user POSTing
+        checkout_plan twice for the SAME plan while the first invoice is
+        still open (unpaid/pending-verification). Must hand back the
+        existing invoice instead of creating a second one."""
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).count(), 1)
+
+    def test_checkout_after_existing_invoice_is_paid_creates_a_new_one(self):
+        """A legitimate case, not a duplicate: once the open invoice for
+        this plan is actually paid (e.g. a renewal, or the admin manually
+        marks it paid), checking out for the SAME plan again must still be
+        possible - the idempotency check only ever looks at OPEN invoices."""
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        first = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        first.status = Invoice.Status.PAID
+        first.save(update_fields=["status"])
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).count(), 2)
+
+    def test_checkout_after_refund_creates_a_new_invoice(self):
+        """Re-subscribing after a refund is a legitimate new checkout, not
+        a duplicate - a REFUNDED invoice must not block it either."""
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        first = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        superadmin = User.objects.create_user(
+            email="admin-refund@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        first.mark_refunded(by=superadmin)
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).count(), 2)
+
+    def test_checkout_for_a_different_plan_is_unaffected_by_an_open_invoice(self):
+        """An open invoice for Plan A must never block checking out Plan B -
+        the idempotency check is scoped per (user, plan), not per user."""
+        other_plan = Plan.objects.create(name="Elite")
+        RegionalPrice.objects.create(plan=other_plan, region_code="ROW", price=Decimal("199"))
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": other_plan.id})
+
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).count(), 1)
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user, plan=other_plan).count(), 1)
+
+    def test_checkout_while_pending_verification_does_not_create_a_duplicate(self):
+        """The window between "user submitted payment proof" and "admin
+        verified it" (Invoice.Status.PENDING_VERIFICATION) must also count
+        as open - a second checkout attempt during that window is exactly
+        as much a duplicate as one against a fresh unpaid invoice."""
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        first = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        first.status = Invoice.Status.PENDING_VERIFICATION
+        first.save(update_fields=["status"])
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+
+        self.assertEqual(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).count(), 1)
+
     def test_checkout_does_not_change_the_users_plan(self):
         from governance.plans import get_assignment
 
