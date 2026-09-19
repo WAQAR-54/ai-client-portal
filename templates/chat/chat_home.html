@@ -519,6 +519,7 @@ function portalCloseUpgradeModal() {
     </div>
     {% endif %}
     <div id="messages" class="chat-messages">
+        {% if conversation %}<h1 class="sr-only">{{ conversation.title }}</h1>{% endif %}
         <div class="chat-column">
             {% for m in messages_list %}
                 {% if m.arena_skip %}
@@ -583,7 +584,7 @@ function portalCloseUpgradeModal() {
             </details>
             {% endif %}
         </div>
-        <form id="composer-form" class="chat-composer"
+        <form id="composer-form" class="chat-composer" method="post"
               hx-post="{% url 'chat:post_message' conversation_id=conversation.id %}"
               hx-target="#messages .chat-column" hx-swap="beforeend"
               hx-encoding="multipart/form-data"
@@ -732,6 +733,21 @@ function portalCloseUpgradeModal() {
         });
     })();
     (function() {
+        // The chat views refuse a send that is over the user's plan/usage
+        // limit with status 429 and a ready-made alert fragment
+        // (chat/_limit_exceeded.html). htmx never swaps a 4xx response, so
+        // that message was silently dropped - the user's text vanished from the
+        // composer and nothing said why. Let this one case through. Only an
+        // HTML body: the JSON 429s elsewhere are fetch() calls, not htmx.
+        document.body.addEventListener("htmx:beforeSwap", function(evt) {
+            var xhr = evt.detail.xhr;
+            if (xhr && xhr.status === 429 && (xhr.getResponseHeader("Content-Type") || "").indexOf("text/html") === 0) {
+                evt.detail.shouldSwap = true;
+                evt.detail.isError = false;
+            }
+        });
+    })();
+    (function() {
         // A quick-start card on the empty state passes its prompt through
         // as ?starter= on the redirect to the new conversation - pick it up
         // once, prefill + focus the composer, then strip it from the URL
@@ -759,12 +775,19 @@ function portalCloseUpgradeModal() {
                 intelInput.value = intel;
                 var attempts = 0;
                 (function send() {
-                    // htmx must be up, or requestSubmit() would do a plain
-                    // full-page POST instead of the htmx one.
-                    if (window.htmx || attempts++ > 40) {
-                        if (window.htmx) composer.requestSubmit();
+                    // htmx must be up AND must already have processed the
+                    // composer, or requestSubmit() falls through to a native
+                    // form submit (a GET that puts the message and CSRF token
+                    // in the URL) instead of the htmx POST. This script runs
+                    // before DOMContentLoaded, when htmx exists but has not
+                    // yet attached its handlers - so wait for the document,
+                    // then process the form explicitly (idempotent).
+                    if (window.htmx && document.readyState !== "loading") {
+                        window.htmx.process(composer);
+                        composer.requestSubmit();
                         return;
                     }
+                    if (attempts++ > 100) return;
                     setTimeout(send, 50);
                 })();
             }
@@ -865,7 +888,7 @@ function portalCloseUpgradeModal() {
     </div>
     {% endif %}
 </section>
-<aside class="artifact-panel" id="artifact-panel" hidden>
+<aside class="artifact-panel" id="artifact-panel" aria-label="{% trans 'Document panel' %}" hidden>
     <div class="artifact-resize-handle" id="artifact-resize-handle"></div>
     <div class="artifact-panel-header">
         <div class="artifact-panel-header-left">
@@ -877,7 +900,7 @@ function portalCloseUpgradeModal() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
     </div>
-    <div class="artifact-panel-body-wrap">
+    <div class="artifact-panel-body-wrap" tabindex="0" role="region" aria-label="{% trans 'Document' %}">
         <div class="artifact-loading" id="artifact-loading">
             <span class="typing-dots"><span></span><span></span><span></span></span>
             {% trans "Loading document…" %}
@@ -996,6 +1019,12 @@ function portalResetComposerAttrs() {
         form.setAttribute("hx-swap", form.dataset.defaultSwap);
         htmx.process(form);
     }
+    // A Live Intelligence quick command tags ONE message. Unlike the visible
+    // fields, a hidden input's .value is its default value, so form.reset()
+    // does not clear it - clear it here or every follow-up in this
+    // conversation would be re-grounded as a news command.
+    var liveIntel = document.getElementById("live-intel-input");
+    if (liveIntel) liveIntel.value = "";
     var banner = document.getElementById("edit-banner");
     if (banner) banner.style.display = "none";
     // Compare mode is per-turn, not sticky - every send (successful or not)
@@ -1004,12 +1033,17 @@ function portalResetComposerAttrs() {
     // of silently double-costing AI calls on a message they forgot it was
     // still on for.
     portalSetCompareMode(false);
-    // Research mode is per-turn too, same reasoning - the hidden input's
-    // value already resets via the form's own native reset() (its default
-    // HTML value is ""), this just syncs the menu item's checkmark to match.
+    // Research mode is per-turn too. The hidden input is cleared explicitly:
+    // its .value is its default value, so the form's native reset() would NOT
+    // clear it (the checkmark would go away while the next message still
+    // went out as a paid Research request).
+    var researchInput = document.getElementById("research-input");
+    if (researchInput) researchInput.value = "";
     var researchBtn = document.getElementById("research-toggle-btn");
     if (researchBtn) researchBtn.classList.remove("active");
     // Code output mode is per-turn too, same reasoning as Research above.
+    var codeInput = document.getElementById("output-mode-input");
+    if (codeInput) codeInput.value = "";
     var codeModeBtn = document.getElementById("code-mode-toggle-btn");
     if (codeModeBtn) codeModeBtn.classList.remove("active");
 }

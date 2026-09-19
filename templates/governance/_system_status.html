@@ -53,7 +53,7 @@ load; provider and job data is HISTORY and is labelled as such.
             <p class="sys-panel-note">{% trans "Last known status, based on each provider's most recent model sync - not a live check. Activity is the newest reply routed through the provider in recent history." %}</p>
 
             {% if system_status.providers.rows %}
-            <div class="sys-table-wrap">
+            <div class="sys-table-wrap" tabindex="0" role="region" aria-labelledby="sys-providers-title">
                 <table class="data sys-table sys-providers">
                     <colgroup><col class="col-provider"><col><col><col></colgroup>
                     <thead><tr><th scope="col">{% trans "Provider" %}</th><th scope="col">{% trans "Status" %}</th><th scope="col">{% trans "Last sync" %}</th><th scope="col">{% trans "Last activity" %}</th></tr></thead>
@@ -100,7 +100,7 @@ load; provider and job data is HISTORY and is labelled as such.
             {% if system_status.jobs.total == system_status.jobs.never_run %}
             <p class="sys-notice" role="status">{% trans "No execution history recorded yet - the tasks below are scheduled but none has been dispatched." %}</p>
             {% endif %}
-            <div class="sys-table-wrap">
+            <div class="sys-table-wrap" tabindex="0" role="region" aria-labelledby="sys-jobs-title">
                 <table class="data sys-table sys-jobs">
                     <colgroup><col class="col-task"><col class="col-status"><col class="col-when"><col class="col-runs"><col class="col-enabled"></colgroup>
                     <thead><tr><th scope="col">{% trans "Task" %}</th><th scope="col">{% trans "Status" %}</th><th scope="col">{% trans "Last run" %}</th><th scope="col" class="sys-num">{% trans "Runs" %}</th><th scope="col">{% trans "Enabled" %}</th></tr></thead>

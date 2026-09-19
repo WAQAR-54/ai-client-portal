@@ -29,7 +29,7 @@
             <span class="mobile-topbar-brand">{% include "_brand_mark.html" %}</span>
         </header>
         <div class="sidebar-backdrop" onclick="document.body.classList.remove('sidebar-open')"></div>
-        <aside class="app-sidebar">
+        <aside class="app-sidebar" aria-label="{% trans 'Sidebar' %}">
             <button type="button" class="mobile-sidebar-close" aria-label="{% trans 'Close menu' %}" onclick="document.body.classList.remove('sidebar-open')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>

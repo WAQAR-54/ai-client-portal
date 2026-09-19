@@ -46,7 +46,7 @@ live_intelligence.safe_url (http/https).
         </p>
         <button type="button" class="btn btn-ghost btn-small intel-refresh"
                 hx-post="{% url 'chat:live_intelligence_refresh' %}" hx-target="#intel-feed" hx-swap="outerHTML"
-                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' hx-disabled-elt="this">
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' hx-request='{"timeout": 25000}' hx-disabled-elt="this">
             {% trans "Refresh intelligence" %}
         </button>
     </div>

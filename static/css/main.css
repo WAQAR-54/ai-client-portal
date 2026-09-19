@@ -31,8 +31,8 @@
        inputs) - not just a hover color, a permanently-stronger outline. */
     --color-border-strong: #c9c4b5;
     --color-text: #232019;
-    --color-text-muted: #6f6c62;
-    --color-text-faint: #9c988c;
+    --color-text-muted: #67645a;
+    --color-text-faint: #6c685e;
 
     /* Secondary = navy. Structural/dominant in light mode: sidebar/header
        fills, headings, body-text links, secondary-button borders+text. */
@@ -81,6 +81,7 @@
        that actually passes contrast (~5.7:1), instead of white-on-cyan
        (~2.5:1, fails). Mode-independent for the same reason as above. */
     --accent-text: #122268;
+    --on-accent: #122268;
 
     /* Sidebar stays a neutral surface in both modes - only the active nav
        item's icon takes the accent color; the highlight behind it stays
@@ -97,8 +98,10 @@
 
     --color-success: #1e9a6c;
     --color-success-soft: #e3f5ec;
+    --color-success-text: #15694a;
     --color-danger: #c7443f;
     --color-danger-soft: #fbe7e8;
+    --color-danger-text: #a8332f;
     --color-danger-hover: #a8332f;
     /* Warning/status colors stay on a conventional amber regardless of
        brand palette - a "nearing your budget" warning must never read as
@@ -118,13 +121,13 @@
        dominant brand color; the other four are new hues chosen to stay
        clearly apart from --color-success/--warn/--color-danger. */
     --provider-anthropic: var(--secondary);
-    --provider-openai: #1f9254;
+    --provider-openai: #17703f;
     --provider-openai-soft: #dff5e7;
-    --provider-gemini: #6d5bd0;
+    --provider-gemini: #5a48c2;
     --provider-gemini-soft: #eae7fb;
-    --provider-grok: #b4790c;
+    --provider-grok: #8f5f06;
     --provider-grok-soft: #fbeed9;
-    --provider-deepseek: #0e7c86;
+    --provider-deepseek: #0c6c75;
     --provider-deepseek-soft: #dcf1f2;
 
     --radius-sm: 6px;
@@ -198,7 +201,7 @@
         --color-border-strong: #3a4152;
         --color-text: #edeef2;
         --color-text-muted: #aeb2be;
-        --color-text-faint: #6c7280;
+        --color-text-faint: #8a91a1;
 
         /* Dominant color flips in dark mode: navy is too close in value to
            this near-black surface to read as a distinct background, so it
@@ -252,8 +255,10 @@
 
         --color-success: #3ecb8f;
         --color-success-soft: #1b3324;
+        --color-success-text: #3ecb8f;
         --color-danger: #f1817e;
         --color-danger-soft: #3a1e1e;
+        --color-danger-text: #f1817e;
         --color-danger-hover: #f5a19e;
 
         --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -273,7 +278,7 @@
     --color-border-strong: #3a4152;
     --color-text: #edeef2;
     --color-text-muted: #aeb2be;
-    --color-text-faint: #6c7280;
+    --color-text-faint: #8a91a1;
 
     --secondary: #93a5f2;
     --secondary-hover: #a8b7f7;
@@ -309,8 +314,10 @@
 
     --color-success: #3ecb8f;
     --color-success-soft: #1b3324;
+    --color-success-text: #3ecb8f;
     --color-danger: #f1817e;
     --color-danger-soft: #3a1e1e;
+    --color-danger-text: #f1817e;
     --color-danger-hover: #f5a19e;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -361,7 +368,7 @@
     top: -40px;
     left: 0;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     padding: 0.6rem 1rem;
     z-index: 200;
     border-radius: 0 0 var(--radius-sm) 0;
@@ -1114,7 +1121,7 @@ button, .btn {
     /* Flat fill, not a gradient - tried a glossy sheen here, reverted:
        across the whole app it read as inconsistent/off rather than premium. */
     background: var(--accent);
-    color: var(--accent-text);
+    color: var(--on-accent);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-sm);
@@ -1150,8 +1157,8 @@ button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent-dim);
     font-weight: 800;
 }
 .badge-muted { background: var(--color-surface-muted); color: var(--color-text-muted); }
-.badge-danger { background: var(--color-danger-soft); color: var(--color-danger); }
-.badge-success { background: var(--color-success-soft); color: var(--color-success); }
+.badge-danger { background: var(--color-danger-soft); color: var(--color-danger-text); }
+.badge-success { background: var(--color-success-soft); color: var(--color-success-text); }
 .badge-warn { background: var(--warn-soft); color: var(--warn); }
 
 /* ---------- Tables ---------- */
@@ -2562,7 +2569,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 }
 .hero-eyebrow {
     font-size: var(--text-xs);
-    color: var(--secondary-text);
+    color: var(--color-text-muted);
     margin-bottom: var(--space-3);
     display: flex;
     align-items: center;
@@ -2571,7 +2578,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .hero-eyebrow-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--secondary-text); flex-shrink: 0; }
 /* Same treatment as .hero-eyebrow, for admin pages - kept as its own class
    (not a shared selector) since chat and admin pages never share a template. */
-.admin-eyebrow { font-size: var(--text-xs); color: var(--secondary-text); margin-bottom: var(--space-2); display: flex; align-items: center; gap: 0.4rem; }
+.admin-eyebrow { font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: var(--space-2); display: flex; align-items: center; gap: 0.4rem; }
 .admin-eyebrow::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--secondary-text); flex-shrink: 0; }
 .hero-title {
     font-family: var(--font-display);
@@ -3008,7 +3015,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     cursor: not-allowed;
     transition: background 140ms var(--ease);
 }
-.compare-setup-start.enabled { background: var(--accent); color: var(--accent-text); cursor: pointer; }
+.compare-setup-start.enabled { background: var(--accent); color: var(--on-accent); cursor: pointer; }
 
 /* Composer's "compare mode is armed" indicator, once the setup screen's
    Start button has locked in the 2 models - replaces .composer-chips for
@@ -4239,7 +4246,7 @@ details[open] > .smooth-details-summary::before { transform: rotate(45deg); }
 .sys-card-detail { margin-top: 4px; font-size: var(--text-sm); font-weight: 600; color: var(--color-text); }
 .sys-card-foot { font-size: var(--text-xs); color: var(--color-text-faint); }
 .sys-card-foot:first-of-type { margin-top: auto; }
-.sys-card-checked { margin-top: 0; opacity: 0.85; }
+.sys-card-checked { margin-top: 0; }
 
 .badge-info { background: var(--secondary-soft); color: var(--secondary); }
 .sys-badge { font-size: 11px; font-weight: 600; white-space: nowrap; gap: 6px; }
@@ -4275,6 +4282,9 @@ table.data tbody th.sys-rowhead {
 }
 .sys-reason { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.35; color: var(--color-danger); }
 .sys-when { white-space: nowrap; font-size: 12px; }
+/* The providers panel is the narrower of the two side by side, so its timestamps
+   wrap instead of forcing the last column behind a horizontal scroll. */
+.sys-providers .sys-when { white-space: normal; }
 .sys-muted { color: var(--color-text-faint); }
 .sys-num { text-align: right; }
 
@@ -4303,7 +4313,9 @@ table.data tbody th.sys-rowhead {
 @media (max-width: 1100px) {
     .sys-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 900px) {
+/* Side by side only where both tables fit without a sideways scroll (measured:
+   the jobs table needs ~540px, providers ~365px, beside a 260px sidebar). */
+@media (max-width: 1400px) {
     .sys-panels { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 560px) {

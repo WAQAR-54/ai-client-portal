@@ -419,6 +419,9 @@ LOGGING = {
     },
     "filters": {
         "request_id": {"()": "accounts.middleware.RequestIDLogFilter"},
+        # An expected 503 from /healthz/ is logged as a WARNING, not an ERROR -
+        # see governance/error_alerts.py::HealthProbeDowngradeFilter.
+        "health_probe": {"()": "governance.error_alerts.HealthProbeDowngradeFilter"},
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": "verbose", "filters": ["request_id"]},
@@ -451,6 +454,7 @@ LOGGING = {
         # propagate=True so it still reaches console/file via "root" too.
         "django.request": {
             "handlers": ["mail_admins"],
+            "filters": ["health_probe"],
             "level": "ERROR",
             "propagate": True,
         },

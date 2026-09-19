@@ -387,6 +387,65 @@ class HomePageTests(LiveIntelligenceViewBase):
 
 
 @override_settings(LIVE_INTELLIGENCE_ENABLED=True)
+class ClientResilienceTests(LiveIntelligenceViewBase):
+    """Guards for three client-side defects found by driving a real browser
+    (Phase 4C). The behaviour itself was verified in Chromium against the real
+    htmx; these tests keep the markup that implements it from being removed."""
+
+    def test_a_failed_or_hung_news_request_ends_in_an_explicit_state(self):
+        """htmx never swaps an error response, so without this handler a
+        502/timeout left "Loading current headlines..." up forever."""
+        html = self.client.get(reverse("chat:chat_home")).content.decode()
+        for event in ("htmx:responseError", "htmx:sendError", "htmx:timeout"):
+            self.assertIn(event, html)
+        self.assertIn("hx-request='{\"timeout\": 20000}'", html)
+        self.assertIn("data-msg-failed=", html)
+        self.assertIn("data-msg-refresh-failed=", html)
+        self.assertIn("data-msg-retry=", html)
+
+    def test_the_refresh_request_is_bounded_too(self):
+        with patch.object(li, "_http_get", fake_http(default=ConnectionError("down"))):
+            fragment = self.client.get(reverse("chat:live_intelligence")).content.decode()
+        self.assertIn("hx-request='{\"timeout\": 25000}'", fragment)
+
+    def _conversation_page(self):
+        conversation = Conversation.objects.create(user=self.user)
+        return self.client.get(reverse("chat:chat_conversation", args=[conversation.id])).content.decode()
+
+    def test_the_auto_send_waits_for_htmx_to_process_the_composer(self):
+        """requestSubmit() before htmx attached its handlers is a native GET
+        that puts the message and the CSRF token in the URL."""
+        html = self._conversation_page()
+        self.assertIn('document.readyState !== "loading"', html)
+        self.assertIn("window.htmx.process(composer)", html)
+        self.assertIn('<form id="composer-form" class="chat-composer" method="post"', html)
+
+    def test_a_limit_refusal_is_shown_to_the_user_not_silently_dropped(self):
+        """The server answers an over-limit send with 429 + an alert fragment;
+        htmx does not swap 4xx by default, so the fragment was never shown."""
+        html = self._conversation_page()
+        self.assertIn("xhr.status === 429", html)
+        self.assertIn("evt.detail.shouldSwap = true", html)
+        self.assertIn('indexOf("text/html") === 0', html)  # JSON 429s (fetch callers) are left alone
+
+    def test_one_shot_composer_flags_are_cleared_after_every_send(self):
+        """A hidden input's .value is its default value, so form.reset() does
+        not clear it. Without explicit clearing, every later message would be
+        re-grounded as a news command (or silently run as paid Research)."""
+        html = self._conversation_page()
+        for line in (
+            'document.getElementById("live-intel-input")',
+            'document.getElementById("research-input")',
+            'document.getElementById("output-mode-input")',
+        ):
+            reset_at = html.index("function portalResetComposerAttrs()")
+            self.assertIn(line, html[reset_at : reset_at + 3000])
+        self.assertIn('liveIntel.value = ""', html)
+        self.assertIn('researchInput.value = ""', html)
+        self.assertIn('codeInput.value = ""', html)
+
+
+@override_settings(LIVE_INTELLIGENCE_ENABLED=True)
 class FeedFragmentTests(LiveIntelligenceViewBase):
     def _feed(self):
         return self.client.get(reverse("chat:live_intelligence"))

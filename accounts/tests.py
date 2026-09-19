@@ -1430,6 +1430,105 @@ class HealthzTests(TestCase):
         self.assertEqual(response.json()["status"], "error")
 
 
+@override_settings(ADMINS=[("Ops", "ops@example.com")], CELERY_TASK_ALWAYS_EAGER=True)
+class HealthProbeAlertTests(TestCase):
+    """The health endpoints are polled constantly (Docker HEALTHCHECK, the CI
+    post-deploy gate, uptime monitors). Django logs every 5xx *response* -
+    not just exceptions - on "django.request" at ERROR, and that logger is
+    wired to the mail_admins handler, so an expected 503 from a probe would
+    otherwise email every ADMINS address on every poll for as long as the
+    dependency is down."""
+
+    def _alert_emails(self):
+        from django.core import mail
+
+        return [m for m in mail.outbox if "/healthz" in m.subject or "/healthz" in m.body]
+
+    def test_a_healthy_probe_sends_no_email(self):
+        self.assertEqual(self.client.get("/healthz/").status_code, 200)
+        self.assertEqual(self.client.get("/healthz/deep/").status_code, 200)
+        self.assertEqual(self._alert_emails(), [])
+
+    def test_a_failing_probe_does_not_email_admins_on_every_poll(self):
+        from unittest.mock import patch
+
+        with patch("config.health.connection") as mock_connection:
+            mock_connection.cursor.side_effect = Exception("connection refused")
+            statuses = [self.client.get("/healthz/").status_code for _ in range(5)]
+            statuses += [self.client.get("/healthz/deep/").status_code for _ in range(3)]
+        self.assertEqual(set(statuses), {503})
+        self.assertEqual(self._alert_emails(), [])
+
+    def test_a_deep_probe_with_redis_down_does_not_email_either(self):
+        from unittest.mock import patch
+
+        with patch("config.urls.check_redis", return_value={"state": "unavailable"}):
+            response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self._alert_emails(), [])
+
+    def test_the_failure_is_still_logged_just_not_as_an_alertable_error(self):
+        from unittest.mock import patch
+
+        with patch("config.health.connection") as mock_connection:
+            mock_connection.cursor.side_effect = Exception("connection refused")
+            with self.assertLogs("django.request", level="WARNING") as captured:
+                self.client.get("/healthz/")
+        self.assertTrue(any("/healthz/" in line for line in captured.output))
+        self.assertTrue(all(record.levelname == "WARNING" for record in captured.records))
+
+    def test_a_genuine_crash_inside_the_health_view_still_emails(self):
+        """Suppression is for the expected 503 only - a bug that raises inside
+        the probe is a real 500 and must still page the admins."""
+        from unittest.mock import patch
+
+        from django.test import Client
+
+        with patch("config.urls.check_database", side_effect=RuntimeError("boom")):
+            response = Client(raise_request_exception=False).get("/healthz/")
+        self.assertEqual(response.status_code, 500)
+        self.assertGreaterEqual(len(self._alert_emails()), 1)
+
+    def _record(self, path, status, exc_info=None):
+        import logging
+        from types import SimpleNamespace
+
+        record = logging.LogRecord("django.request", logging.ERROR, __file__, 1, "msg", (), exc_info)
+        record.request = SimpleNamespace(path=path)
+        record.status_code = status
+        return record
+
+    def test_the_filter_downgrades_only_an_exception_free_503_on_a_probe_path(self):
+        import logging
+
+        from governance.error_alerts import HealthProbeDowngradeFilter
+
+        probe_filter = HealthProbeDowngradeFilter()
+        for path in ("/healthz/", "/healthz/deep/"):
+            record = self._record(path, 503)
+            self.assertTrue(probe_filter.filter(record))
+            self.assertEqual(record.levelno, logging.WARNING)
+
+        untouched = [
+            self._record("/chat/", 503),  # a 503 anywhere else is still an alert
+            self._record("/healthz/", 500),  # a real server error on the probe path
+            self._record(
+                "/healthz/", 503, exc_info=(RuntimeError, RuntimeError("boom"), None)
+            ),  # crashed, not answered
+        ]
+        for record in untouched:
+            probe_filter.filter(record)
+            self.assertEqual(record.levelno, logging.ERROR, record.request.path)
+
+    def test_the_filter_is_wired_onto_the_django_request_logger(self):
+        import logging
+
+        from governance.error_alerts import HealthProbeDowngradeFilter
+
+        filters = logging.getLogger("django.request").filters
+        self.assertTrue(any(isinstance(f, HealthProbeDowngradeFilter) for f in filters))
+
+
 class VerifySentryCommandTests(TestCase):
     """accounts/management/commands/verify_sentry.py - lets an operator
     prove Sentry actually receives an event, not just that sentry_sdk.

@@ -8,7 +8,7 @@
               hx-target="#domain-generator-model-rows" hx-swap="outerHTML" style="margin:0;">
             {% csrf_token %}
             <label class="toggle-switch" title="{% if m.is_domain_generator_enabled %}{% trans 'Remove from Domain Generator' %}{% else %}{% trans 'Show in Domain Generator' %}{% endif %}">
-                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_domain_generator_enabled %}checked{% endif %}>
+                <input type="checkbox" aria-label="{{ m.display_label }}" onchange="this.closest('form').requestSubmit()" {% if m.is_domain_generator_enabled %}checked{% endif %}>
                 <span class="toggle"><span class="toggle-knob"></span></span>
             </label>
         </form>

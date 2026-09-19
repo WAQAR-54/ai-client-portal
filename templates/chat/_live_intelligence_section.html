@@ -6,13 +6,16 @@ chat:live_intelligence, so a slow or dead feed can only ever affect this
 section, never /chat/ itself. Quick commands POST to create_conversation like
 the existing quick-start cards; the retrieved data is attached server-side.
 {% endcomment %}
-<section class="chat-intel" aria-labelledby="chat-intel-title">
+<section class="chat-intel" id="chat-intel" aria-labelledby="chat-intel-title"
+         data-msg-failed="{% trans "Unable to retrieve current news. Try again shortly." %}"
+         data-msg-refresh-failed="{% trans "Couldn't refresh right now. Try again shortly." %}"
+         data-msg-retry="{% trans "Try again" %}">
     <div class="chat-intel-head">
         <h2 id="chat-intel-title" class="chat-intel-title">{% trans "Live intelligence" %}</h2>
         <p class="chat-intel-sub">{% trans "Stay up to date with technology, AI, developer and security news, from public sources retrieved on demand." %}</p>
     </div>
 
-    <div id="intel-feed" hx-get="{% url 'chat:live_intelligence' %}" hx-trigger="load" hx-swap="outerHTML" aria-live="polite" aria-busy="true">
+    <div id="intel-feed" hx-get="{% url 'chat:live_intelligence' %}" hx-trigger="load" hx-swap="outerHTML" hx-request='{"timeout": 20000}' aria-live="polite" aria-busy="true">
         <div class="intel-cards" aria-hidden="true">
             <div class="intel-card intel-card-loading"></div>
             <div class="intel-card intel-card-loading"></div>
@@ -35,4 +38,53 @@ the existing quick-start cards; the retrieved data is attached server-side.
     </div>
 
     <div id="intel-headlines" class="intel-headlines-wrap"></div>
+
+    <script>
+    (function () {
+        // htmx never swaps an error response, so without this a dead or slow
+        // news request would leave the skeleton ("Loading...") up forever and a
+        // failed Refresh would give no feedback at all. Only THIS section is
+        // touched - the rest of /chat/ is unaffected by a news failure.
+        var section = document.getElementById("chat-intel");
+        if (!section || section.dataset.errorHandler) return;
+        section.dataset.errorHandler = "1";
+
+        function failed(evt) {
+            var target = evt.detail && evt.detail.target;
+            var feed = document.getElementById("intel-feed");
+            if (!feed || target !== feed) return;
+            feed.setAttribute("aria-busy", "false");
+            if (feed.dataset.intelState) {
+                // A failed Refresh: keep what is shown and say it did not update.
+                var status = feed.querySelector(".intel-status");
+                if (status && !status.querySelector(".intel-note-error")) {
+                    var note = document.createElement("span");
+                    note.className = "intel-note intel-note-error";
+                    note.textContent = section.dataset.msgRefreshFailed;
+                    status.appendChild(note);
+                }
+                return;
+            }
+            // The initial load failed: replace the skeleton with an explicit state.
+            while (feed.firstChild) feed.removeChild(feed.firstChild);
+            var p = document.createElement("p");
+            p.className = "intel-status";
+            p.setAttribute("role", "status");
+            p.textContent = section.dataset.msgFailed + " ";
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-ghost btn-small";
+            btn.textContent = section.dataset.msgRetry;
+            btn.addEventListener("click", function () {
+                feed.setAttribute("aria-busy", "true");
+                htmx.ajax("GET", feed.getAttribute("hx-get"), {target: "#intel-feed", swap: "outerHTML"});
+            });
+            p.appendChild(btn);
+            feed.appendChild(p);
+        }
+        ["htmx:responseError", "htmx:sendError", "htmx:timeout"].forEach(function (name) {
+            document.body.addEventListener(name, failed);
+        });
+    })();
+    </script>
 </section>

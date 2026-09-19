@@ -8,7 +8,7 @@
               hx-target="#playground-model-rows" hx-swap="outerHTML" style="margin:0;">
             {% csrf_token %}
             <label class="toggle-switch" title="{% if m.is_playground_enabled %}{% trans 'Remove from Code Playground' %}{% else %}{% trans 'Show in Code Playground' %}{% endif %}">
-                <input type="checkbox" onchange="this.closest('form').requestSubmit()" {% if m.is_playground_enabled %}checked{% endif %}>
+                <input type="checkbox" aria-label="{{ m.display_label }}" onchange="this.closest('form').requestSubmit()" {% if m.is_playground_enabled %}checked{% endif %}>
                 <span class="toggle"><span class="toggle-knob"></span></span>
             </label>
         </form>
