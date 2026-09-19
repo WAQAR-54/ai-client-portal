@@ -21,7 +21,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 |---|---|
 | `manage.py` | Django ka entry point — sab commands isi se chalte hain (`runserver`, `migrate`, `test`, waghera) |
 | `config/settings.py` | **Sabse important file.** Database, installed apps, API keys, sessions, logging, login brute-force protection (axes), backup config — sab yahan |
-| `config/urls.py` | Root URL routing — yahan se har app ke `urls.py` ko include kiya gaya hai |
+| `config/urls.py` | Root URL routing — yahan se har app ke `urls.py` ko include kiya gaya hai. `/healthz/` (DB-only check, Docker/CI ke liye — hamesha fast rehna chahiye) aur **`/healthz/deep/`** (naya, 2026-09-19 — Redis bhi check karta hai, alag endpoint isliye taake hot Docker-healthcheck path slow na ho) |
 | `config/wsgi.py` / `config/asgi.py` | Server entrypoints (production/deployment ke liye, aksar chhedne ki zaroorat nahi) |
 | `.env` | Real secrets (API keys, SECRET_KEY, backup credentials) — **kabhi commit nahi hoti**, sirf is machine par hai |
 | `.env.example` | `.env` ka template, bina real values ke — naya setup karte waqt copy karke `.env` banayein. **Hamesha placeholder blank rakhein, kabhi real value yahan paste na karein** (ek dafa isi file mein real demo-account passwords accidentally aa gaye thay) |
@@ -48,17 +48,18 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | File | Kaam | Kis se link hai |
 |---|---|---|
 | `accounts/models.py` | **`User`** (email, role, department) aur **`Department`** (name, budget cap) models yahan define hain | Almost har app isko import karta hai (`chat`, `governance`) |
-| `accounts/signals.py` | `post_save` signal — **naya user ban'ne par automatically Demo plan assign** karta hai (`governance/plans.py::assign_default_plan_if_missing`). Login-lockout hone par audit log entry likhne wala signal bhi yahan hai | `accounts/apps.py::ready()` se connect hota hai |
+| `accounts/signals.py` | `post_save` signal — **naya user ban'ne par automatically Demo plan assign** karta hai (`governance/plans.py::assign_default_plan_if_missing`). Login-lockout hone par audit log entry likhne wala signal, **aur har successful login par bhi `auth.login` AuditLog entry** (Django ke `user_logged_in` signal se — password/post-MFA/Google sign-in teeno isi ek signal se guzarte hain) | `accounts/apps.py::ready()` se connect hota hai |
 | `accounts/axes_hooks.py` | Login lockout hone par custom (on-brand) error page dikhane wala callable | `config/settings.py::AXES_LOCKOUT_CALLABLE` isko point karta hai |
 | `accounts/middleware.py` | **`GeoLanguageMiddleware`** — naye/anonymous visitors ke liye IP se country guess karke starting language set karta hai (sirf pehli dafa, cookie set hone ke baad kabhi override nahi karta). **`UserLanguagePreferenceMiddleware`** — logged-in user ke DB mein stored `preferred_language` ko har request par activate karta hai (session/cookie se independent, isi liye "per-user not per-session" persist hota hai) | `config/settings.py::MIDDLEWARE` mein dono wired hain — Geo wala `LocaleMiddleware` se pehle, User-preference wala Authentication ke baad |
 | `accounts/geo.py` | IP address → country → language (en/ur/ar) mapping. `geoip2fast` library use karta hai (offline database, koi API key/account nahi chahiye) | `accounts/middleware.py::GeoLanguageMiddleware` isko call karta hai |
 | `accounts/forms.py` | Login form, Signup form, Profile edit form | `accounts/views.py` use karta hai |
-| `accounts/views.py` | Login, Logout, Signup, Dashboard, Profile (naam edit + password change), **`set_language_preference`** (Settings ka language toggle) views | `accounts/urls.py` se wire hain, templates render karte hain |
+| `accounts/views.py` | Login, Logout, Signup, Dashboard, Profile (naam edit + password change — **ab `user.password_change` AuditLog entry bhi likhta hai**, password khud kabhi log nahi hota), **`set_language_preference`** (Settings ka language toggle) views | `accounts/urls.py` se wire hain, templates render karte hain |
 | `accounts/urls.py` | `/accounts/login/`, `/accounts/signup/`, `/accounts/profile/`, `/accounts/set-language/` waghera | `config/urls.py` mein include hai |
 | `accounts/permissions.py` | RBAC helpers: `role_required` decorator, `AdminRequiredMixin` — **ye poore project mein har jagah use hota hai** admin-only pages protect karne ke liye | `chat/views.py`, `governance/views.py` sab isko import karte hain |
 | `accounts/admin.py` | Django admin panel mein User/Department dikhane ka config | Sirf `/admin/` (raw Django admin) ke liye |
 | `accounts/management/commands/create_demo_users.py` | `python manage.py create_demo_users` — `.env` ke `DEMO_*` vars se ek admin/manager/user demo account bana/update karta hai | `.env` ke `DEMO_ADMIN_EMAIL` waghera read karta hai |
 | `accounts/management/commands/backup_database.py` | `python manage.py backup_database` — production Postgres ka backup lekar S3-compatible storage par upload karta hai, purane backups delete karta hai | `docs/BACKUP_RESTORE.md` mein poora procedure hai |
+| `accounts/management/commands/verify_sentry.py` | `python manage.py verify_sentry` (ya `--raise` ek real exception ke sath) — Sentry ko ek deliberate test event bhejta hai, taake sirf config dekh kar assume na karein ke Sentry kaam kar raha hai. 2026-09-19 ko real Sentry project ke against actually chalaya — reachable confirm hua (ek dafa rate-limit response bhi mila, jo shayad rapid back-to-back testing ki wajah se tha, plan/quota check karna worth hai) | `config/settings.py`'s `SENTRY_DSN` na ho to CommandError deta hai |
 | `templates/accounts/login.html` | Login page (split-screen design) | `accounts:login` URL |
 | `templates/accounts/locked_out.html` | "Too many failed attempts" page — 5 galat password attempts ke baad dikhta hai | `accounts/axes_hooks.py` render karta hai |
 | `templates/accounts/signup.html` | Signup page | `accounts:signup` URL |
@@ -73,7 +74,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 | File | Kaam | Kis se link hai |
 |---|---|---|
-| `chat/models.py` | **`ModelConfig`** (AI models list + pricing + `display_name`), **`UserModelPermission`** (per-user explicit allow/deny override), **`Conversation`** (pin/soft-delete fields bhi hain), **`Message`** (attachment fields + `served_from_cache`), **`MessageFeedback`** (thumbs up/down + comment + denormalized `model_used`), **`PromptTemplate`** (personal ya department-wide "Team" template) | `accounts.User`/`Department` ko reference karta hai; `Conversation.objects` sirf non-deleted dikhata hai (`Conversation.all_objects` sab kuch) |
+| `chat/models.py` | **`ModelConfig`** (AI models list + pricing + `display_name`), **`UserModelPermission`** (per-user explicit allow/deny override), **`Conversation`** (pin/soft-delete + `last_provider_model` + `project` fields), **`Message`** (attachment fields + `served_from_cache`), **`MessageFeedback`** (thumbs up/down + comment + denormalized `model_used`), **`PromptTemplate`** (personal ya department-wide "Team" template), `Project` (personal conversation-grouping). Attachment `upload_to` ab **per-user subfolder** hai (`chat_attachments/user_<id>/...`) — pehle sab users ka data ek hi flat folder mein tha, filename ke siwa kuch alag nahi karta tha (2026-09-19 fix) | `accounts.User`/`Department` ko reference karta hai; `Conversation.objects` sirf non-deleted dikhata hai (`Conversation.all_objects` sab kuch) |
 | `chat/utils.py` | `group_conversations()` — sidebar list ko "Today / Yesterday / Previous 7 Days / ..." mein group karta hai | `chat/views.py::chat_home` use karta hai |
 | `chat/markdown_utils.py` | AI reply ka Markdown → safe HTML render karta hai (bleach se sanitize, taake koi prompt-injected reply raw HTML/script na chala sake) | `chat/templatetags/chat_extras.py` ka filter isko call karta hai |
 | `chat/templatetags/chat_extras.py` | Template filters: `render_markdown`, `to_offset` (usage-ring animation ke liye) | `_message_bubble.html`, `_usage_ring.html` use karte hain |
@@ -82,7 +83,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | `chat/model_sync.py` | Har provider ke live models-list API (`GET /v1/models` waghera) se real model IDs fetch karta hai — chat-capable models filter karta hai (embeddings/whisper/dall-e waghera hata deta hai). OpenAI ke against **real API se verified**; Anthropic key abhi tak available nahi hui isliye wo path untested hai | `governance/views.py::sync_models_preview`/`sync_models_import` isko call karte hain |
 | `chat/response_cache.py` | Exact-match response caching — Redis (ya `LocMemCache` agar Redis nahi hai) mein user+model+poori history ka hash key bana kar 1-hour TTL ke sath store karta hai. Alag users kabhi cache share nahi karte | `chat/views.py::stream_message` isko check/store dono ke liye call karta hai |
 | `chat/tasks.py` | Daily Celery task — naye providers models discover hone par admins ko notify karta hai (`notify()` call), khud kuch enable nahi karta | `notifications/notify.py` use karta hai; Celery Beat se schedule hota hai |
-| `chat/providers.py` | OpenAI aur Anthropic API calls ka common interface (retries/timeout bhi yahan configured hain — network blips ke against resilience) — **naya AI provider add karna ho to yahan** | `chat/views.py` aur `chat/router.py` use karte hain |
+| `chat/providers.py` | **4 providers ka common interface**: OpenAI (+ Grok/DeepSeek, same `OpenAICompatibleProvider` class kyunke wire format identical hai), Anthropic, Gemini — sab `ProviderError` mein wrap hoti hain, retry/timeout sab jagah configured (OpenAI/Grok/Anthropic ke SDK ka apna `max_retries=5`; Gemini raw `requests` se call hota hai isliye `_RETRYING_SESSION` — shared `requests.Session` + `Retry` adapter — 2026-09-19 mein add hui, pehle Gemini ka koi retry nahi tha). Koi bhi provider fail ho to user ko friendly fallback message milta hai, raw error kabhi nahi | `chat/views.py` aur `chat/router.py` use karte hain |
 | `chat/router.py` | Smart routing (kaunsa model use hoga) — **ab user ke Plan ke allowed_models se restrict hota hai** (`governance/plans.py::effective_allowed_model_ids`), phir UserModelPermission overrides | `chat/views.py` use karta hai |
 | `chat/prompts.py` | System prompt banane ka logic (base prompt + department-specific instructions + attached-document delimiter instruction) | `governance.models.SystemPromptVersion` import karta hai |
 | `chat/views.py` | **Sabse bari file.** Chat home, message send/receive, streaming (SSE), file upload/download, pin/unpin, soft-delete, sidebar search, `request_upgrade`, message edit (regenerates forward) / regenerate (replaces in place), feedback, export, prompt templates, response caching, usage-warning notification trigger | `governance/limits.py`, `governance/plans.py`, `chat/router.py`, `chat/providers.py`, `chat/response_cache.py`, `chat/export.py`, `notifications/notify.py` — sab yahan milte hain |
@@ -110,10 +111,12 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 | File | Kaam | Kis se link hai |
 |---|---|---|
-| `governance/models.py` | **`Plan`** (tier: Demo/Standard/Premium — models/limits/feature-flags bundle), **`UserPlanAssignment`** (kaun kis plan par hai + expiry), **`UpgradeRequest`** (self-service upgrade requests), `SystemPromptVersion`, **`UsageLimit`** (per-user/department override — Plan se upar priority), `AuditLog` | `accounts.Department`, `accounts.User`, `chat.ModelConfig` (Plan ka `allowed_models` M2M) |
-| `governance/plans.py` | **Plan resolution ka poora dimagh.** `get_plan_status()` (active/grace/expired), `assign_plan()`, `effective_allowed_model_ids()`, `plan_limit_fallback()`, `has_feature()`, `engagement_score()`, `check_session_creation_limit()`, **`get_user_overrides()`/`count_user_overrides()`/`clear_user_overrides()`** (per-user Plan-override visibility, added). Precedence: personal `UsageLimit` > department `UsageLimit` > user ka Plan > kuch nahi | `chat/router.py`, `governance/limits.py`, `chat/views.py` sab isko call karte hain |
-| `governance/limits.py` | Usage limit check (`check_usage_limits` — ab Plan expiry/grace bhi yahan check hota hai) aur file-upload validation (`validate_upload`) | `chat/views.py` isko directly call karta hai har message/upload par |
-| `governance/audit.py` | `log_action()` helper — har admin action (role change, plan change, model enable, lockout, waghera) yahan se AuditLog mein likha jata hai | `governance/views.py`, `accounts/signals.py` isko call karte hain |
+| `governance/models.py` | **`Plan`** (tier: Demo/Standard/Premium — models/limits/feature-flags bundle, **`max_messages_per_minute`** naya burst-rate-limit field, 2026-09-19), **`UserPlanAssignment`** (kaun kis plan par hai + expiry + **`cancelled_at`** naya field — billing app ke cancel/resume ke liye), **`UpgradeRequest`** (self-service upgrade requests), `SystemPromptVersion`, **`UsageLimit`** (per-user/department override — Plan se upar priority), **`AuditLog`** (**ab immutable hai** — `save()`/`delete()` override karke ek dafa likhne ke baad kabhi edit/delete nahi ho sakta, sirf `SET_NULL` FK cascade jab actor user delete ho, 2026-09-19) | `accounts.Department`, `accounts.User`, `chat.ModelConfig` (Plan ka `allowed_models` M2M) |
+| `governance/plans.py` | **Plan resolution ka poora dimagh.** `get_plan_status()` (active/grace/expired), `assign_plan()`, `effective_allowed_model_ids()`, `plan_limit_fallback()`, `has_feature()`, `engagement_score()`, `check_session_creation_limit()`, `get_user_overrides()`/`count_user_overrides()`/`clear_user_overrides()`, **`check_message_burst_limit()`** (naya, 2026-09-19 — per-minute rate limit, cache-backed via `accounts/rate_limit.py`, `max_requests_per_period` se alag kyunke uska shortest window ek poora din hai). Precedence: personal `UsageLimit` > department `UsageLimit` > user ka Plan > kuch nahi | `chat/router.py`, `governance/limits.py`, `chat/views.py` sab isko call karte hain |
+| `governance/limits.py` | Usage limit check (`check_usage_limits` — Plan expiry/grace + **burst rate limit** ab yahan check hota hai) aur file-upload validation (`validate_upload` — size/extension + **`governance/uploads.py::verify_file_content` magic-byte check**, 2026-09-19) | `chat/views.py` isko directly call karta hai har message/upload par |
+| `governance/uploads.py` | **Naya file (2026-09-19).** Magic-byte content verification (`filetype` library, pure Python) — executable/script signatures hard-block karta hai (admin ka `allowed_file_extensions` override bhi bypass nahi kar sakta), aur pdf/png/jpg/docx/xlsx ke liye real content claimed-extension se match karta hai. txt/csv/md/json ke liye kuch signature nahi hota (genuinely plain text) | `governance/limits.py::validate_upload` isko call karta hai |
+| `governance/error_alerts.py` | **Naya file (2026-09-19).** `AsyncAdminEmailHandler` — koi bhi unhandled 500 error hone par `settings.ADMINS` ko Celery task ke zariye email jata hai (Django ka apna `mail_admins` synchronous hota, request thread block kar deta) | `config/settings.py::LOGGING`'s `django.request` logger isko use karta hai |
+| `governance/audit.py` | `log_action()` helper — har admin action (role change, plan change, model enable, lockout, login, password change, refund, cancellation, waghera) yahan se AuditLog mein likha jata hai | `governance/views.py`, `accounts/signals.py`, `billing/views.py` isko call karte hain |
 | `governance/templatetags/governance_extras.py` | `dict_get` filter — templates mein ek dict ko variable-key se lookup karne ke liye (e.g. Users list mein har row ka plan-status) | `_users_table.html` use karta hai |
 | `governance/views.py` | **Sabse bari file is app ki.** Dashboard (charts + org usage ring), Users list (search/filter + Plan column + bulk plan-assign + **overrides badge/view/clear**), **Plans CRUD**, **Upgrade Requests**, Models (add/pricing/enable + search/filter + **Sync Models**), Model Permissions, Limits (CRUD + search), Departments (CRUD + search + **department templates**), Audit Logs (search/filter/pagination), System Prompt, **Feedback review**, **Usage export (CSV/Excel/monthly summary)** | `chat.models`, `accounts.models`, `governance.plans` — sab import karta hai |
 | `governance/urls.py` | `/governance/...` sab routes — including `/governance/plans/`, `/governance/upgrade-requests/`, `/governance/users/<id>/change-plan/`, `/governance/users/bulk-change-plan/`, `/governance/users/<id>/overrides/` (view/clear), `/governance/models/sync/`, `/governance/usage/export.csv\|.xlsx`, `/governance/feedback/` | `config/urls.py` mein include hai |
@@ -135,13 +138,40 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 5. `notifications` app — In-app Bell + Email Notifications
+## 5. `billing` app — Invoices, Regional Pricing, Refund & Cancellation
+
+**Responsibility:** Invoice generation (manual + recurring monthly sweep), payment verification (manual proof-of-payment — koi real payment gateway nahi hai), regional pricing, self-service plan checkout, **refund requests** aur **plan cancellation** (2026-09-19 mein add hua).
+
+| File | Kaam | Kis se link hai |
+|---|---|---|
+| `billing/models.py` | **`Invoice`** (status: unpaid/pending_verification/paid/**refunded** — amounts creation-time par snapshot hote hain, baad mein Plan/RegionalPrice badalne se purane invoice ka number nahi badalta), **`RefundRequest`** (7-day window ke andar auto-approved, bahar Admin ki pending review — `governance.UpgradeRequest` jaisa pending/approved/rejected shape), `DepartmentBillingProfile`, `OrganizationBillingProfile`, `UserBillingProfile`, `RegionalPrice` | `governance.Plan`, `accounts.Department`/`User` reference karta hai |
+| `billing/invoicing.py` | `generate_invoice_for_department()` / `generate_invoice_for_user()` — poora money-math (seats, tax, line items) **ek hi jagah** hai, taake manual "Generate invoice" button aur recurring sweep dono same logic use karein | `billing/views.py`, `billing/tasks.py` dono isko call karte hain |
+| `billing/tasks.py` | **`sweep_due_invoices`** — daily Celery Beat task, har recipient ke last invoice se 30-din rolling cycle par next invoice banata hai (**cancelled plan (`UserPlanAssignment.cancelled_at` set) ko skip kar deta hai** — cancel karne ka yahi asal mechanism hai, plan khud nahi badalta, sirf future invoice generate hona band ho jata hai). `send_overdue_reminders` bhi yahan hai | `django_celery_beat` se schedule (data migration se seed hua) |
+| `billing/access.py` | `has_overdue_unpaid_invoice()` — koi bhi overdue unpaid invoice ho to chat access block karta hai | `governance/limits.py::check_usage_limits` isko call karta hai |
+| `billing/emails.py` | Invoice email, overdue reminder email bhejne ka code (`send_tracked_email` reuse karta hai, alag se koi email-sending code nahi) | `billing/views.py::checkout_plan` waghera call karte hain |
+| `billing/pdf.py` | Invoice ka PDF render (`xhtml2pdf`/`reportlab`) | `billing/views.py::download_invoice_pdf` use karta hai |
+| `billing/regions.py`, `billing/tax_rules.py` | Region list (currency/flag) aur country → tax-rate mapping | `billing/views.py` regional pricing/checkout mein use karta hai |
+| `billing/views.py` | Invoice CRUD (generate/verify/reject/toggle-status/delete/email/**paginated list — 50/page**), regional pricing, self-service checkout (`checkout_plan` — sirf unpaid Invoice banata hai, plan tabhi badalta hai jab invoice PAID mark ho), My Invoices, My Plans, **`request_refund`** (7-day window check → auto-refund ya pending RefundRequest), **`resolve_refund_request`** (Admin approve/reject), **`cancel_plan`/`resume_plan`** (self-service, `next=dashboard` param se wapas dashboard par ya my-plans par redirect) | `governance.plans`, `governance.audit.log_action`, `notifications.notify` sab yahan milte hain |
+| `billing/urls.py` | `/billing/invoices/...`, `/billing/my-invoices/...`, `/billing/my-plans/cancel/`, `/billing/my-plans/resume/`, `/billing/refund-requests/`, `/billing/refund-requests/<id>/resolve/` | `config/urls.py` mein include hai |
+| `billing/admin.py` | Django admin config (Invoice/Plan/RegionalPrice) | Sirf `/admin/` ke liye |
+| `templates/billing/invoices.html` + `_invoices_table.html` | Admin invoice list — department filter, verify/reject/toggle actions (htmx), **pagination bar (50/page)** | `billing:invoices` URL |
+| `templates/billing/invoice_detail.html` | Ek invoice ka poora detail — proof-of-payment, **refund request button (paid invoice par)**, refunded-status message | `billing:invoice_detail` URL |
+| `templates/billing/my_invoices.html` | User ki apni invoices — payment submit karna, **"Request a refund" (7-day-window text ke sath)** | `billing:my_invoices` URL |
+| `templates/billing/my_plans.html` | Plan-cards grid + **current plan status card (Cancel plan / Resume plan button)** | `billing:my_plans` URL |
+| `templates/billing/refund_requests.html` + `_refund_requests_table.html` | Admin-facing pending refund requests — Approve/Reject | `billing:refund_requests` URL — sidebar mein "Billing" group ke andar, "Invoices" ke sath |
+| `templates/accounts/dashboard.html` | (accounts app mein hai, lekin yahan note karna zaroori hai) Post-login "Your plan" card — **Cancel plan/Resume plan button yahan bhi hai**, `next=dashboard` se wapas isi page par aata hai | `accounts:dashboard` URL |
+
+**Refund/cancellation ka poora flow:** koi payment gateway nahi hai is app mein — refund matlab hamesha "Admin (ya 7-day auto-approval) invoice ko REFUNDED mark karta hai app ke andar, paisa wapas bhejna admin ka apna kaam hai (bank transfer waghera) app ke bahar." `RefundRequest.auto_approved=True` hota hai jab 7-day window ke andar khud approve ho jaye — Admin ko sirf window ke BAHAR wale requests dikhte hain review ke liye.
+
+---
+
+## 6. `notifications` app — In-app Bell + Email Notifications
 
 **Responsibility:** In-app notification bell, email sending (via Celery), per-user per-type email opt-out. Zero tests before Phase 6 — now has 22.
 
 | File | Kaam | Kis se link hai |
 |---|---|---|
-| `notifications/models.py` | **`Notification`** (title/body/is_read/email_sent), **`NotificationType`** choices (usage_warning/plan_change/trial_expiring/trial_expired/admin_change/model_sync_available), **`NotificationPreference`** (per-type email on/off — missing row = "email everything", safe default) | `accounts.User` ko reference karta hai |
+| `notifications/models.py` | **`Notification`** (title/body/is_read/email_sent), **`NotificationType`** choices (usage_warning/plan_change/trial_expiring/trial_expired/admin_change/model_sync_available/invoice_payment_submitted/**refund_requested**/**refund_decision**/**plan_cancellation** — teen naye 2026-09-19 refund/cancellation feature ke liye), **`NotificationPreference`** (per-type email on/off — missing row = "email everything", safe default) | `accounts.User` ko reference karta hai |
 | `notifications/notify.py` | `notify()` — **har trigger isi se guzarta hai.** In-app row hamesha banata hai; email sirf preference allow kare to Celery task queue karta hai. `recently_notified()` dedup helper (same type ko 24h mein dobara na bheje) | `chat/views.py`, `governance/views.py`, `notifications/tasks.py` sab isko call karte hain |
 | `notifications/tasks.py` | `send_notification_email` (Celery task — branded HTML email render+send), `sweep_expiring_demo_plans` (daily Beat task — trial-expiring/trial-expired notify) | `notify()` `.delay()` karta hai; Beat schedule `django-celery-beat` se DB mein hai |
 | `notifications/views.py` | Bell dropdown fragment, mark-read/mark-all-read, Settings ka preferences form | `notifications/urls.py` se wire hain |
@@ -152,7 +182,7 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 6. Shared/Layout files
+## 7. Shared/Layout files
 
 | File | Kaam |
 |---|---|
@@ -161,12 +191,12 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
-## 7. Naya kaam karte waqt kahan jayein (cheat-sheet)
+## 8. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |
 |---|---|
 | Naya field User/Department mein add karna | `accounts/models.py` → phir `makemigrations` |
-| Naya AI provider (e.g. Google Gemini) add karna | `chat/providers.py` mein naya class, `chat/models.py` mein `ModelConfig.Provider` choice add karo |
+| Naya AI provider add karna (Claude/GPT/Gemini/Grok already hain) | `chat/providers.py` mein naya `AIProvider` subclass, `providers/adapters/` mein model-listing adapter |
 | Chat ka UI/design badalna | `templates/chat/chat_home.html`, `_message_bubble.html`, aur `static/css/main.css` ka "Chat" section |
 | Admin dashboard mein naya page add karna | `governance/views.py` (naya view) + `governance/urls.py` (naya route) + `templates/governance/` mein naya template + `templates/base.html` ke sidebar mein link |
 | Admin list page mein search/filter add karna | View mein `FilterableListMixin` use karo (`governance/views.py` mein already kai jagah hai), `_xxx_table.html` partial banao, toolbar form mein `hx-get`/`hx-trigger` **har individual input/select par** lagao (wrapping `<form>` par nahi — ye kaam nahi karta) |
@@ -184,10 +214,14 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 | Naya notification type add karna | `notifications/models.py::NotificationType` + `EMAIL_TOGGLE_LABELS` mein add karo, phir jahan trigger hona hai wahan `notify()` call karo |
 | Response caching ka TTL ya scope badalna | `chat/response_cache.py` |
 | Per-user Plan override dikhana/clear karna | `governance/plans.py::get_user_overrides`/`clear_user_overrides`, UI `templates/governance/user_overrides.html` |
+| Rate limit (login/signup/OTP/chat messages) badalna | `accounts/rate_limit.py::is_rate_limited` (login/signup/OTP, module-level constants `accounts/views.py` mein), `governance/plans.py::check_message_burst_limit` (chat messages, `Plan.max_messages_per_minute` se) |
+| File upload validation (naya file-type allow karna) | `governance/uploads.py::_EXPECTED_KINDS` (magic-byte signature) + `settings.DEFAULT_ALLOWED_FILE_EXTENSIONS`/`UsageLimit.allowed_file_extensions` (extension allowlist — dono check hote hain) |
+| Refund/cancellation ka rule badalna | `billing/models.py::REFUND_WINDOW_DAYS` (7-day window), `billing/views.py::request_refund`/`resolve_refund_request`/`cancel_plan`/`resume_plan` |
+| Naya AuditLog action type add karna | Bas jahan action ho wahan `governance/audit.py::log_action(actor, "app.action_name", target, ...)` call karo — AuditLog immutable hai, koi migration nahi chahiye naye action_type ke liye (plain string hai) |
 
 ---
 
-## 8. Data flow example — "User message bhejta hai"
+## 9. Data flow example — "User message bhejta hai"
 
 ```
 User composer form submit karta hai (chat_home.html)
@@ -211,7 +245,7 @@ chat/urls.py → chat/views.py::stream_message
         └─→ Message.save()  (final reply + tokens + cost DB mein)
 ```
 
-## 9. Data flow example — "Admin kisi user ka Plan change karta hai"
+## 10. Data flow example — "Admin kisi user ka Plan change karta hai"
 
 ```
 Admin Users page par ek row ka "Change" button click karta hai
@@ -226,7 +260,7 @@ governance/urls.py → governance/views.py::change_user_plan
         └─→ governance/audit.py::log_action()    ("user.plan_change" audit trail mein)
 ```
 
-## 10. Data flow example — "5 galat password attempts"
+## 11. Data flow example — "5 galat password attempts"
 
 ```
 User login form 5 baar galat password se submit karta hai
@@ -239,7 +273,7 @@ django-axes (AxesStandaloneBackend, AUTHENTICATION_BACKENDS mein sabse pehle)
         │       └─→ accounts/signals.py::_log_axes_lockout()          (audit log: "auth.lockout", IP included)
 ```
 
-## 11. Data flow example — "User apni usage limit ke 85% par pohonch jata hai"
+## 12. Data flow example — "User apni usage limit ke 85% par pohonch jata hai"
 
 ```
 chat/views.py::post_message ek message save karne ke baad
