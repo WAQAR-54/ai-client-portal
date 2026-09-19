@@ -4414,6 +4414,7 @@ class SystemStatusBackendTests(TestCase):
         self._superadmin("rsuper2@example.com")
         with override_settings(REDIS_URL=""):
             page = self.client.get(reverse("governance:dashboard"))
+        self.assertContains(page, "Local cache / fallback active")
         self.assertContains(page, "No Redis configuration detected")
         self.assertContains(page, "Not configured")
 
@@ -4469,7 +4470,9 @@ class SystemStatusBackendTests(TestCase):
         result = check_providers()
         states = {r["slug"]: r["state"] for r in result["rows"]}
         self.assertEqual(states, {"openai": "failed", "gemini": "healthy", "anthropic": "never"})
-        self.assertEqual((result["total"], result["healthy"], result["attention"], result["unverified"]), (3, 1, 1, 1))
+        self.assertEqual(
+            (result["total"], result["healthy"], result["attention"], result["never_synced"]), (3, 1, 1, 1)
+        )
 
     def test_never_synced_provider_says_not_verified_not_healthy(self):
         from providers.models import Provider
@@ -4478,8 +4481,8 @@ class SystemStatusBackendTests(TestCase):
         self._only_connected("anthropic")
         self._superadmin("psuper@example.com")
         response = self.client.get(reverse("governance:dashboard"))
-        self.assertContains(response, "Not verified")
         self.assertContains(response, "Never synced")
+        self.assertContains(response, "No sync recorded")
 
     def test_failed_provider_shows_a_safe_category_never_the_raw_error(self):
         from providers.models import Provider
@@ -4510,7 +4513,9 @@ class SystemStatusBackendTests(TestCase):
         Provider.objects.update(is_connected=False)
         self._superadmin("psuper3@example.com")
         response = self.client.get(reverse("governance:dashboard"))
-        self.assertContains(response, "No providers configured")
+        self.assertContains(response, "No AI providers configured")
+        self.assertContains(response, "No provider sync data is available yet.")
+        self.assertContains(response, reverse("providers:list"))
 
     # -- Background jobs -------------------------------------------------
 
@@ -4550,8 +4555,8 @@ class SystemStatusBackendTests(TestCase):
         self._superadmin("jsuper@example.com")
         response = self.client.get(reverse("governance:dashboard"))
         self.assertContains(response, 'data-job-state="never_run"')
-        self.assertContains(response, "Not run yet")
-        self.assertContains(response, "No run recorded")
+        self.assertContains(response, "Never run")
+        self.assertContains(response, "No execution history recorded yet")
         self.assertNotContains(response, 'data-job-state="active"')
 
     def test_last_dispatch_age_uses_the_most_recent_run(self):
@@ -4614,3 +4619,159 @@ class SystemStatusBackendTests(TestCase):
         with CaptureQueriesContext(connection) as ctx:
             build_system_status()
         self.assertLessEqual(len(ctx.captured_queries), 4)
+
+
+class SystemStatusPolishTests(TestCase):
+    """Header, per-card "checked" lines, provider Last activity, the never-run
+    notice, and the accessibility markup the tables and tooltips rely on."""
+
+    def setUp(self):
+        User.objects.create_user(
+            email="polish@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.login(email="polish@example.com", password="pw12345!")
+
+    def _dashboard(self):
+        return self.client.get(reverse("governance:dashboard"))
+
+    def test_header_has_a_subtitle_and_a_last_checked_line(self):
+        response = self._dashboard()
+        self.assertContains(response, "Operational overview of application services, AI providers and background jobs.")
+        self.assertContains(response, "Last checked:")
+
+    def test_probed_cards_say_when_they_were_checked_but_the_jobs_card_does_not(self):
+        cards = {c["key"]: c for c in self._dashboard().context["system_status"]["cards"]}
+        self.assertTrue(cards["application"]["probed"])
+        self.assertTrue(cards["database"]["probed"])
+        self.assertTrue(cards["redis"]["probed"])
+        # Jobs reports stored history, not a measurement taken now.
+        self.assertFalse(cards["jobs"]["probed"])
+
+    def test_redis_not_configured_says_local_cache_is_active(self):
+        from django.test import override_settings
+
+        with override_settings(REDIS_URL=""):
+            cards = {c["key"]: c for c in self._dashboard().context["system_status"]["cards"]}
+        self.assertEqual(cards["redis"]["badge"], "Not configured")
+        self.assertEqual(cards["redis"]["detail"], "Local cache / fallback active")
+
+    # -- provider Last activity -------------------------------------------
+
+    def _reply_via(self, provider_slug, minutes_ago):
+        from chat.models import Conversation, Message
+        from providers.models import Provider, ProviderModel
+
+        provider = Provider.objects.get(slug=provider_slug)
+        model = ProviderModel.objects.create(provider=provider, model_id=f"{provider_slug}-m", is_enabled=True)
+        conversation = Conversation.objects.create(user=User.objects.first())
+        message = Message.objects.create(
+            conversation=conversation, role="assistant", content="hi", provider_model_used=model
+        )
+        Message.objects.filter(pk=message.pk).update(
+            created_at=timezone.now() - timezone.timedelta(minutes=minutes_ago)
+        )
+        return provider
+
+    def _connect_only(self, *slugs):
+        from providers.models import Provider
+
+        Provider.objects.update(is_connected=False)
+        Provider.objects.filter(slug__in=slugs).update(
+            is_connected=True, last_sync_status=Provider.SyncStatus.SUCCESS, last_synced_at=timezone.now()
+        )
+
+    def test_last_activity_is_the_newest_reply_routed_through_that_provider(self):
+        from governance.system_status import check_providers
+
+        self._connect_only("openai", "gemini")
+        self._reply_via("openai", minutes_ago=30)
+        rows = {r["slug"]: r for r in check_providers()["rows"]}
+        self.assertEqual(rows["openai"]["activity_age"], "30 minutes")
+        self.assertEqual(rows["gemini"]["activity_age"], "")  # connected, but nothing routed through it
+
+    def test_last_activity_renders_and_missing_activity_is_labelled_not_invented(self):
+        self._connect_only("openai", "gemini")
+        self._reply_via("openai", minutes_ago=30)
+        response = self._dashboard()
+        self.assertContains(response, "No recent activity")
+        self.assertIn("30 minutes ago", response.content.decode().replace("\xa0", " "))
+
+    def test_last_activity_query_is_a_single_bounded_query(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from governance.system_status import ACTIVITY_WINDOW, _latest_activity_by_provider
+
+        with CaptureQueriesContext(connection) as ctx:
+            _latest_activity_by_provider()
+        self.assertEqual(len(ctx.captured_queries), 1)
+        self.assertIn("LIMIT", ctx.captured_queries[0]["sql"])
+        self.assertIn(str(ACTIVITY_WINDOW), ctx.captured_queries[0]["sql"])
+
+    def test_no_activity_query_at_all_when_no_provider_is_connected(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from governance.system_status import check_providers
+        from providers.models import Provider
+
+        Provider.objects.update(is_connected=False)
+        with CaptureQueriesContext(connection) as ctx:
+            check_providers()
+        self.assertFalse(any("chat_message" in q["sql"] for q in ctx.captured_queries))
+
+    # -- jobs --------------------------------------------------------------
+
+    def test_a_dashboard_where_no_task_ever_ran_says_so_instead_of_looking_broken(self):
+        from django_celery_beat.models import PeriodicTask
+
+        PeriodicTask.objects.update(last_run_at=None, total_run_count=0)
+        response = self._dashboard()
+        self.assertContains(response, "No execution history recorded yet")
+        self.assertContains(response, "data-job-state=", count=PeriodicTask.objects.count())
+
+    def test_the_notice_disappears_once_any_task_has_been_dispatched(self):
+        from django_celery_beat.models import PeriodicTask
+
+        PeriodicTask.objects.update(last_run_at=None, total_run_count=0)
+        PeriodicTask.objects.filter(pk=PeriodicTask.objects.first().pk).update(
+            last_run_at=timezone.now() - timezone.timedelta(hours=1), total_run_count=1
+        )
+        response = self._dashboard()
+        self.assertNotContains(response, "No execution history recorded yet")
+        self.assertContains(response, "Last activity:")
+
+    # -- accessibility -----------------------------------------------------
+
+    def test_tables_have_scoped_headers_and_row_headers(self):
+        self._connect_only("openai")  # the providers table only renders with a connected provider
+        html = self._dashboard().content.decode()
+        self.assertIn('<th scope="col">Task</th>', html)
+        self.assertIn('<th scope="col">Provider</th>', html)
+        self.assertIn('scope="row"', html)
+
+    def test_truncated_task_names_are_keyboard_focusable_and_keep_the_full_name(self):
+        from django_celery_beat.models import IntervalSchedule, PeriodicTask
+
+        PeriodicTask.objects.all().delete()
+        schedule, _created = IntervalSchedule.objects.get_or_create(every=1, period=IntervalSchedule.DAYS)
+        name = "Daily connected-provider model resync and retired-model reconciliation sweep across regions"
+        PeriodicTask.objects.create(name=name, task="a.b", interval=schedule)
+        html = self._dashboard().content.decode()
+        self.assertIn('class="sys-trunc" tabindex="0"', html)
+        self.assertIn(f'title="{name} (a.b)"', html)
+
+    def test_status_is_conveyed_in_text_not_only_colour_and_icons_are_hidden_from_assistive_tech(self):
+        html = self._dashboard().content.decode()
+        self.assertIn('class="sys-icon" aria-hidden="true"', html)
+        self.assertIn('focusable="false"', html)
+        for card in self._dashboard().context["system_status"]["cards"]:
+            # Every card carries its state as words in the badge.
+            self.assertTrue(card["badge"])
+            self.assertIn(f">{card['badge']}<", html)
+
+    def test_the_never_run_status_is_text_not_just_a_muted_colour(self):
+        from django_celery_beat.models import PeriodicTask
+
+        PeriodicTask.objects.update(last_run_at=None)
+        self.assertContains(self._dashboard(), ">Never run<")

@@ -33,17 +33,45 @@ def age_label(moment):
     return age if not age.startswith("0 ") else "less than a minute"
 
 
+# How many of the newest model-routed replies to look through for "last
+# activity". Bounded so this dashboard query costs the same at 10 thousand
+# replies as at 10 million; a provider absent from the window shows "No
+# recent activity" (which the column tooltip spells out), not a wrong date.
+ACTIVITY_WINDOW = 5000
+
+
+def _latest_activity_by_provider():
+    """{provider_id: datetime of its newest reply}, from Message rows.
+    One query, newest first, so the first time a provider is seen is its
+    latest activity."""
+    from chat.models import Message
+
+    latest = {}
+    newest_first = (
+        Message.objects.filter(provider_model_used__isnull=False)
+        .order_by("-id")
+        .values_list("provider_model_used__provider_id", "created_at")[:ACTIVITY_WINDOW]
+    )
+    for provider_id, created_at in newest_first:
+        latest.setdefault(provider_id, created_at)
+    return latest
+
+
 def check_providers():
     from providers.models import Provider
 
+    providers = list(Provider.objects.filter(is_connected=True).order_by("name"))
+    activity = _latest_activity_by_provider() if providers else {}
+
     rows = []
-    for provider in Provider.objects.filter(is_connected=True).order_by("name"):
+    for provider in providers:
         if provider.last_sync_status == Provider.SyncStatus.SUCCESS:
             state = "healthy"
         elif provider.last_sync_status == Provider.SyncStatus.FAILED:
             state = "failed"
         else:
             state = "never"
+        last_activity = activity.get(provider.id)
         rows.append(
             {
                 "name": provider.name,
@@ -51,6 +79,7 @@ def check_providers():
                 "state": state,
                 "last_synced_at": provider.last_synced_at,
                 "age": age_label(provider.last_synced_at),
+                "activity_age": age_label(last_activity),
                 "reason": describe(provider.last_sync_error)["label"] if state == "failed" else "",
             }
         )
@@ -60,7 +89,7 @@ def check_providers():
         "total": len(rows),
         "healthy": sum(1 for r in rows if r["state"] == "healthy"),
         "attention": sum(1 for r in rows if r["state"] == "failed"),
-        "unverified": sum(1 for r in rows if r["state"] == "never"),
+        "never_synced": sum(1 for r in rows if r["state"] == "never"),
     }
 
 
@@ -124,8 +153,8 @@ def _summary_cards(database, redis_status, jobs):
         redis_card = (
             "muted",
             "Not configured",
-            "No Redis configuration detected",
-            "Using in-process cache; Celery runs tasks inline",
+            "Local cache / fallback active",
+            "No Redis configuration detected · Celery runs tasks inline",
         )
 
     if jobs["total"] == 0:
@@ -141,9 +170,20 @@ def _summary_cards(database, redis_status, jobs):
         )
         jobs_card = ("info", "Scheduled", detail, foot)
 
-    def card(key, label, icon, values):
+    def card(key, label, icon, values, probed=True):
+        """`probed` = measured on this page load (so a "Checked X ago" line is
+        truthful). The jobs card is not a probe - it reports stored history."""
         tone, badge, detail, foot = values
-        return {"key": key, "label": label, "icon": icon, "tone": tone, "badge": badge, "detail": detail, "foot": foot}
+        return {
+            "key": key,
+            "label": label,
+            "icon": icon,
+            "tone": tone,
+            "badge": badge,
+            "detail": detail,
+            "foot": foot,
+            "probed": probed,
+        }
 
     return [
         card(
@@ -154,7 +194,7 @@ def _summary_cards(database, redis_status, jobs):
         ),
         card("database", "Database", "database", db_card),
         card("redis", "Redis", "redis", redis_card),
-        card("jobs", "Background jobs", "jobs", jobs_card),
+        card("jobs", "Background jobs", "jobs", jobs_card, probed=False),
     ]
 
 
