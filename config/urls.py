@@ -40,6 +40,55 @@ def healthz(request):
     return JsonResponse({"status": "ok"})
 
 
+def healthz_deep(request):
+    """A slower, more thorough sibling of healthz() above - checks Redis
+    too, not just the database. Deliberately a SEPARATE endpoint rather
+    than added to healthz() itself: that one is polled constantly (Docker's
+    own HEALTHCHECK, CI's post-deploy gate) and its own docstring is
+    explicit that staying cheap is the point - Redis/Celery/storage were a
+    deliberate exclusion, not an oversight. This one is for an occasional
+    manual/monitoring check instead, not wired into anything that polls
+    it often.
+
+    Celery worker liveness is deliberately NOT checked here either - it
+    already has its own, better mechanism: docker-compose.yml's `worker`
+    service runs `celery inspect ping` as its own Docker healthcheck,
+    which round-trips through Redis to prove the worker is actually
+    consuming tasks (not just alive). Duplicating that through an HTTP
+    endpoint on the WEB process would mean this view blocking on a
+    Celery control-plane round-trip it doesn't own and can't bound
+    reliably. File storage isn't checked either - there's no S3/cloud
+    storage configured (see docs/BACKUP_RESTORE.md), only local disk
+    that already has to be writable for the process to have started at
+    all, so there's nothing distinct left to verify there."""
+    checks = {}
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = str(exc)
+
+    if settings.REDIS_URL:
+        try:
+            from django.core.cache import cache
+
+            cache.set("healthz_deep_probe", "1", timeout=5)
+            if cache.get("healthz_deep_probe") != "1":
+                raise RuntimeError("Redis round-trip returned an unexpected value.")
+            checks["redis"] = "ok"
+        except Exception as exc:
+            checks["redis"] = str(exc)
+    else:
+        checks["redis"] = "not configured (LocMemCache in use, e.g. local dev)"
+
+    healthy = checks["database"] == "ok" and checks["redis"] in (
+        "ok",
+        "not configured (LocMemCache in use, e.g. local dev)",
+    )
+    return JsonResponse({"status": "ok" if healthy else "error", **checks}, status=200 if healthy else 503)
+
+
 def serve_docs(request, path):
     # Same reasoning as serve_media above - read settings.BASE_DIR inside
     # the view rather than baking it into urlpatterns at import time.
@@ -50,6 +99,7 @@ def serve_docs(request, path):
 
 urlpatterns = [
     path("healthz/", healthz),
+    path("healthz/deep/", healthz_deep),
     path("admin/", admin.site.urls),
     path("accounts/", include("accounts.urls")),
     path("billing/", include("billing.urls")),

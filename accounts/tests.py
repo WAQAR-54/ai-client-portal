@@ -1399,6 +1399,51 @@ class HealthzTests(TestCase):
         self.assertEqual(response.json()["status"], "error")
 
 
+class HealthzDeepTests(TestCase):
+    """config/urls.py::healthz_deep - the slower sibling that also checks
+    Redis, kept off the hot healthz() path on purpose (see its own
+    docstring)."""
+
+    def test_returns_ok_with_database_and_cache_reachable(self):
+        response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["database"], "ok")
+
+    def test_returns_503_when_database_query_fails(self):
+        from unittest.mock import patch
+
+        with patch("config.urls.connection") as mock_connection:
+            mock_connection.cursor.side_effect = Exception("connection refused")
+            response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["status"], "error")
+
+    def test_returns_503_when_redis_is_configured_but_unreachable(self):
+        from unittest.mock import patch
+
+        with patch("config.urls.settings") as mock_settings, patch("django.core.cache.cache") as mock_cache:
+            mock_settings.REDIS_URL = "redis://example.invalid:6379/0"
+            mock_cache.set.side_effect = Exception("connection refused")
+            response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 503)
+        body = response.json()
+        self.assertEqual(body["status"], "error")
+        self.assertIn("connection refused", body["redis"])
+
+    def test_reports_redis_not_configured_in_local_dev(self):
+        """REDIS_URL is blank locally (LocMemCache, see config/settings.py) -
+        that's a normal, healthy state, not a failure."""
+        from unittest.mock import patch
+
+        with patch("config.urls.settings") as mock_settings:
+            mock_settings.REDIS_URL = ""
+            response = self.client.get("/healthz/deep/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+
 class DocsServingTests(TestCase):
     """config/urls.py's /docs/ route (serve_docs) - the plain-language
     guides in docs/ only lived as files in the repo until this route gave
