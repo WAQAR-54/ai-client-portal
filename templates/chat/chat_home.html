@@ -52,6 +52,12 @@
     </a>
 </div>
 {% endif %}
+{% if can_select_model %}
+<form id="compare-start-form" method="post" action="{% url 'chat:create_conversation' %}" hidden>
+    {% csrf_token %}
+    <input type="hidden" name="compare" value="1">
+</form>
+{% endif %}
 {% include "chat/_projects_section.html" %}
 {% include "chat/_provider_filter_tabs.html" %}
 {% if user|has_feature:"conversation_pin_search" %}
@@ -748,6 +754,18 @@ function portalCloseUpgradeModal() {
         });
     })();
     (function() {
+        // ?compare=1 (from "Compare" on the chat home): open the pick-two-models
+        // screen once the page's own scripts have defined it, then strip the flag.
+        var params = new URLSearchParams(window.location.search);
+        if (params.get("compare") !== "1") return;
+        window.addEventListener("DOMContentLoaded", function() {
+            if (typeof portalSidebarCompareClick === "function") portalSidebarCompareClick();
+            params.delete("compare");
+            var qs = params.toString();
+            window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+        });
+    })();
+    (function() {
         // A quick-start card on the empty state passes its prompt through
         // as ?starter= on the redirect to the new conversation - pick it up
         // once, prefill + focus the composer, then strip it from the URL
@@ -813,6 +831,7 @@ function portalCloseUpgradeModal() {
     })();
     </script>
     {% else %}
+    <div class="chat-home-scroll">
     <div class="chat-hero">
         <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span>{% trans "Route any model, one workspace" %}</div>
         <h1 class="hero-title">{% trans "What are we routing" %}<br>{% trans "through today?" %}</h1>
@@ -820,7 +839,7 @@ function portalCloseUpgradeModal() {
         <div class="quick-grid" data-stagger data-stagger-items=".quick-card">
             <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
                 {% csrf_token %}
-                <input type="hidden" name="starter_text" value="{% trans 'Compare how two models answer the same question' %}">
+                {% if can_select_model %}<input type="hidden" name="compare" value="1">{% else %}<input type="hidden" name="starter_text" value="{% trans 'Compare how two models answer the same question' %}">{% endif %}
                 <button type="submit" class="quick-card">
                     <div class="quick-card-title">{% trans "Compare two models" %}</div>
                     <div class="quick-card-sub">{% trans "Send one prompt, see both answers" %}</div>
@@ -861,6 +880,7 @@ function portalCloseUpgradeModal() {
         {% if live_intelligence_enabled and user|has_feature:"live_intelligence" %}
         {% include "chat/_live_intelligence_section.html" %}
         {% endif %}
+    </div>
     </div>
     {% comment %}
     A real, working composer on the empty state too - not just the quick-start
@@ -1144,7 +1164,13 @@ function portalSidebarChatClick() {
 }
 function portalSidebarCompareClick() {
     var setupScreen = document.getElementById("compareSetupScreen");
-    if (!setupScreen) return; // no open conversation to compare within yet
+    if (!setupScreen) {
+        // On the chat home there is no conversation yet: start one that opens
+        // straight on the pick-two-models screen (a silent no-op before).
+        var starter = document.getElementById("compare-start-form");
+        if (starter) starter.submit();
+        return;
+    }
     document.getElementById("modeChatBtn").classList.remove("active");
     document.getElementById("modeCompareBtn").classList.add("active");
     document.getElementById("messages").style.display = "none";

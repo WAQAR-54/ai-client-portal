@@ -577,6 +577,11 @@ def create_conversation(request):
         url = f"{url}?starter={quote(starter_text)}"
         if intel_allowed:
             url = f"{url}&intel={quote(intel)}"
+    elif request.POST.get("compare") == "1":
+        # "Compare" from the chat home: open the new conversation straight on
+        # the pick-two-models screen (the screen only exists inside a
+        # conversation, so from the home it used to do nothing at all).
+        url = f"{url}?compare=1"
     return redirect(url)
 
 

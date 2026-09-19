@@ -2846,7 +2846,9 @@ class CancelPlanTests(TestCase):
         self.client.post(reverse("billing:resume_plan"))
         notification = Notification.objects.filter(
             user=self.user, notification_type=NotificationType.PLAN_CANCELLATION
-        ).latest("created_at")
+        ).latest(
+            "created_at", "id"
+        )  # id breaks a tie when both rows land in the same clock tick
         self.assertIn("active again", notification.title.lower())
 
     def test_cancel_can_redirect_back_to_the_dashboard(self):

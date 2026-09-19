@@ -327,13 +327,15 @@ class HomePageTests(LiveIntelligenceViewBase):
         self.assertContains(response, 'hx-get="%s"' % reverse("chat:live_intelligence"))
         self.assertContains(response, "Loading current headlines")
 
-    def test_the_section_reads_cards_then_quick_commands_then_headlines(self):
+    def test_the_section_reads_quick_commands_then_cards_then_headlines(self):
+        """The one-click commands are the main action, so they sit first - above
+        the fold - with the live cards and the headlines beneath."""
         html = self.client.get(reverse("chat:chat_home")).content.decode()
-        feed, commands, headlines = (
-            html.index(m) for m in ('id="intel-feed"', 'class="intel-commands"', 'id="intel-headlines"')
+        commands, feed, headlines = (
+            html.index(m) for m in ('class="intel-commands"', 'id="intel-feed"', 'id="intel-headlines"')
         )
-        self.assertLess(feed, commands)
-        self.assertLess(commands, headlines)
+        self.assertLess(commands, feed)
+        self.assertLess(feed, headlines)
 
     def test_the_existing_chat_experience_is_still_there(self):
         response = self.client.get(reverse("chat:chat_home"))
