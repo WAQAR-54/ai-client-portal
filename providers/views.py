@@ -17,6 +17,7 @@ from django.views.generic import TemplateView
 from accounts.models import User
 from accounts.permissions import SuperAdminRequiredMixin, role_required
 from governance.audit import log_action
+from providers.errors import describe
 from providers.models import Provider, ProviderModel
 from providers.services import sync_provider
 
@@ -31,6 +32,11 @@ def _provider_row(provider):
         "models": models,
         "new_count": sum(1 for m in models if m.is_new and not m.is_retired),
         "enabled_count": sum(1 for m in models if m.is_enabled),
+        # Category + short fixed message - never Provider.last_sync_error's
+        # raw text (see providers/errors.py). None unless the last sync failed.
+        "sync_problem": (
+            describe(provider.last_sync_error) if provider.last_sync_status == Provider.SyncStatus.FAILED else None
+        ),
     }
 
 

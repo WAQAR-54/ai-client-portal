@@ -16,13 +16,12 @@ Two rules keep this honest:
   free-text error. Failures are reduced to a fixed vocabulary here.
 """
 
-import re
-
 import django
 from django.utils import timezone
 from django.utils.timesince import timesince
 
 from config.health import check_database, check_redis
+from providers.errors import describe
 
 
 def age_label(moment):
@@ -32,31 +31,6 @@ def age_label(moment):
         return ""
     age = timesince(moment).split(",")[0].replace(" ", " ")
     return age if not age.startswith("0 ") else "less than a minute"
-
-
-_HTTP_STATUS = re.compile(r"(?:error code|status(?: code)?|http)[:\s]+(\d{3})", re.IGNORECASE)
-
-
-def classify_provider_error(raw_error):
-    """A provider's stored last_sync_error is free text from that
-    provider's API (already stripped of the API key by sanitize_error, but
-    still arbitrary). The dashboard shows a category from this fixed list
-    instead - or nothing if the text doesn't clearly match one."""
-    text = (raw_error or "").lower()
-    if not text:
-        return ""
-    status = _HTTP_STATUS.search(text)
-    code = int(status.group(1)) if status else None
-
-    if code in (401, 403) or any(w in text for w in ("api key", "api_key", "authentication", "unauthorized")):
-        return "Authentication error"
-    if code == 429 or any(w in text for w in ("rate limit", "rate_limit", "quota")):
-        return "Rate limited or quota exceeded"
-    if any(w in text for w in ("timed out", "timeout", "connection", "getaddrinfo", "name resolution", "network")):
-        return "Network error or timeout"
-    if (code is not None and code >= 500) or any(w in text for w in ("overloaded", "server error", "unavailable")):
-        return "Provider service error"
-    return ""
 
 
 def check_providers():
@@ -77,7 +51,7 @@ def check_providers():
                 "state": state,
                 "last_synced_at": provider.last_synced_at,
                 "age": age_label(provider.last_synced_at),
-                "reason": classify_provider_error(provider.last_sync_error) if state == "failed" else "",
+                "reason": describe(provider.last_sync_error)["label"] if state == "failed" else "",
             }
         )
 

@@ -178,8 +178,14 @@ def generate_domains(request):
     try:
         provider = get_provider(provider_model.provider)
         raw_text, input_tokens, output_tokens = _complete_with_usage(provider, prompt, provider_model.model_id)
-    except ProviderError as exc:
-        return JsonResponse({"error": f"Generation failed: {exc}"}, status=502)
+    except ProviderError:
+        # Never echo the provider's own error text back to the browser (it can
+        # carry key fragments/headers/response bodies) - log it, return a fixed
+        # message. Same policy as the broader except below.
+        logger.exception("Domain Generator: AI provider call failed")
+        return JsonResponse(
+            {"error": "Generation failed - the AI provider had a problem. Try again shortly."}, status=502
+        )
     except Exception:
         # Anything else here (a bad adapter_type, a provider SDK raising a
         # type ProviderError doesn't wrap, ...) must still come back as

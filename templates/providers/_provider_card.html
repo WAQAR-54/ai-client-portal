@@ -13,8 +13,12 @@
         <span>{% trans "Last synced" %}</span>
         <span>{% if provider.last_synced_at %}{{ provider.last_synced_at|timesince }} {% trans "ago" %}{% else %}{% trans "Never" %}{% endif %}</span>
     </div>
-    {% if provider.last_sync_status == "failed" %}
-    <div class="plan-row"><span>{% trans "Last sync" %}</span><span style="color:var(--color-danger);">{{ provider.last_sync_error|default:_("Failed") }}</span></div>
+    {% if sync_problem %}
+    <div class="plan-row">
+        <span>{% trans "Last sync" %}</span>
+        <span style="color:var(--color-danger);" title="{{ sync_problem.message }}">{% trans "Failed" %} - {{ sync_problem.label }}</span>
+    </div>
+    <p class="text-faint" style="font-size:var(--text-xs); margin:0 0 var(--space-2);">{{ sync_problem.message }}</p>
     {% endif %}
     <div class="plan-row">
         <span>{% trans "Models" %}</span>

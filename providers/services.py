@@ -3,11 +3,16 @@ into ProviderModel rows. Two callers: the Connect flow (governance views,
 synchronous - the admin is already waiting on the modal) and the Celery
 Beat periodic task (providers/tasks.py)."""
 
+import logging
+
 from django.utils import timezone
 
 from providers.adapters import ProviderAPIError
 from providers.adapters.sanitize import sanitize_error
+from providers.errors import describe
 from providers.models import Provider, ProviderModel
+
+logger = logging.getLogger(__name__)
 
 
 def sync_provider(provider: Provider) -> dict:
@@ -102,7 +107,20 @@ def sync_provider(provider: Provider) -> dict:
 
 
 def _record_sync_result(provider: Provider, result: dict) -> None:
+    """Stores only the SAFE category label (providers/errors.py), and swaps
+    result["error"] for that same label so every caller - the Connect flash
+    message included - gets something safe to show. The raw text (already
+    stripped of the exact API key by sanitize_error) goes to the server log
+    only, where an operator can still diagnose it."""
+    raw_error = result["error"]
+    if result["success"]:
+        safe = ""
+    else:
+        info = describe(raw_error)
+        safe = info["label"]
+        logger.warning("Provider sync failed (provider=%s, category=%s): %.300s", provider.slug, info["key"], raw_error)
+    result["error"] = safe or None
     provider.last_synced_at = timezone.now()
     provider.last_sync_status = Provider.SyncStatus.SUCCESS if result["success"] else Provider.SyncStatus.FAILED
-    provider.last_sync_error = result["error"] or ""
+    provider.last_sync_error = safe
     provider.save(update_fields=["last_synced_at", "last_sync_status", "last_sync_error"])

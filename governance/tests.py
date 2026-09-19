@@ -4494,31 +4494,15 @@ class SystemStatusBackendTests(TestCase):
         self.assertNotContains(response, "sk-proj")
         self.assertNotContains(response, "Incorrect API key")
 
-    def test_error_classification_vocabulary(self):
-        from governance.system_status import classify_provider_error
-
-        cases = {
-            "Error code: 401 - bad key": "Authentication error",
-            "HTTP 403": "Authentication error",
-            "403 Forbidden": "",  # no status/http prefix and no keyword: not guessed at
-            "Error code: 429 - slow down": "Rate limited or quota exceeded",
-            "You exceeded your current quota": "Rate limited or quota exceeded",
-            "Connection error.": "Network error or timeout",
-            "Request timed out": "Network error or timeout",
-            "Error code: 503 - upstream": "Provider service error",
-            "something entirely unrecognised": "",
-            "": "",
-        }
-        for raw, expected in cases.items():
-            self.assertEqual(classify_provider_error(raw), expected, raw)
-
-    def test_failed_provider_with_unrecognised_error_has_no_reason(self):
+    def test_failed_provider_with_unrecognised_error_says_unknown_not_the_raw_text(self):
         from governance.system_status import check_providers
         from providers.models import Provider
 
-        self._connect("openai", Provider.SyncStatus.FAILED, "something entirely unrecognised")
+        self._connect("openai", Provider.SyncStatus.FAILED, "something entirely unrecognised sk-proj-LEAK")
         self._only_connected("openai")
-        self.assertEqual(check_providers()["rows"][0]["reason"], "")
+        row = check_providers()["rows"][0]
+        self.assertEqual(row["reason"], "Unknown provider error")
+        self.assertNotIn("LEAK", str(row))
 
     def test_no_connected_providers_renders_an_empty_state(self):
         from providers.models import Provider

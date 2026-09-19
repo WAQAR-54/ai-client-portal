@@ -261,6 +261,21 @@ class GenerateDomainsViewTests(TestCase):
         self.assertFalse(DomainSearch.objects.exists())
 
     @patch("chat.providers.get_provider")
+    def test_provider_error_text_is_never_echoed_to_the_browser(self, mock_get_provider):
+        """Remaining-hardening finding: this used to return
+        f"Generation failed: {exc}", handing the provider's raw error (key
+        fragments, headers, response body) to any user of the tool."""
+        mock_get_provider.return_value.stream_chat.side_effect = ProviderError(
+            "Error code: 401 - Incorrect API key provided: sk-proj-LEAKME1234 Authorization: Bearer tok_LEAKME"
+        )
+        with self.assertLogs("domaingen.views", level="ERROR"):
+            response = self._post()
+        body = response.content.decode()
+        self.assertEqual(response.status_code, 502)
+        for secret in ("LEAKME", "sk-proj", "Bearer", "Incorrect API key"):
+            self.assertNotIn(secret, body)
+
+    @patch("chat.providers.get_provider")
     def test_unexpected_exception_during_generation_returns_json_not_html(self, mock_get_provider):
         """Regression guard: an uncaught exception here used to render
         Django's HTML error page, which the frontend's fetch().then(r =>

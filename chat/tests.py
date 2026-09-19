@@ -1737,6 +1737,21 @@ class DocumentGenerationOutputModeTests(TestCase):
         self.assertEqual(assistant_message.attachment_kind, "document")
         self.assertTrue(assistant_message.attachment.name.endswith(".docx"))
 
+    @patch("chat.views.get_provider")
+    def test_provider_error_text_never_becomes_the_assistant_reply(self, mock_get_provider):
+        """Remaining-hardening finding: a ProviderError used to be re-raised
+        as MediaGenerationError(str(exc)) and saved verbatim as the
+        assistant's chat message - raw provider text shown to end users."""
+        mock_get_provider.return_value.stream_chat.side_effect = ProviderError(
+            "Error code: 401 - Incorrect API key provided: sk-proj-LEAKME1234 Authorization: Bearer tok_LEAKME"
+        )
+        with self.assertLogs("chat.views", level="ERROR"):
+            self._generate("write a Q3 memo")
+        reply = self.conversation.messages.get(role=Message.Role.ASSISTANT).content
+        for secret in ("LEAKME", "sk-proj", "Bearer", "Incorrect API key", "401"):
+            self.assertNotIn(secret, reply)
+        self.assertIn("Please try again", reply)
+
     def test_blocked_without_the_document_generation_flag(self):
         self.premium.feature_flags = {"document_generation": False}
         self.premium.save(update_fields=["feature_flags"])
@@ -1763,7 +1778,12 @@ class DocumentGenerationOutputModeTests(TestCase):
         response = self._generate()
         self.assertEqual(response.status_code, 200)
         assistant_message = self.conversation.messages.get(role=Message.Role.ASSISTANT)
-        self.assertEqual(assistant_message.content, "Upstream is down")
+        # A friendly fixed reply, NOT the provider's own text (this used to
+        # assert content == "Upstream is down" - i.e. it pinned the leak).
+        self.assertEqual(
+            assistant_message.content, "The assistant hit a problem generating the document. Please try again."
+        )
+        self.assertNotIn("Upstream", assistant_message.content)
         self.assertFalse(assistant_message.attachment)
 
     @patch("chat.views.get_provider")

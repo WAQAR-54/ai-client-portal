@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import User
 from providers.adapters import get_adapter_class
@@ -773,3 +774,155 @@ class SeedProviderResyncScheduleMigrationTests(TestCase):
         task = PeriodicTask.objects.get(name="Daily connected-provider model resync")
         self.assertEqual(task.task, "providers.tasks.sync_all_connected_providers")
         self.assertTrue(task.enabled)
+
+
+class ProviderErrorClassificationTests(TestCase):
+    """providers/errors.py - the only route by which a provider failure may
+    become visible text. Raw provider output can echo key fragments,
+    headers or response bodies, so nothing renders it verbatim."""
+
+    def test_categories(self):
+        from providers.errors import classify
+
+        cases = {
+            "Error code: 401 - Incorrect API key provided": "authentication",
+            "HTTP 403 Forbidden": "authentication",
+            "invalid x-api-key": "authentication",
+            "Error code: 429 - Too many requests": "rate_limited",
+            "You exceeded your current quota": "rate_limited",
+            "Request timed out.": "timeout",
+            "HTTP 504": "timeout",
+            "Connection error.": "unavailable",
+            "Error code: 503 - upstream unavailable": "unavailable",
+            "Expecting value: JSONDecodeError line 1 column 1": "invalid_response",
+            "Not connected": "configuration",
+            "something entirely unrecognised": "unknown",
+            "": "unknown",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(classify(raw), expected, raw)
+
+    def test_describe_is_idempotent_on_an_already_stored_label(self):
+        from providers.errors import describe
+
+        first = describe("Error code: 401 - bad key")
+        again = describe(first["label"])
+        self.assertEqual(first, again)
+
+    def test_describe_never_returns_the_raw_text(self):
+        from providers.errors import describe
+
+        raw = "Error code: 401 - Incorrect API key provided: sk-proj-abcdef1234567890 Authorization: Bearer xyz"
+        info = describe(raw)
+        rendered = f"{info['key']} {info['label']} {info['message']}"
+        for secret in ("sk-proj", "abcdef1234567890", "Bearer xyz", "Authorization: Bearer", "Incorrect API key"):
+            self.assertNotIn(secret, rendered)
+
+
+class ProviderErrorNeverReachesTheUITests(TestCase):
+    """Regression tests: an API-key-like string in a provider error must not
+    appear on ANY provider-facing surface - list page, card partial, the
+    connect/resync flash message, the Django admin, or the stored field."""
+
+    RAW = (
+        "Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-proj-LEAKME1234567890abcd. "
+        "Authorization: Bearer tok_LEAKME', 'type': 'invalid_request_error'}}"
+    )
+
+    def setUp(self):
+        self.superadmin = User.objects.create_user(
+            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+        )
+        self.client.force_login(self.superadmin)
+        self.provider = Provider.objects.get(slug="openai")
+        self.provider.set_api_key("sk-real-secret-key-9999")
+        self.provider.is_connected = True
+        self.provider.save()
+
+    def _assert_clean(self, text):
+        for secret in ("LEAKME", "sk-proj", "Bearer tok", "Incorrect API key", "invalid_request_error"):
+            self.assertNotIn(secret, text)
+
+    def test_a_failed_sync_stores_only_the_safe_category(self):
+        from providers.adapters import ProviderAPIError
+
+        with patch(
+            "providers.adapters.openai_compatible.OpenAICompatibleAdapter.fetch_models",
+            side_effect=ProviderAPIError(self.RAW),
+        ):
+            result = sync_provider(self.provider)
+        self.provider.refresh_from_db()
+        self.assertEqual(self.provider.last_sync_error, "Authentication error")
+        self.assertEqual(result["error"], "Authentication error")
+        self._assert_clean(self.provider.last_sync_error)
+
+    def test_the_raw_text_goes_to_the_server_log_only(self):
+        from providers.adapters import ProviderAPIError
+
+        with patch(
+            "providers.adapters.openai_compatible.OpenAICompatibleAdapter.fetch_models",
+            side_effect=ProviderAPIError("Error code: 429 - slow down"),
+        ):
+            with self.assertLogs("providers.services", level="WARNING") as logs:
+                sync_provider(self.provider)
+        joined = "\n".join(logs.output)
+        self.assertIn("category=rate_limited", joined)
+        self.assertIn("429", joined)
+
+    def test_legacy_raw_text_already_in_the_database_is_never_rendered(self):
+        """Rows written before this change still hold raw provider text."""
+        Provider.objects.filter(pk=self.provider.pk).update(
+            last_sync_status=Provider.SyncStatus.FAILED, last_sync_error=self.RAW, last_synced_at=timezone.now()
+        )
+        page = self.client.get(reverse("providers:list"))
+        self.assertEqual(page.status_code, 200)
+        self._assert_clean(page.content.decode())
+        self.assertContains(page, "Authentication error")
+        self.assertContains(page, "Failed")
+
+    def test_the_card_partial_shows_category_message_and_timestamp(self):
+        Provider.objects.filter(pk=self.provider.pk).update(
+            last_sync_status=Provider.SyncStatus.FAILED,
+            last_sync_error="Authentication error",
+            last_synced_at=timezone.now() - timezone.timedelta(minutes=18),
+        )
+        page = self.client.get(reverse("providers:list"))
+        self.assertContains(page, "Authentication error")
+        self.assertContains(page, "Reconnect it with a valid API key")
+        self.assertIn("18 minutes ago", page.content.decode().replace(" ", " "))
+
+    def test_resync_flash_message_is_safe(self):
+        from providers.adapters import ProviderAPIError
+
+        with patch(
+            "providers.adapters.openai_compatible.OpenAICompatibleAdapter.fetch_models",
+            side_effect=ProviderAPIError(self.RAW),
+        ):
+            response = self.client.post(
+                reverse("providers:resync", kwargs={"provider_id": self.provider.id}), follow=True
+            )
+        text = " ".join(str(m) for m in response.context["messages"]) + response.content.decode()
+        self._assert_clean(text)
+        self.assertIn("Authentication error", text)
+
+    def test_django_admin_change_page_never_shows_raw_legacy_text(self):
+        admin_user = User.objects.create_superuser(email="dj@example.com", password="pw12345!")
+        self.client.force_login(admin_user)
+        Provider.objects.filter(pk=self.provider.pk).update(
+            last_sync_status=Provider.SyncStatus.FAILED, last_sync_error=self.RAW
+        )
+        response = self.client.get(reverse("admin:providers_provider_change", args=[self.provider.pk]))
+        self.assertEqual(response.status_code, 200)
+        self._assert_clean(response.content.decode())
+        self.assertContains(response, "Authentication error")
+
+    def test_system_status_shares_the_same_classification(self):
+        from governance.system_status import check_providers
+
+        Provider.objects.exclude(pk=self.provider.pk).update(is_connected=False)
+        Provider.objects.filter(pk=self.provider.pk).update(
+            last_sync_status=Provider.SyncStatus.FAILED, last_sync_error=self.RAW, last_synced_at=timezone.now()
+        )
+        row = check_providers()["rows"][0]
+        self.assertEqual(row["reason"], "Authentication error")
+        self._assert_clean(str(row))

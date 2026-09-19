@@ -814,7 +814,17 @@ def _generate_document_bytes(user, prompt):
             if chunk.done:
                 break
     except ProviderError as exc:
-        raise MediaGenerationError(str(exc)) from exc
+        # This message is saved as the assistant's reply, so it must never be
+        # the raw provider text (it can echo key fragments, headers or a
+        # response body, and names the provider the portal keeps hidden).
+        # Same policy as stream_message: log the real error, show a fixed one.
+        logger.exception(
+            "AI provider call failed during document generation (provider=%s, model=%s)",
+            candidates[0].provider,
+            candidates[0].model_id,
+        )
+        capture_exception(exc)
+        raise MediaGenerationError(_("The assistant hit a problem generating the document. Please try again.")) from exc
 
     if not content_text.strip():
         raise MediaGenerationError(_("The model returned an empty response."))
