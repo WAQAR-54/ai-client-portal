@@ -1,0 +1,18 @@
+{% load i18n %}
+<div id="conv-list-container" class="conv-list-scroll">
+    {% if grouped_conversations %}
+        {% for label, items in grouped_conversations %}
+        <div class="chat-sidebar-label">{{ label }}</div>
+        <ul class="conv-group">
+            {% for c in items %}{% include "chat/_conversation_item.html" with c=c %}{% endfor %}
+        </ul>
+        {% endfor %}
+        {% if truncated %}
+        <div class="sidebar-search-truncated-hint">{% trans "Showing the most recent matches - refine your search to narrow further." %}</div>
+        {% endif %}
+    {% else %}
+    <div class="sidebar-empty-state">
+        <p>{% blocktrans %}No conversations match "{{ query }}".{% endblocktrans %}</p>
+    </div>
+    {% endif %}
+</div>

@@ -211,14 +211,81 @@ def _model_catalog_rows(available_models, upgrade_plan_choices):
     return rows
 
 
+# Sidebar was unbounded - a real gap found in the production-readiness
+# audit (measured: page size/query cost grows without limit as a user's
+# conversation history grows). Pinned conversations stay unbounded (in
+# practice always few - bounded by how many a person will realistically
+# pin, not by total history), only the day-grouped unpinned list is capped.
+# The client-side search/filter JS (chat_home.html) can only ever see
+# conversations actually in the DOM, so search is intentionally NOT capped
+# here - see search_conversations below, which the search box now hits
+# directly instead of relying on pure client-side filtering.
+CONVERSATIONS_PAGE_SIZE = 100
+
+
+def _encode_conversation_cursor(conversation):
+    return f"{conversation.updated_at.isoformat()}|{conversation.id}"
+
+
+def _decode_conversation_cursor(raw):
+    """Returns (updated_at, id) or None for a missing/malformed cursor -
+    callers treat None as "start from the top", never as an error, since a
+    stale/tampered cursor from an old page load must degrade gracefully
+    rather than 400 or crash."""
+    from django.utils.dateparse import parse_datetime
+
+    updated_at_str, _, id_str = (raw or "").partition("|")
+    updated_at = parse_datetime(updated_at_str) if updated_at_str else None
+    if updated_at is None or not id_str.isdigit():
+        return None
+    return updated_at, int(id_str)
+
+
+def _unpinned_conversations_page(request, *, before_cursor=None):
+    """One page of unpinned conversations, ordered newest-first with a
+    stable tiebreaker (id) so pagination can't skip/duplicate a row when
+    two conversations share the exact same updated_at - a real risk with
+    auto_now timestamps under concurrent activity, and explicitly called
+    out in the audit ("pagination must have stable ordering"). Returns
+    (page, has_more) - page is at most CONVERSATIONS_PAGE_SIZE long."""
+    qs = (
+        Conversation.objects.filter(user=request.user, is_pinned=False)
+        .select_related("last_provider_model__provider", "project")
+        .order_by("-updated_at", "-id")
+    )
+    if before_cursor is not None:
+        updated_at, conv_id = before_cursor
+        qs = qs.filter(Q(updated_at__lt=updated_at) | Q(updated_at=updated_at, id__lt=conv_id))
+    rows = list(qs[: CONVERSATIONS_PAGE_SIZE + 1])
+    has_more = len(rows) > CONVERSATIONS_PAGE_SIZE
+    return rows[:CONVERSATIONS_PAGE_SIZE], has_more
+
+
+def _load_more_url(cursor, last_label, active_conversation_id):
+    """Built server-side (not composed piecemeal in the template) so query
+    values that could contain '&'/'?' - a conversation's day-bucket label
+    is user-facing translated text, and a title-driven label could in
+    principle contain odd characters - are properly encoded, not just
+    concatenated into an href."""
+    params = {"cursor": cursor, "last_label": last_label or ""}
+    if active_conversation_id:
+        params["active_conversation_id"] = active_conversation_id
+    return f"{reverse('chat:load_more_conversations')}?{urlencode(params)}"
+
+
 def _conversation_list_context(request, active_conversation=None):
     """Shared context for the sidebar list, used both on full page loads and
-    on the pin/delete/project htmx partial re-renders."""
+    on the pin/delete/project htmx partial re-renders. Always starts from
+    the first page - toggle_pin/delete_conversation/project actions re-
+    render this from scratch, same as a fresh page load; a user who had
+    already clicked "Load more" simply sees the list collapse back to page
+    one, rather than this trying to remember how many pages were open."""
     own_conversations = Conversation.objects.filter(user=request.user).select_related(
         "last_provider_model__provider", "project"
     )
     pinned = own_conversations.filter(is_pinned=True).order_by("-pinned_at")
-    unpinned = own_conversations.filter(is_pinned=False).order_by("-updated_at")
+    unpinned, has_more = _unpinned_conversations_page(request)
+    grouped = group_conversations(unpinned)
     # Personal projects (see chat.models.Project) - annotated count uses the
     # reverse FK at the SQL level (Count/filter), so it stays correct
     # regardless of which manager touches Conversation elsewhere (the
@@ -227,12 +294,90 @@ def _conversation_list_context(request, active_conversation=None):
     user_projects = Project.objects.filter(user=request.user).annotate(
         conversation_count=Count("conversations", filter=Q(conversations__is_deleted=False))
     )
+    active_id = active_conversation.id if active_conversation else None
     return {
         "pinned_conversations": pinned,
-        "grouped_conversations": group_conversations(unpinned),
-        "active_conversation_id": active_conversation.id if active_conversation else None,
+        "grouped_conversations": grouped,
+        "active_conversation_id": active_id,
         "user_projects": user_projects,
+        "has_more_conversations": has_more,
+        "load_more_url": (
+            _load_more_url(_encode_conversation_cursor(unpinned[-1]), grouped[-1][0], active_id) if has_more else ""
+        ),
     }
+
+
+@login_required
+@require_GET
+def load_more_conversations(request):
+    """ "Load more" click at the bottom of the sidebar list - appends the
+    next page after the cursor rather than re-rendering everything (that
+    would both re-fetch conversations the browser already has and reset
+    the user's scroll position). A malformed/stale cursor just restarts
+    from the top rather than erroring - see _decode_conversation_cursor."""
+    cursor = _decode_conversation_cursor(request.GET.get("cursor", ""))
+    active_id = request.GET.get("active_conversation_id") or None
+    batch, has_more = _unpinned_conversations_page(request, before_cursor=cursor)
+    grouped = group_conversations(batch)
+    # Avoid a duplicate "Previous 30 Days" (etc.) heading when this batch
+    # continues the same bucket the previous page ended on - cosmetic, but
+    # a repeated heading mid-list reads as a bug even though nothing is
+    # actually wrong with the data underneath it.
+    continues_previous_bucket = bool(grouped) and grouped[0][0] == request.GET.get("last_label", "")
+    return render(
+        request,
+        "chat/_conversation_list_more.html",
+        {
+            "grouped_conversations": grouped,
+            "continues_previous_bucket": continues_previous_bucket,
+            "active_conversation_id": active_id,
+            "has_more_conversations": has_more,
+            "load_more_url": (
+                _load_more_url(_encode_conversation_cursor(batch[-1]), grouped[-1][0], active_id) if has_more else ""
+            ),
+        },
+    )
+
+
+@login_required
+@require_GET
+def search_conversations(request):
+    """Server-side search backing the sidebar's search box - added
+    alongside the pagination above specifically so search still reaches a
+    user's FULL conversation history, not just whatever page happens to be
+    loaded in the DOM (the audit's own explicit requirement: "search must
+    still work"). An empty query just returns the normal first page
+    (unchanged behavior) so clearing the search box restores pagination.
+
+    Capped at CONVERSATIONS_PAGE_SIZE * 2 results, generous for an actual
+    search (which narrows, rather than lists, history) without letting a
+    single-character query force-render someone's entire history in one
+    response - a "refine your search" hint appears if the cap was hit,
+    rather than silently truncating with no explanation. Provider/project
+    filtering stays client-side (chat_home.html's applyFilter()), applied
+    to whatever this renders, exactly as it already does for the normal
+    paginated view."""
+    query = request.GET.get("q", "").strip()
+    if not query:
+        return render(request, "chat/_conversation_list.html", _conversation_list_context(request))
+
+    matches = list(
+        Conversation.objects.filter(user=request.user, title__icontains=query)
+        .select_related("last_provider_model__provider", "project")
+        .order_by("-updated_at", "-id")[: CONVERSATIONS_PAGE_SIZE * 2 + 1]
+    )
+    truncated = len(matches) > CONVERSATIONS_PAGE_SIZE * 2
+    matches = matches[: CONVERSATIONS_PAGE_SIZE * 2]
+    return render(
+        request,
+        "chat/_conversation_search_results.html",
+        {
+            "grouped_conversations": group_conversations(matches),
+            "active_conversation_id": None,
+            "truncated": truncated,
+            "query": query,
+        },
+    )
 
 
 @login_required

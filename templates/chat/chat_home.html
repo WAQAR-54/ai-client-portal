@@ -57,7 +57,11 @@
 {% if user|has_feature:"conversation_pin_search" %}
 <div class="filter-search sidebar-conv-search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="search" id="conv-search-input" placeholder="{% trans 'Search conversations...' %}" autocomplete="off">
+    <input type="search" id="conv-search-input" name="q" placeholder="{% trans 'Search conversations...' %}" autocomplete="off"
+           hx-get="{% url 'chat:search_conversations' %}"
+           hx-trigger="input changed delay:300ms, search"
+           hx-target="#conv-list-container" hx-swap="outerHTML"
+           hx-indicator="#conv-list-skeleton">
 </div>
 {% endif %}
 <div class="conv-list-wrap">
@@ -73,7 +77,15 @@
 </div>
 <script>
 (function() {
-    var input = document.getElementById("conv-search-input");
+    // Text search itself is server-side now (see chat:search_conversations,
+    // wired via hx-get directly on #conv-search-input above) - the audit
+    // found the old pure-client-side version could only ever match
+    // conversations already sitting in the DOM, which silently broke once
+    // the sidebar stopped rendering the FULL history (see the pagination
+    // added alongside this - CONVERSATIONS_PAGE_SIZE in chat/views.py).
+    // Provider/project filtering stays client-side exactly as before,
+    // applied to whatever's currently rendered - the normal paginated
+    // view, an appended "Load more" batch, or a set of search results.
     var listWrap = document.querySelector(".conv-list-wrap");
     var emptyState = document.getElementById("conv-search-empty");
     var activeProviderFilter = "";
@@ -81,17 +93,13 @@
     if (!listWrap) return;
 
     function applyFilter() {
-        var query = input ? input.value.trim().toLowerCase() : "";
         var anyVisibleAtAll = false;
         listWrap.querySelectorAll(".conv-group").forEach(function(group) {
             var anyVisibleInGroup = false;
             group.querySelectorAll(".conv-item").forEach(function(item) {
-                var titleEl = item.querySelector(".conv-item-link span");
-                var title = titleEl ? titleEl.textContent.toLowerCase() : "";
-                var matchesSearch = !query || title.indexOf(query) !== -1;
                 var matchesProvider = !activeProviderFilter || item.dataset.providerSlug === activeProviderFilter;
                 var matchesProject = !activeProjectFilter || item.dataset.projectId === activeProjectFilter;
-                var match = matchesSearch && matchesProvider && matchesProject;
+                var match = matchesProvider && matchesProject;
                 item.style.display = match ? "" : "none";
                 if (match) anyVisibleInGroup = true;
             });
@@ -104,7 +112,7 @@
         });
         var hasAnyGroups = listWrap.querySelectorAll(".conv-group").length > 0;
         if (emptyState) {
-            emptyState.style.display = ((query || activeProviderFilter || activeProjectFilter) && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
+            emptyState.style.display = ((activeProviderFilter || activeProjectFilter) && hasAnyGroups && !anyVisibleAtAll) ? "flex" : "none";
         }
     }
 
@@ -134,12 +142,19 @@
         applyFilter();
     };
 
-    if (input) input.addEventListener("input", applyFilter);
-    // Re-apply the current search/provider/project filter after the list
-    // is refreshed by htmx (pin/unpin, delete, project changes) so
-    // filtering survives those swaps.
+    // Exposed for _conversation_list_more.html's "Load more" button
+    // (hx-on::after-swap="portalApplyConversationFilter()") - that swap's
+    // OWN outerHTML target is the button itself, already removed from the
+    // document by the time any afterSwap listener runs, so evt.target.
+    // closest() below can't reliably reach #conv-list-container for it;
+    // an inline handler on the button avoids depending on that at all.
+    window.portalApplyConversationFilter = applyFilter;
+
+    // Re-apply the active provider/project filter after a full swap of
+    // #conv-list-container itself (search, pin/unpin, delete, project
+    // changes all replace it wholesale).
     document.body.addEventListener("htmx:afterSwap", function(evt) {
-        if (evt.target.id === "conv-list-container" || (evt.target.querySelector && evt.target.querySelector("#conv-list-container"))) {
+        if (evt.target.id === "conv-list-container") {
             applyFilter();
         }
     });

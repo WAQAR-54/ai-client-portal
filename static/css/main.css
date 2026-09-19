@@ -1950,6 +1950,29 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .sidebar-empty-state .empty-icon-badge { width: 40px; height: 40px; background: var(--sidebar-hover-bg); color: var(--sidebar-text-muted); }
 .sidebar-empty-state .empty-icon-badge svg { width: 18px; height: 18px; }
 
+/* Conversations sidebar pagination (production-readiness audit) - the
+   day-grouped list is capped server-side, this is the "keep going"
+   affordance rather than an infinite-scroll trigger, so it's obvious
+   there's more history without loading it unasked. */
+.sidebar-load-more-btn {
+    display: block;
+    width: calc(100% - 2 * var(--space-3));
+    margin: var(--space-2) var(--space-3);
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--sidebar-border);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+.sidebar-load-more-btn:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
+.sidebar-search-truncated-hint {
+    padding: var(--space-2) var(--space-3);
+    color: var(--sidebar-text-muted);
+    font-size: var(--text-xs);
+}
+
 /* Pin/delete are always visible now, not hover-only - matches the same
    change made to the message Copy/Edit/Regenerate row, for the same
    reason (touch users, and anyone who hasn't learned to hover here). */

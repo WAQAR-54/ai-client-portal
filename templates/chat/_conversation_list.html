@@ -13,6 +13,12 @@
             {% for c in items %}{% include "chat/_conversation_item.html" with c=c %}{% endfor %}
         </ul>
         {% endfor %}
+        {% if has_more_conversations %}
+        <button type="button" class="sidebar-load-more-btn"
+                hx-get="{{ load_more_url }}" hx-target="this" hx-swap="outerHTML">
+            {% trans "Load more" %}
+        </button>
+        {% endif %}
     {% elif not pinned_conversations %}
     <div class="sidebar-empty-state">
         <div class="empty-icon-badge">

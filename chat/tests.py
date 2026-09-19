@@ -2676,6 +2676,155 @@ class ConversationGroupingTests(TestCase):
         self.assertNotIn(old, dict(buckets).get("Today", []))
 
 
+class ConversationPaginationTests(TestCase):
+    """Regression tests for the remaining-audit pass: the sidebar was
+    unbounded (chat/views.py::_conversation_list_context rendered every
+    unpinned conversation, unconditionally). Verifies the cap, the "Load
+    more" cursor pagination, stable ordering under it, and that server-side
+    search (chat:search_conversations) still reaches conversations beyond
+    the first page - the actual functional requirement the audit called
+    out ("search must still work"), not just a page-size number."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="lots@example.com", password="pw12345!")
+        self.client.login(email="lots@example.com", password="pw12345!")
+
+    def _create_conversations(self, count, title_prefix="c"):
+        """Distinct updated_at per row (oldest first created = oldest
+        updated_at), matching real usage where conversations accumulate
+        over time - a tie-free sequence, needed to test ordering itself
+        without the (separately tested) tiebreaker muddying it."""
+        now = timezone.now()
+        conversations = []
+        for i in range(count):
+            c = Conversation.objects.create(user=self.user, title=f"{title_prefix}{i}")
+            Conversation.objects.filter(pk=c.pk).update(updated_at=now - timezone.timedelta(seconds=count - i))
+            conversations.append(c)
+        return conversations
+
+    def test_sidebar_caps_at_page_size_and_offers_load_more(self):
+        from chat.views import CONVERSATIONS_PAGE_SIZE
+
+        self._create_conversations(CONVERSATIONS_PAGE_SIZE + 20)
+        response = self.client.get(reverse("chat:chat_home"))
+        rendered_items = response.content.count(b'<li class="conv-item')
+        self.assertEqual(rendered_items, CONVERSATIONS_PAGE_SIZE)
+        self.assertContains(response, "sidebar-load-more-btn")
+
+    def test_sidebar_shows_everything_when_under_the_cap(self):
+        from chat.views import CONVERSATIONS_PAGE_SIZE
+
+        self._create_conversations(CONVERSATIONS_PAGE_SIZE - 10)
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertNotContains(response, "sidebar-load-more-btn")
+
+    def test_load_more_returns_the_next_page_without_repeating_or_skipping(self):
+        from chat.views import CONVERSATIONS_PAGE_SIZE
+
+        total = CONVERSATIONS_PAGE_SIZE + 30
+        created = self._create_conversations(total)
+        # Pull the load-more URL straight out of the rendered context rather
+        # than parsing HTML.
+        load_more_url = self.client.get(reverse("chat:chat_home")).context["load_more_url"]
+        second_response = self.client.get(load_more_url)
+        second_page_items = second_response.content.count(b'<li class="conv-item')
+
+        self.assertEqual(second_page_items, 30)
+        self.assertNotContains(second_response, "sidebar-load-more-btn")
+        # Every one of the 30 oldest conversations shows up exactly once on
+        # page 2 - no gap, no duplicate.
+        oldest_30_titles = {c.title for c in created[:30]}
+        for title in oldest_30_titles:
+            self.assertContains(second_response, title.encode() if isinstance(title, bytes) else title)
+
+    def test_pagination_is_stable_across_conversations_sharing_the_same_updated_at(self):
+        """A real risk with auto_now timestamps: two conversations updated
+        in the same request/transaction can land on the exact same
+        updated_at. Without a tiebreaker, offset/cursor pagination could
+        skip or duplicate one of them across pages."""
+        from chat.views import CONVERSATIONS_PAGE_SIZE
+
+        now = timezone.now()
+        tied = [Conversation.objects.create(user=self.user, title=f"tied{i}") for i in range(5)]
+        Conversation.objects.filter(id__in=[c.id for c in tied]).update(updated_at=now)
+        self._create_conversations(CONVERSATIONS_PAGE_SIZE - 3, title_prefix="filler")
+
+        first_response = self.client.get(reverse("chat:chat_home"))
+        first_page_html = first_response.content
+        load_more_url = first_response.context["load_more_url"]
+        second_response = self.client.get(load_more_url)
+        second_page_html = second_response.content
+
+        for c in tied:
+            in_first = c.title.encode() in first_page_html
+            in_second = c.title.encode() in second_page_html
+            self.assertTrue(in_first or in_second, f"{c.title} missing from both pages")
+            self.assertFalse(in_first and in_second, f"{c.title} duplicated across pages")
+
+    def test_search_finds_a_conversation_far_outside_the_first_page(self):
+        """The actual point of making search server-side: a title far
+        beyond CONVERSATIONS_PAGE_SIZE (never rendered in the initial DOM)
+        must still be findable - proves search isn't just filtering
+        whatever happened to already be on the page."""
+        from chat.views import CONVERSATIONS_PAGE_SIZE
+
+        self._create_conversations(CONVERSATIONS_PAGE_SIZE + 50)
+        buried = Conversation.objects.create(user=self.user, title="Needle in a haystack")
+        Conversation.objects.filter(pk=buried.pk).update(updated_at=timezone.now() - timezone.timedelta(days=365))
+
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertNotContains(response, "Needle in a haystack")  # confirms it's genuinely off the first page
+
+        search_response = self.client.get(reverse("chat:search_conversations"), {"q": "haystack"})
+        self.assertContains(search_response, "Needle in a haystack")
+
+    def test_search_is_scoped_to_the_logged_in_user(self):
+        other = User.objects.create_user(email="lotsother@example.com", password="pw12345!")
+        Conversation.objects.create(user=other, title="Someone else's secret project")
+        response = self.client.get(reverse("chat:search_conversations"), {"q": "secret"})
+        self.assertNotContains(response, "Someone else's secret project")
+
+    def test_empty_search_query_returns_the_normal_paginated_view(self):
+        response = self.client.get(reverse("chat:search_conversations"), {"q": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'id="conv-list-container"', response.content)
+
+    def test_query_count_does_not_scale_with_total_conversation_count(self):
+        """Real before/after evidence, not just a page-size assertion: the
+        whole point of capping is that rendering the sidebar costs the
+        same whether a user has 100 or 1000 conversations. Two independent
+        users/sessions (not the same user measured twice in a row) so
+        nothing about request order or a warm per-request cache from the
+        first call can make the second look artificially cheaper or more
+        expensive - same reasoning as the equivalent N+1 regression test
+        for the sidebar's role-feature-toggle checks."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        # Warm up governance's lazily-created singleton rows (ComplianceSettings/
+        # SiteBranding, get_or_create'd on whichever request hits them first)
+        # BEFORE either measurement - otherwise whichever of the two calls
+        # happens to run first eats a few one-time setup queries that have
+        # nothing to do with conversation count, and looks artificially more
+        # expensive than the second.
+        self.client.get(reverse("chat:chat_home"))
+
+        self._create_conversations(100)
+        with CaptureQueriesContext(connection) as small:
+            self.client.get(reverse("chat:chat_home"))
+
+        many_user = User.objects.create_user(email="lots-many@example.com", password="pw12345!")
+        self.client.login(email="lots-many@example.com", password="pw12345!")
+        now = timezone.now()
+        for i in range(1000):
+            c = Conversation.objects.create(user=many_user, title=f"more{i}")
+            Conversation.objects.filter(pk=c.pk).update(updated_at=now - timezone.timedelta(seconds=1000 - i))
+        with CaptureQueriesContext(connection) as large:
+            self.client.get(reverse("chat:chat_home"))
+
+        self.assertEqual(len(small.captured_queries), len(large.captured_queries))
+
+
 class ConversationPinDeleteTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="pin@example.com", password="pw12345!")
