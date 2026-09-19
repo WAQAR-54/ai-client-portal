@@ -1399,6 +1399,55 @@ class HealthzTests(TestCase):
         self.assertEqual(response.json()["status"], "error")
 
 
+class VerifySentryCommandTests(TestCase):
+    """accounts/management/commands/verify_sentry.py - lets an operator
+    prove Sentry actually receives an event, not just that sentry_sdk.
+    init() in config/settings.py looks right on paper. Confirmed live
+    against a real Sentry project during this session's own manual run
+    (a real "Rate-limited via x-sentry-rate-limits" response came back -
+    proof the DSN/host is real and reachable, though worth checking the
+    project's quota/plan since a rate-limited event is silently dropped
+    on Sentry's own side, not retried)."""
+
+    def test_refuses_to_run_without_sentry_dsn(self):
+        from django.core.management import CommandError, call_command
+        from django.test import override_settings
+
+        with override_settings(SENTRY_DSN=""):
+            with self.assertRaises(CommandError):
+                call_command("verify_sentry")
+
+    def test_sends_a_message_event_when_dsn_is_set(self):
+        from unittest.mock import patch
+
+        from django.core.management import call_command
+        from django.test import override_settings
+
+        with override_settings(SENTRY_DSN="https://fake@fake.ingest.sentry.io/1"):
+            with patch("sentry_sdk.capture_message", return_value="fake-event-id") as mock_capture, patch(
+                "sentry_sdk.flush"
+            ):
+                call_command("verify_sentry")
+        mock_capture.assert_called_once()
+        self.assertIn("verify_sentry deliberate test message", mock_capture.call_args[0][0])
+
+    def test_raise_flag_captures_a_real_exception_instead(self):
+        from unittest.mock import patch
+
+        from django.core.management import call_command
+        from django.test import override_settings
+
+        with override_settings(SENTRY_DSN="https://fake@fake.ingest.sentry.io/1"):
+            with patch("sentry_sdk.capture_exception", return_value="fake-event-id") as mock_capture, patch(
+                "sentry_sdk.flush"
+            ):
+                call_command("verify_sentry", "--raise")
+        mock_capture.assert_called_once()
+        exc = mock_capture.call_args[0][0]
+        self.assertIsInstance(exc, RuntimeError)
+        self.assertIn("verify_sentry deliberate test error", str(exc))
+
+
 class HealthzDeepTests(TestCase):
     """config/urls.py::healthz_deep - the slower sibling that also checks
     Redis, kept off the hot healthz() path on purpose (see its own
