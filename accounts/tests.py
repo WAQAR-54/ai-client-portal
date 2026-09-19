@@ -571,6 +571,37 @@ class PasswordResetFlowTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("brand-new-password-456"))
 
+    def test_completing_a_reset_writes_an_audit_entry_without_the_password(self):
+        """Remaining-audit finding: the in-profile password change was
+        audited but the emailed-link reset (the path an attacker with
+        mailbox access would use) left no trace. Records who and when -
+        never the password itself."""
+        from django.core import mail
+
+        from governance.models import AuditLog
+
+        mail.outbox = []
+        self.client.post(reverse("accounts:password_reset_request"), {"email": self.user.email})
+        html_body = mail.outbox[0].alternatives[0][0]
+        uidb64, token = self._extract_reset_url(html_body).split("password-reset/confirm/", 1)[1].strip("/").split("/")
+        confirm_url = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
+
+        self.client.post(
+            confirm_url, {"new_password1": "brand-new-password-456", "new_password2": "brand-new-password-456"}
+        )
+
+        entry = AuditLog.objects.get(action_type="user.password_reset_via_email")
+        self.assertEqual(entry.actor, self.user)
+        self.assertEqual(entry.target_id, str(self.user.id))
+        self.assertNotIn("brand-new-password-456", f"{entry.old_value}{entry.new_value}")
+
+    def test_an_invalid_reset_link_writes_no_audit_entry(self):
+        from governance.models import AuditLog
+
+        confirm_url = reverse("accounts:password_reset_confirm", kwargs={"uidb64": "invalid", "token": "bad-token"})
+        self.client.post(confirm_url, {"new_password1": "whatever-123456", "new_password2": "whatever-123456"})
+        self.assertFalse(AuditLog.objects.filter(action_type="user.password_reset_via_email").exists())
+
     def test_confirm_with_invalid_token_shows_invalid_link(self):
         confirm_url = reverse("accounts:password_reset_confirm", kwargs={"uidb64": "invalid", "token": "bad-token"})
         response = self.client.get(confirm_url)

@@ -1419,6 +1419,22 @@ class CheckoutPlanTests(TestCase):
         response = self.client.get(reverse("billing:my_plans"))
         self.assertContains(response, "Pro")
 
+    def test_checkout_writes_an_audit_entry_once_even_when_repeated(self):
+        """Remaining-audit finding: admin invoice generation was audited
+        (billing.invoice_generate) but the self-service path creating the
+        same billable document was not. A repeated POST is now a no-op
+        (idempotency fix), so it must not write a second entry either."""
+        from governance.models import AuditLog
+
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+        self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
+
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        entries = AuditLog.objects.filter(action_type="billing.invoice_checkout")
+        self.assertEqual(entries.count(), 1)
+        self.assertEqual(entries.get().actor, self.user)
+        self.assertEqual(entries.get().target_id, str(invoice.id))
+
     def test_checkout_creates_an_unpaid_invoice_for_the_chosen_plan(self):
         response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.plan.id})
         self.assertRedirects(response, reverse("billing:my_invoices"))

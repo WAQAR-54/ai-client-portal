@@ -1891,13 +1891,26 @@ class EmailLogListView(SuperAdminRequiredMixin, TemplateView):
 @role_required(User.Role.SUPERADMIN)
 @require_http_methods(["POST"])
 def delete_email_logs(request):
-    from notifications.models import EmailLog
+    from notifications.models import EmailLog, EmailSettings
 
     if request.POST.get("delete_all") == "1":
-        EmailLog.objects.all().delete()
+        deleted_count, _details = EmailLog.objects.all().delete()
     else:
         log_ids = request.POST.getlist("log_ids")
-        EmailLog.objects.filter(id__in=log_ids).delete()
+        deleted_count, _details = EmailLog.objects.filter(id__in=log_ids).delete()
+    # Deleting delivery records is a destructive action on evidence (who
+    # was emailed what, and whether it sent) - remaining-audit finding: it
+    # left no trace of its own. Only the count is recorded, never any
+    # recipient/subject content. Audited against the EmailSettings
+    # singleton, same target as email_settings.update, since there's no
+    # single EmailLog row to point at for a bulk delete.
+    if deleted_count:
+        log_action(
+            request.user,
+            "email_log.delete",
+            EmailSettings.load(),
+            new_value=f"{deleted_count} log(s) deleted",
+        )
     return redirect("governance:email_logs")
 
 

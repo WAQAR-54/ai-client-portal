@@ -457,6 +457,14 @@ def password_reset_confirm_view(request, uidb64, token):
         form = PortalSetPasswordForm(user=user, data=request.POST)
         if form.is_valid():
             form.save()
+            # Same reasoning as the in-profile user.password_change entry:
+            # a credential change is exactly what an account-takeover
+            # investigation needs a timestamp for, and the emailed-link path
+            # is the one an attacker with mailbox access would use. Actor is
+            # the account itself (nobody is logged in yet); no value recorded.
+            from governance.audit import log_action
+
+            log_action(actor=user, action_type="user.password_reset_via_email", target=user)
             messages.success(request, translation.gettext("Your password has been reset. You can log in now."))
             return redirect("accounts:login")
     else:

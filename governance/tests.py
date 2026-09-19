@@ -1926,6 +1926,29 @@ class EmailLogsAdminTests(TestCase):
         self.assertFalse(self.EmailLog.objects.filter(id=gone.id).exists())
         self.assertTrue(self.EmailLog.objects.filter(id=keep.id).exists())
 
+    def test_deleting_logs_is_itself_audited_with_a_count_only(self):
+        """Remaining-audit finding: bulk-deleting delivery records left no
+        trace. Only the count is recorded - never a recipient or subject."""
+        from governance.models import AuditLog
+
+        self.EmailLog.objects.create(
+            recipient="private-person@example.com", subject="Confidential subject", status="sent"
+        )
+        self.EmailLog.objects.create(recipient="b@example.com", subject="Hi2", status="failed")
+        self.client.post(reverse("governance:delete_email_logs"), {"delete_all": "1"})
+
+        entry = AuditLog.objects.get(action_type="email_log.delete")
+        self.assertEqual(entry.actor, self.superadmin)
+        self.assertEqual(entry.new_value, "2 log(s) deleted")
+        self.assertNotIn("private-person", f"{entry.old_value}{entry.new_value}")
+        self.assertNotIn("Confidential", f"{entry.old_value}{entry.new_value}")
+
+    def test_deleting_nothing_writes_no_audit_entry(self):
+        from governance.models import AuditLog
+
+        self.client.post(reverse("governance:delete_email_logs"), {"log_ids": ["999999"]})
+        self.assertFalse(AuditLog.objects.filter(action_type="email_log.delete").exists())
+
     def test_delete_all_logs(self):
         self.EmailLog.objects.create(recipient="a@example.com", subject="Hi", status="sent")
         self.EmailLog.objects.create(recipient="b@example.com", subject="Hi2", status="failed")

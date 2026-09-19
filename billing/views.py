@@ -286,6 +286,10 @@ def checkout_plan(request):
         except InvoiceGenerationError as exc:
             django_messages.error(request, str(exc))
             return redirect("billing:my_plans")
+        # An admin generating an invoice is already audited
+        # (billing.invoice_generate); the self-service path creates the same
+        # billable document and left no trace - remaining-audit finding.
+        log_action(request.user, "billing.invoice_checkout", invoice, new_value=plan.name)
 
     success, _error = send_invoice_email(invoice)
     if success:
