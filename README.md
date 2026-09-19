@@ -87,6 +87,15 @@ startup command differs, selected via `docker-entrypoint.sh web|worker|beat`.
   for native (non-Docker) local dev.
 - Uploaded chat attachments persist in the `media_data` named volume across
   container restarts/rebuilds.
+- **`FIELD_ENCRYPTION_KEY` needs a backup outside the production server,
+  today.** It's the only key that decrypts `Provider.api_key_encrypted`
+  (every connected AI provider's API key) - losing it (a dead VPS, a wiped
+  disk, an `.env` that never made it into a backup) makes those fields
+  **permanently** unreadable, with no reset/recovery path, unlike a lost
+  `SECRET_KEY` (rotatable) or a lost database password (resettable). Store
+  a copy in a password manager or secrets vault the server itself doesn't
+  have access to, separate from wherever the server's own `.env` lives.
+  See `docs/SECRETS.md` for the full secrets-management audit.
 
 ### Going to production with this compose file
 
