@@ -2710,6 +2710,52 @@ class ResponseCacheTests(TestCase):
         pending.refresh_from_db()
         return pending, call_count
 
+    def _stream_url(self, message, regenerate=False):
+        url = reverse(
+            "chat:stream_message",
+            kwargs={
+                "conversation_id": message.conversation_id,
+                "message_id": message.id,
+                "token": message.stream_token,
+            },
+        )
+        return f"{url}?regenerate=1" if regenerate else url
+
+    def test_regenerate_bypasses_the_cache_even_on_an_identical_exchange(self):
+        """Production-readiness audit gap: regenerate_message resets the
+        same reply and re-streams with no way to skip the exact-match
+        cache - "Regenerate" on a still-cached exchange silently handed
+        back the identical text, which looks exactly like the button
+        doing nothing. Fixed by regenerate_message now appending
+        ?regenerate=1 (see chat/views.py), which stream_message uses to
+        skip the cache lookup the same way `research` mode already did."""
+        conversation = Conversation.objects.create(user=self.user)
+        reply, first_calls = self._stream(self.client, conversation, "capital of France?", "Paris")
+        self.assertEqual(first_calls, 1)
+        self.assertFalse(reply.served_from_cache)
+
+        # regenerate_message itself just resets the row and hands back the
+        # ?regenerate=1 stream URL - call it for real rather than
+        # reconstructing its effect by hand.
+        self.client.post(
+            reverse("chat:regenerate_message", kwargs={"conversation_id": conversation.id, "message_id": reply.id})
+        )
+        reply.refresh_from_db()
+        self.assertTrue(self._stream_url(reply, regenerate=True).endswith("?regenerate=1"))
+
+        with patch("chat.views.classify_complexity", return_value=ProviderModel.Tier.DEFAULT), patch(
+            "chat.views.get_provider"
+        ) as mock_get_provider:
+            mock_get_provider.return_value.stream_chat.return_value = iter(
+                [StreamChunk(text="Lyon"), StreamChunk(done=True, input_tokens=10, output_tokens=5)]
+            )
+            response = self.client.get(self._stream_url(reply, regenerate=True))
+            b"".join(response.streaming_content)
+            self.assertEqual(mock_get_provider.return_value.stream_chat.call_count, 1)  # not served from cache
+        reply.refresh_from_db()
+        self.assertFalse(reply.served_from_cache)
+        self.assertEqual(reply.content, "Lyon")
+
     def test_second_identical_request_hits_cache(self):
         conv1 = Conversation.objects.create(user=self.user)
         conv2 = Conversation.objects.create(user=self.user)

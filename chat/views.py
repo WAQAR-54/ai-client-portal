@@ -952,7 +952,7 @@ def regenerate_message(request, conversation_id, message_id):
     return render(
         request,
         "chat/_pending_assistant_row.html",
-        {"conversation": conversation, "pending_message": message, "stream_qs": ""},
+        {"conversation": conversation, "pending_message": message, "stream_qs": "?regenerate=1"},
     )
 
 
@@ -1231,6 +1231,11 @@ def stream_message(request, conversation_id, message_id, token):
     history = _history_with_attachments(conversation, exclude_message_id=message.id)
     requested_model_id = request.GET.get("model_id", "").strip()
     research = request.GET.get("research") == "1"
+    # Set by regenerate_message below - "Regenerate" means "give me a
+    # fresh attempt", so it must never silently hand back the exact same
+    # cached text just because the history hash hasn't changed (the whole
+    # point of asking again is that it might not be identical this time).
+    is_regenerate = request.GET.get("regenerate") == "1"
     # Composer's "Code" output-mode toggle - post_message already
     # whitelisted this to "" or "code" before it ever reached the stream
     # URL, but re-checked here too rather than trusted, same reasoning as
@@ -1342,8 +1347,13 @@ def stream_message(request, conversation_id, message_id, token):
         # chat/response_cache.py for why the whole history is hashed.
         # Skipped entirely for research mode - a cached answer never
         # actually ran a fresh search, which defeats the whole point of
-        # asking for "current information" a second time.
-        cached = None if research else get_cached_response(request.user.id, candidates[0].id, system_prompt, history)
+        # asking for "current information" a second time. Also skipped
+        # for an explicit regenerate (see is_regenerate above).
+        cached = (
+            None
+            if (research or is_regenerate)
+            else get_cached_response(request.user.id, candidates[0].id, system_prompt, history)
+        )
         if cached is not None:
             yield _sse_event("message", cached["text"])
             message.content = cached["text"]
