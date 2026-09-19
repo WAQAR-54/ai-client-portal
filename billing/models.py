@@ -132,6 +132,16 @@ class UserBillingProfile(models.Model):
         return f"Billing profile for {self.user}"
 
 
+def _invoice_proof_upload_path(instance, filename):
+    """Per-recipient subfolder, same reasoning as chat/models.py's
+    _chat_attachment_upload_path - a flat invoice_proofs/ folder had
+    nothing but the filename separating one user's payment screenshot
+    from another's on disk. Falls back to a "no-recipient" bucket for the
+    (rare, department-only) invoices that have no recipient_user set."""
+    recipient_id = instance.recipient_user_id or "none"
+    return f"invoice_proofs/user_{recipient_id}/{timezone.now():%Y/%m}/{filename}"
+
+
 class Invoice(models.Model):
     """One billing-period invoice for a Department (the billable-client
     unit throughout this feature). plan/currency/amounts are snapshotted
@@ -199,7 +209,7 @@ class Invoice(models.Model):
     # unpaid invoice (billing.views.submit_payment_proof) - both optional
     # individually, but the view requires at least one of the two.
     submitted_transaction_id = models.CharField(max_length=200, blank=True)
-    submitted_proof_image = models.ImageField(upload_to="invoice_proofs/", null=True, blank=True)
+    submitted_proof_image = models.ImageField(upload_to=_invoice_proof_upload_path, null=True, blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
 
     # Who verified the submission (Approve -> PAID, or Reject -> UNPAID so

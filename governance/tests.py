@@ -880,6 +880,125 @@ class UploadLimitOverrideTests(TestCase):
         upload = SimpleUploadedFile("tool.exe", b"x", content_type="application/octet-stream")
         validate_upload(self.user, upload)  # should not raise
 
+    def test_extension_override_has_no_safety_floor_against_a_real_executable(self):
+        """The override above works because "x" isn't real executable
+        content - governance/uploads.py's magic-byte check is the actual
+        floor: even an admin who explicitly allowed "exe" can't let a
+        genuine PE/MZ executable through."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        UsageLimit.objects.create(user=self.user, allowed_file_extensions="exe")
+        upload = SimpleUploadedFile("tool.exe", b"MZ" + b"\x00" * 100, content_type="application/octet-stream")
+        with self.assertRaises(UploadRejected):
+            validate_upload(self.user, upload)
+
+    def test_renamed_executable_is_rejected_despite_an_allowed_extension(self):
+        """A real MZ/PE executable renamed to .pdf must not sail through
+        just because .pdf is in the default allowlist - the content check
+        runs regardless of which extension the filename claims."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("totally-a.pdf", b"MZ" + b"\x00" * 100, content_type="application/pdf")
+        with self.assertRaises(UploadRejected):
+            validate_upload(self.user, upload)
+
+    def test_genuine_pdf_content_is_accepted(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("real.pdf", b"%PDF-1.4\n" + b"\x00" * 50, content_type="application/pdf")
+        validate_upload(self.user, upload)  # should not raise
+
+    def test_content_extension_mismatch_is_rejected(self):
+        """Real PNG bytes claiming to be a .pdf - the claimed extension is
+        one this app can actually verify (see governance/uploads.py's
+        _EXPECTED_KINDS), so a mismatch is a hard reject even though PNG
+        isn't itself dangerous."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("fake.pdf", b"\x89PNG\r\n\x1a\n" + b"\x00" * 20, content_type="application/pdf")
+        with self.assertRaises(UploadRejected):
+            validate_upload(self.user, upload)
+
+    def test_plain_text_extensions_are_unaffected_by_the_content_check(self):
+        """txt/csv/md/json genuinely have no magic signature to verify -
+        the content check must not reject ordinary plain text just
+        because filetype.guess() returns None for it."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("notes.txt", b"just some plain text", content_type="text/plain")
+        validate_upload(self.user, upload)  # should not raise
+
+    def test_the_file_is_still_readable_after_validation(self):
+        """verify_file_content must restore the read position - otherwise
+        the caller's later .save() of the attachment would write a
+        truncated/empty file."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("real.pdf", b"%PDF-1.4\n" + b"\x00" * 50, content_type="application/pdf")
+        validate_upload(self.user, upload)
+        self.assertEqual(upload.read(), b"%PDF-1.4\n" + b"\x00" * 50)
+
+
+class UploadContentVerificationTests(TestCase):
+    """governance/uploads.py::verify_file_content, exercised directly
+    (UploadLimitOverrideTests above covers it through validate_upload)."""
+
+    def test_genuine_docx_is_accepted(self):
+        import io
+
+        import docx
+
+        from governance.uploads import verify_file_content
+
+        buf = io.BytesIO()
+        docx.Document().save(buf)
+        buf.seek(0)
+        verify_file_content(buf, "docx")  # should not raise
+
+    def test_a_zip_renamed_to_docx_is_rejected(self):
+        """A generic zip (or a docx-like container missing the real
+        word/ppt/xl internal structure) must not pass as a docx just
+        because both are ZIP-based."""
+        import io
+        import zipfile
+
+        from governance.uploads import UploadContentRejected, verify_file_content
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("readme.txt", "not an office document")
+        buf.seek(0)
+        with self.assertRaises(UploadContentRejected):
+            verify_file_content(buf, "docx")
+
+    def test_macho_executable_is_rejected(self):
+        import io
+
+        from governance.uploads import UploadContentRejected, verify_file_content
+
+        buf = io.BytesIO(b"\xfe\xed\xfa\xce" + b"\x00" * 100)
+        with self.assertRaises(UploadContentRejected):
+            verify_file_content(buf, "pdf")
+
+    def test_shebang_script_is_rejected_even_for_a_plain_text_extension(self):
+        import io
+
+        from governance.uploads import UploadContentRejected, verify_file_content
+
+        buf = io.BytesIO(b"#!/bin/sh\nrm -rf /\n")
+        with self.assertRaises(UploadContentRejected):
+            verify_file_content(buf, "txt")
+
+    def test_unrecognized_extension_skips_the_positive_match_check(self):
+        """csv has no dict entry in _EXPECTED_KINDS (no magic signature to
+        check) - plain, harmless content must pass."""
+        import io
+
+        from governance.uploads import verify_file_content
+
+        buf = io.BytesIO(b"a,b,c\n1,2,3\n")
+        verify_file_content(buf, "csv")  # should not raise
+
 
 class UserOverridesTests(TestCase):
     def setUp(self):

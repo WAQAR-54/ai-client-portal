@@ -35,7 +35,8 @@ def _effective_limit(user):
 def validate_upload(user, uploaded_file):
     """Raise UploadRejected if `uploaded_file` violates this user's
     effective size/extension limits (personal, then department, then the
-    system-wide default from settings)."""
+    system-wide default from settings), or if its real content doesn't
+    match what its filename/extension claims (see governance/uploads.py)."""
     limit = _effective_limit(user)
 
     max_mb = (limit.max_upload_size_mb if limit else None) or settings.DEFAULT_MAX_UPLOAD_SIZE_MB
@@ -52,6 +53,17 @@ def validate_upload(user, uploaded_file):
             _("File type '.%(ext)s' isn't allowed. Allowed types: %(allowed)s.")
             % {"ext": file_extension or "?", "allowed": allowed_list}
         )
+
+    # Content check, independent of the (admin-overridable) extension check
+    # above - see governance/uploads.py's own docstring for why this is a
+    # hard floor rather than something an allowed_file_extensions override
+    # can bypass.
+    from governance.uploads import UploadContentRejected, verify_file_content
+
+    try:
+        verify_file_content(uploaded_file, file_extension)
+    except UploadContentRejected as exc:
+        raise UploadRejected(str(exc)) from exc
 
 
 def check_attachment_monthly_limit(user, kind):

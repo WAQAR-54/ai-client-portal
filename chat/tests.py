@@ -1641,6 +1641,20 @@ class FileUploadTests(TestCase):
         self.assertEqual(user_message.attachment_original_name, "notes.txt")
         self.assertEqual(user_message.attachment_size, 11)
 
+    def test_attachment_is_stored_in_a_per_user_subfolder(self):
+        """chat/models.py::_chat_attachment_upload_path - a flat, date-only
+        path had nothing but the filename separating one user's uploads
+        from another's on disk."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile("notes.txt", b"hello world", content_type="text/plain")
+        self.client.post(
+            reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
+            {"content": "", "attachment": upload},
+        )
+        user_message = self.conversation.messages.get(role=Message.Role.USER)
+        self.assertIn(f"chat_attachments/user_{self.user.id}/", user_message.attachment.name)
+
     def test_disallowed_extension_rejected(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -1721,9 +1735,14 @@ class AttachmentMonthlyLimitTests(TestCase):
         self.client.login(email="u@example.com", password="pw12345!")
         self.conversation = Conversation.objects.create(user=self.user)
 
-    def _upload(self, filename, content=b"x"):
+    def _upload(self, filename, content=None):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
+        if content is None:
+            # Real magic bytes for .png uploads - governance.uploads.
+            # verify_file_content now checks real content against the
+            # claimed extension, so a fake byte string would 400 here.
+            content = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24 if filename.endswith(".png") else b"plain text content"
         return self.client.post(
             reverse("chat:post_message", kwargs={"conversation_id": self.conversation.id}),
             {"content": "", "attachment": SimpleUploadedFile(filename, content)},

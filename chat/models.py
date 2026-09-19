@@ -3,7 +3,18 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
+
+def _chat_attachment_upload_path(instance, filename):
+    """Per-user subfolder, not just a flat date-based path - two users'
+    uploads only ever shared a folder before this, with nothing but the
+    filename itself (predictable, attacker-visible in the URL) separating
+    one user's file from another's on disk. Access is still enforced at
+    the view layer (chat/views.py::download_attachment, ownership-checked)
+    regardless - this is a second, independent boundary."""
+    return f"chat_attachments/user_{instance.conversation.user_id}/{timezone.now():%Y/%m}/{filename}"
 
 
 class ModelConfig(models.Model):
@@ -207,7 +218,7 @@ class Message(models.Model):
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)
     estimated_cost = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
-    attachment = models.FileField(upload_to="chat_attachments/%Y/%m/", null=True, blank=True)
+    attachment = models.FileField(upload_to=_chat_attachment_upload_path, null=True, blank=True)
     attachment_original_name = models.CharField(max_length=255, blank=True)
     attachment_size = models.PositiveIntegerField(null=True, blank=True, help_text="Bytes.")
     # Set once at creation - for a USER message's upload, from the
