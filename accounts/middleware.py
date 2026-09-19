@@ -1,3 +1,9 @@
+import logging
+import uuid
+from contextvars import ContextVar
+
+import sentry_sdk
+from celery import current_task
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -6,6 +12,72 @@ from django.utils import timezone, translation
 
 from accounts.geo import language_for_ip
 from accounts.rate_limit import client_ip
+
+# Set by RequestIDMiddleware for the lifetime of one request, read by
+# RequestIDLogFilter (below) so every log record - including ones logged
+# deep inside chat/providers.py or chat/views.py, with no request object in
+# scope - can be tagged without threading an id through every function
+# signature. A ContextVar (not a plain module global) so it can't leak
+# across requests handled concurrently by the same async/threaded worker.
+_current_request_id: ContextVar[str] = ContextVar("current_request_id", default="-")
+
+
+class RequestIDMiddleware:
+    """Generates a short id for every request and makes it available to
+    logging (via RequestIDLogFilter), to Sentry (as a tag - the "Request ID"
+    field an operator can search on directly), and back to the client (the
+    X-Request-ID response header - useful for support: "what's in your
+    browser's network tab for this failed request" now maps directly to a
+    log line and a Sentry event).
+
+    Deliberately always generates fresh rather than trusting an inbound
+    X-Request-ID header from the client - the reverse proxy in front of this
+    app isn't confirmed to strip that header, and trusting a client-supplied
+    value here would let it inject arbitrary text into every log line and
+    Sentry event for that request.
+
+    Does NOT reach into Celery: a task queued from within a request (e.g.
+    notify()'s send_notification_email) gets its own, separate identity from
+    Celery itself (self.request.id) - see RequestIDLogFilter, which surfaces
+    that instead when running inside a worker. Chaining "which request
+    caused this task" end-to-end would mean threading this id through every
+    .delay() call site across notifications/billing/governance - out of
+    scope for this pass; each half (request, task) is independently
+    traceable, but not yet joined.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request.id = uuid.uuid4().hex[:16]
+        token = _current_request_id.set(request.id)
+        sentry_sdk.set_tag("request_id", request.id)
+        response = self.get_response(request)
+        response["X-Request-ID"] = request.id
+        # NOT a finally around get_response(): for a StreamingHttpResponse
+        # (chat/views.py::stream_message), get_response() returns the
+        # response object immediately, unconsumed - the generator body
+        # (where a provider failure actually gets logged) only runs later,
+        # when the WSGI server iterates it, which is AFTER this middleware's
+        # __call__ has already returned. Resetting here would clear the id
+        # before that logging call ever happens, defeating the one case
+        # this exists for. response.close() (Django/WSGI's own hook, fired
+        # once the response - streaming or not - is fully sent) is the
+        # actual end of this request's lifetime.
+        response._resource_closers.append(lambda: _current_request_id.reset(token))
+        return response
+
+
+class RequestIDLogFilter(logging.Filter):
+    """Attached to every handler in LOGGING (config/settings.py) so the
+    formatter can include %(request_id)s on every line, whether or not the
+    code that logged it has a request object in scope."""
+
+    def filter(self, record):
+        record.request_id = _current_request_id.get()
+        record.task_id = current_task.request.id if current_task else "-"
+        return True
 
 
 class GeoLanguageMiddleware:

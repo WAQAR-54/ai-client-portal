@@ -1493,6 +1493,88 @@ class HealthzDeepTests(TestCase):
         self.assertEqual(response.json()["status"], "ok")
 
 
+class RequestIDTests(TestCase):
+    """accounts.middleware.RequestIDMiddleware + RequestIDLogFilter - the
+    production-readiness audit's Phase 2A finding: there was no way to trace
+    one failing request across a log line and its Sentry event. Verifies the
+    id is generated, returned to the client, distinct per request, and that
+    a log record emitted mid-request actually carries it (the whole point -
+    a filter that's wired up but never actually populated on a real record
+    would look done without being done)."""
+
+    def test_response_carries_a_request_id_header(self):
+        response = self.client.get("/healthz/")
+        self.assertIn("X-Request-ID", response)
+        self.assertEqual(len(response["X-Request-ID"]), 16)
+
+    def test_two_requests_get_different_ids(self):
+        first = self.client.get("/healthz/")["X-Request-ID"]
+        second = self.client.get("/healthz/")["X-Request-ID"]
+        self.assertNotEqual(first, second)
+
+    def test_a_log_record_emitted_during_the_request_carries_its_id(self):
+        import logging
+
+        from accounts.middleware import RequestIDLogFilter
+
+        captured = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                RequestIDLogFilter().filter(record)
+                captured.append(record.request_id)
+
+        test_logger = logging.getLogger("chat.views")
+        handler = _Capture()
+        test_logger.addHandler(handler)
+        try:
+            with patch("chat.views.classify_complexity", return_value="default"), patch(
+                "chat.views.get_provider"
+            ) as mock_get_provider:
+                from chat.providers import ProviderError
+
+                mock_get_provider.return_value.stream_chat.side_effect = ProviderError("down")
+
+                from accounts.models import User
+                from chat.models import Conversation, Message
+                from governance.models import Plan
+                from governance.plans import assign_plan
+                from providers.models import Provider, ProviderModel
+
+                user = User.objects.create_user(email="rid@example.com", password="pw12345!")
+                model = ProviderModel.objects.create(
+                    provider=Provider.objects.get(slug="openai"),
+                    model_id="test-model",
+                    tier=ProviderModel.Tier.DEFAULT,
+                    input_price_per_mtok=1,
+                    output_price_per_mtok=2,
+                    is_enabled=True,
+                )
+                premium = Plan.objects.get(name="Premium")
+                assign_plan(user, premium)
+                premium.allowed_provider_models.add(model)
+                self.client.login(email="rid@example.com", password="pw12345!")
+                conversation = Conversation.objects.create(user=user)
+                pending = Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content="")
+
+                response = self.client.get(
+                    reverse(
+                        "chat:stream_message",
+                        kwargs={
+                            "conversation_id": conversation.id,
+                            "message_id": pending.id,
+                            "token": pending.stream_token,
+                        },
+                    )
+                )
+                request_id = response["X-Request-ID"]
+                list(response.streaming_content)  # drive the generator so the log call inside it actually runs
+        finally:
+            test_logger.removeHandler(handler)
+
+        self.assertIn(request_id, captured)
+
+
 class DocsServingTests(TestCase):
     """config/urls.py's /docs/ route (serve_docs) - the plain-language
     guides in docs/ only lived as files in the repo until this route gave

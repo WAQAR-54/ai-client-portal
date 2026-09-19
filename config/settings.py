@@ -93,6 +93,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so every subsequent middleware/view/log line for this request
+    # can be tagged with request.id - see accounts/middleware.py.
+    "accounts.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -401,16 +404,26 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "verbose": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+        # request_id/task_id come from accounts.middleware.RequestIDLogFilter
+        # (below) - "-" on either when there's no request/task in scope
+        # (e.g. a management command), so the format string never breaks.
+        "verbose": {
+            "format": "{asctime} {levelname} req={request_id} task={task_id} {name}: {message}",
+            "style": "{",
+        },
+    },
+    "filters": {
+        "request_id": {"()": "accounts.middleware.RequestIDLogFilter"},
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose", "filters": ["request_id"]},
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": BASE_DIR / "logs" / "app.log",
             "maxBytes": 5 * 1024 * 1024,
             "backupCount": 3,
             "formatter": "verbose",
+            "filters": ["request_id"],
         },
         # governance/error_alerts.py::AsyncAdminEmailHandler - same job as
         # Django's built-in AdminEmailHandler (email settings.ADMINS on
