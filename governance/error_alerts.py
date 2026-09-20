@@ -16,12 +16,30 @@ from django.utils.log import AdminEmailHandler
 
 
 class AsyncAdminEmailHandler(AdminEmailHandler):
+    """The ONE admin-alert path (config/settings.py::LOGGING also removes
+    Django's stock synchronous AdminEmailHandler from the "django" logger -
+    with both attached, every unhandled 500 emailed the admins twice)."""
+
     def send_mail(self, subject, message, *args, **kwargs):
         if not settings.ADMINS:
             return
         from notifications.tasks import send_admin_error_alert
 
-        send_admin_error_alert.delay(subject, message)
+        # Django's own mail_admins() adds EMAIL_SUBJECT_PREFIX; keep it so inbox
+        # rules that match "[Django]" keep working.
+        prefixed = f"{settings.EMAIL_SUBJECT_PREFIX}{subject}"
+        try:
+            send_admin_error_alert.delay(prefixed, message)
+        except Exception:
+            # The broker (Redis) being down is exactly when errors are likely, and it
+            # is what the deleted synchronous handler used to cover. Fall back to a
+            # direct send so the alert is not lost - still one email, because the
+            # queued path raised before anything was sent. A logging handler must
+            # never raise into the code that logged, so this is best-effort.
+            try:
+                super().send_mail(subject, message, *args, **kwargs)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 class HealthProbeDowngradeFilter(logging.Filter):

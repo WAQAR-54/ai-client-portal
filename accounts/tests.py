@@ -1365,7 +1365,8 @@ class AdminErrorAlertTests(TestCase):
 
         with patch("notifications.tasks.send_admin_error_alert.delay") as mock_delay:
             AsyncAdminEmailHandler().send_mail("ERROR: boom", "full traceback text")
-        mock_delay.assert_called_once_with("ERROR: boom", "full traceback text")
+        # Django's own mail_admins() prefixes the subject; the async path keeps that prefix.
+        mock_delay.assert_called_once_with(f"{settings.EMAIL_SUBJECT_PREFIX}ERROR: boom", "full traceback text")
 
     @override_settings(ADMINS=[])
     def test_send_mail_is_a_no_op_with_no_admins_configured(self):
@@ -1487,7 +1488,45 @@ class HealthProbeAlertTests(TestCase):
         with patch("config.urls.check_database", side_effect=RuntimeError("boom")):
             response = Client(raise_request_exception=False).get("/healthz/")
         self.assertEqual(response.status_code, 500)
-        self.assertGreaterEqual(len(self._alert_emails()), 1)
+        self.assertEqual(len(self._alert_emails()), 1)  # exactly one alert per crash
+
+    def test_a_real_crash_emails_the_admins_once_with_the_usual_subject_prefix(self):
+        from unittest.mock import patch
+
+        from django.core import mail
+        from django.test import Client
+
+        with patch("config.urls.check_database", side_effect=RuntimeError("boom")):
+            Client(raise_request_exception=False).get("/healthz/")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertTrue(mail.outbox[0].subject.startswith("[Django] "), mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[0].to, ["ops@example.com"])
+
+    def test_when_the_broker_is_down_the_alert_still_goes_out_once_via_the_direct_send(self):
+        """The async path needs Redis; the old duplicate handler used to be the
+        (accidental) fallback. Now the fallback is explicit and does not double up."""
+        from unittest.mock import patch
+
+        from django.core import mail
+        from django.test import Client
+
+        with patch("notifications.tasks.send_admin_error_alert.delay", side_effect=ConnectionError("redis down")):
+            with patch("config.urls.check_database", side_effect=RuntimeError("boom")):
+                response = Client(raise_request_exception=False).get("/healthz/")
+        self.assertEqual(response.status_code, 500)  # the request itself is unaffected
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_exactly_one_admin_email_handler_is_reachable_from_django_request(self):
+        import logging
+
+        from django.utils.log import AdminEmailHandler
+
+        found, logger = [], logging.getLogger("django.request")
+        while logger is not None:
+            found += [h for h in logger.handlers if isinstance(h, AdminEmailHandler)]
+            logger = logger.parent if logger.propagate else None
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(type(found[0]).__name__, "AsyncAdminEmailHandler")
 
     def _record(self, path, status, exc_info=None):
         import logging

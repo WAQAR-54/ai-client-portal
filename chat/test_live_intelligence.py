@@ -453,7 +453,13 @@ class FeedFragmentTests(LiveIntelligenceViewBase):
         return self.client.get(reverse("chat:live_intelligence"))
 
     def test_success_shows_real_headlines_sources_links_and_relative_times(self):
-        with patch.object(li, "_http_get", fake_http()):
+        # Built now, not at import: the module-level GOOD_FEED's "30 minutes ago" drifts to "33"
+        # once a long suite has been running for a few minutes.
+        fresh_feed = rss(
+            ("Chip maker unveils new processor", "https://example.com/a", minutes_ago(30), "Faster and cooler."),
+            ("Regulators open AI probe", "https://example.com/b", minutes_ago(90), "A probe."),
+        )
+        with patch.object(li, "_http_get", fake_http(default=fresh_feed)):
             response = self._feed()
         html = response.content.decode().replace("\xa0", " ")
         self.assertContains(response, "Chip maker unveils new processor")

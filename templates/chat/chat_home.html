@@ -748,6 +748,26 @@ function portalCloseUpgradeModal() {
         });
     })();
     (function() {
+        // Close a reply's EventSource ourselves the moment its "done" event arrives.
+        // The server ends the response right after "done", and a browser reports
+        // ANY end of an EventSource connection it did not close itself as an
+        // error - htmx-ext-sse then logs console.error(Event) on every normal
+        // reply. Closing first means no error event is ever raised for a clean
+        // finish, while a connection that really breaks before "done" still
+        // errors (and is still logged) exactly as before. Uses the extension's
+        // documented createEventSource hook; our listener is registered first, and
+        // close() only stops FUTURE events, so the extension's own "done" handling
+        // (which swaps in the rendered reply) still runs.
+        if (window.htmx && !window.htmx.createEventSourceWrapped) {
+            window.htmx.createEventSource = function(url) {
+                var source = new EventSource(url, { withCredentials: true });
+                source.addEventListener("done", function() { source.close(); });
+                return source;
+            };
+            window.htmx.createEventSourceWrapped = true;
+        }
+    })();
+    (function() {
         // The chat views refuse a send that is over the user's plan/usage
         // limit with status 429 and a ready-made alert fragment
         // (chat/_limit_exceeded.html). htmx never swaps a 4xx response, so

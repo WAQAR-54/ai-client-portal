@@ -213,6 +213,9 @@ BACKUP_RETENTION_DAYS = env.int("BACKUP_RETENTION_DAYS", default=30)
 # same escape hatch pattern used elsewhere in this file for test-only
 # behavior. Set a real REDIS_URL in production to actually queue tasks.
 REDIS_URL = env("REDIS_URL", default="")
+# The git commit this process was built from - set by the deploy step through
+# docker-compose.yml. "" locally. Read by `manage.py ops_verify`.
+RELEASE_SHA = env("RELEASE_SHA", default="")
 CELERY_BROKER_URL = REDIS_URL or "memory://"
 CELERY_RESULT_BACKEND = REDIS_URL or None
 CELERY_TASK_ALWAYS_EAGER = not REDIS_URL
@@ -422,16 +425,23 @@ LOGGING = {
         # An expected 503 from /healthz/ is logged as a WARNING, not an ERROR -
         # see governance/error_alerts.py::HealthProbeDowngradeFilter.
         "health_probe": {"()": "governance.error_alerts.HealthProbeDowngradeFilter"},
+        # Masks credential-shaped text (URLs with ?key=, Bearer tokens, sk-... keys)
+        # in every message and traceback written to the console/file - see config/redaction.py.
+        "redact_secrets": {"()": "config.redaction.SecretRedactionFilter"},
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "verbose", "filters": ["request_id"]},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "filters": ["request_id", "redact_secrets"],
+        },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": BASE_DIR / "logs" / "app.log",
             "maxBytes": 5 * 1024 * 1024,
             "backupCount": 3,
             "formatter": "verbose",
-            "filters": ["request_id"],
+            "filters": ["request_id", "redact_secrets"],
         },
         # governance/error_alerts.py::AsyncAdminEmailHandler - same job as
         # Django's built-in AdminEmailHandler (email settings.ADMINS on
@@ -448,6 +458,13 @@ LOGGING = {
     },
     "root": {"handlers": ["console", "file"], "level": "INFO"},
     "loggers": {
+        # Django's default logging config attaches its own synchronous
+        # AdminEmailHandler to this logger, and "django.request" propagates
+        # here - so every unhandled 500 reached TWO email handlers (this
+        # project's async one below plus Django's stock one, one of which
+        # blocked the request on SMTP). No handlers here: records still reach
+        # console/file via "root", and the single alert path is "mail_admins".
+        "django": {"handlers": [], "level": "INFO", "propagate": True},
         # This is the exact logger Django's request-handling machinery
         # writes to on every unhandled exception during a view (see
         # django.core.handlers.exception.handle_uncaught_exception) -
@@ -532,7 +549,10 @@ if SENTRY_DSN and "test" not in sys.argv:
         request = event.get("request")
         if request and "data" in request:
             del request["data"]
-        return event
+        # Exception text/breadcrumbs can carry a request URL; mask any credential in it.
+        from config.redaction import scrub_event
+
+        return scrub_event(event)
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,

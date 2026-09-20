@@ -13,6 +13,15 @@
 #   docker-compose exec web python manage.py createsuperuser
 # See README.md for the full walkthrough.
 
+# Container stdout/stderr is kept by Docker with NO size limit by default, and the
+# app's console log handler writes every INFO line there - so a busy month could
+# fill the disk. Rotate: at most 3 x 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
@@ -69,6 +78,11 @@ services:
       # bare `manage.py runserver` (which never sets it and stays
       # "development").
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      # The git commit this stack was built from (set by the deploy step). Lets
+      # `manage.py ops_verify` and System status confirm that web, worker and beat
+      # are all running the intended revision, not just that Git is current.
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
+    logging: *default-logging
     ports:
       - "8000:8000"
     volumes:
@@ -96,6 +110,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       DEBUG: ${DEBUG:-False}
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
+    logging: *default-logging
     volumes:
       - media_data:/app/media
     depends_on:
@@ -128,6 +144,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       DEBUG: ${DEBUG:-False}
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
+    logging: *default-logging
     depends_on:
       db:
         condition: service_healthy

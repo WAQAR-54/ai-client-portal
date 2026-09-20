@@ -20,6 +20,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from config.redaction import redact_secrets
+
 # Gemini is called directly via `requests` (no vendor SDK, see
 # GeminiProvider's own docstring) - OpenAI/Anthropic's SDKs already retry
 # transient failures on their own (max_retries=5, set where each client is
@@ -51,7 +53,14 @@ class StreamChunk:
 
 
 class ProviderError(Exception):
-    """Raised when an upstream AI provider call fails."""
+    """Raised when an upstream AI provider call fails.
+
+    The message is masked for credentials on the way in: it is built from a
+    library exception's text, which can contain the request URL (and, before the
+    Gemini key moved into a header, the API key itself)."""
+
+    def __init__(self, message="", *args):
+        super().__init__(redact_secrets(str(message)), *args)
 
 
 class AIProvider(ABC):
@@ -297,7 +306,11 @@ class GeminiProvider(AIProvider):
         try:
             resp = _RETRYING_SESSION.post(
                 url,
-                params={"key": self._api_key(), "alt": "sse"},
+                # The key travels in a header, never in the URL: requests/urllib3
+                # put the full URL in their exception text, which is logged and
+                # sent to Sentry (a 429 used to write the key into app.log).
+                headers={"x-goog-api-key": self._api_key()},
+                params={"alt": "sse"},
                 json=self._body(messages, system_prompt),
                 stream=True,
                 timeout=60,
@@ -327,7 +340,7 @@ class GeminiProvider(AIProvider):
         try:
             resp = _RETRYING_SESSION.post(
                 url,
-                params={"key": self._api_key()},
+                headers={"x-goog-api-key": self._api_key()},
                 json=self._body(messages, system_prompt),
                 timeout=60,
             )

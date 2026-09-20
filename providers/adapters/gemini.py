@@ -15,14 +15,18 @@ _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 class GeminiAdapter(BaseProviderAdapter):
     def test_connection(self, api_key):
         try:
-            resp = requests.get(f"{_BASE_URL}/models", params={"key": api_key, "pageSize": 1}, timeout=20)
+            resp = requests.get(
+                f"{_BASE_URL}/models", headers={"x-goog-api-key": api_key}, params={"pageSize": 1}, timeout=20
+            )
             return resp.status_code == 200
         except requests.RequestException:
             return False
 
     def fetch_models(self, api_key):
         try:
-            resp = requests.get(f"{_BASE_URL}/models", params={"key": api_key, "pageSize": 1000}, timeout=20)
+            resp = requests.get(
+                f"{_BASE_URL}/models", headers={"x-goog-api-key": api_key}, params={"pageSize": 1000}, timeout=20
+            )
             resp.raise_for_status()
         except requests.RequestException as exc:
             raise ProviderAPIError(sanitize_error(str(exc), api_key)) from exc

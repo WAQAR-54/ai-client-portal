@@ -1,14 +1,16 @@
 from django import template
 from django.utils.safestring import mark_safe
 
-from chat.markdown_utils import render_markdown
+from chat.markdown_utils import PAGE_BASE_HEADING_LEVEL, render_markdown
 
 register = template.Library()
 
 
 @register.filter(name="render_markdown", is_safe=True)
 def render_markdown_filter(text):
-    return mark_safe(render_markdown(text))
+    # Used only for on-page display (message bubbles, the document panel), so
+    # headings are re-levelled to sit under the page's h1.
+    return mark_safe(render_markdown(text, base_heading_level=PAGE_BASE_HEADING_LEVEL))
 
 
 @register.filter(name="plan_has_feature")

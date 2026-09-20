@@ -3217,6 +3217,15 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .msg-markdown li { margin-bottom: 0.25rem; }
 .msg-markdown h1, .msg-markdown h2, .msg-markdown h3, .msg-markdown h4 { margin: 1rem 0 0.5rem; line-height: 1.3; }
 .msg-markdown h1:first-child, .msg-markdown h2:first-child, .msg-markdown h3:first-child { margin-top: 0; }
+/* Headings are re-levelled under the page's h1 (chat/markdown_utils.py::normalize_headings);
+   md-hN is the level the author wrote, so the size stays what it always was. */
+.msg-markdown .md-h1 { font-size: 2em; }
+.msg-markdown .md-h2 { font-size: 1.5em; }
+.msg-markdown .md-h3 { font-size: 1.17em; }
+.msg-markdown .md-h4 { font-size: 1em; }
+.msg-markdown .md-h5 { font-size: 0.83em; }
+.msg-markdown .md-h6 { font-size: 0.67em; }
+.msg-markdown h2:first-child, .msg-markdown h3:first-child, .msg-markdown h4:first-child { margin-top: 0; }
 .msg-markdown code {
     background: var(--color-surface-muted);
     border-radius: 5px;

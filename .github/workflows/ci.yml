@@ -124,7 +124,10 @@ jobs:
             # consecutive automated deploy failures whose steps both
             # reproduced cleanly by hand, one command at a time, right after
             # the rollback.
-            docker compose up -d --build
+            # RELEASE_SHA is passed through docker-compose.yml to web, worker and beat, so
+            # the post-deploy verification below can confirm every process runs THIS commit
+            # (a green git pull says nothing about which image is actually running).
+            RELEASE_SHA="$(git rev-parse HEAD)" docker compose up -d --build
             echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) deployed $(git rev-parse HEAD)" >> ~/ai-client-portal/deploy.log
 
       # Real client's-eye-view check, not just "did the SSH commands exit 0" -
@@ -172,6 +175,50 @@ jobs:
             cd ~/ai-client-portal
             docker compose exec -T web python manage.py send_deploy_notification --status success --sha "${{ github.sha }}" || true
 
+      # Informational smoke test from the runner's side (never a gate: a transient
+      # Redis blip during a deploy must not roll back good code). Prints a real
+      # request's status for the pages a visitor hits first; the health check above
+      # is the gate. Exit codes are what decide pass/fail - no log-string matching.
+      - name: Smoke test (informational)
+        continue-on-error: true
+        run: |
+          host="${{ secrets.SSH_HOST }}"
+          for path in /healthz/ /healthz/deep/ /accounts/login/; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://$host$path" || echo "000")
+            echo "::notice title=smoke $path::HTTP $status"
+            case "$status" in 200|301|302) ;; *) echo "::warning title=smoke $path::unexpected HTTP $status"; failed=1 ;; esac
+          done
+          [ -z "$failed" ]
+
+      # READ-ONLY, informational (continue-on-error, and ops_verify itself always exits 0
+      # unless --strict): confirms web/worker/beat run this exact commit, and reports
+      # migrations, schema, Redis, Celery, news-feed reachability from the server, disk,
+      # database connections and retention counts as annotations on this run. It writes
+      # nothing (see governance/management/commands/ops_verify.py and its tests) and
+      # prints no credentials. Being informational it can never trigger the rollback below.
+      - name: Post-deploy verification (read-only, informational)
+        continue-on-error: true
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 4m
+          script: |
+            cd ~/ai-client-portal
+            expected="${{ github.sha }}"
+            for svc in web worker beat; do
+              running=$(docker compose exec -T "$svc" printenv RELEASE_SHA 2>/dev/null || echo unreachable)
+              if [ "$running" = "$expected" ]; then
+                echo "::notice title=release $svc::$svc runs $expected"
+              else
+                echo "::error title=release $svc::$svc runs $running but this deploy was $expected"
+              fi
+            done
+            docker compose ps --format '{{.Service}} state={{.State}} health={{.Health}}' | while read -r line; do echo "::notice title=container::$line"; done
+            docker system df --format '{{.Type}}: {{.Size}}, reclaimable {{.Reclaimable}}' | while read -r line; do echo "::notice title=docker disk::$line"; done
+            docker compose exec -T web python manage.py ops_verify --annotate || true
+
       # Only runs if something above failed. Reverts the CODE to whatever was
       # deployed before this run and rebuilds - see the note in the PR/commit
       # this shipped with: this does NOT undo a database migration that
@@ -196,7 +243,7 @@ jobs:
             PREV_SHA=$(cat /tmp/ai_client_portal_prev_sha)
             echo "Rolling back to $PREV_SHA"
             git reset --hard "$PREV_SHA"
-            docker compose up -d --build
+            RELEASE_SHA="$PREV_SHA" docker compose up -d --build
             echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ROLLED BACK to $PREV_SHA after failed deploy/health check" >> ~/ai-client-portal/deploy.log
             # Best-effort - the rollback itself already happened above and
             # must never be masked by a notification hiccup.
