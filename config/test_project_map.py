@@ -57,6 +57,23 @@ class ProjectMapTests(SimpleTestCase):
             missing.append(base)
         self.assertEqual(missing, [], "PROJECT_MAP.md names files that do not exist - fix or strike them through")
 
+    def test_the_map_covers_the_final_phase_and_uses_the_status_vocabulary(self):
+        text = (ROOT / "PROJECT_MAP.md").read_text(encoding="utf-8")
+        for needle in (
+            "accounts/management/commands/verify_backup.py",
+            "accounts/test_transport_security.py",
+            "governance/test_media_bulk.py",
+            "governance/test_final_object_sweep.py",
+            "chat/test_extraction_limits.py",
+        ):
+            self.assertIn(needle, text)
+            self.assertTrue((ROOT / needle).exists(), needle)
+        for status in ("IMPLEMENTED", "VERIFIED", "PARTIALLY VERIFIED", "UNVERIFIED", "BLOCKED", "KNOWN LIMITATION"):
+            self.assertIn(status, text)
+        for phase in ("Phase 1", "Phase 2", "Phase 3", "Phase 4C", "Phase 5", "Phase 6", "Final phase"):
+            self.assertIn(phase, text)
+        self.assertNotIn("Bulk delete route **nahi hai**", text)  # stale once bulk delete shipped
+
     def test_the_map_covers_the_phase_6_areas(self):
         text = (ROOT / "PROJECT_MAP.md").read_text(encoding="utf-8")
         for needle in (

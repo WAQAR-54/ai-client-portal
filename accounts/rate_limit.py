@@ -25,10 +25,13 @@ Nothing here fails CLOSED on an outage: a limiter that cannot count never blocks
 counted itself. The outage is logged once a minute (not per request) and readable via limiter_status().
 """
 
+import functools
+import ipaddress
 import logging
 import threading
 import time
 
+from django.conf import settings
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -156,28 +159,88 @@ def is_over_limit(key, *, limit, policy=SECURITY_CRITICAL):
         return False
 
 
-def client_ip(request):
-    """The real visitor's IP, not Nginx's own loopback address - this
-    deployment sits behind Cloudflare (orange-cloud DNS) -> Nginx ->
-    Gunicorn (see deployment/nginx.conf.example), so plain REMOTE_ADDR as
-    Django sees it is always Nginx's address, never the visitor's. Before
-    this, EVERY caller of this function (this module's own rate limits,
-    accounts/middleware.py's GeoIP language detection, billing/views.py's
-    GeoIP region detection) was silently treating every visitor as the
-    same one - turning e.g. SIGNUP_RATE_LIMIT into a global cap shared by
-    all 200 users instead of a per-visitor one, and making the public
-    pricing page auto-detect the same (wrong) region for everyone.
+def _valid_ip(raw):
+    """An ipaddress object, or None. A header that is not an IP address is never used as a rate-limit key."""
+    try:
+        return ipaddress.ip_address((raw or "").strip())
+    except ValueError:
+        return None
 
-    Prefers CF-Connecting-IP - set by Cloudflare itself at its edge, not
-    spoofable by the client, since this app's DNS is Cloudflare-proxied.
-    Falls back to X-Forwarded-For's first entry (set by Nginx's own
-    proxy_set_header) for any request that reaches Django without going
-    through Cloudflare (local dev, or a direct-IP request); REMOTE_ADDR
-    is the final fallback for a request with no proxy in front at all."""
-    cf_connecting_ip = request.META.get("HTTP_CF_CONNECTING_IP", "").strip()
-    if cf_connecting_ip:
-        return cf_connecting_ip
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "")
+
+@functools.lru_cache(maxsize=4)
+def _cloudflare_networks(ranges):
+    networks = []
+    for cidr in ranges:
+        try:
+            networks.append(ipaddress.ip_network(cidr.strip(), strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+
+# Where a reverse proxy on THIS host (Nginx, or the Docker bridge gateway) can appear as the peer. Deliberately
+# not ipaddress's is_private, which also counts documentation and other reserved ranges as private.
+_LOCAL_PROXY_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "127.0.0.0/8",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "169.254.0.0/16",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
+
+
+def _is_local_proxy(address):
+    return address is not None and any(address.version == n.version and address in n for n in _LOCAL_PROXY_NETWORKS)
+
+
+def _in_cloudflare(address):
+    networks = _cloudflare_networks(tuple(getattr(settings, "CLOUDFLARE_IP_RANGES", ()) or ()))
+    return address is not None and any(address.version == n.version and address in n for n in networks)
+
+
+def client_ip(request):
+    """The real visitor's IP, decided from who actually connected - not from whatever headers arrived.
+
+    This deployment sits behind Cloudflare -> Nginx -> Gunicorn (deployment/nginx.conf.example), so the peer
+    Django sees is Nginx, and the visitor's address is only in headers. CF-Connecting-IP is right ONLY when the
+    request really came through Cloudflare; anyone who can reach the origin directly can send any value, and
+    every per-IP limit (login failures, signup, password reset) would then be theirs to dodge. So:
+
+    * peer is a Cloudflare address (Cloudflare connecting straight to Gunicorn): trust CF-Connecting-IP.
+    * peer is a private/loopback address (Nginx or the Docker gateway on this host): Nginx's X-Real-IP is the
+      true TCP peer it saw. If that is a Cloudflare address, trust CF-Connecting-IP; if it is anything else the
+      request did NOT come through Cloudflare, so the forwarded headers are forged or irrelevant and X-Real-IP
+      is the visitor. If Nginx sends no X-Real-IP (a config that predates it), fall back to the old behaviour
+      (CF-Connecting-IP, then X-Forwarded-For) rather than treating every visitor as the proxy.
+    * peer is any other public address (a direct connection to Gunicorn): every forwarded header is ignored and
+      the peer is the visitor.
+
+    Cloudflare's published ranges are settings.CLOUDFLARE_IP_RANGES (verify at https://www.cloudflare.com/ips/)."""
+    meta = request.META
+    peer_raw = (meta.get("REMOTE_ADDR") or "").strip()
+    peer = _valid_ip(peer_raw)
+
+    def cloudflare_header(fallback):
+        header = _valid_ip(meta.get("HTTP_CF_CONNECTING_IP", ""))
+        return str(header) if header else fallback
+
+    if peer is not None and _in_cloudflare(peer):
+        return cloudflare_header(peer_raw)
+    if _is_local_proxy(peer):
+        real = _valid_ip(meta.get("HTTP_X_REAL_IP", ""))
+        if real is None:
+            legacy = meta.get("HTTP_CF_CONNECTING_IP", "").strip()
+            if legacy:
+                return legacy
+            forwarded_for = meta.get("HTTP_X_FORWARDED_FOR", "")
+            return forwarded_for.split(",")[0].strip() if forwarded_for else peer_raw
+        if _in_cloudflare(real):
+            return cloudflare_header(str(real))
+        return str(real)
+    return peer_raw

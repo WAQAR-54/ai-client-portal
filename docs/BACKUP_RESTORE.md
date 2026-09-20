@@ -42,12 +42,23 @@ that's the whole point of an off-server backup.
 `.github/workflows/ci.yml`'s deploy job runs `docker compose exec -T web
 python manage.py backup_database` against the *currently running* (pre-
 deploy) container before pulling new code or applying any migration —
-see that file's "Deploy over SSH" step. This is best-effort: if
-`BACKUP_S3_BUCKET` isn't set yet, the command exits non-zero and the
-deploy script logs a warning to `~/ai-client-portal/deploy.log` and
-carries on rather than blocking the deploy. Once the variables below are
-actually set on the server, this pre-deploy backup starts working for
-real with no further changes needed.
+see that file's "Deploy over SSH" step. The command's real exit status
+decides what happens, and every outcome is a GitHub Actions annotation on
+the deploy run, not only a line in a server file:
+
+| Exit | Meaning | Deploy |
+|---|---|---|
+| `0` | backup uploaded and its size confirmed at the destination | continues (notice) |
+| `3` | no `BACKUP_S3_*` destination configured | continues, with a **warning** annotation |
+| `4` | a configured backup **failed** (dump, upload or size check) | **stops before anything changes** (error annotation); production keeps the old code and schema |
+| other | the web container is not running / the command could not start | continues with a warning, so a stopped stack can still be repaired by a deploy |
+
+To ship anyway when exit `4` is understood and accepted, set the
+repository variable `ALLOW_DEPLOY_WITHOUT_BACKUP` to `true` (Settings →
+Secrets and variables → Actions → Variables); the failure is then still
+annotated but does not stop the deploy. Once the variables below are set
+on the server, this pre-deploy backup starts working for real with no
+further changes.
 
 This does not replace a recurring schedule below — it only guarantees a
 fresh backup exists right before the riskiest moment (a new migration
@@ -64,9 +75,11 @@ etc.) — no separate cron service to remember, running on the same
 `worker`/`beat` containers `docker-compose.yml` already brings up.
 
 - **Task**: `accounts.tasks.run_scheduled_database_backup` (thin wrapper
-  around the same `backup_database` command, logging — not raising — a
-  `CommandError` when `BACKUP_S3_BUCKET` isn't set yet, so a not-yet-
-  configured bucket never shows up as a failed/retried Celery task).
+  around the same `backup_database` command). Not configured yet
+  (`BackupNotConfigured`, exit 3) → a logged warning, not a failed task.
+  A configured backup that **fails** logs an ERROR ("Scheduled database
+  backup FAILED"), raises, is retried with backoff, and shows as Failed in
+  System status — a real failure is never reported as success.
 - **Schedule**: daily at 03:00 UTC, ahead of every other scheduled job in
   this app (04:00/04:30/05:00), so a fresh backup exists before any of
   them run.
@@ -78,6 +91,27 @@ Until `BACKUP_S3_BUCKET`/`BACKUP_S3_ACCESS_KEY_ID`/etc. are actually set
 on the server, this task runs on schedule but does nothing (logs a
 warning and exits) — setting those variables is still a required manual
 step; only the scheduling itself is now automatic.
+
+## Retention, verification and failure behaviour
+
+- **Retention**: `BACKUP_RETENTION_DAYS` (default 30). Pruning only ever
+  considers objects named `backup-YYYYMMDD-HHMMSS.dump` under the
+  `db-backups/` prefix, and the **newest 3 are never removed** whatever
+  their age (a stopped schedule cannot delete the last backups). A pruning
+  error is logged and never fails an otherwise good backup.
+- **Upload check**: after uploading, the command asks the destination for
+  the object's size and fails (exit 4) if it differs from the dump. Error
+  messages carry the exception class only, never a key, endpoint or URL.
+- **Encryption**: none of our own; the dump travels over TLS to the bucket
+  and is stored as the provider stores it (enable bucket-level encryption
+  at the provider). Do not put a database dump in a public bucket.
+- **See the newest backup** (read-only): `docker compose exec -T web python
+  manage.py ops_verify` → section `backups` (destination configured?
+  newest backup's age and size; WARN after 26 h).
+- **Prove it is readable**: `docker compose exec -T web python manage.py
+  verify_backup` downloads the newest backup to a temp directory and runs
+  `pg_restore --list` on it (restores nothing, touches no database; exit 0
+  = readable, 3 = not configured, non-zero otherwise).
 
 ## Restore procedure (exact commands)
 
@@ -171,14 +205,18 @@ this test exercised the dump/restore mechanics directly, not the S3
 upload/download leg, since those variables aren't configured on the
 server yet.
 
-**One real gap this surfaced**: `BACKUP_S3_BUCKET` (and the other
-`BACKUP_S3_*` variables) are **not set on the production server**. The
-daily Celery Beat task and the pre-deploy backup step have been running on
-schedule this whole time but doing nothing for real (logging a warning and
-exiting, exactly as designed to fail-open rather than block deploys) -
-**no actual off-server backup has ever been created yet.** Setting those
-variables on the server is the one remaining step between "the mechanism
-works" (now proven above) and "backups are actually happening."
+**One real gap this surfaced — STILL OPEN (BLOCKED on the owner)**:
+`BACKUP_S3_BUCKET` (and the other `BACKUP_S3_*` variables) are **not set on
+the production server**. The daily Celery Beat task and the pre-deploy
+backup step run but cannot back anything up (the deploy now shows an
+explicit warning annotation for it, instead of a line in a server file) —
+**no actual off-server backup has ever been created yet.** It needs a
+bucket and access keys that only the owner can create; nothing in this
+repository can supply them. After setting them: deploy (or run
+`backup_database` once), then `verify_backup` and `ops_verify` give the
+first real evidence. Until then the S3 upload/size-check/retention code is
+proven only against a test double, never a real bucket
+(`accounts/test_backup.py`).
 
 **Earlier gap, already fixed**: the production Docker image installed
 `libpq5` (the client *library*, for psycopg2) but never `postgresql-client`

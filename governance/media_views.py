@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 from django.contrib import messages as django_messages
 from django.core.cache import cache
 from django.core.files.storage import default_storage
-from django.http import FileResponse, Http404, HttpResponse, QueryDict
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -465,3 +465,81 @@ def media_delete_orphan(request):
     else:
         django_messages.error(request, _("That file could not be identified, so nothing was deleted."))
     return redirect(back)
+
+
+# ---------------------------------------------------------------------------------------------
+# Bulk delete (JSON; the page sends small chunks and shows progress between them)
+# ---------------------------------------------------------------------------------------------
+BULK_LOCK_SECONDS = 120
+_OPERATION_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
+
+def _json_error(message, status):
+    return JsonResponse({"ok": False, "error": str(message)}, status=status)
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["POST"])
+def media_bulk_delete(request):
+    """Delete the safe files among the identifiers sent. The browser's selection is not trusted: this view
+    authenticates and authorises, refuses an oversized request whole, refuses to run the same step twice, and
+    media_service.bulk_delete then resolves each opaque id and re-checks references file by file. One audit row
+    per request (counts only - never a name, path or content)."""
+    ids = request.POST.getlist("ids")
+    operation = request.POST.get("op", "")
+    chunk = request.POST.get("chunk", "0")[:6]
+    if not ids:
+        return _json_error(_("Nothing was selected."), 400)
+    if len(ids) > media.BULK_MAX_PER_REQUEST:
+        return _json_error(
+            _("Too many files in one request (the limit is %(limit)s).") % {"limit": media.BULK_MAX_PER_REQUEST}, 400
+        )
+    if not _OPERATION_ID.match(operation):
+        return _json_error(_("This request is not valid."), 400)
+    lock_key = f"media:bulk:{request.user.pk}:{operation}:{chunk}"
+    try:
+        first_time = cache.add(lock_key, 1, BULK_LOCK_SECONDS)
+    except Exception:  # noqa: BLE001 - no cache: deleting is idempotent, so run rather than refuse
+        first_time = True
+    if not first_time:
+        return _json_error(_("This step was already submitted."), 409)
+    try:
+        result = media.bulk_delete(ids)
+    except Exception:  # noqa: BLE001 - never show a raw storage or database error
+        logger.exception("media bulk delete failed")
+        reference = getattr(request, "id", "") or ""
+        suffix = f" ({_('reference')} {reference})" if reference else ""
+        return _json_error(_("Something went wrong and this step was not completed.") + suffix, 500)
+    _audit(
+        request.user,
+        "media_bulk_delete",
+        f"bulk:{operation[:12]}",
+        old_value=(
+            f"selected={result.selected} deleted={result.deleted} skipped_referenced={result.skipped_referenced} "
+            f"skipped_missing={result.skipped_missing} failed={result.failed}"
+        ),
+        new_value=f"freed={result.freed_bytes}B step={chunk}",
+    )
+    return JsonResponse({"ok": True, **result.as_dict()})
+
+
+@role_required(User.Role.SUPERADMIN)
+@require_http_methods(["GET"])
+def media_bulk_selectable(request):
+    """What 'select all matching' means for the CURRENT filters, decided by the server: how many files match,
+    how many of them are deletable (orphan candidates), and the identifiers of the first BULK_MAX_PER_OPERATION
+    of those. The page never builds this list itself, so it cannot select outside its own filter."""
+    filters = _filters_from_request(request)
+    _items, total, _error = media.list_items(filters, page=1, page_size=1)
+    orphans = [] if filters["reference"] == "referenced" else media._orphan_items(filters)
+    limit = media.BULK_MAX_PER_OPERATION
+    return JsonResponse(
+        {
+            "total": total,
+            "eligible": len(orphans),
+            "referenced": total - len(orphans),
+            "ids": [item.bulk_id for item in orphans[:limit]],
+            "limit": limit,
+            "truncated": len(orphans) > limit,
+        }
+    )

@@ -17,6 +17,7 @@ import heapq
 import mimetypes
 import os
 import posixpath
+import re
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -146,6 +147,12 @@ class MediaItem:
     @property
     def is_orphan(self):
         return self.source == SOURCE_ORPHAN
+
+    @property
+    def bulk_id(self):
+        """The opaque identifier a bulk request carries for this row: 'orphan:<digest>' for a file no record
+        refers to, '<source>:<pk>' for a referenced one. Never a path."""
+        return f"orphan:{self.token}" if self.is_orphan else f"{self.source}:{self.pk}"
 
     @property
     def token(self):
@@ -587,8 +594,17 @@ def referenced_names():
 
 
 def is_referenced(relative_name):
-    """Fresh, exact check against every place a file can be referenced from (never the cache)."""
-    return relative_name in referenced_names()
+    """Fresh, exact check against every place a file can be referenced from (never the cache). Three targeted
+    EXISTS queries, so checking one file does not load every referenced name in the database."""
+    from billing.models import Invoice
+    from chat.models import Message
+
+    if Message.objects.filter(attachment=relative_name).exists():
+        return True
+    if Invoice.objects.filter(submitted_proof_image=relative_name).exists():
+        return True
+    branding = _branding()
+    return bool(branding) and relative_name in (branding.logo.name, branding.favicon.name)
 
 
 def _walk_filesystem(root, budget_end, max_files):
@@ -776,7 +792,7 @@ def token_is_referenced(token):
     return any(name_digest(name) == token for name in referenced_names())
 
 
-def delete_orphan(raw_name):
+def delete_orphan(raw_name, clear_cache=True):
     """Delete ONE file that no record refers to. Returns (status, size).
 
     Everything is re-checked here, at the moment of deletion, whatever an earlier scan or page said:
@@ -798,5 +814,83 @@ def delete_orphan(raw_name):
         storage.delete(name)
     except Exception:  # noqa: BLE001 - reported as a fixed status; the raw error is for the log only
         return DELETE_STORAGE_ERROR, 0
-    clear_scan_cache()
+    if clear_cache:
+        clear_scan_cache()
     return DELETE_OK, size
+
+
+# ---------------------------------------------------------------------------------------------
+# Bulk delete
+# ---------------------------------------------------------------------------------------------
+BULK_MAX_PER_REQUEST = 50  # enforced by the server: a request naming more is refused whole
+BULK_MAX_PER_OPERATION = 100  # what the page will delete in one go (it sends chunks of BULK_CHUNK)
+BULK_CHUNK = 10
+_ORPHAN_ID = re.compile(r"^orphan:([0-9a-f]{16})$")
+_RECORD_ID = re.compile(r"^(chat|generated|proof|branding):(\d{1,12})$")
+
+
+@dataclass
+class BulkResult:
+    selected: int = 0
+    deleted: int = 0
+    skipped_referenced: int = 0
+    skipped_missing: int = 0
+    failed: int = 0
+    freed_bytes: int = 0
+
+    def as_dict(self):
+        return dict(self.__dict__)
+
+
+def bulk_delete(raw_ids):
+    """Delete the files among `raw_ids` that are safe to delete, and account for every id.
+
+    The identifiers are what the page sent - NOT trusted. Each is parsed strictly; an orphan digest is resolved
+    against the storage scan (never a path from the request); and delete_orphan() then re-checks, for that very
+    file and at this very moment, that the path stays inside the storage, that NO record refers to it, and that
+    it still exists. A referenced file is skipped, never deleted; an id that is not one of the two accepted
+    shapes counts as failed and touches nothing. Partial success is normal: the result says exactly how many
+    were deleted, skipped (in use / already gone) or failed, and how many bytes were really freed."""
+    result = BulkResult()
+    seen, ids = set(), []
+    for raw in raw_ids:
+        if raw not in seen:
+            seen.add(raw)
+            ids.append(raw)
+    result.selected = len(ids)
+    by_token = None
+    for raw in ids:
+        orphan, record = _ORPHAN_ID.match(raw), _RECORD_ID.match(raw)
+        if orphan:
+            token = orphan.group(1)
+            if by_token is None:
+                by_token = {entry["id"]: entry["name"] for entry in get_scan().get("orphans", [])}
+            name = by_token.get(token)
+            if name is None:
+                # Not in the scan: either it is gone, or it became a referenced file after the page loaded.
+                if token_is_referenced(token):
+                    result.skipped_referenced += 1
+                else:
+                    result.skipped_missing += 1
+                continue
+            status, size = delete_orphan(name, clear_cache=False)
+            if status == DELETE_OK:
+                result.deleted += 1
+                result.freed_bytes += size
+            elif status == DELETE_REFERENCED:
+                result.skipped_referenced += 1
+            elif status == DELETE_MISSING:
+                result.skipped_missing += 1
+            else:
+                result.failed += 1
+        elif record:
+            # A record refers to this file: never deletable from here. (If the record vanished, the file went with it.)
+            if get_item(record.group(1), int(record.group(2))) is None:
+                result.skipped_missing += 1
+            else:
+                result.skipped_referenced += 1
+        else:
+            result.failed += 1
+    if result.deleted:
+        clear_scan_cache()
+    return result

@@ -2002,11 +2002,10 @@ class ScheduledDatabaseBackupTaskTests(TestCase):
         """BACKUP_S3_BUCKET not being set yet is an expected, pre-
         configuration state (the command itself raises CommandError for
         it) - this must never surface as a failed/retried Celery task."""
-        from django.core.management.base import CommandError
-
+        from accounts.management.commands.backup_database import BackupNotConfigured
         from accounts.tasks import run_scheduled_database_backup
 
-        with patch("accounts.tasks.call_command", side_effect=CommandError("BACKUP_S3_BUCKET is not set.")):
+        with patch("accounts.tasks.call_command", side_effect=BackupNotConfigured("BACKUP_S3_BUCKET is not set.")):
             run_scheduled_database_backup()  # must not raise
 
     def test_runs_cleanly_against_the_real_command_on_sqlite(self):

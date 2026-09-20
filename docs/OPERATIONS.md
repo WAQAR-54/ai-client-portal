@@ -78,6 +78,11 @@ as an opaque attachment, previews only images/PDF/plain text whose first bytes m
 extension (never SVG or HTML), audits each download and preview of a private file, and can delete
 only a file that no record refers to. Its "View" page shows a file and its facts without ever making
 it public; anything it cannot show safely says "Preview not available" and offers a download.
+Bulk delete (`governance:media_bulk_delete`) trusts nothing the browser selected: it takes opaque ids (never a
+path), refuses more than 50 per request, refuses to run the same step twice, and for every file re-checks - now -
+that it still exists and that no record refers to it; a referenced file is skipped, never deleted. The page sends
+chunks of 10 (at most 100 per run) so it can show real progress, and each request writes one audit row of counts
+(selected / deleted / skipped / failed / bytes freed), never names.
 
 Object-level rules (`governance/test_object_authorization.py`): a department Admin manages the Users
 and Managers of their own department only - not another department, a peer Admin or a SuperAdmin -
@@ -101,18 +106,103 @@ one username (django-axes locks the account after 5 failures, from any IP), many
 one IP (failed logins are counted per IP: `LOGIN_IP_FAILURE_LIMIT`, default 30 per hour; successes
 never count, so an office signing in each morning is unaffected) and one username from many IPs
 (the same axes lock). The refusal text does not depend on whether the account exists.
-**Limit:** the client IP is read from `CF-Connecting-IP` (then `X-Forwarded-For`); that header is
-trustworthy only if the origin accepts traffic from Cloudflare alone. Someone who reaches the
-origin directly can send any value and dodge the per-IP limits.
+**Client IP (what the per-IP limits key on).** `accounts/rate_limit.py::client_ip` decides from who actually
+connected, not from headers alone: a peer inside Cloudflare's published ranges (`CLOUDFLARE_IP_RANGES`) is
+believed when it sends `CF-Connecting-IP`; behind this host's Nginx (`X-Real-IP`, set by Nginx to the true TCP
+peer) the header is believed only if that peer is a Cloudflare address, otherwise `X-Real-IP` is the visitor and
+every forwarded header is ignored; a direct public connection to Gunicorn ignores all forwarded headers. So
+reaching the origin directly can no longer be used to pick your own rate-limit identity. **Remaining limit:** if
+the live Nginx does not send `X-Real-IP` (its config is not in this repository), the old behaviour applies
+(`CF-Connecting-IP` is believed) rather than making every visitor look like the proxy. Confirm the live Nginx
+matches `deployment/nginx.conf.example`, and close the direct door (see "Transport security").
+
+## Transport security (Cloudflare in front, plain HTTP to the origin)
+
+What production showed before this was configured (anonymous requests, 2026-09-21): `http://` answered 200 with no
+redirect, the CSRF cookie had no `Secure` flag, and no HSTS header was sent. Cloudflare terminates TLS and speaks
+plain HTTP to the origin, so Django never sees HTTPS (`request.is_secure()` is False): Django's own
+`SECURE_SSL_REDIRECT`/HSTS cannot be used. `accounts/middleware.py::CloudflareHttpsMiddleware` uses the
+`CF-Visitor` header Cloudflare adds instead (the scheme the **visitor** used):
+
+| Setting (default in `docker-compose.yml`) | Effect |
+|---|---|
+| `ENFORCE_HTTPS_VIA_CLOUDFLARE=True` | a visitor who used `http://` gets a 301 (GET/HEAD) or 308 (other methods) to the same URL on https. `/healthz/` and `/healthz/deep/` and requests without `CF-Visitor` (the deploy's own health check) are never redirected. No loop: `CF-Visitor` reflects the visitor's scheme. |
+| `CLOUDFLARE_HSTS_SECONDS=86400` | `Strict-Transport-Security: max-age=86400` on https visitors' responses. One day on purpose (a browser remembers it that long); no `includeSubDomains`, no `preload`. Raise to `31536000` in the server's `.env` after it has run cleanly for a while. |
+| `SESSION_COOKIE_SECURE=True`, `CSRF_COOKIE_SECURE=True` | the browser never sends the session or CSRF cookie over `http://`. |
+
+**Kill switch:** set `ENFORCE_HTTPS_VIA_CLOUDFLARE=False` (and/or the cookie flags to `False`) in the server's `.env`
+and redeploy; nothing is stored in the database. Everything is per-process configuration.
+Cloudflare's own "Always Use HTTPS" setting (dashboard) would make the redirect redundant; it is not required.
+Security headers already present: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy: same-origin`. **No `Content-Security-Policy` is sent**
+(known limitation: the pages use inline scripts and handlers).
+
+**Origin exposure.** `docker-compose.yml` publishes Gunicorn on `0.0.0.0:8000`, so anyone who learns the origin
+address can reach the app without Cloudflare (the deploy's health check itself calls `http://<host>/healthz/`
+directly, so port 80 is also open). The default is unchanged because the live Nginx and firewall configuration are
+not in this repository. Once `deployment/nginx.conf.example`'s `proxy_pass http://127.0.0.1:8000` is confirmed on
+the server, set `WEB_BIND_ADDRESS=127.0.0.1` in the server's `.env` (then `docker compose up -d`) to close port 8000;
+restricting port 80/443 to Cloudflare's ranges (`https://www.cloudflare.com/ips/`) in the cloud firewall or `ufw`
+is the other half. Neither has been done or verified from here.
+
+**Crash alerts.** `ADMINS` (`Name:email` pairs) is unset in production. `governance/error_alerts.py::alert_recipients`
+now falls back to every **active SuperAdmin** (the same people the deploy notification already emails), so an unset
+`ADMINS` no longer means nobody is told. `ops_verify` reports how many recipients there are and which source. The
+health probes' expected 503 still sends nothing (`HealthProbeDowngradeFilter`).
+
+## Database backup
+
+* **Command:** `manage.py backup_database` (`pg_dump --format custom` -> S3-compatible bucket, prefix `db-backups/`,
+  names `backup-YYYYMMDD-HHMMSS.dump`). After uploading it asks the destination for the object's size and fails if it
+  differs from the dump. Not client-side encrypted (rely on bucket-level encryption).
+* **Exit status:** `0` done, `3` no bucket configured, `4` a configured backup failed (dump, upload or size check).
+* **Schedule:** the daily Celery Beat task `accounts.tasks.run_scheduled_database_backup` (03:00 UTC). Not configured
+  -> a warning; a real failure -> an ERROR log, a retry (3x with backoff) and a "Failed" row in System status.
+* **Every deploy:** the pre-deploy step runs the command before `git pull`. `0` -> notice annotation; `3` -> a visible
+  **warning annotation** and the deploy continues; `4` -> **error annotation and the deploy stops before anything
+  changes** (production keeps the old code and schema); set the repository variable
+  `ALLOW_DEPLOY_WITHOUT_BACKUP=true` to ship anyway on purpose; any other status (the web container is down) ->
+  warning, deploy continues so a down stack can still be repaired. Nothing is only a line in a server file.
+* **Retention:** `BACKUP_RETENTION_DAYS` (default 30). Only `backup-*.dump` objects are ever removed, and the newest
+  3 are never removed whatever their age, so a stopped schedule cannot delete the last backups.
+* **Verify:** `manage.py ops_verify` (section `backups`) lists the destination read-only and reports the newest
+  backup's age and size (WARN after 26 h, FAIL if it is empty or unreadable). `manage.py verify_backup` downloads the
+  newest backup to a temp directory and has `pg_restore --list` read it (restores nothing; exit 0 = readable).
+* **Restore:** `docs/BACKUP_RESTORE.md` (throwaway database first). A real dump/restore of the production database
+  was rehearsed on 2026-09-19 (row counts and sampled rows identical).
+* **CURRENT STATE: no destination is configured in production** (`ops_verify`: "no S3 backup target configured"), so
+  no off-server backup exists yet. Setting `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`
+  (and `BACKUP_S3_ENDPOINT_URL`/`BACKUP_S3_REGION` for non-AWS storage) in the server's `.env` needs a bucket and
+  credentials that only the owner can create; the next deploy's annotation and `ops_verify` then show the first real
+  backup. The S3 upload/verify path is proven with a doubled destination in tests, never against a real bucket.
 
 ## Capacity (Gunicorn, streaming)
 
-Default 3 workers x 4 threads = 12 requests at once, and every open chat reply holds one thread for
-its whole duration. `ops_verify` (section `capacity`) reports how many replies are streaming right
-now against that number. There is no load test behind the default, so it is an assumption, not a
-measurement: raise `GUNICORN_THREADS` only when `capacity` shows streaming at or above ~75% of the
-threads at peak. Each request also opens its own database connection (`CONN_MAX_AGE=0`) and the
-database allows 100, so 12 -> 24 threads is comfortable on that axis.
+**CURRENT CAPACITY ASSUMPTION (not a measurement).** Production reports **1 CPU core** (`ops_verify`, section
+`capacity`, which also prints the container's memory). `deployment/gunicorn.conf.py`: `gthread` workers,
+3 workers x 4 threads = 12 requests at once (`GUNICORN_WORKERS`/`GUNICORN_THREADS`; the default formula
+`min(2*cores+1, 3)` gives 3 on one core), `timeout=60`, `graceful_timeout=30`, workers recycled every ~1000 requests.
+Chat replies are SSE streams (`StreamingHttpResponse`), and **each open reply holds one thread for its whole
+duration**, so at most 12 replies can stream at once and every other request (page loads, health checks) shares
+those threads. Streaming is I/O-bound (waiting on the provider), which is why threads rather than sync workers are
+used and why a single core is workable at small scale; CPU-heavy work (PDF/DOCX/XLSX parsing, Markdown rendering)
+runs on that same core. `ops_verify` reports how many replies are streaming right now against the 12 threads.
+
+What was checked, and what it means:
+
+* `timeout=60` does not cut a long reply: for `gthread` workers it is a heartbeat, not a per-request limit.
+* The example Nginx uses `proxy_buffering off` and `proxy_read_timeout 120s`: a reply that sends nothing for
+  2 minutes (a provider retrying) is cut by Nginx, not by Gunicorn. The live Nginx is not in this repository.
+* A deploy restarts the web container; Docker's default 10 s stop timeout is shorter than `graceful_timeout` (30 s),
+  so a reply still streaming at that moment is cut (its partial text is saved). Accepted.
+* Every request opens its own database connection (`CONN_MAX_AGE=0`); the database allows 100, so 12 threads are
+  comfortable on that axis.
+* Attachment parsing is bounded (PDF: first 60 pages; sheets: 5,000 rows; every extractor stops at 8,000 characters)
+  and cached, so one large upload no longer costs seconds of the single core on every turn.
+
+**No load test has been run, against production or anywhere else, so no maximum number of users is claimed.** Raise
+`GUNICORN_THREADS` only if `ops_verify` shows streaming at or above ~75% of the threads at peak; adding workers on
+one core adds memory, not CPU.
 
 ## Context, attachments and quotas
 
@@ -189,6 +279,9 @@ key written without a TTL would never leave. None of the new keys is written wit
 | `CELERY_TASK_TIME_LIMIT` / `CELERY_TASK_SOFT_TIME_LIMIT` | 1800 / 1500 seconds. A task that exceeds them is stopped. |
 | `GUNICORN_WORKERS`, `GUNICORN_THREADS` | Default 3 x 4 = 12 concurrent requests. Every open chat reply holds one thread until it finishes. |
 | `ADMINS` | `Name:email` pairs that receive crash emails. |
+| `ENFORCE_HTTPS_VIA_CLOUDFLARE`, `CLOUDFLARE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | Transport security (see above); `docker-compose.yml` defaults them to True / 86400 / True / True. |
+| `CLOUDFLARE_IP_RANGES` | Comma-separated Cloudflare proxy ranges used by `client_ip` (defaults to the published list). |
+| `WEB_BIND_ADDRESS` | Compose only: interface Gunicorn's port 8000 is published on (default `0.0.0.0`; `127.0.0.1` closes direct access once Nginx is confirmed to proxy to it). |
 | `LOGIN_IP_FAILURE_LIMIT` | Failed logins per IP per hour across all usernames (default 30). |
 | `MODEL_CONTEXT_TOKENS_DEFAULT`, `MODEL_CONTEXT_TOKENS`, `MODEL_CONTEXT_TOKENS_BY_MODEL` | Input budget per model (default 32000; adapter defaults in `config/settings.py`). |
 | `MEDIA_DISK_WARN_PCT`, `MEDIA_DISK_CRITICAL_PCT` | Server Media disk thresholds (80 / 90). |

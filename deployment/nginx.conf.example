@@ -39,6 +39,16 @@ server {
     # pattern as /static/ above) only if that ever becomes a real
     # bottleneck - it would need MEDIA_ROOT to be a bind mount Nginx can
     # actually read, not just the Docker named volume it is today.
+    # Client identity for rate limits (accounts/rate_limit.py::client_ip):
+    # X-Real-IP below MUST be $remote_addr (the real TCP peer). The app
+    # believes the Cloudflare CF-Connecting-IP header (passed through by Nginx
+    # unchanged) only when that peer is a Cloudflare address, so a request
+    # that skips Cloudflare cannot pick its own identity. CF-Visitor is passed
+    # through the same way and drives the http -> https redirect/HSTS
+    # (CloudflareHttpsMiddleware). Do not overwrite either header here.
+    # Also close the direct door: set WEB_BIND_ADDRESS=127.0.0.1 in the
+    # server's .env once this proxy_pass is confirmed, and allow ports 80/443
+    # only from Cloudflare's ranges in the firewall.
     location / {
         proxy_pass http://ai_client_portal;
         proxy_set_header Host $host;

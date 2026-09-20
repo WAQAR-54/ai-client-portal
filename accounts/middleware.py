@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from contextvars import ContextVar
@@ -7,6 +8,7 @@ from celery import current_task
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
+from django.http import HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect
 from django.utils import timezone, translation
 
@@ -203,3 +205,58 @@ class SessionTimeoutMiddleware:
                 return redirect("accounts:login")
             request.session["last_activity"] = now
         return self.get_response(request)
+
+
+def _visitor_scheme(request):
+    """'http' or 'https' - the scheme of the VISITOR's connection to Cloudflare, from the CF-Visitor header
+    Cloudflare adds to every request it proxies ({"scheme":"https"}). None when the header is absent or not
+    what Cloudflare sends (a request that did not come through Cloudflare, e.g. the deploy's health check)."""
+    raw = request.META.get("HTTP_CF_VISITOR", "")
+    if not raw or len(raw) > 100:
+        return None
+    try:
+        scheme = json.loads(raw).get("scheme")
+    except (ValueError, AttributeError):
+        return None
+    return scheme if scheme in ("http", "https") else None
+
+
+class CloudflareHttpsMiddleware:
+    """HTTPS for visitors who arrive through Cloudflare, without needing Django to see TLS itself.
+
+    Cloudflare terminates TLS and speaks plain HTTP to this origin, so request.is_secure() is False and
+    Django's own SECURE_SSL_REDIRECT / HSTS cannot work (they would redirect forever or never fire). What
+    Cloudflare does tell us, in CF-Visitor, is the scheme the VISITOR used:
+
+    * visitor used http  -> redirect to the same URL on https (301 for GET/HEAD, 308 to keep the method), so
+      a browser can never keep a session on plain HTTP. The two health endpoints are exempt, and requests
+      with no CF-Visitor (the deploy's own health check, local dev) are never redirected.
+    * visitor used https -> add Strict-Transport-Security, if CLOUDFLARE_HSTS_SECONDS > 0 (max-age only: no
+      includeSubDomains and no preload, which are much harder to undo).
+
+    Off by default (ENFORCE_HTTPS_VIA_CLOUDFLARE, CLOUDFLARE_HSTS_SECONDS); docker-compose.yml turns it on for
+    production. There is no redirect loop: CF-Visitor reflects the visitor's scheme, not the origin's."""
+
+    EXEMPT_PATHS = frozenset({"/healthz/", "/healthz/deep/"})
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        scheme = _visitor_scheme(request)
+        if (
+            getattr(settings, "ENFORCE_HTTPS_VIA_CLOUDFLARE", False)
+            and scheme == "http"
+            and request.path not in self.EXEMPT_PATHS
+        ):
+            target = f"https://{request.get_host()}{request.get_full_path()}"
+            if request.method in ("GET", "HEAD"):
+                return HttpResponsePermanentRedirect(target)
+            response = HttpResponse(status=308)
+            response["Location"] = target
+            return response
+        response = self.get_response(request)
+        seconds = int(getattr(settings, "CLOUDFLARE_HSTS_SECONDS", 0) or 0)
+        if seconds > 0 and scheme == "https" and "Strict-Transport-Security" not in response:
+            response["Strict-Transport-Security"] = f"max-age={seconds}"
+        return response

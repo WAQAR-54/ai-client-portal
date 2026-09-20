@@ -23,18 +23,26 @@ def run_scheduled_database_backup():
     and gives no visible signal if it was never actually set up.
 
     The command itself already no-ops safely on SQLite and raises
-    CommandError with a clear message when BACKUP_S3_BUCKET isn't set
-    yet - both are expected, pre-configuration states, so they're caught
-    and logged as a warning below (never retried - retrying a
-    still-unconfigured bucket immediately would just fail identically).
+    BackupNotConfigured when BACKUP_S3_BUCKET isn't set yet - both are
+    expected, pre-configuration states, so they're caught and logged as a
+    warning below (never retried - retrying a still-unconfigured bucket
+    immediately would just fail identically).
     autoretry_for handles the OTHER case this didn't cover before: a
     genuinely transient failure mid-dump/upload (S3 network blip, pg_dump
     briefly unable to connect) used to fail the whole night's backup with
     no retry at all - now retried up to 3 times with backoff first."""
+    from accounts.management.commands.backup_database import BackupNotConfigured
+
     try:
         call_command("backup_database")
-    except CommandError as exc:
+    except BackupNotConfigured as exc:
         logger.warning("Scheduled database backup did not run: %s", exc)
+    except CommandError:
+        # A configured backup that FAILED is not a "pre-configuration state": raise, so Celery retries it
+        # (autoretry_for above), the task monitor records the failure (System status shows it), and after
+        # the last retry the ERROR reaches Sentry instead of vanishing as a warning.
+        logger.error("Scheduled database backup FAILED")
+        raise
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=30, max_retries=3)

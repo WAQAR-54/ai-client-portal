@@ -112,3 +112,43 @@ class CiGateTests(SimpleTestCase):
         script = _step("deploy", "Post-deploy verification")["with"]["script"]
         for forbidden in ("migrate", "makemigrations", "flush", "down", "restart", "rm ", "delete", "DROP", "ALTER"):
             self.assertNotIn(forbidden, script, forbidden)
+
+
+@skipIf(yaml is None, "PyYAML is not installed (it only runs where developers edit the workflow)")
+class PreDeployBackupTests(SimpleTestCase):
+    """The pre-deploy backup must not vanish into a server-side log: 'not configured' and 'failed' are
+    different outcomes, both visible on the run, and a configured backup that FAILED stops the deploy
+    before anything changes (unless the repository variable deliberately allows shipping anyway)."""
+
+    def script(self):
+        return _step("deploy", "Deploy over SSH")["with"]["script"]
+
+    def test_the_backup_runs_before_any_code_or_migration_changes(self):
+        script = self.script()
+        self.assertLess(script.index("manage.py backup_database"), script.index("git pull origin main"))
+        self.assertLess(script.index("manage.py backup_database"), script.index("docker compose up -d"))
+
+    def test_a_failure_is_not_swallowed_into_a_log_file(self):
+        script = self.script()
+        self.assertNotIn("backup_database ||", script.replace("backup_database || backup_rc=$?", ""))
+        # the exit status is captured, then inspected
+        self.assertIn("backup_rc=0", script)
+        self.assertIn("|| backup_rc=$?", script)
+
+    def test_each_outcome_is_a_visible_annotation(self):
+        script = self.script()
+        for expected in (
+            "::notice title=Pre-deploy backup",
+            "::warning title=Pre-deploy backup",
+            "::error title=Pre-deploy backup",
+        ):
+            self.assertIn(expected, script)
+
+    def test_only_a_failed_configured_backup_stops_the_deploy_and_only_before_git_pull(self):
+        script = self.script()
+        branch = script[script.index('elif [ "$backup_rc" -eq 4 ]') : script.index("git rev-parse HEAD > /tmp")]
+        self.assertIn("exit 1", branch)
+        self.assertIn("vars.ALLOW_DEPLOY_WITHOUT_BACKUP", branch)
+        # 'not configured' (3) and 'could not run' (anything else) must never stop a deploy
+        before_failed_branch = script[: script.index('elif [ "$backup_rc" -eq 4 ]')]
+        self.assertNotIn("exit 1", before_failed_branch)

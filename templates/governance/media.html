@@ -89,15 +89,22 @@
     <div class="filter-result-count" aria-live="polite">{% blocktrans with total=total %}<span class="mono">{{ total }}</span> file(s) match{% endblocktrans %}{% if filters.reference != "referenced" and scan.orphan_count > orphan_cap %} · {% blocktrans with cap=orphan_cap %}orphan candidates are listed up to {{ cap }}{% endblocktrans %}{% endif %}</div>
 
     {% if items %}
+    <div class="media-bulk-bar" id="mediaBulkBar" hidden data-selectable-url="{% url 'governance:media_bulk_selectable' %}?{{ back_query }}" data-t-count="{% trans 'Selected: {n}' %}" data-page-count="{{ items|length }}" data-total="{{ total }}">
+        <span class="media-bulk-count" id="mediaBulkCount" role="status" aria-live="polite"></span>
+        <button type="button" class="btn btn-small btn-ghost" id="mediaSelectAllFiltered" hidden>{% blocktrans with total=total %}Select all {{ total }} matching files{% endblocktrans %}</button>
+        <button type="button" class="btn btn-small btn-ghost" id="mediaClearSelection">{% trans "Clear selection" %}</button>
+        <button type="button" class="btn btn-small btn-danger" id="mediaBulkDelete">{% trans "Delete selected" %}</button>
+    </div>
     <div class="media-table-wrap" id="mediaTableWrap">
     <table class="data media-table">
         <thead><tr>
-            <th scope="col">{% trans "Preview" %}</th><th scope="col">{% trans "File" %}</th><th scope="col">{% trans "Type" %}</th><th scope="col">{% trans "Size" %}</th>
+            <th scope="col" class="media-col-check"><input type="checkbox" id="mediaSelectPage" class="media-select-page" hidden aria-label="{% trans 'Select all files on this page' %}"></th><th scope="col">{% trans "Preview" %}</th><th scope="col">{% trans "File" %}</th><th scope="col">{% trans "Type" %}</th><th scope="col">{% trans "Size" %}</th>
             <th scope="col">{% trans "Owner" %}</th><th scope="col">{% trans "Status" %}</th><th scope="col">{% trans "Uploaded" %}</th><th scope="col">{% trans "Actions" %}</th>
         </tr></thead>
         <tbody>
         {% for item in items %}
         <tr>
+            <td class="media-col-check"><input type="checkbox" class="media-select" hidden value="{{ item.bulk_id }}" data-eligible="{% if item.is_orphan %}1{% else %}0{% endif %}" aria-label="{% blocktrans with name=item.display_name %}Select {{ name }}{% endblocktrans %}"></td>
             <td class="media-col-icon">{% include "governance/_media_icon.html" with category=item.category %}</td>
             <th scope="row" class="media-col-file"><div class="media-name" title="{{ item.display_name }}">{{ item.display_name }}</div><div class="text-faint media-sub" title="{{ item.mime }}">{{ item.source_label }}</div></th>
             <td data-label="{% trans 'Type' %}"><span class="media-type">{{ item.category_label }}{% if item.ext %} · {{ item.ext }}{% endif %}</span></td>
@@ -179,4 +186,5 @@
     {% endif %}
 </div>
 {% include "governance/_media_delete_modal.html" %}
+{% if view == "files" and items %}{% include "governance/_media_bulk_modal.html" %}{% endif %}
 {% endblock %}

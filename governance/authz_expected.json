@@ -123,6 +123,8 @@
  "/governance/limits/999999/edit/": "none",
  "/governance/limits/new/": "admin",
  "/governance/media/": "superadmin",
+ "/governance/media/bulk-delete/": "superadmin",
+ "/governance/media/bulk-selectable/": "superadmin",
  "/governance/media/orphans/delete/": "superadmin",
  "/governance/media/orphans/x/": "superadmin",
  "/governance/media/orphans/x/download/": "superadmin",

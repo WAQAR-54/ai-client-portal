@@ -15,13 +15,27 @@ from django.conf import settings
 from django.utils.log import AdminEmailHandler
 
 
+def alert_recipients():
+    """Who a crash alert goes to: the addresses in ADMINS when it is set; otherwise every active SuperAdmin
+    (the same people the deploy notification already emails), so an unset ADMINS no longer means nobody is told.
+    Never raises: this runs while something else has already gone wrong, and the database may be the problem."""
+    if settings.ADMINS:
+        return [email for _name, email in settings.ADMINS]
+    try:
+        from accounts.models import User
+
+        return list(User.objects.filter(role=User.Role.SUPERADMIN, is_active=True).values_list("email", flat=True))
+    except Exception:  # noqa: BLE001
+        return []
+
+
 class AsyncAdminEmailHandler(AdminEmailHandler):
     """The ONE admin-alert path (config/settings.py::LOGGING also removes
     Django's stock synchronous AdminEmailHandler from the "django" logger -
     with both attached, every unhandled 500 emailed the admins twice)."""
 
     def send_mail(self, subject, message, *args, **kwargs):
-        if not settings.ADMINS:
+        if not alert_recipients():
             return
         from notifications.tasks import send_admin_error_alert
 

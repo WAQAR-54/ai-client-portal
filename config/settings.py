@@ -99,6 +99,8 @@ MIDDLEWARE = [
     # can be tagged with request.id - see accounts/middleware.py.
     "accounts.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Right after SecurityMiddleware: redirect http visitors (per Cloudflare's CF-Visitor) before anything else runs.
+    "accounts.middleware.CloudflareHttpsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # Before LocaleMiddleware so its IP-based guess (for anonymous, first-
@@ -447,6 +449,43 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = FORCE_HTTPS
     # Nginx sits between Cloudflare and Gunicorn and sets this per deployment/nginx.conf.example.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
+# HTTPS behind Cloudflare (accounts/middleware.py::CloudflareHttpsMiddleware). Both default OFF; the production
+# docker-compose.yml turns them on. HSTS starts short (1 day) because a browser remembers it for that long:
+# raise CLOUDFLARE_HSTS_SECONDS (e.g. 31536000) only after the redirect has run cleanly for a while.
+ENFORCE_HTTPS_VIA_CLOUDFLARE = env.bool("ENFORCE_HTTPS_VIA_CLOUDFLARE", default=False)
+CLOUDFLARE_HSTS_SECONDS = env.int("CLOUDFLARE_HSTS_SECONDS", default=0)
+# Cloudflare's published proxy ranges (https://www.cloudflare.com/ips-v4 and /ips-v6, fetched 2026-09-21). Used by
+# accounts/rate_limit.py::client_ip to decide whether a CF-Connecting-IP header can be believed. Override with a
+# comma-separated list if Cloudflare changes them.
+CLOUDFLARE_IP_RANGES = env.list(
+    "CLOUDFLARE_IP_RANGES",
+    default=[
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32",
+    ],
+)
 
 
 # Always log real exceptions to the console, independent of Sentry — a

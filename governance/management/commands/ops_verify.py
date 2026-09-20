@@ -388,6 +388,27 @@ class Command(BaseCommand):
             f"input {sums['i'] or 0} output {sums['o'] or 0} tokens (as reported by the providers)",
         )
 
+    @staticmethod
+    def _memory_summary():
+        """Memory as this container sees it (Linux only): what the host reports, and the container's own
+        limit when a cgroup sets one. Read from /proc and /sys; nothing is executed."""
+        parts = []
+        try:
+            with open("/proc/meminfo", encoding="ascii") as handle:
+                info = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in handle if ":" in line}
+            parts.append(f"total {_human(info['MemTotal'])}, available {_human(info['MemAvailable'])}")
+        except (OSError, KeyError, ValueError):
+            return "memory: not readable here (not Linux)"
+        for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+            try:
+                raw = open(path, encoding="ascii").read().strip()
+            except OSError:
+                continue
+            if raw.isdigit() and int(raw) < 1 << 60:
+                parts.append(f"container limit {_human(int(raw))}")
+            break
+        return "memory: " + ", ".join(parts)
+
     def check_frontend(self):
         """Browser-side failures reported by static/js/client-errors.js, counted today (cache)."""
         from config import client_errors
@@ -426,6 +447,7 @@ class Command(BaseCommand):
             f"replies claimed as generating for over 10 min: {stuck.count()}",
         )
         self._emit("OK", "capacity", f"CPU cores visible to this container: {os.cpu_count()}")
+        self._emit("OK", "capacity", self._memory_summary())
 
     def check_feeds(self):
         from chat import live_intelligence as li
@@ -527,28 +549,61 @@ class Command(BaseCommand):
         self._emit("OK", "retention", f"BACKUP_RETENTION_DAYS={getattr(settings, 'BACKUP_RETENTION_DAYS', 'unset')}")
 
     def check_backups(self):
-        """Configuration only: whether the nightly database backup has anywhere to go. It never
-        contacts the bucket and never prints a credential - the values are reduced to booleans."""
-        configured = all(
-            getattr(settings, name, "")
-            for name in ("BACKUP_S3_BUCKET", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY")
-        )
-        if configured:
-            self._emit(
-                "OK", "backups", f"S3 backup target configured (retention {settings.BACKUP_RETENTION_DAYS} days)"
-            )
-        else:
+        """Whether the nightly database backup has anywhere to go and, when it does, what the destination
+        actually holds: the newest backup's age and size (one read-only listing; nothing is downloaded,
+        written or deleted). Credentials are never printed - only counts, sizes and ages."""
+        from accounts.management.commands import backup_database as backup
+
+        if not backup.is_configured():
             self._emit("WARN", "backups", "no S3 backup target configured: backup_database has nowhere to upload")
+            return
+        self._emit("OK", "backups", f"S3 backup target configured (retention {settings.BACKUP_RETENTION_DAYS} days)")
+        try:
+            found = backup.list_backups()
+        except Exception as exc:  # noqa: BLE001
+            self._emit("FAIL", "backups", f"the backup destination could not be read ({type(exc).__name__})")
+            return
+        if not found:
+            self._emit("FAIL", "backups", "the destination is reachable but holds no backups yet")
+            return
+        _key, size, modified = found[0]
+        hours = (timezone.now() - modified).total_seconds() / 3600
+        self._emit(
+            "OK" if hours < 26 else "WARN",
+            "backups",
+            f"newest backup {hours:.1f}h old, {_human(size)}; {len(found)} kept (daily backup expected within 26h)",
+        )
 
     def check_settings(self):
         self._emit("OK" if not settings.DEBUG else "FAIL", "settings", f"DEBUG={settings.DEBUG}")
         # Presence only (never a value) of the variables production depends on.
         present = {
             name: bool(os.environ.get(name) or getattr(settings, name, ""))
-            for name in ("REDIS_URL", "SITE_URL", "FIELD_ENCRYPTION_KEY", "SENTRY_DSN", "ADMINS")
+            for name in ("REDIS_URL", "SITE_URL", "FIELD_ENCRYPTION_KEY", "SENTRY_DSN")
         }
         missing = sorted(name for name, ok in present.items() if not ok)
         self._emit("OK" if not missing else "WARN", "settings", f"required settings not set: {missing or 'none'}")
+        # Who hears about a crash: ADMINS if set, else the active SuperAdmins (governance/error_alerts.py). Counts only.
+        from governance.error_alerts import alert_recipients
+
+        recipients = len(alert_recipients())
+        source = "ADMINS" if settings.ADMINS else "active SuperAdmins (ADMINS is not set)"
+        self._emit(
+            "OK" if recipients else "WARN", "settings", f"crash alerts go to {recipients} recipient(s): {source}"
+        )
+        # Transport security as configured for THIS process (booleans and a number, nothing else).
+        self._emit(
+            (
+                "OK"
+                if settings.SESSION_COOKIE_SECURE
+                and settings.CSRF_COOKIE_SECURE
+                and settings.ENFORCE_HTTPS_VIA_CLOUDFLARE
+                else "WARN"
+            ),
+            "settings",
+            f"session_cookie_secure={settings.SESSION_COOKIE_SECURE} csrf_cookie_secure={settings.CSRF_COOKIE_SECURE} "
+            f"https_redirect={settings.ENFORCE_HTTPS_VIA_CLOUDFLARE} hsts_seconds={settings.CLOUDFLARE_HSTS_SECONDS}",
+        )
         sentry = bool(getattr(settings, "SENTRY_DSN", ""))
         backend = settings.EMAIL_BACKEND.rsplit(".", 1)[-1]
         self._emit(

@@ -82,9 +82,24 @@ services:
       # `manage.py ops_verify` and System status confirm that web, worker and beat
       # are all running the intended revision, not just that Git is current.
       RELEASE_SHA: ${RELEASE_SHA:-unknown}
+      # Transport security for a site whose visitors reach it through Cloudflare (which terminates TLS and
+      # speaks plain HTTP to this origin). Each can be overridden from the server's .env; setting the first
+      # to False is the kill switch if the redirect ever misbehaves. See accounts/middleware.py and
+      # docs/OPERATIONS.md ("Transport security").
+      #   ENFORCE_HTTPS_VIA_CLOUDFLARE  redirect visitors who used http:// (per Cloudflare's CF-Visitor)
+      #   CLOUDFLARE_HSTS_SECONDS       Strict-Transport-Security max-age; starts at 1 day on purpose
+      #   *_COOKIE_SECURE               the browser then never sends the session/CSRF cookie over http://
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
+      CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-True}
+      ENFORCE_HTTPS_VIA_CLOUDFLARE: ${ENFORCE_HTTPS_VIA_CLOUDFLARE:-True}
+      CLOUDFLARE_HSTS_SECONDS: ${CLOUDFLARE_HSTS_SECONDS:-86400}
     logging: *default-logging
     ports:
-      - "8000:8000"
+      # 0.0.0.0 keeps today's behaviour: Gunicorn is reachable on the host's public address, so anyone who
+      # finds the origin can skip Cloudflare. Once Nginx on this host is confirmed to proxy to
+      # 127.0.0.1:8000 (deployment/nginx.conf.example), set WEB_BIND_ADDRESS=127.0.0.1 in the server's .env
+      # to close that door. The default is unchanged because the live Nginx config is not in this repository.
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:8000:8000"
     volumes:
       - media_data:/app/media
     depends_on:

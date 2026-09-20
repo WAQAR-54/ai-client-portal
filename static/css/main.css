@@ -4567,3 +4567,33 @@ table.data tbody th.sys-rowhead {
 }
 .media-table thead th { letter-spacing: 0.02em; font-size: 0.68rem; }
 .media-table-wrap .media-owner { max-width: 7.5rem; }
+
+/* ---------- Server Media: bulk selection ---------- */
+.media-bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.55rem 0.75rem; margin-bottom: var(--space-3); border: 1px solid var(--accent); border-radius: var(--radius-md); background: var(--accent-soft); position: sticky; top: 0; z-index: 5; }
+.media-bulk-bar[hidden] { display: none; }
+.media-bulk-count { font-weight: 600; font-size: 0.85rem; margin-inline-end: auto; }
+.media-col-check { width: 1.6rem; padding-inline: 0.3rem; }
+.media-col-check input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0; cursor: pointer; }
+.media-col-check input[hidden] { display: none; }
+.media-bulk-lines { margin: 0; padding-inline-start: 1.1rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.media-bulk-result { margin: 0; display: flex; flex-direction: column; }
+.media-bulk-result > div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.4rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.88rem; }
+.media-bulk-result dt { color: var(--color-text-muted); }
+.media-bulk-result dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.media-bulk-error { margin: 0; padding: 0.6rem 0.75rem; border-radius: var(--radius-md); background: var(--color-danger-soft); color: var(--color-danger-text); font-size: 0.85rem; }
+@container (max-width: 980px) {
+    table.media-table tr { padding-left: 3.9rem; }
+    table.media-table td.media-col-check { position: absolute; left: 0; top: 0.8rem; width: 1.8rem; padding: 0; }
+    table.media-table td.media-col-icon { left: 1.9rem; }
+}
+.media-table-wrap th, .media-table-wrap td { padding-inline: 0.32rem; }
+.media-table thead th.media-col-check { width: 1.5rem; padding-inline: 0.2rem; }
+.media-table thead th { letter-spacing: 0; }
+.media-table-wrap .media-actions .btn-small { padding: 0.28rem 0.5rem; }
+.media-table-wrap .media-actions { padding-inline-end: 0.5rem; }
+.media-table-wrap table.data { font-size: 0.78rem; }
+.media-table-wrap .badge { font-size: 0.7rem; }
+.media-table-wrap .media-owner { max-width: 6.2rem; }
+/* The dialog switches panels with the HTML `hidden` attribute, but .modal-body / .btn set `display`, which beats the
+   browser's own [hidden] rule: without this every panel and button showed at once. */
+.modal-overlay [hidden], .media-bulk-bar[hidden] { display: none !important; }

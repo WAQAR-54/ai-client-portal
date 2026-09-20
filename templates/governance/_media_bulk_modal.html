@@ -1,0 +1,56 @@
+{% load i18n %}
+{# The bulk "Delete N files?" dialog: confirm -> progress -> result. Every number in the CONFIRM step is an estimate the #}
+{# page can make from what it shows; the RESULT step shows only what the server reports. The dialog is a courtesy, not the #}
+{# protection: the server re-checks every file (still exists, no record refers to it) before it removes anything. #}
+<div class="modal-overlay" id="mediaBulkModal" role="dialog" aria-modal="true" aria-labelledby="mediaBulkTitle"
+     data-url="{% url 'governance:media_bulk_delete' %}" data-chunk="10" data-max="100"
+     data-t-selected="{% trans '{n} files selected.' %}"
+     data-t-selected-one="{% trans '1 file selected.' %}"
+     data-t-referenced="{% trans '{n} are in use by a record and will be skipped.' %}"
+     data-t-referenced-one="{% trans '1 is in use by a record and will be skipped.' %}"
+     data-t-eligible="{% trans '{n} can be deleted now.' %}"
+     data-t-eligible-one="{% trans '1 can be deleted now.' %}"
+     data-t-none="{% trans 'None of the selected files can be deleted: every one is in use by a record.' %}"
+     data-t-capped="{% trans 'Only the first {n} are deleted in one run. Run it again for the rest.' %}"
+     data-t-progress="{% trans 'Deleting {done} of {total}…' %}"
+     data-t-delete="{% trans 'Delete {n} files' %}"
+     data-t-delete-one="{% trans 'Delete 1 file' %}"
+     data-t-stopped="{% trans 'Stopped after {done} of {total}: {error}' %}"
+     data-t-network="{% trans 'The request could not be completed. Reload the page and check the result before trying again.' %}"
+     data-label-deleted="{% trans 'Files removed' %}"
+     data-label-freed="{% trans 'Space recovered' %}"
+     data-label-referenced="{% trans 'Skipped: in use' %}"
+     data-label-missing="{% trans 'Skipped: already gone' %}"
+     data-label-failed="{% trans 'Failed' %}">
+    <div class="modal-box" style="width:min(480px, 100%);">
+        <div class="modal-head">
+            <h3 class="modal-title" id="mediaBulkTitle">{% trans "Delete selected files?" %}</h3>
+            <button type="button" class="modal-close" data-bulk-cancel aria-label="{% trans 'Close' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <form id="mediaBulkForm" method="post" action="" onsubmit="return false;">
+            {% csrf_token %}
+            <div class="modal-body" id="mediaBulkConfirm">
+                <p id="mediaBulkSummary" style="margin:0;"></p>
+                <ul class="media-bulk-lines" id="mediaBulkLines"></ul>
+                <p class="text-faint" style="margin:0; font-size:0.8rem;">{% trans "Deleted files cannot be restored. A file that a record has started using since this page loaded is skipped, not deleted." %}</p>
+            </div>
+            <div class="modal-body" id="mediaBulkProgress" hidden>
+                <p id="mediaBulkProgressText" role="status" aria-live="polite" style="margin:0;"></p>
+                <progress id="mediaBulkProgressBar" value="0" max="1" style="width:100%;"></progress>
+                <p class="text-faint" style="margin:0; font-size:0.8rem;">{% trans "Please keep this page open until it finishes." %}</p>
+            </div>
+            <div class="modal-body" id="mediaBulkResult" hidden>
+                <p id="mediaBulkResultTitle" style="margin:0; font-weight:600;"></p>
+                <dl class="media-bulk-result" id="mediaBulkResultList"></dl>
+                <p id="mediaBulkResultError" class="media-bulk-error" hidden role="alert"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-bulk-cancel id="mediaBulkCancel">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-danger" id="mediaBulkConfirmButton">{% trans "Delete" %}</button>
+                <button type="button" class="btn" id="mediaBulkClose" hidden>{% trans "Close" %}</button>
+            </div>
+        </form>
+    </div>
+</div>

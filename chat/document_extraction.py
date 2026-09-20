@@ -36,12 +36,26 @@ def _extract_text_file(file_field):
         return f.read(MAX_CHARS + 1).decode("utf-8", errors="replace")
 
 
+# Extraction stops as soon as it has MAX_CHARS of text (or, for PDFs, this many pages): only the first
+# MAX_CHARS ever reach the model, so parsing a 1,000-page PDF or a million-row sheet to keep 8,000
+# characters would just burn CPU (the production box has one core) and memory for nothing.
+MAX_PDF_PAGES = 60
+MAX_SHEET_ROWS = 5000
+
+
 def _extract_pdf(file_field):
     from pypdf import PdfReader
 
     with file_field.open("rb") as f:
         reader = PdfReader(f)
-        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        parts, total = [], 0
+        for page in reader.pages[:MAX_PDF_PAGES]:
+            text = page.extract_text() or ""
+            parts.append(text)
+            total += len(text)
+            if total > MAX_CHARS:
+                break
+        return "\n\n".join(parts)
 
 
 def _extract_docx(file_field):
@@ -49,25 +63,42 @@ def _extract_docx(file_field):
 
     with file_field.open("rb") as f:
         document = docx.Document(f)
-    parts = [p.text for p in document.paragraphs if p.text]
+    parts, total = [], 0
+    for paragraph in document.paragraphs:
+        if paragraph.text:
+            parts.append(paragraph.text)
+            total += len(paragraph.text)
+            if total > MAX_CHARS:
+                return "\n".join(parts)
     for table in document.tables:
         for row in table.rows:
-            parts.append(" | ".join(cell.text for cell in row.cells))
+            line = " | ".join(cell.text for cell in row.cells)
+            parts.append(line)
+            total += len(line)
+            if total > MAX_CHARS:
+                return "\n".join(parts)
     return "\n".join(parts)
 
 
 def _extract_xlsx(file_field):
     import openpyxl
 
+    lines, total, rows = [], 0, 0
+    # The rows are read INSIDE the `with`: openpyxl's read-only mode streams from the open file, so iterating
+    # after it was closed raised "I/O operation on closed file" and every .xlsx attachment came back unreadable.
     with file_field.open("rb") as f:
         workbook = openpyxl.load_workbook(f, read_only=True, data_only=True)
-    lines = []
-    for sheet in workbook.worksheets:
-        lines.append(f"# Sheet: {sheet.title}")
-        for row in sheet.iter_rows(values_only=True):
-            cells = ["" if v is None else str(v) for v in row]
-            if any(cells):
-                lines.append(" | ".join(cells))
+        for sheet in workbook.worksheets:
+            lines.append(f"# Sheet: {sheet.title}")
+            for row in sheet.iter_rows(values_only=True):
+                cells = ["" if v is None else str(v) for v in row]
+                rows += 1
+                if any(cells):
+                    line = " | ".join(cells)
+                    lines.append(line)
+                    total += len(line)
+                if total > MAX_CHARS or rows >= MAX_SHEET_ROWS:
+                    return "\n".join(lines)
     return "\n".join(lines)
 
 
