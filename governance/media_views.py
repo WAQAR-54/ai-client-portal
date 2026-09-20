@@ -84,7 +84,7 @@ def _filters_from_request(request):
 
 def _with_times(entries):
     """Scan entries carry a POSIX mtime and a storage-relative name; the template wants a datetime
-    and a display-safe name (the relative name itself stays in the row only as a form value)."""
+    and a display-safe name (the storage-relative path itself is never sent to the page)."""
     return [
         {
             **entry,
@@ -254,7 +254,7 @@ def media_delete_orphan(request):
     """Delete ONE unreferenced file, after a typed confirmation. Never a bulk action, never a file
     that any record refers to: media_service.delete_orphan re-checks all of that at deletion time."""
     orphans_url = f"{reverse('governance:media')}?view=orphans"
-    if request.POST.get("confirm", "").strip() != DELETE_CONFIRMATION_WORD:
+    if request.POST.get("typed_word", "").strip() != DELETE_CONFIRMATION_WORD:
         django_messages.error(request, _("Type %(word)s to confirm the deletion.") % {"word": DELETE_CONFIRMATION_WORD})
         return redirect(orphans_url)
     name = media.orphan_name_for(request.POST.get("file", ""))

@@ -4496,3 +4496,14 @@ table.data tbody th.sys-rowhead {
 .media-mini .media-name { flex: 1; min-width: 0; }
 .media-delete-form { display: inline-flex; gap: 0.4rem; align-items: center; }
 .media-delete-form input[type="text"] { width: 6rem; }
+/* The media table is wide by nature: keep each cell on one line and let the wrapper scroll sideways
+   instead of squeezing dates and badges into three-line stacks. */
+.media-table-wrap th, .media-table-wrap td { white-space: nowrap; }
+.media-table-wrap .media-name { max-width: 15rem; }
+.media-sub { font-size: 0.72rem; }
+.media-table-wrap th, .media-table-wrap td { padding-inline: 0.45rem; }
+.media-table-wrap table.data { font-size: 0.82rem; }
+.media-table-wrap th:first-child, .media-table-wrap td:first-child { width: 2rem; padding-inline: 0.3rem; }
+.media-actions .media-sub { white-space: normal; max-width: 11rem; }
+.media-table-wrap .media-owner { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; }
+.media-table-wrap .media-actions .btn-small { padding: 0.3rem 0.6rem; }

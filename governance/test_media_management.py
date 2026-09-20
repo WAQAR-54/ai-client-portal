@@ -109,7 +109,7 @@ class MediaAccessTests(MediaBase):
             self.assertEqual(self.client.post(reverse("governance:media_rescan")).status_code, 403)
             resp = self.client.post(
                 reverse("governance:media_delete_orphan"),
-                {"file": self.stray_token("chat_attachments/user_1/stray.txt"), "confirm": "DELETE"},
+                {"file": self.stray_token("chat_attachments/user_1/stray.txt"), "typed_word": "DELETE"},
             )
             self.assertEqual(resp.status_code, 403)
         self.assertTrue(Path(self.media_root, "chat_attachments/user_1/stray.txt").exists())
@@ -328,7 +328,9 @@ class MediaPathSafetyTests(MediaBase):
         self.addCleanup(lambda: outside.unlink(missing_ok=True))
         self.login(self.superadmin)
         for token in ("../outside-target2.txt", str(outside), "0" * 16, ""):
-            response = self.client.post(reverse("governance:media_delete_orphan"), {"file": token, "confirm": "DELETE"})
+            response = self.client.post(
+                reverse("governance:media_delete_orphan"), {"file": token, "typed_word": "DELETE"}
+            )
             self.assertEqual(response.status_code, 302)
         self.assertTrue(outside.exists())
         self.assertEqual(AuditLog.objects.filter(action_type="media_orphan_deleted").count(), 0)
@@ -363,7 +365,7 @@ class MediaOrphanTests(MediaBase):
         self.assertTrue(Path(message.attachment.path).exists())
         self.login(self.superadmin)
         token = media.name_digest(name)
-        self.client.post(reverse("governance:media_delete_orphan"), {"file": token, "confirm": "DELETE"})
+        self.client.post(reverse("governance:media_delete_orphan"), {"file": token, "typed_word": "DELETE"})
         self.assertTrue(Path(message.attachment.path).exists())
 
     def test_a_file_that_became_referenced_after_the_scan_is_not_deleted(self):
@@ -373,7 +375,7 @@ class MediaOrphanTests(MediaBase):
         conversation = Conversation.objects.create(user=self.owner)
         Message.objects.create(conversation=conversation, role=Message.Role.USER, attachment=self.ORPHAN)
         response = self.client.post(
-            reverse("governance:media_delete_orphan"), {"file": media.name_digest(self.ORPHAN), "confirm": "DELETE"}
+            reverse("governance:media_delete_orphan"), {"file": media.name_digest(self.ORPHAN), "typed_word": "DELETE"}
         )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(path.exists())
@@ -396,9 +398,9 @@ class MediaOrphanTests(MediaBase):
         url = reverse("governance:media_delete_orphan")
         token = media.name_digest(self.ORPHAN)
         self.client.post(url, {"file": token})
-        self.client.post(url, {"file": token, "confirm": "delete me"})
+        self.client.post(url, {"file": token, "typed_word": "delete me"})
         self.assertTrue(path.exists())  # no or wrong confirmation: nothing happens
-        response = self.client.post(url, {"file": token, "confirm": "DELETE"})
+        response = self.client.post(url, {"file": token, "typed_word": "DELETE"})
         self.assertEqual(response.status_code, 302)
         self.assertFalse(path.exists())
         row = AuditLog.objects.get(action_type="media_orphan_deleted")
@@ -409,6 +411,20 @@ class MediaOrphanTests(MediaBase):
             self.assertNotIn(forbidden, blob)
         # gone from the cached scan too, so it cannot be offered again
         self.assertEqual(media.get_scan()["orphan_count"], 0)
+
+    def test_the_delete_form_does_not_shadow_window_confirm(self):
+        """Regression (found in a real browser): an <input name="confirm"> inside the form made the
+        inline onsubmit="return confirm(...)" call the INPUT ("confirm is not a function"), the handler
+        threw, and the form submitted with no confirmation dialog at all."""
+        self.write_stray(self.ORPHAN)
+        self.login(self.superadmin)
+        html = self.client.get(reverse("governance:media"), {"view": "orphans"}).content.decode()
+        form = html[
+            html.index('class="media-delete-form"') : html.index("</form>", html.index('class="media-delete-form"'))
+        ]
+        self.assertIn("window.confirm(", form)
+        for shadowing in ('name="confirm"', 'name="alert"', 'name="submit"', 'id="confirm"'):
+            self.assertNotIn(shadowing, form)
 
     def test_there_is_no_bulk_delete_route(self):
         self.write_stray(self.ORPHAN)
@@ -422,7 +438,7 @@ class MediaOrphanTests(MediaBase):
                     media.name_digest(self.ORPHAN),
                     media.name_digest("chat_attachments/user_99/2026/01/other.pdf"),
                 ],
-                "confirm": "DELETE",
+                "typed_word": "DELETE",
             },
         )
         self.assertEqual(response.status_code, 302)

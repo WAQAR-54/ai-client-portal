@@ -75,31 +75,32 @@
     <div class="media-table-wrap">
     <table class="data">
         <thead><tr>
-            <th style="width:2rem;"></th><th>{% trans "File" %}</th><th>{% trans "Type" %}</th><th>{% trans "Size" %}</th>
+            <th style="width:2rem;"></th><th>{% trans "File" %}</th><th>{% trans "Size" %}</th>
             <th>{% trans "Owner" %}</th><th>{% trans "Related" %}</th><th>{% trans "Uploaded" %}</th><th>{% trans "Visibility" %}</th><th>{% trans "Storage" %}</th><th></th>
         </tr></thead>
         <tbody>
         {% for item in items %}
         <tr>
             <td>{% include "governance/_media_icon.html" with category=item.category %}</td>
-            <td><div class="media-name" title="{{ item.display_name }}">{{ item.display_name }}</div><div class="text-faint" style="font-size:0.72rem;">{{ item.source_label }}</div></td>
-            <td class="mono" title="{{ item.mime }}">{{ item.ext|default:"—" }}</td>
+            <td><div class="media-name" title="{{ item.display_name }}">{{ item.display_name }}</div><div class="text-faint media-sub" title="{{ item.mime }}">{{ item.source_label }}{% if item.ext %} · {{ item.ext }}{% endif %}</div></td>
             <td class="mono">{% if item.size is not None %}{{ item.size|filesizeformat }}{% else %}—{% endif %}</td>
-            <td class="text-muted">{{ item.owner }}</td>
+            <td class="text-muted media-owner" title="{{ item.owner }}">{{ item.owner }}</td>
             <td class="text-muted">{{ item.related }}</td>
-            <td class="text-muted mono">{{ item.uploaded|date:"Y-m-d H:i"|default:"—" }}</td>
+            <td class="text-muted mono" title="{{ item.uploaded|date:'Y-m-d H:i' }} UTC">{{ item.uploaded|date:"Y-m-d"|default:"—" }}</td>
             <td><span class="badge {% if item.is_public %}badge-info{% else %}badge-muted{% endif %}">{{ item.visibility }}</span></td>
             <td>{% if item.state == "present" %}<span class="badge badge-success">{% trans "On disk" %}</span>{% elif item.state == "missing" %}<span class="badge badge-danger">{% trans "Missing" %}</span>{% else %}<span class="badge badge-muted">{% trans "Unknown" %}</span>{% endif %}</td>
             <td class="media-actions">
+                <div>
                 {% if item.state != "missing" %}
                 {% if item.can_preview %}<a class="btn btn-small btn-ghost" href="{% url 'governance:media_preview' item.source item.pk %}" target="_blank" rel="noopener noreferrer">{% trans "Preview" %}</a>{% endif %}
                 <a class="btn btn-small btn-ghost" href="{% url 'governance:media_download' item.source item.pk %}">{% trans "Download" %}</a>
                 {% endif %}
-                <span class="text-faint" style="font-size:0.72rem;" title="{% trans 'Files in use by a record cannot be deleted here. Remove the record (message, invoice) instead.' %}">{% trans "In use" %}</span>
+                </div>
+                <div class="text-faint media-sub" title="{% trans 'Files in use by a record cannot be deleted here. Remove the record (message, invoice) instead.' %}">{% trans "In use by a record — not deletable here" %}</div>
             </td>
         </tr>
         {% empty %}
-        <tr class="empty-state-row"><td colspan="10">{% trans "No files match. Try clearing a filter." %}</td></tr>
+        <tr class="empty-state-row"><td colspan="9">{% trans "No files match. Try clearing a filter." %}</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -138,10 +139,10 @@
             <td class="text-muted">{{ o.reason }}</td>
             <td><span class="badge badge-warn">{% trans "None found" %}</span></td>
             <td>
-                <form method="post" action="{% url 'governance:media_delete_orphan' %}" class="media-delete-form" onsubmit="return confirm('{% trans 'Delete this file permanently? This cannot be undone.' %}');">
+                <form method="post" action="{% url 'governance:media_delete_orphan' %}" class="media-delete-form" onsubmit="return window.confirm('{% trans 'Delete this file permanently? This cannot be undone.' %}');">
                     {% csrf_token %}
                     <input type="hidden" name="file" value="{{ o.id }}">
-                    <input type="text" name="confirm" placeholder="{{ delete_word }}" autocomplete="off" size="8" aria-label="{% trans 'Type DELETE to confirm' %}" required>
+                    <input type="text" name="typed_word" placeholder="{{ delete_word }}" autocomplete="off" size="8" aria-label="{% trans 'Type DELETE to confirm' %}" required>
                     <button type="submit" class="btn btn-small btn-danger">{% trans "Delete" %}</button>
                 </form>
             </td>
