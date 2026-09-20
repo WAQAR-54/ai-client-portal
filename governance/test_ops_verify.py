@@ -126,6 +126,19 @@ class OpsVerifyTests(TestCase):
         self.assertIn("WARN logs: 1 log lines across 1 file(s) contain an un-redacted", output)
         self.assertNotIn(secret, output)
 
+    def test_backups_are_reported_as_configuration_only_and_never_print_a_credential(self):
+        with override_settings(BACKUP_S3_BUCKET="", BACKUP_S3_ACCESS_KEY_ID="", BACKUP_S3_SECRET_ACCESS_KEY=""):
+            self.assertIn("WARN backups: no S3 backup target configured", run("--skip-feeds"))
+        with override_settings(
+            BACKUP_S3_BUCKET="bucket-name-x",
+            BACKUP_S3_ACCESS_KEY_ID="AKIA-do-not-print",
+            BACKUP_S3_SECRET_ACCESS_KEY="secret-do-not-print",
+        ):
+            output = run("--skip-feeds")
+        self.assertIn("OK backups: S3 backup target configured", output)
+        for hidden in ("bucket-name-x", "AKIA-do-not-print", "secret-do-not-print"):
+            self.assertNotIn(hidden, output)
+
     def test_release_is_reported_from_the_environment(self):
         with override_settings(RELEASE_SHA="abcdef1234567890"):
             self.assertIn("OK release: this process was built from abcdef123456", run("--skip-feeds"))

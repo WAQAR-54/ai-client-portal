@@ -50,6 +50,18 @@ class StreamChunk:
     done: bool = False
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # True on the final chunk when the provider says the reply was cut off (length limit, content
+    # filter) - or, for Gemini, when the stream simply ended without ever sending a finish reason.
+    # Without this a half-finished reply (even one that stops in the middle of a URL) was saved
+    # and shown exactly like a complete one.
+    truncated: bool = False
+
+
+# Finish reasons that mean "the reply stopped before it was finished".
+_TRUNCATED_OPENAI_REASONS = frozenset({"length", "content_filter"})
+_TRUNCATED_GEMINI_REASONS = frozenset(
+    {"MAX_TOKENS", "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "OTHER"}
+)
 
 
 class ProviderError(Exception):
@@ -150,13 +162,21 @@ class OpenAICompatibleProvider(AIProvider):
                 stream_options={"include_usage": True},
             )
             input_tokens = output_tokens = None
+            finish_reason = None
             for chunk in stream:
                 if chunk.usage is not None:
                     input_tokens = chunk.usage.prompt_tokens
                     output_tokens = chunk.usage.completion_tokens
+                if chunk.choices and getattr(chunk.choices[0], "finish_reason", None):
+                    finish_reason = chunk.choices[0].finish_reason
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield StreamChunk(text=chunk.choices[0].delta.content)
-            yield StreamChunk(done=True, input_tokens=input_tokens, output_tokens=output_tokens)
+            yield StreamChunk(
+                done=True,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                truncated=finish_reason in _TRUNCATED_OPENAI_REASONS,
+            )
         except Exception as exc:
             raise ProviderError(str(exc)) from exc
 
@@ -235,6 +255,7 @@ class AnthropicProvider(AIProvider):
                     done=True,
                     input_tokens=final.usage.input_tokens,
                     output_tokens=final.usage.output_tokens,
+                    truncated=getattr(final, "stop_reason", None) == "max_tokens",
                 )
         except Exception as exc:
             raise ProviderError(str(exc)) from exc
@@ -317,12 +338,14 @@ class GeminiProvider(AIProvider):
             )
             resp.raise_for_status()
             input_tokens = output_tokens = None
+            finish_reason = None
             for line in resp.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data: "):
                     continue
                 chunk = json.loads(line[len("data: ") :])
                 candidates = chunk.get("candidates") or []
                 if candidates:
+                    finish_reason = candidates[0].get("finishReason") or finish_reason
                     for part in candidates[0].get("content", {}).get("parts", []):
                         text = part.get("text", "")
                         if text:
@@ -331,7 +354,14 @@ class GeminiProvider(AIProvider):
                 if usage:
                     input_tokens = usage.get("promptTokenCount")
                     output_tokens = usage.get("candidatesTokenCount")
-            yield StreamChunk(done=True, input_tokens=input_tokens, output_tokens=output_tokens)
+            # A normal Gemini stream ends with a finishReason (STOP). None at all means the
+            # connection ended early (observed: replies stopping mid-URL), so it is incomplete too.
+            yield StreamChunk(
+                done=True,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                truncated=finish_reason is None or finish_reason in _TRUNCATED_GEMINI_REASONS,
+            )
         except (requests.RequestException, json.JSONDecodeError) as exc:
             raise ProviderError(str(exc)) from exc
 

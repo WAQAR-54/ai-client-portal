@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils import timezone, translation
 from django.utils.html import escape
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_http_methods
 from sentry_sdk import capture_exception, new_scope
 
@@ -1752,6 +1753,7 @@ def stream_message(request, conversation_id, message_id, token):
             full_text = ""
             partial_text["text"] = ""
             input_tokens = output_tokens = None
+            truncated = False
             is_last_candidate = attempt_index == len(candidates) - 1
             history_for_model = history if model_config.supports_vision else _strip_images(history)
 
@@ -1765,6 +1767,7 @@ def stream_message(request, conversation_id, message_id, token):
                         yield _sse_event("message", chunk.text)
                     if chunk.done:
                         input_tokens, output_tokens = chunk.input_tokens, chunk.output_tokens
+                        truncated = chunk.truncated
             except ProviderError as exc:
                 if not full_text and not is_last_candidate:
                     continue
@@ -1794,6 +1797,11 @@ def stream_message(request, conversation_id, message_id, token):
                 yield _sse_event("done", "")
                 return
 
+            if truncated and full_text:
+                # Say so, instead of presenting half an answer (possibly cut mid-sentence or
+                # mid-URL) as a finished one.
+                full_text += str(TRUNCATED_REPLY_NOTICE)
+                yield _sse_event("message", str(TRUNCATED_REPLY_NOTICE))
             message.content = full_text
             message.provider_model_used = model_config
             message.input_tokens = input_tokens
@@ -1805,15 +1813,16 @@ def stream_message(request, conversation_id, message_id, token):
                 message.artifact_title = extract_document_title(full_text, fallback=message.artifact_title)
             message.save()
             Conversation.objects.filter(pk=message.conversation_id).update(last_provider_model=model_config)
-            store_cached_response(
-                request.user.id,
-                model_config.id,
-                system_prompt,
-                history,
-                text=full_text,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
+            if not truncated:  # never cache half an answer: an identical question would get it back
+                store_cached_response(
+                    request.user.id,
+                    model_config.id,
+                    system_prompt,
+                    history,
+                    text=full_text,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
             _notify_if_usage_warning(request.user)
             yield _sse_event("done", "")
             return
@@ -1842,6 +1851,11 @@ def stream_message(request, conversation_id, message_id, token):
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response
+
+
+TRUNCATED_REPLY_NOTICE = gettext_lazy(
+    "\n\n*(This reply was cut off before it finished. Ask me to continue, or try again.)*"
+)
 
 
 def _sse_event(event_name, data):

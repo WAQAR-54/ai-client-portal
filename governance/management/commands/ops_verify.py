@@ -43,6 +43,7 @@ ANNOTATION_GROUPS = {
     "disk": "storage",
     "logs": "storage",
     "retention": "retention",
+    "backups": "retention",
 }
 SEVERITY = {"OK": 0, "SKIP": 0, "WARN": 1, "FAIL": 2}
 EXPECTED_CHAT_MIGRATIONS = ("0023_message_generation_started_at_message_is_generating", "0024_message_live_intel")
@@ -122,6 +123,7 @@ class Command(BaseCommand):
             ("disk", self.check_disk),
             ("logs", self.check_logs),
             ("retention", self.check_retention),
+            ("backups", self.check_backups),
             ("settings", self.check_settings),
         ]
         if options["skip_feeds"]:
@@ -381,6 +383,20 @@ class Command(BaseCommand):
                 "OK", "retention", f"{label}: {model.objects.count()} rows, oldest {oldest.date() if oldest else 'n/a'}"
             )
         self._emit("OK", "retention", f"BACKUP_RETENTION_DAYS={getattr(settings, 'BACKUP_RETENTION_DAYS', 'unset')}")
+
+    def check_backups(self):
+        """Configuration only: whether the nightly database backup has anywhere to go. It never
+        contacts the bucket and never prints a credential - the values are reduced to booleans."""
+        configured = all(
+            getattr(settings, name, "")
+            for name in ("BACKUP_S3_BUCKET", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY")
+        )
+        if configured:
+            self._emit(
+                "OK", "backups", f"S3 backup target configured (retention {settings.BACKUP_RETENTION_DAYS} days)"
+            )
+        else:
+            self._emit("WARN", "backups", "no S3 backup target configured: backup_database has nowhere to upload")
 
     def check_settings(self):
         self._emit("OK" if not settings.DEBUG else "FAIL", "settings", f"DEBUG={settings.DEBUG}")

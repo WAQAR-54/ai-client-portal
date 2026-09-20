@@ -217,6 +217,28 @@ Static CSS **ek hi file** hai sab pages ke liye: `static/css/main.css`. Har page
 
 ---
 
+## 8b. Phase 5 — Hardening, authorization aur operations (2026-09-20)
+
+| File | Kaam | Kahan se use hota hai |
+|---|---|---|
+| `config/redaction.py` | **Credentials ko logs/exceptions/Sentry se bahar rakhta hai.** `redact_secrets()` (`?key=`, Bearer, `sk-…` jaisi cheezein mask), `SecretRedactionFilter` (har console/file log record + poori exception chain), `scrub_event()` (Sentry). Wajah: Gemini key URL mein jati thi aur `requests` ke exception text se log/Sentry mein likhi gayi (app.log mein poori key thi). Ab key `x-goog-api-key` **header** mein jati hai | `chat/providers.py::ProviderError`, `config/settings.py::LOGGING` + Sentry `before_send` |
+| `config/files.py` | `delete_file_after_commit()` — row delete hone par uski file disk se hatata hai (commit ke **baad**, rollback par nahi). Pehle retention sweep rows hata deta tha magar attachments hamesha disk par rehte the | `chat/models.py` (Message.attachment), `billing/models.py` (Invoice proof) `post_delete` signals |
+| `accounts/redirects.py` | `safe_next_url()` — POSTed `next` sirf same-host par follow hota hai (pehle 8 views open redirect the) | notifications, governance, billing views |
+| `governance/management/commands/ops_verify.py` | **Read-only production self-check** (migrations, schema, Redis PING + cache round trip, Celery ping, beat, feeds (har source par 1 GET), disk, DB connections, retention counts, backup config, release SHA). Kuch likhta/delete nahi karta, credentials print nahi karta. CI deploy ke baad chalata hai (`--annotate`), nateeja run ke checks par annotations ki shakal mein dikhta hai | `.github/workflows/ci.yml` "Post-deploy verification" |
+| `accounts/authz_matrix.py` + `governance/test_authorization_matrix.py` + `governance/authz_expected.json` | **Authorization matrix**: har route (346) ko 7 roles (anonymous/user/member/manager/dept-admin/admin/superadmin) se asli backend par hit karta hai. Invariants + golden file: kisi route ka minimum role badle to test fail (jaan-boojh kar badla ho to `AUTHZ_UPDATE=1` se dobara likho aur diff review karo) | CI test job |
+| `billing/views.py::invoice_proof` | Payment screenshot sirf usi ko jo invoice dekh sakta hai (recipient / usi department ka Admin / SuperAdmin). Pehle `/media/invoice_proofs/…` seedha public tha | `billing/templates/billing/invoice_detail.html`, `_invoices_table.html` |
+| `config/urls.py::serve_media` / `serve_docs` | `/media/` ab **sirf `branding/`** (login page ka logo/favicon) public hai, path normalise karke check hota hai (`branding/../chat_attachments/x` pehle guzar jata tha). `/docs/` sirf `guides/*.html` + `FEATURE_GUIDE.html`; `SECRETS.md`/`PRODUCTION_ACCESS.md` etc. kabhi nahi | `billing/test_media_privacy.py` |
+| `chat/markdown_utils.py::normalize_headings` | AI reply ke headings page ke h1 ke neeche h2 se shuru (levels rank ho kar, gap nahi; `md-hN` class se dikhawat wahi). Sirf on-page display; documents/exports author ke levels rakhte hain | `chat/templatetags/chat_extras.py` filter |
+| `chat/providers.py::StreamChunk.truncated` + `chat/views.py::TRUNCATED_REPLY_NOTICE` | Provider ne jawab beech mein kaat diya (OpenAI `length`, Anthropic `max_tokens`, Gemini finishReason ke bagair stream khatam) to user ko note dikhta hai, aur woh reply cache nahi hoti | `chat/views.py::stream_message` |
+| `billing/views.py::verify/reject/toggle_invoice` | Status ab **maujooda state** dekh kar, row lock ke andar badalta hai: sirf `pending_verification` verify/reject ho sakti hai; refunded invoice wapas paid nahi hoti | `billing/test_invoice_state_guards.py` |
+| `governance/error_alerts.py` | Ab **ek hi** admin-alert path (Django ka apna sync `AdminEmailHandler` `django` logger se hata diya); broker down ho to direct send fallback; subject par `[Django]` prefix. Health-probe 503 downgrade waisa hi | `config/settings.py::LOGGING` |
+| `deployment/ci_annotate_failures.py` | Test job fail ho to sirf tab chalta hai: fail hone wale tests ko annotations banata hai (raw logs public nahi). Kabhi pass/fail decide nahi karta | `.github/workflows/ci.yml` |
+| `config/test_requirements_complete.py`, `config/test_ci_workflow.py` | Har import kiya hua third-party module `requirements.txt` mein pin ho (defusedxml incident); CI gates sirf exit code par (koi `grep FAILED`), deploy `needs: lint+test`, verification steps rollback trigger nahi kar sakte | CI |
+| `docker-compose.yml` | `RELEASE_SHA` web/worker/beat mein; container logs ka size limit (3 × 10 MB) | deploy step |
+| `chat/test_browser_sse.py` | Chromium (Playwright) se SSE regression: normal reply par console `Event` error nahi, toota hua stream phir bhi report hota hai. Browser na ho to skip (browser **pehle** check hota hai, live server baad mein — warna Postgres par `DROP DATABASE` fail hota tha) | local |
+
+---
+
 ## 9. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |
@@ -319,4 +341,4 @@ chat/views.py::_notify_if_usage_warning(user)
 
 ---
 
-*Last updated: 2026-08-30 (Section B feature pack — export/templates/shortcuts/file-upload/multi-language/usage-export/notifications/mobile-review/onboarding, Section C reliability — feedback/brute-force/backup/caching, IP-based language detection, aur per-user Plan-override view/clear UI ke baad; sab kuch real live-tested evidence ke saath, ab CI par bhi pass ho raha hai). Jab bhi naye app/model/major feature add ho, is document ko bhi update kar dena.*
+*Last updated: 2026-09-20 (Phase 5 hardening - section 8b), previously 2026-08-30 (Section B feature pack — export/templates/shortcuts/file-upload/multi-language/usage-export/notifications/mobile-review/onboarding, Section C reliability — feedback/brute-force/backup/caching, IP-based language detection, aur per-user Plan-override view/clear UI ke baad; sab kuch real live-tested evidence ke saath, ab CI par bhi pass ho raha hai). Jab bhi naye app/model/major feature add ho, is document ko bhi update kar dena.*
