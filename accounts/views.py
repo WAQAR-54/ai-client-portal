@@ -38,7 +38,13 @@ from accounts.mfa import (
 )
 from accounts.models import User
 from accounts.permissions import AdminRequiredMixin
-from accounts.rate_limit import client_ip, is_rate_limited
+from accounts.rate_limit import (
+    SECURITY_CRITICAL,
+    client_ip,
+    count_failure,
+    is_over_limit,
+    is_rate_limited,
+)
 from governance.features import require_feature
 
 # Per-IP-per-hour caps on the two unauthenticated, abuse-prone endpoints
@@ -173,10 +179,23 @@ class PortalLoginView(LoginView):
         # see LOGIN_RATE_LIMIT's own comment for why this exists alongside
         # axes rather than being redundant with it.
         username = request.POST.get("username", "").strip().lower()
-        if username and is_rate_limited(f"login:{username}", limit=LOGIN_RATE_LIMIT, window_seconds=3600):
+        # One source trying MANY usernames (credential stuffing) is invisible to the per-username
+        # limits, so failures are also counted per IP. The answer is identical whether or not the
+        # usernames exist, and only FAILURES count, so a shared office IP where everyone logs in
+        # each morning is never the one that hits it.
+        if is_over_limit(f"login_fail_ip:{client_ip(request)}", limit=settings.LOGIN_IP_FAILURE_LIMIT):
+            messages.error(request, translation.gettext("Too many login attempts. Try again later."))
+            return self.render_to_response(self.get_context_data(form=self.get_form_class()(request)))
+        if username and is_rate_limited(
+            f"login:{username}", limit=LOGIN_RATE_LIMIT, window_seconds=3600, policy=SECURITY_CRITICAL
+        ):
             messages.error(request, translation.gettext("Too many login attempts for this account. Try again later."))
             return self.render_to_response(self.get_context_data(form=self.get_form_class()(request)))
         return super().post(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        count_failure(f"login_fail_ip:{client_ip(self.request)}", window_seconds=3600)
+        return super().form_invalid(form)
 
     def form_valid(self, form):
         """form_valid means the password already checked out (that's what
@@ -202,7 +221,12 @@ def google_signin(request):
     caller is the button's own fetch(), not a form submission."""
     if not google_signin_enabled():
         return JsonResponse({"error": translation.gettext("Google sign-in isn't enabled.")}, status=403)
-    if is_rate_limited(f"google_signin:{client_ip(request)}", limit=GOOGLE_SIGNIN_RATE_LIMIT, window_seconds=3600):
+    if is_rate_limited(
+        f"google_signin:{client_ip(request)}",
+        limit=GOOGLE_SIGNIN_RATE_LIMIT,
+        window_seconds=3600,
+        policy=SECURITY_CRITICAL,
+    ):
         return JsonResponse(
             {"error": translation.gettext("Too many attempts from this location. Try again later.")}, status=429
         )
@@ -338,7 +362,9 @@ def signup_view(request):
         # signup) and django-axes only ever tracks LOGIN failures - so
         # this is the one thing standing between "one person signing up"
         # and automated mass account creation from a single IP.
-        if is_rate_limited(f"signup:{client_ip(request)}", limit=SIGNUP_RATE_LIMIT, window_seconds=3600):
+        if is_rate_limited(
+            f"signup:{client_ip(request)}", limit=SIGNUP_RATE_LIMIT, window_seconds=3600, policy=SECURITY_CRITICAL
+        ):
             messages.error(
                 request, translation.gettext("Too many signup attempts from this location. Try again later.")
             )
@@ -418,10 +444,16 @@ def password_reset_request_view(request):
             # visibly different response when rate-limited would leak
             # its own bit of information.
             ip_limited = is_rate_limited(
-                f"pwreset_ip:{client_ip(request)}", limit=PASSWORD_RESET_IP_RATE_LIMIT, window_seconds=3600
+                f"pwreset_ip:{client_ip(request)}",
+                limit=PASSWORD_RESET_IP_RATE_LIMIT,
+                window_seconds=3600,
+                policy=SECURITY_CRITICAL,
             )
             email_limited = is_rate_limited(
-                f"pwreset_email:{email.lower()}", limit=PASSWORD_RESET_EMAIL_RATE_LIMIT, window_seconds=3600
+                f"pwreset_email:{email.lower()}",
+                limit=PASSWORD_RESET_EMAIL_RATE_LIMIT,
+                window_seconds=3600,
+                policy=SECURITY_CRITICAL,
             )
             if not ip_limited and not email_limited:
                 for user in form.get_users(email):

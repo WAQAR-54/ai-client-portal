@@ -94,7 +94,8 @@ load; provider and job data is HISTORY and is labelled as such.
                 </span>
                 {% endif %}
             </header>
-            <p class="sys-panel-note">{% trans "Reflects when the scheduler last dispatched each task. Whether a run succeeded isn't recorded yet." %}</p>
+            <p class="sys-panel-note">{% trans "Last run is when the scheduler dispatched the task. Outcome, duration and failures are recorded by the worker; a task with no outcome recorded shows a dash, not a success." %}</p>
+            {% if system_status.jobs.beat_stale %}<p class="sys-notice" role="alert">{% trans "The scheduler looks stale: every recurring task is overdue. Check that the beat container is running." %}</p>{% endif %}
 
             {% if system_status.jobs.rows %}
             {% if system_status.jobs.total == system_status.jobs.never_run %}
@@ -102,8 +103,8 @@ load; provider and job data is HISTORY and is labelled as such.
             {% endif %}
             <div class="sys-table-wrap" tabindex="0" role="region" aria-labelledby="sys-jobs-title">
                 <table class="data sys-table sys-jobs">
-                    <colgroup><col class="col-task"><col class="col-status"><col class="col-when"><col class="col-runs"><col class="col-enabled"></colgroup>
-                    <thead><tr><th scope="col">{% trans "Task" %}</th><th scope="col">{% trans "Status" %}</th><th scope="col">{% trans "Last run" %}</th><th scope="col" class="sys-num">{% trans "Runs" %}</th><th scope="col">{% trans "Enabled" %}</th></tr></thead>
+                    <colgroup><col class="col-task"><col class="col-status"><col class="col-when"><col class="col-when"><col class="col-runs"><col class="col-enabled"></colgroup>
+                    <thead><tr><th scope="col">{% trans "Task" %}</th><th scope="col">{% trans "Status" %}</th><th scope="col">{% trans "Last run" %}</th><th scope="col">{% trans "Outcome" %}</th><th scope="col" class="sys-num">{% trans "Runs" %}</th><th scope="col">{% trans "Enabled" %}</th></tr></thead>
                     <tbody>
                         {% for row in system_status.jobs.rows %}
                         <tr data-job-state="{{ row.state }}">
@@ -114,6 +115,13 @@ load; provider and job data is HISTORY and is labelled as such.
                                 {% else %}<span class="badge badge-muted sys-badge">{% trans "Never run" %}</span>{% endif %}
                             </td>
                             <td class="mono sys-when" data-label="{% trans 'Last run' %}">{% if row.age %}{{ row.age }} {% trans "ago" %}{% else %}<span class="sys-muted">{% trans "Never" %}</span>{% endif %}</td>
+                            <td data-label="{% trans 'Outcome' %}">
+                                {% if row.health == "failing" %}<span class="badge badge-danger sys-badge">{% trans "Failed" %}</span> <span class="sys-muted">{{ row.last_failure_age }} {% trans "ago" %}{% if row.failure_kind %} · {{ row.failure_kind }}{% endif %}</span>
+                                {% elif row.health == "stale" %}<span class="badge badge-warn sys-badge">{% trans "Overdue" %}</span>
+                                {% elif row.running %}<span class="badge badge-info sys-badge">{% trans "Running" %}</span>
+                                {% elif row.health == "ok" %}<span class="badge badge-success sys-badge">{% trans "OK" %}</span> <span class="sys-muted mono">{{ row.last_success_age }} {% trans "ago" %}{% if row.duration_ms is not None %} · {{ row.duration_ms }} ms{% endif %}{% if row.retries %} · {{ row.retries }} {% trans "retries" %}{% endif %}</span>
+                                {% else %}<span class="sys-muted">{% trans "No outcome recorded" %}</span>{% endif %}
+                            </td>
                             <td class="mono sys-num" data-label="{% trans 'Runs' %}">{{ row.run_count }}</td>
                             <td data-label="{% trans 'Enabled' %}">{% if row.enabled %}{% trans "Yes" %}{% else %}<span class="sys-muted">{% trans "No" %}</span>{% endif %}</td>
                         </tr>

@@ -290,6 +290,36 @@ class Command(BaseCommand):
                 "beat",
                 f"most recent dispatch was {hours:.1f}h ago (daily tasks expected within 26h)",
             )
+        self._check_task_outcomes()
+
+    def _check_task_outcomes(self):
+        """Outcome of each enabled task as recorded by the worker's Celery signals
+        (governance/task_monitor.py): failures, unrecorded outcomes, overdue dispatches."""
+        from django_celery_beat.models import PeriodicTask
+
+        from governance import task_monitor
+
+        enabled = list(PeriodicTask.objects.select_related("interval").filter(enabled=True))
+        failing, unrecorded, late, running = [], 0, [], 0
+        for task in enabled:
+            summary = task_monitor.summarize(task.task)
+            if summary["outcome"] == "failing":
+                failing.append(f"{task.name} ({summary['last_failure_kind'] or 'error'})")
+            if not summary["recorded"]:
+                unrecorded += 1
+            running += summary["running"]
+            if task_monitor.is_stale(task):
+                late.append(task.name)
+        self._emit("OK" if not failing else "FAIL", "beat", f"tasks whose last run failed: {failing or 'none'}")
+        self._emit(
+            "OK" if not late else "WARN", "beat", f"interval tasks dispatched later than 3 intervals ago: {late or 'none'}"
+        )
+        self._emit(
+            "OK" if unrecorded < len(enabled) or not enabled else "WARN",
+            "beat",
+            f"enabled tasks with a recorded outcome: {len(enabled) - unrecorded}/{len(enabled)}; running now: {running}"
+            " (records live in the cache, so none is expected right after a deploy or a cache flush)",
+        )
 
     def check_providers(self):
         from providers.models import Provider

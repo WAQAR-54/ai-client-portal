@@ -384,6 +384,10 @@ DEFAULT_ALLOWED_FILE_EXTENSIONS = env(
 )
 
 # Server Media (SuperAdmin): storage-health thresholds for the media disk, in percent used.
+# FAILED logins per IP per hour, across all usernames (credential stuffing; accounts/views.py). Only
+# failures count, so many people signing in from one office address never reach it.
+LOGIN_IP_FAILURE_LIMIT = env.int("LOGIN_IP_FAILURE_LIMIT", default=30)
+
 MEDIA_DISK_WARN_PCT = env.int("MEDIA_DISK_WARN_PCT", default=80)
 MEDIA_DISK_CRITICAL_PCT = env.int("MEDIA_DISK_CRITICAL_PCT", default=90)
 

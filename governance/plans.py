@@ -626,14 +626,14 @@ def check_message_burst_limit(user):
     calendar day, so it does nothing against a tight posting loop within
     a single minute). Cache-backed (accounts.rate_limit.is_rate_limited),
     not a DB query, since this needs to be cheap on every single message."""
-    from accounts.rate_limit import is_rate_limited
+    from accounts.rate_limit import EXPENSIVE, is_rate_limited
     from governance.limits import UsageLimitExceeded
 
     plan = get_plan_status(user)["plan"]
     if plan is None or plan.max_messages_per_minute is None:
         return
 
-    if is_rate_limited(f"chat_post:{user.id}", limit=plan.max_messages_per_minute, window_seconds=60):
+    if is_rate_limited(f"chat_post:{user.id}", limit=plan.max_messages_per_minute, window_seconds=60, policy=EXPENSIVE):
         raise UsageLimitExceeded(
             f"You're sending messages too quickly (limit: {plan.max_messages_per_minute} per minute). "
             "Wait a moment and try again."

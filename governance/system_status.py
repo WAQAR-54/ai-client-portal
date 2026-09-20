@@ -9,8 +9,8 @@ slow or unreliable as the thing it is reporting on.
 
 Two rules keep this honest:
 - A status is only ever derived from real data. Where the data can't
-  support a claim (e.g. whether a scheduled task's last run *succeeded* -
-  nothing records that), the claim is not made.
+  support a claim (e.g. a task whose outcome record is absent), the claim
+  is not made: the row says so instead of showing "healthy".
 - Nothing raw from a failure ever reaches the page: not an exception
   message, not a Redis URL (which can carry a password), not a provider's
   free-text error. Failures are reduced to a fixed vocabulary here.
@@ -84,42 +84,75 @@ def check_providers():
 
 
 def check_jobs():
-    """PeriodicTask.last_run_at is when Beat last *dispatched* the task to
-    a worker - not proof it succeeded, and nothing in this project records
-    a task's outcome (no result table; Celery's results live in Redis by
-    task id only). So the only statuses the data supports are:
-    disabled / not run yet / active (has been dispatched). "Healthy" and
-    "Failed" would be claims this data can't back up, so they don't exist."""
+    """PeriodicTask.last_run_at is when Beat last *dispatched* a task, not proof it finished. The
+    outcome (success / failure / duration / running) comes from governance/task_monitor.py, which
+    records Celery's own signals in the shared cache. If that record is absent (cache flushed, task
+    never ran since it was introduced) the row says "no outcome recorded" - never "healthy".
+    A dispatch older than three intervals marks an interval task, and if EVERY enabled interval task
+    is that late, the scheduler itself, as stale."""
     from django_celery_beat.models import PeriodicTask
+    from governance import task_monitor
 
+    now = timezone.now()
     rows = []
-    for task in PeriodicTask.objects.order_by("name"):
+    for task in PeriodicTask.objects.select_related("interval").order_by("name"):
         if not task.enabled:
             state = "disabled"
         elif task.last_run_at is None:
             state = "never_run"
         else:
             state = "active"
+        outcome = task_monitor.summarize(task.task, now=now)
+        stale = task_monitor.is_stale(task, now=now)
+        if state == "disabled":
+            health = "disabled"
+        elif outcome["outcome"] == "failing":
+            health = "failing"
+        elif stale:
+            health = "stale"
+        elif outcome["running"]:
+            health = "running"
+        elif outcome["outcome"] == "ok":
+            health = "ok"
+        else:
+            health = "unknown"
         rows.append(
             {
                 "name": task.name,
                 "task": task.task,
                 "state": state,
+                "health": health,
                 "enabled": task.enabled,
                 "last_run_at": task.last_run_at,
                 "age": age_label(task.last_run_at),
                 "run_count": task.total_run_count,
+                "stale": stale,
+                "judged": task_monitor.expected_interval_seconds(task) is not None,
+                "running": outcome["running"],
+                "last_success_age": age_label(outcome["last_success_at"]),
+                "last_failure_age": age_label(outcome["last_failure_at"]),
+                "failure_kind": outcome["last_failure_kind"],
+                "duration_ms": outcome["last_duration_ms"],
+                "failures": outcome["failures"],
+                "retries": outcome["retries"],
+                "recorded": outcome["recorded"],
             }
         )
 
     dispatched = [r["last_run_at"] for r in rows if r["last_run_at"]]
     last_dispatch = max(dispatched) if dispatched else None
+    interval_rows = [r for r in rows if r["enabled"] and r["last_run_at"] and r["judged"]]
     return {
         "rows": rows,
         "total": len(rows),
         "enabled": sum(1 for r in rows if r["enabled"]),
         "disabled": sum(1 for r in rows if not r["enabled"]),
         "never_run": sum(1 for r in rows if r["state"] == "never_run"),
+        "failing": sum(1 for r in rows if r["health"] == "failing"),
+        "stale": sum(1 for r in rows if r["health"] == "stale"),
+        "running": sum(1 for r in rows if r["running"]),
+        "outcomes_recorded": sum(1 for r in rows if r["recorded"]),
+        "beat_stale": bool(interval_rows) and all(r["stale"] for r in interval_rows),
         "last_dispatch_age": age_label(last_dispatch),
     }
 
@@ -158,7 +191,14 @@ def _summary_cards(database, redis_status, jobs):
             if jobs["last_dispatch_age"]
             else "No execution recorded yet"
         )
-        jobs_card = ("info", "Scheduled", detail, foot)
+        if jobs["failing"]:
+            jobs_card = ("danger", "Failing", f"{jobs['failing']} task(s) failed on their last run", foot)
+        elif jobs["beat_stale"]:
+            jobs_card = ("danger", "Scheduler stale", "No scheduled task has been dispatched on time", foot)
+        elif jobs["stale"]:
+            jobs_card = ("muted", "Late", f"{jobs['stale']} task(s) overdue", foot)
+        else:
+            jobs_card = ("info", "Scheduled", detail, foot)
 
     def card(key, label, icon, values, probed=True):
         """`probed` = measured on this page load (so a "Checked X ago" line is
