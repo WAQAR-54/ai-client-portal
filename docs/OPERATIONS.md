@@ -158,13 +158,24 @@ Security headers already present: `X-Frame-Options: DENY`, `X-Content-Type-Optio
 `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy: same-origin`. **No `Content-Security-Policy` is sent**
 (known limitation: the pages use inline scripts and handlers).
 
-**Origin exposure.** `docker-compose.yml` publishes Gunicorn on `0.0.0.0:8000`, so anyone who learns the origin
-address can reach the app without Cloudflare (the deploy's health check itself calls `http://<host>/healthz/`
-directly, so port 80 is also open). The default is unchanged because the live Nginx and firewall configuration are
-not in this repository. Once `deployment/nginx.conf.example`'s `proxy_pass http://127.0.0.1:8000` is confirmed on
-the server, set `WEB_BIND_ADDRESS=127.0.0.1` in the server's `.env` (then `docker compose up -d`) to close port 8000;
-restricting port 80/443 to Cloudflare's ranges (`https://www.cloudflare.com/ips/`) in the cloud firewall or `ufw`
-is the other half. Neither has been done or verified from here.
+**Origin exposure.** `docker-compose.yml` publishes Gunicorn on `0.0.0.0:8000` (the default is unchanged: the live
+Nginx and firewall are not in this repository), but checked from the internet on 2026-09-21 the origin answered only
+on **port 80** (Nginx): `:8000`, `:443`, PostgreSQL `:5432` and Redis `:6379` did not answer, so the cloud
+firewall/security list already blocks them (one vantage point; the rules themselves were not read). Consequences:
+port 80 can still be reached without Cloudflare (`http://<origin>/` serves the app), and because 443 is closed
+Cloudflare must be talking plain HTTP to the origin (Cloudflare SSL mode "Flexible", inferred, not read from the
+dashboard), so that leg is unencrypted. Closing both is an infrastructure change: a certificate on the origin
+(e.g. a Cloudflare Origin CA cert) with Cloudflare set to "Full (strict)", and port 80/443 restricted to Cloudflare's
+ranges (`https://www.cloudflare.com/ips/`) in the cloud firewall. Once `deployment/nginx.conf.example`'s
+`proxy_pass http://127.0.0.1:8000` is confirmed on the server, `WEB_BIND_ADDRESS=127.0.0.1` in the server's `.env`
+also removes the 0.0.0.0 binding (belt and braces). None of this has been changed or verified from here.
+
+**Redis memory.** Redis (`redis:7-alpine`, no `--maxmemory`, no container limit) holds the Celery queue, the cache
+and the rate-limit counters, so an eviction policy would be a correctness decision, not a tuning one; no limit is
+set because no safe value can be derived from repository or measured data. `manage.py ops_verify` (section `redis`)
+now reports Redis's real used/peak memory and whether `maxmemory` is set (WARN while unbounded); choose a limit from
+those numbers and the host's free memory (`capacity` line), then add `--maxmemory <n> --maxmemory-policy noeviction`
+to the redis service's command. Restarting Redis is a deliberate step, not part of a deploy of code.
 
 **Crash alerts.** `ADMINS` (`Name:email` pairs) is unset in production. `governance/error_alerts.py::alert_recipients`
 now falls back to every **active SuperAdmin** (the same people the deploy notification already emails), so an unset

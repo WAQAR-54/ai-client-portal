@@ -52,6 +52,8 @@ ANNOTATION_GROUPS = {
 }
 SEVERITY = {"OK": 0, "SKIP": 0, "WARN": 1, "FAIL": 2}
 EXPECTED_CHAT_MIGRATIONS = ("0023_message_generation_started_at_message_is_generating", "0024_message_live_intel")
+# docker-compose.yml's fallback when the server .env sets no POSTGRES_PASSWORD (a public value in the repository).
+COMPOSE_DEFAULT_DB_PASSWORD = "changeme-local-only"
 EXPECTED_COLUMNS = {"chat_message": ("is_generating", "generation_started_at", "live_intel")}
 # A credential-looking value after key= in a log line (see config/redaction.py).
 _LEAKED_KEY = re.compile(r"[?&](?:key|api_key|access_token|token)=(?!\[REDACTED\])[^&\s'\"<>)]{16,}", re.IGNORECASE)
@@ -261,6 +263,33 @@ class Command(BaseCommand):
         self._emit(
             "OK" if cache.get(key) == "1" else "FAIL", "redis", "cache write/read round trip on a 15s throw-away key"
         )
+        self._check_redis_memory()
+
+    def _check_redis_memory(self):
+        """Redis memory as Redis reports it (INFO memory): used, peak, and whether a maxmemory bound exists.
+        Read-only. Redis here holds the Celery queue, the cache and the rate-limit counters, so no eviction policy is
+        assumed: an unbounded Redis is reported, not silently changed."""
+        import redis
+
+        client = None
+        try:
+            client = redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+            info = client.info("memory")
+        except Exception as exc:  # noqa: BLE001 - a report line must never abort the run
+            self._emit("WARN", "redis", f"memory not readable: {type(exc).__name__}")
+            return
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        limit = int(info.get("maxmemory", 0) or 0)
+        summary = (
+            f"memory: used {info.get('used_memory_human', '?')}, peak {info.get('used_memory_peak_human', '?')}, "
+            f"maxmemory {_human(limit) if limit else 'not set (unbounded)'}, policy {info.get('maxmemory_policy', '?')}"
+        )
+        self._emit("OK" if limit else "WARN", "redis", summary)
 
     def check_celery(self):
         if not settings.REDIS_URL:
@@ -583,6 +612,17 @@ class Command(BaseCommand):
         }
         missing = sorted(name for name, ok in present.items() if not ok)
         self._emit("OK" if not missing else "WARN", "settings", f"required settings not set: {missing or 'none'}")
+        # docker-compose.yml falls back to a public placeholder database password when the server's .env sets none.
+        # Boolean only: the password itself is never read into the output.
+        db = settings.DATABASES["default"]
+        if db.get("ENGINE", "").endswith("postgresql"):
+            is_default = db.get("PASSWORD") == COMPOSE_DEFAULT_DB_PASSWORD
+            self._emit(
+                "FAIL" if is_default else "OK",
+                "settings",
+                "database password is the public compose placeholder: "
+                + ("YES - set POSTGRES_PASSWORD" if is_default else "no"),
+            )
         # Who hears about a crash: ADMINS if set, else the active SuperAdmins (governance/error_alerts.py). Counts only.
         from governance.error_alerts import alert_recipients
 

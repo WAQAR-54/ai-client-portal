@@ -144,3 +144,74 @@ class OpsVerifyTests(TestCase):
             self.assertIn("OK release: this process was built from abcdef123456", run("--skip-feeds"))
         with override_settings(RELEASE_SHA=""):
             self.assertIn("WARN release:", run("--skip-feeds"))
+
+
+class OpsVerifyRedisAndSecretsTests(TestCase):
+    """Two read-only report lines added for the final production check."""
+
+    def command(self):
+        cmd = ops_verify.Command()
+        cmd.results = []
+        cmd.stdout = StringIO()
+        return cmd
+
+    def fake_redis(self, info=None, error=None):
+        client = type("FakeRedis", (), {})()
+        client.info = (lambda section: info) if error is None else (lambda section: (_ for _ in ()).throw(error))
+        client.close = lambda: None
+        return client
+
+    def test_an_unbounded_redis_is_reported_as_a_warning_with_real_numbers(self):
+        cmd = self.command()
+        info = {
+            "used_memory_human": "1.20M",
+            "used_memory_peak_human": "3.00M",
+            "maxmemory": 0,
+            "maxmemory_policy": "noeviction",
+        }
+        with patch("redis.Redis.from_url", return_value=self.fake_redis(info)):
+            cmd._check_redis_memory()
+        self.assertEqual(
+            cmd.results,
+            [("WARN", "redis", "memory: used 1.20M, peak 3.00M, maxmemory not set (unbounded), policy noeviction")],
+        )
+
+    def test_a_bounded_redis_is_ok(self):
+        cmd = self.command()
+        info = {
+            "used_memory_human": "1M",
+            "used_memory_peak_human": "2M",
+            "maxmemory": 256 * 1024 * 1024,
+            "maxmemory_policy": "noeviction",
+        }
+        with patch("redis.Redis.from_url", return_value=self.fake_redis(info)):
+            cmd._check_redis_memory()
+        self.assertEqual(cmd.results[0][0], "OK")
+        self.assertIn("maxmemory 256", cmd.results[0][2])
+
+    def test_an_unreadable_redis_never_aborts_the_run(self):
+        cmd = self.command()
+        with patch("redis.Redis.from_url", return_value=self.fake_redis(error=ConnectionError("secret-host:6379"))):
+            cmd._check_redis_memory()
+        self.assertEqual(cmd.results, [("WARN", "redis", "memory not readable: ConnectionError")])  # class name only
+
+    def postgres_settings(self, password):
+        return {"default": {"ENGINE": "django.db.backends.postgresql", "PASSWORD": password}}
+
+    def test_the_public_placeholder_database_password_is_a_failure_and_is_never_printed_otherwise(self):
+        cmd = self.command()
+        with patch.object(
+            ops_verify.settings, "DATABASES", self.postgres_settings(ops_verify.COMPOSE_DEFAULT_DB_PASSWORD)
+        ):
+            cmd.check_settings()
+        self.assertIn(
+            ("FAIL", "settings", "database password is the public compose placeholder: YES - set POSTGRES_PASSWORD"),
+            cmd.results,
+        )
+
+        cmd = self.command()
+        real = "a-long-real-production-password-9f3"
+        with patch.object(ops_verify.settings, "DATABASES", self.postgres_settings(real)):
+            cmd.check_settings()
+        self.assertIn(("OK", "settings", "database password is the public compose placeholder: no"), cmd.results)
+        self.assertNotIn(real, cmd.stdout.getvalue())
