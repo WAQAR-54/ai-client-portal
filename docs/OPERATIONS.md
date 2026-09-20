@@ -171,11 +171,13 @@ ranges (`https://www.cloudflare.com/ips/`) in the cloud firewall. Once `deployme
 also removes the 0.0.0.0 binding (belt and braces). None of this has been changed or verified from here.
 
 **Redis memory.** Redis (`redis:7-alpine`, no `--maxmemory`, no container limit) holds the Celery queue, the cache
-and the rate-limit counters, so an eviction policy would be a correctness decision, not a tuning one; no limit is
-set because no safe value can be derived from repository or measured data. `manage.py ops_verify` (section `redis`)
-now reports Redis's real used/peak memory and whether `maxmemory` is set (WARN while unbounded); choose a limit from
-those numbers and the host's free memory (`capacity` line), then add `--maxmemory <n> --maxmemory-policy noeviction`
-to the redis service's command. Restarting Redis is a deliberate step, not part of a deploy of code.
+and the rate-limit counters, so an eviction policy would be a correctness decision, not a tuning one. Measured by
+`ops_verify` on production (2026-09-21, deploy 838fb1f): **used 1.85 MB, peak 2.10 MB, `maxmemory` not set, policy
+`noeviction` (Redis's default, so it never silently drops queued work)**, on a host with 5.8 GB total / 3.2 GB
+available. At that size the missing bound is a theoretical risk, not a current one, and setting one needs a Redis
+restart, so nothing was changed. If usage ever grows into the hundreds of MB (`ops_verify` section `redis` shows it
+after every deploy; it reports WARN while unbounded), pick a limit from the numbers then and add
+`--maxmemory <n> --maxmemory-policy noeviction` to the redis service's command.
 
 **Crash alerts.** `ADMINS` (`Name:email` pairs) is unset in production. `governance/error_alerts.py::alert_recipients`
 now falls back to every **active SuperAdmin** (the same people the deploy notification already emails), so an unset
