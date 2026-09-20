@@ -776,12 +776,25 @@ def toggle_invoice_status(request, invoice_id):
     which specifically resolve a user's submitted proof and record who
     reviewed it."""
     invoice = _get_scoped_invoice_or_403(request, invoice_id)
-    old_status = invoice.status
-    invoice.status = Invoice.Status.UNPAID if invoice.status == Invoice.Status.PAID else Invoice.Status.PAID
-    invoice.save(update_fields=["status"])
-    log_action(request.user, "billing.invoice_status_toggle", invoice, old_value=old_status, new_value=invoice.status)
-    if invoice.status == Invoice.Status.PAID:
-        _sync_plan_assignment_to_paid_invoice(invoice, request.user)
+    # Row-locked read-check-write (a no-op on SQLite, real on Postgres): two admins clicking at
+    # once used to both read the same status and both write it, so a double toggle came out as a
+    # single one. A refunded invoice is closed - flipping it back to paid would hand the plan back
+    # for money that was returned, so the override refuses it.
+    with transaction.atomic():
+        invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        old_status = invoice.status
+        changed = old_status != Invoice.Status.REFUNDED
+        if changed:
+            invoice.status = Invoice.Status.UNPAID if old_status == Invoice.Status.PAID else Invoice.Status.PAID
+            invoice.save(update_fields=["status"])
+    if changed:
+        log_action(
+            request.user, "billing.invoice_status_toggle", invoice, old_value=old_status, new_value=invoice.status
+        )
+        if invoice.status == Invoice.Status.PAID:
+            _sync_plan_assignment_to_paid_invoice(invoice, request.user)
+    else:
+        django_messages.warning(request, _("A refunded invoice can't be changed, so nothing was updated."))
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect(_safe_next_url(request, reverse("billing:invoices")))
@@ -791,9 +804,20 @@ def toggle_invoice_status(request, invoice_id):
 @require_http_methods(["POST"])
 def verify_invoice_payment(request, invoice_id):
     invoice = _get_scoped_invoice_or_403(request, invoice_id)
-    invoice.verify_payment(request.user)
-    log_action(request.user, "billing.invoice_payment_verified", invoice, new_value=invoice.status)
-    _sync_plan_assignment_to_paid_invoice(invoice, request.user)
+    # Only a proof that is still WAITING can be verified, decided under a row lock. Before, this
+    # ran on any status: a second admin (or a double click, or a stale page) re-verified an invoice
+    # that had already been rejected or refunded, wrote a second audit entry, and could put a
+    # refunded invoice back to paid - and re-assign the plan - for money that was returned.
+    with transaction.atomic():
+        invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        awaiting = invoice.status == Invoice.Status.PENDING_VERIFICATION
+        if awaiting:
+            invoice.verify_payment(request.user)
+    if awaiting:
+        log_action(request.user, "billing.invoice_payment_verified", invoice, new_value=invoice.status)
+        _sync_plan_assignment_to_paid_invoice(invoice, request.user)
+    else:
+        django_messages.warning(request, _("This invoice is no longer awaiting verification, so nothing was changed."))
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect(_safe_next_url(request, reverse("billing:invoices")))
@@ -803,8 +827,15 @@ def verify_invoice_payment(request, invoice_id):
 @require_http_methods(["POST"])
 def reject_invoice_payment(request, invoice_id):
     invoice = _get_scoped_invoice_or_403(request, invoice_id)
-    invoice.reject_payment(request.user)
-    log_action(request.user, "billing.invoice_payment_rejected", invoice, new_value=invoice.status)
+    with transaction.atomic():  # same guard as verify_invoice_payment: only a waiting proof can be rejected
+        invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        awaiting = invoice.status == Invoice.Status.PENDING_VERIFICATION
+        if awaiting:
+            invoice.reject_payment(request.user)
+    if awaiting:
+        log_action(request.user, "billing.invoice_payment_rejected", invoice, new_value=invoice.status)
+    else:
+        django_messages.warning(request, _("This invoice is no longer awaiting verification, so nothing was changed."))
     if request.headers.get("HX-Request"):
         return render(request, "billing/_invoices_table.html", _invoices_context(request))
     return redirect(_safe_next_url(request, reverse("billing:invoices")))

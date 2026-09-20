@@ -28,21 +28,34 @@ from providers.models import Provider, ProviderModel
 class SseConsoleTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
-        super().setUpClass()
         # Playwright's sync API keeps an asyncio loop alive in this thread, which trips
         # Django's "no ORM calls from an async context" guard. This is the documented
         # way to use both together in a test; it is restored in tearDownClass.
         cls._previous_async_unsafe = os.environ.get("DJANGO_ALLOW_ASYNC_UNSAFE")
         os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+        # Find out whether a browser exists BEFORE starting the live server. Starting the server
+        # first and then skipping left its database connection open; on PostgreSQL that made
+        # "DROP DATABASE" at the end of the run fail ("being accessed by other users") and the
+        # whole CI test job exit 1 with every test green. SQLite never notices, so this only
+        # showed up on the runner.
         try:
             from playwright.sync_api import sync_playwright
 
             cls._pw = sync_playwright().start()
             cls._browser = cls._pw.chromium.launch(headless=True)
         except Exception as exc:  # noqa: BLE001 - no browser available here
+            pw = getattr(cls, "_pw", None)
+            if pw is not None:
+                pw.stop()
             cls._restore_async_flag()
-            super().tearDownClass()
             raise SkipTest(f"Chromium is not available: {type(exc).__name__}")
+        try:
+            super().setUpClass()
+        except Exception:
+            cls._browser.close()
+            cls._pw.stop()
+            cls._restore_async_flag()
+            raise
 
     @classmethod
     def tearDownClass(cls):

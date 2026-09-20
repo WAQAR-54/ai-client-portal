@@ -1133,6 +1133,8 @@ class InvoicePaymentVerificationTests(TestCase):
         self.assertEqual(verify_log.actor, self.admin)
         self.assertEqual(verify_log.target_id, str(self.invoice.id))
 
+        # The proof is resubmitted and waits again: only a WAITING proof can be rejected now.
+        Invoice.objects.filter(pk=self.invoice.pk).update(status=Invoice.Status.PENDING_VERIFICATION)
         self.client.post(reverse("billing:reject_invoice_payment", kwargs={"invoice_id": self.invoice.id}))
         reject_log = AuditLog.objects.get(action_type="billing.invoice_payment_rejected")
         self.assertEqual(reject_log.actor, self.admin)

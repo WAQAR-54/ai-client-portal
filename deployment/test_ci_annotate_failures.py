@@ -40,10 +40,15 @@ class AnnotateFailuresTests(SimpleTestCase):
         self.assertIn("::error title=failed test test_a::AssertionError: 1 != 2", lines[0])
         self.assertIn("test_b::django.db.utils.OperationalError: connection refused", lines[1])
 
-    def test_a_run_with_no_failure_blocks_says_so_instead_of_staying_silent(self):
-        lines = ci_annotate.annotate(ci_annotate.summarise("Ran 3 tests\n\nOK\n"))
-        self.assertEqual(len(lines), 1)
-        self.assertIn("no FAIL/ERROR blocks", lines[0])
+    def test_a_crash_outside_any_test_shows_the_last_lines_of_the_output(self):
+        output = (
+            "Found 3 test(s).\nRan 3 tests in 1s\n\nOK\nDestroying test database\n"
+            "OperationalError: database is being accessed by other users\n"
+        )
+        lines = ci_annotate.annotate(ci_annotate.summarise(output), output)
+        self.assertIn("no failing test found in the re-run", lines[0])
+        self.assertTrue(any("being accessed by other users" in line for line in lines))
+        self.assertLessEqual(len(lines), ci_annotate.TAIL + 1)
 
     def test_workflow_command_characters_in_a_message_cannot_break_out(self):
         findings = [("t", "bad 100% of\nnew line")]
