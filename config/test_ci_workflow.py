@@ -71,6 +71,13 @@ class CiGateTests(SimpleTestCase):
         names = [step.get("name") for step in _steps("test")]
         self.assertLess(names.index("Install dependencies"), names.index("Django system checks"))
 
+    def test_the_failure_diagnostics_step_only_reports_and_cannot_decide_the_outcome(self):
+        names = [step.get("name") for step in _steps("test")]
+        self.assertGreater(names.index("Failure diagnostics (re-run, annotations only)"), names.index("Run tests"))
+        step = _step("test", "Failure diagnostics")
+        self.assertEqual(step["if"], "failure()")  # only after a real failure
+        self.assertTrue(step["continue-on-error"])  # and can never turn a green run red
+
     def test_the_health_check_gates_the_deploy_and_a_failure_rolls_back(self):
         health = _step("deploy", "Health check")
         self.assertNotIn("continue-on-error", health)

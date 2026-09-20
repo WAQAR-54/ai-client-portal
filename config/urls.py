@@ -1,10 +1,20 @@
+import posixpath
+import re
+
 from django.conf import settings
 from django.contrib import admin
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
 from config.health import HEALTHY, NOT_CONFIGURED, check_database, check_redis
+
+# Only branding (the logo and favicon, which the login page needs before anyone is signed in)
+# is public. Everything else under MEDIA_ROOT is private and is served by an authenticated
+# view: chat attachments by chat:download_attachment, payment proofs by billing:invoice_proof.
+# Their paths are predictable (chat_attachments/user_<id>/<yyyy>/<mm>/<the user's filename>),
+# and this route used to hand any of them to an anonymous visitor.
+PUBLIC_MEDIA_PREFIXES = ("branding/",)
 
 
 def serve_media(request, path):
@@ -19,7 +29,12 @@ def serve_media(request, path):
     # the current value on every request.
     from django.views.static import serve
 
-    return serve(request, path, document_root=settings.MEDIA_ROOT)
+    # Check the NORMALISED path: "branding/../chat_attachments/x" starts with "branding/" but
+    # django.views.static.serve collapses the ".." and would happily serve the private file.
+    clean = posixpath.normpath(path).lstrip("/")
+    if clean.startswith("..") or not clean.startswith(PUBLIC_MEDIA_PREFIXES):
+        raise Http404
+    return serve(request, clean, document_root=settings.MEDIA_ROOT)
 
 
 def healthz(request):
@@ -70,11 +85,21 @@ def healthz_deep(request):
     return JsonResponse({"status": "ok" if healthy else "error", **checks}, status=200 if healthy else 503)
 
 
+# Only the plain-language guides are meant to be public. docs/ also holds operational
+# notes (SECRETS.md, PRODUCTION_ACCESS.md, LOCAL_ACCESS.md, BACKUP_RESTORE.md) that
+# must never be served: the route used to serve the whole folder, and the only thing
+# keeping those files off the internet in production was .dockerignore leaving docs/
+# out of the image. An allowlist makes the route safe on any build.
+_PUBLIC_DOCS = re.compile(r"^(?:guides/[A-Za-z0-9_-]+\.html|FEATURE_GUIDE\.html)$")
+
+
 def serve_docs(request, path):
     # Same reasoning as serve_media above - read settings.BASE_DIR inside
     # the view rather than baking it into urlpatterns at import time.
     from django.views.static import serve
 
+    if not _PUBLIC_DOCS.match(path):
+        raise Http404
     return serve(request, path, document_root=settings.BASE_DIR / "docs")
 
 

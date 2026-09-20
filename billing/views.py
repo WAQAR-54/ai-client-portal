@@ -6,7 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.http import HttpResponse, HttpResponseBadRequest
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone, translation
@@ -1239,6 +1239,24 @@ def download_invoice_pdf(request, invoice_id):
         raise PermissionDenied("You don't have access to this invoice.")
     pdf_bytes = render_invoice_pdf(invoice)
     return _pdf_response(pdf_bytes, f"{invoice.invoice_number}.pdf", inline=request.GET.get("inline") == "1")
+
+
+@require_http_methods(["GET"])
+def invoice_proof(request, invoice_id):
+    """The payment screenshot a recipient submitted, served only to whoever may
+    open that invoice (its recipient, an Admin of its department, any SuperAdmin -
+    the same rule as the detail page and the PDF). It used to be linked straight
+    at /media/invoice_proofs/..., which config/urls.py served to anyone."""
+    if not request.user.is_authenticated:
+        return redirect("accounts:login")
+    invoice = get_object_or_404(Invoice, id=invoice_id)
+    if not _can_view_invoice(request.user, invoice):
+        raise PermissionDenied("You don't have access to this invoice.")
+    if not invoice.submitted_proof_image:
+        raise Http404("No payment proof on this invoice.")
+    response = FileResponse(invoice.submitted_proof_image.open("rb"))
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 @require_http_methods(["GET"])

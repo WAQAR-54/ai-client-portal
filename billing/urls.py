@@ -40,6 +40,7 @@ urlpatterns = [
     ),
     path("invoices/<int:invoice_id>/", views.InvoiceDetailView.as_view(), name="invoice_detail"),
     path("invoices/<int:invoice_id>/pdf/", views.download_invoice_pdf, name="download_invoice_pdf"),
+    path("invoices/<int:invoice_id>/proof/", views.invoice_proof, name="invoice_proof"),
     path("invoices/<int:invoice_id>/toggle-status/", views.toggle_invoice_status, name="toggle_invoice_status"),
     path("invoices/<int:invoice_id>/verify/", views.verify_invoice_payment, name="verify_invoice_payment"),
     path("invoices/<int:invoice_id>/reject/", views.reject_invoice_payment, name="reject_invoice_payment"),

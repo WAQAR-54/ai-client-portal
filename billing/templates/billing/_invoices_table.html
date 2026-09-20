@@ -40,7 +40,7 @@
             <td style="white-space:nowrap;">
                 {% if invoice.status == 'pending_verification' %}
                 {% if invoice.submitted_transaction_id %}<div class="mono text-faint" style="font-size:0.78rem;">{{ invoice.submitted_transaction_id }}</div>{% endif %}
-                {% if invoice.submitted_proof_image %}<a href="{{ invoice.submitted_proof_image.url }}" target="_blank" rel="noopener" style="font-size:0.78rem;">{% trans "View proof" %}</a>{% endif %}
+                {% if invoice.submitted_proof_image %}<a href="{% url 'billing:invoice_proof' invoice.id %}" target="_blank" rel="noopener" style="font-size:0.78rem;">{% trans "View proof" %}</a>{% endif %}
                 <div style="margin-top:0.3rem;">
                     <form method="post" action="{% url 'billing:verify_invoice_payment' invoice_id=invoice.id %}"
                           hx-post="{% url 'billing:verify_invoice_payment' invoice_id=invoice.id %}" hx-target="#invoices-table" hx-swap="innerHTML" style="display:inline;">

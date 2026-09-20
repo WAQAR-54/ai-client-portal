@@ -85,6 +85,17 @@ jobs:
       - name: Run tests
         run: python manage.py test
 
+      # DIAGNOSTICS ONLY, and only after the step above has already failed: re-runs the suite
+      # and publishes each failing test's name and assertion as an annotation, which is public
+      # on the checks API (the raw job log needs authentication). It never decides pass/fail -
+      # the "Run tests" exit code above already did, and this step cannot change the outcome.
+      - name: Failure diagnostics (re-run, annotations only)
+        if: failure()
+        continue-on-error: true
+        run: |
+          python manage.py test --noinput > test-rerun.log 2>&1
+          python deployment/ci_annotate_failures.py < test-rerun.log
+
   deploy:
     name: Deploy to production
     runs-on: ubuntu-latest

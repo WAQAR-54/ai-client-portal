@@ -44,8 +44,8 @@
     <h2 style="margin-bottom:0.5rem;">{% trans "Submitted payment proof" %}</h2>
     {% if invoice.submitted_transaction_id %}<p>{% blocktrans with txn=invoice.submitted_transaction_id %}Transaction ID: {{ txn }}{% endblocktrans %}</p>{% endif %}
     {% if invoice.submitted_proof_image %}
-    <a href="{{ invoice.submitted_proof_image.url }}" target="_blank" rel="noopener">
-        <img src="{{ invoice.submitted_proof_image.url }}" alt="{% trans 'Payment screenshot' %}" style="max-width:320px; border-radius:var(--radius-md); border:1px solid var(--color-border); display:block; margin-top:0.5rem;">
+    <a href="{% url 'billing:invoice_proof' invoice.id %}" target="_blank" rel="noopener">
+        <img src="{% url 'billing:invoice_proof' invoice.id %}" alt="{% trans 'Payment screenshot' %}" style="max-width:320px; border-radius:var(--radius-md); border:1px solid var(--color-border); display:block; margin-top:0.5rem;">
     </a>
     {% endif %}
     <p class="text-faint" style="font-size:0.85rem; margin-top:0.5rem;">{% blocktrans with submitted=invoice.submitted_at|date:"Y-m-d H:i" %}Submitted {{ submitted }}{% endblocktrans %}</p>
