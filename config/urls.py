@@ -7,6 +7,7 @@ from django.http import Http404, JsonResponse
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
+from config.client_errors import client_error
 from config.health import HEALTHY, NOT_CONFIGURED, check_database, check_redis
 
 # Only branding (the logo and favicon, which the login page needs before anyone is signed in)
@@ -106,6 +107,7 @@ def serve_docs(request, path):
 urlpatterns = [
     path("healthz/", healthz),
     path("healthz/deep/", healthz_deep),
+    path("client-errors/", client_error),
     path("admin/", admin.site.urls),
     path("accounts/", include("accounts.urls")),
     path("billing/", include("billing.urls")),

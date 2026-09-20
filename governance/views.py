@@ -78,7 +78,16 @@ def _is_scoped_admin(user):
     return user.role == User.Role.ADMIN
 
 
+# An Admin's reach is their own department. An Admin with NO department has no department to reach:
+# filter(department_id=None) would match every department-less row (a SuperAdmin usually has none),
+# and None == None would pass every equality check below, so each scoping helper treats it as "nothing".
+def _no_department(user):
+    return _is_scoped_admin(user) and user.department_id is None
+
+
 def _scope_users(request, qs):
+    if _no_department(request.user):
+        return qs.none()
     if _is_scoped_admin(request.user):
         qs = qs.filter(department_id=request.user.department_id)
     return qs
@@ -88,6 +97,8 @@ def _scope_by_user_department(request, qs, path="user__department_id"):
     """For querysets one hop away from User via `path` (e.g. Message via
     conversation__user__department_id, UpgradeRequest via
     user__department_id)."""
+    if _no_department(request.user):
+        return qs.none()
     if _is_scoped_admin(request.user):
         qs = qs.filter(**{path: request.user.department_id})
     return qs
@@ -119,12 +130,20 @@ def _get_scoped_user_or_403(request, user_id):
     PermissionDenied (403), not a silent 404, so this is testable as an
     explicit access-control decision rather than looking like "not found"."""
     target = get_object_or_404(User, id=user_id)
-    if _is_scoped_admin(request.user) and target.department_id != request.user.department_id:
-        raise PermissionDenied("That user is outside your department.")
+    if _is_scoped_admin(request.user):
+        # Not another department, not an Admin without one (None == None must never match), and not
+        # a peer Admin or a SuperAdmin: an Admin who could reset a SuperAdmin's password or change
+        # their email would simply become that SuperAdmin.
+        if _no_department(request.user) or target.department_id != request.user.department_id:
+            raise PermissionDenied("That user is outside your department.")
+        if target.role not in (User.Role.USER, User.Role.MANAGER):
+            raise PermissionDenied("Only a SuperAdmin can manage Admin and SuperAdmin accounts.")
     return target
 
 
 def _scope_teams(request, qs):
+    if _no_department(request.user):
+        return qs.none()
     if _is_scoped_admin(request.user):
         qs = qs.filter(department_id=request.user.department_id)
     return qs
@@ -189,6 +208,8 @@ def _toggle_manager_assigned_model(actor, target, provider_model):
 def _scope_limits(request, qs):
     """A UsageLimit targets either a user or a department (never both, per
     its own CheckConstraint) — scope on whichever is set."""
+    if _no_department(request.user):
+        return qs.none()
     if _is_scoped_admin(request.user):
         dept_id = request.user.department_id
         qs = qs.filter(Q(user__department_id=dept_id) | Q(department_id=dept_id))
@@ -203,6 +224,8 @@ def _scope_audit_logs(request, qs):
     plan/department change, suspension, ...) who belongs to it."""
     if not _is_scoped_admin(request.user):
         return qs
+    if _no_department(request.user):
+        return qs.none()
     dept_id = request.user.department_id
     dept_user_ids = [str(uid) for uid in User.objects.filter(department_id=dept_id).values_list("id", flat=True)]
     return qs.filter(Q(actor__department_id=dept_id) | Q(target_type="User", target_id__in=dept_user_ids))
@@ -1966,7 +1989,9 @@ class UpgradeRequestListView(AdminRequiredMixin, RequireFeatureMixin, ListView):
 @require_http_methods(["POST"])
 def resolve_upgrade_request(request, request_id):
     upgrade_request = get_object_or_404(UpgradeRequest, id=request_id)
-    if _is_scoped_admin(request.user) and upgrade_request.user.department_id != request.user.department_id:
+    if _is_scoped_admin(request.user) and (
+        _no_department(request.user) or upgrade_request.user.department_id != request.user.department_id
+    ):
         raise PermissionDenied("That upgrade request is outside your department.")
     action = request.POST.get("action")
 
@@ -2455,7 +2480,12 @@ class AuditLogListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
             "action_type_filter": self.request.GET.get("action_type", ""),
             "date_from": self.request.GET.get("date_from", ""),
             "date_to": self.request.GET.get("date_to", ""),
-            "action_types": AuditLog.objects.values_list("action_type", flat=True).distinct().order_by("action_type"),
+            # From the SCOPED queryset: the full list would name action types that only ever happened
+            # in other departments.
+            "action_types": _scope_audit_logs(self.request, AuditLog.objects.all())
+            .values_list("action_type", flat=True)
+            .distinct()
+            .order_by("action_type"),
             "total_count": _scope_audit_logs(self.request, AuditLog.objects.all()).count(),
             "querystring_without_page": _querystring_without(self.request, "page"),
         }
@@ -2721,8 +2751,10 @@ class LimitFormView(AdminRequiredMixin, RequireFeatureMixin, TemplateView):
         if _is_scoped_admin(request.user):
             dept_id = request.user.department_id
             target_user = User.objects.filter(id=limit.user_id).first() if limit.user_id else None
-            if (limit.user_id and (target_user is None or target_user.department_id != dept_id)) or (
-                limit.department_id and str(limit.department_id) != str(dept_id)
+            if (
+                dept_id is None
+                or (limit.user_id and (target_user is None or target_user.department_id != dept_id))
+                or (limit.department_id and str(limit.department_id) != str(dept_id))
             ):
                 raise PermissionDenied("That target is outside your department.")
 

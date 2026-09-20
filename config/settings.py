@@ -9,6 +9,8 @@ from pathlib import Path
 import environ
 from django.core.exceptions import ImproperlyConfigured
 
+from config.db_options import postgres_timeout_options
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
@@ -190,6 +192,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
 }
+# Opt-in session timeouts for PostgreSQL only (both 0 = off = no change; see config/db_options.py).
+_db_timeouts = postgres_timeout_options(
+    env.int("DB_STATEMENT_TIMEOUT_MS", default=0), env.int("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", default=0)
+)
+if _db_timeouts and DATABASES["default"]["ENGINE"].endswith("postgresql"):
+    DATABASES["default"].setdefault("OPTIONS", {})["options"] = _db_timeouts
 
 
 # Database backups (see accounts/management/commands/backup_database.py and

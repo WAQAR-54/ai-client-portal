@@ -870,13 +870,17 @@ class GovernanceRBACAndAuditTests(TestCase):
 
 class LimitManagementTests(TestCase):
     def setUp(self):
+        # Same department for the Admin and the user they manage: an Admin with NO department has no
+        # scope at all (see governance/test_object_authorization.py::DepartmentlessAdminTests).
+        department = Department.objects.create(name="Limits Dept")
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
             role=User.Role.ADMIN,
             is_staff=True,
+            department=department,
         )
-        self.user = User.objects.create_user(email="u@example.com", password="pw12345!")
+        self.user = User.objects.create_user(email="u@example.com", password="pw12345!", department=department)
         self.client.login(email="admin@example.com", password="pw12345!")
 
     def test_create_user_limit(self):
@@ -1046,14 +1050,17 @@ class UploadContentVerificationTests(TestCase):
 
 class UserOverridesTests(TestCase):
     def setUp(self):
+        # Admin and target share a department: an Admin's reach is their own department.
+        department = Department.objects.create(name="Overrides Dept")
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="pw12345!",
             role=User.Role.ADMIN,
             is_staff=True,
+            department=department,
         )
         self.client.login(email="admin@example.com", password="pw12345!")
-        self.target = User.objects.create_user(email="target@example.com", password="pw12345!")
+        self.target = User.objects.create_user(email="target@example.com", password="pw12345!", department=department)
         self.model_config = ModelConfig.objects.create(
             provider="openai", model_name="gpt-5.6-sol", display_name="Sol", is_enabled=True
         )

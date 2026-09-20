@@ -26,6 +26,7 @@ PUBLIC_PREFIXES = (
     "/accounts/mfa/",
     "/accounts/verify/",
     "/healthz/",
+    "/client-errors/",  # log-only browser error beacon (config/client_errors.py): must work with an expired session
     "/static/",
     "/i18n/",
 )

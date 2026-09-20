@@ -67,12 +67,16 @@ per-row popover.
                 </form>
             </td>
             <td>
+                {% comment %}A department Admin can only manage Users and Managers (governance/views.py::_get_scoped_user_or_403);
+                offering Edit on an Admin/SuperAdmin row would just open a 403.{% endcomment %}
+                {% if user.is_superadmin or u.role == "user" or u.role == "manager" %}
                 <button type="button" class="btn-small btn-ghost"
                         hx-get="{% url 'governance:user_edit_form' user_id=u.id %}"
                         hx-target="#editUserModalBody" hx-swap="innerHTML"
                         onclick="document.getElementById('editUserModalTitle').textContent = '{{ u.email|escapejs }}'; portalOpenModal('editUserModal');">
                     {% trans "Edit" %}
                 </button>
+                {% endif %}
             </td>
         </tr>
         {% endwith %}

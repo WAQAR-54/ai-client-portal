@@ -20,12 +20,14 @@ import os
 import re
 import shutil
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import connection
+from django.db.models import Sum
 from django.utils import timezone
 
 # Sections reported together as one annotation (see _write_annotations).
@@ -39,6 +41,9 @@ ANNOTATION_GROUPS = {
     "celery": "services",
     "beat": "services",
     "providers": "providers",
+    "ai": "providers",
+    "capacity": "services",
+    "frontend": "services",
     "feeds": "feeds",
     "disk": "storage",
     "logs": "storage",
@@ -120,6 +125,9 @@ class Command(BaseCommand):
             ("celery", self.check_celery),
             ("beat", self.check_beat_schedule),
             ("providers", self.check_providers),
+            ("ai", self.check_ai),
+            ("capacity", self.check_capacity),
+            ("frontend", self.check_frontend),
             ("disk", self.check_disk),
             ("logs", self.check_logs),
             ("retention", self.check_retention),
@@ -312,7 +320,9 @@ class Command(BaseCommand):
                 late.append(task.name)
         self._emit("OK" if not failing else "FAIL", "beat", f"tasks whose last run failed: {failing or 'none'}")
         self._emit(
-            "OK" if not late else "WARN", "beat", f"interval tasks dispatched later than 3 intervals ago: {late or 'none'}"
+            "OK" if not late else "WARN",
+            "beat",
+            f"interval tasks dispatched later than 3 intervals ago: {late or 'none'}",
         )
         self._emit(
             "OK" if unrecorded < len(enabled) or not enabled else "WARN",
@@ -332,6 +342,90 @@ class Command(BaseCommand):
                 "providers",
                 f"{provider.slug}: connected={provider.is_connected} last_sync={provider.last_sync_status} ({age})",
             )
+
+    def check_ai(self):
+        """Today's provider-call counters (cache) and token metadata actually stored on replies."""
+        from chat import ai_metrics
+        from chat.models import Message
+
+        summary = ai_metrics.summary(days=1)
+        total = summary["total"]
+        if not total["requests"]:
+            self._emit(
+                "OK", "ai", "no provider calls counted today (counters live in the cache, so a flush resets them)"
+            )
+        else:
+            failure_rate = total["failure"] / total["requests"]
+            self._emit(
+                "OK" if failure_rate < 0.2 else "WARN",
+                "ai",
+                f"today: {total['requests']} provider calls, {total['success']} ok, {total['failure']} failed "
+                f"({total['timeout']} timeouts, {total['rate_limited']} rate-limited), "
+                f"{total['fallback_success']} answered by a fallback model, {total['truncated']} cut short, "
+                f"avg latency {total['avg_latency_ms']} ms",
+            )
+            for row in summary["rows"][:6]:
+                self._emit(
+                    "OK",
+                    "ai",
+                    f"{row['provider']}/{row['model']}: {row['requests']} calls, {row['failure']} failed, "
+                    f"avg {row['avg_latency_ms']} ms",
+                )
+        since = timezone.now() - timedelta(hours=24)
+        replies = Message.objects.filter(
+            role=Message.Role.ASSISTANT,
+            created_at__gte=since,
+            provider_model_used__isnull=False,
+            served_from_cache=False,
+        )
+        count = replies.count()
+        with_tokens = replies.filter(input_tokens__isnull=False, output_tokens__isnull=False).count()
+        sums = replies.aggregate(i=Sum("input_tokens"), o=Sum("output_tokens"))
+        self._emit(
+            "OK" if count == with_tokens else "WARN",
+            "ai",
+            f"replies in 24h carrying provider token counts (cache hits excluded): {with_tokens}/{count}; "
+            f"input {sums['i'] or 0} output {sums['o'] or 0} tokens (as reported by the providers)",
+        )
+
+    def check_frontend(self):
+        """Browser-side failures reported by static/js/client-errors.js, counted today (cache)."""
+        from config import client_errors
+
+        counts = client_errors.summary(days=1)
+        if not counts:
+            self._emit("OK", "frontend", "no browser-side errors reported today")
+            return
+        parts = ", ".join(f"{kind}/{status or 'n-a'}={n}" for (kind, status), n in sorted(counts.items()))
+        self._emit("WARN", "frontend", f"browser-side errors reported today: {parts}")
+
+    def check_capacity(self):
+        """Evidence for the Gunicorn sizing question: how many chat replies are streaming right now
+        compared with the request threads that exist. Read-only."""
+        from chat.models import Message
+
+        workers = int(os.environ.get("GUNICORN_WORKERS", 3))
+        threads = int(os.environ.get("GUNICORN_THREADS", 4))
+        capacity = workers * threads
+        live = Message.objects.filter(
+            is_generating=True, generation_started_at__gte=timezone.now() - timedelta(minutes=10)
+        )
+        stuck = Message.objects.filter(
+            is_generating=True, generation_started_at__lt=timezone.now() - timedelta(minutes=10)
+        )
+        streaming = live.count()
+        self._emit(
+            "OK" if streaming < capacity * 0.75 else "WARN",
+            "capacity",
+            f"chat replies streaming right now: {streaming} of {capacity} request threads "
+            f"({workers} workers x {threads}); each open reply holds one thread for its whole duration",
+        )
+        self._emit(
+            "OK" if not stuck.count() else "WARN",
+            "capacity",
+            f"replies claimed as generating for over 10 min: {stuck.count()}",
+        )
+        self._emit("OK", "capacity", f"CPU cores visible to this container: {os.cpu_count()}")
 
     def check_feeds(self):
         from chat import live_intelligence as li
@@ -375,6 +469,24 @@ class Command(BaseCommand):
             if path and os.path.isdir(path):
                 count, size = _dir_stats(path)
                 self._emit("OK", "disk", f"{label}: {count} files, {_human(size)}")
+        self._check_media_orphans()
+
+    def _check_media_orphans(self):
+        """Files on disk that no record refers to. Counts only; nothing is deleted automatically
+        (review and delete one at a time in Server Media)."""
+        from governance import media_service
+
+        scan = media_service.run_scan()
+        if scan["error"]:
+            self._emit("WARN", "disk", f"media scan failed: {scan['error']}")
+            return
+        partial = " (partial scan)" if scan["partial"] else ""
+        self._emit(
+            "OK" if not scan["orphan_count"] else "WARN",
+            "disk",
+            f"media orphan candidates: {scan['orphan_count']} files, {_human(scan['orphan_bytes'])}; "
+            f"records pointing at a missing file: {scan['missing_count']}{partial}",
+        )
 
     def check_logs(self):
         """Counts lines that still contain a credential-looking ?key= value (from before
@@ -430,6 +542,13 @@ class Command(BaseCommand):
 
     def check_settings(self):
         self._emit("OK" if not settings.DEBUG else "FAIL", "settings", f"DEBUG={settings.DEBUG}")
+        # Presence only (never a value) of the variables production depends on.
+        present = {
+            name: bool(os.environ.get(name) or getattr(settings, name, ""))
+            for name in ("REDIS_URL", "SITE_URL", "FIELD_ENCRYPTION_KEY", "SENTRY_DSN", "ADMINS")
+        }
+        missing = sorted(name for name, ok in present.items() if not ok)
+        self._emit("OK" if not missing else "WARN", "settings", f"required settings not set: {missing or 'none'}")
         sentry = bool(getattr(settings, "SENTRY_DSN", ""))
         backend = settings.EMAIL_BACKEND.rsplit(".", 1)[-1]
         self._emit(

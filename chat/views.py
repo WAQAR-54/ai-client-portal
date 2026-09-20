@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from datetime import timedelta
 from urllib.parse import quote, urlencode
 
@@ -21,7 +22,7 @@ from sentry_sdk import capture_exception, new_scope
 from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, Project, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
-from chat import context_window
+from chat import ai_metrics, context_window
 from chat.document_extraction import IMAGE_EXTENSIONS
 from chat.export import render_conversation_markdown, render_conversation_pdf, render_conversation_text
 from chat.response_cache import get_cached_response, store_cached_response
@@ -47,6 +48,7 @@ from governance.limits import (
     get_usage_status,
     validate_upload,
 )
+from providers.errors import classify as classify_provider_error
 from providers.models import Provider, ProviderModel
 
 logger = logging.getLogger(__name__)
@@ -1725,6 +1727,7 @@ def stream_message(request, conversation_id, message_id, token):
                 return
             history_for_model = fitted.turns if model_config.supports_vision else _strip_images(fitted.turns)
 
+            call_started = time.monotonic()
             try:
                 for chunk in provider.stream_chat(
                     history_for_model, model_config.model_id, system_prompt=system_prompt, enable_web_search=research
@@ -1737,6 +1740,9 @@ def stream_message(request, conversation_id, message_id, token):
                         input_tokens, output_tokens = chunk.input_tokens, chunk.output_tokens
                         truncated = chunk.truncated
             except ProviderError as exc:
+                ai_metrics.record_failure(
+                    model_config.provider.slug, model_config.model_id, classify_provider_error(str(exc))
+                )
                 if not full_text and not is_last_candidate:
                     continue
                 # Log the real exception (console/file always, Sentry too if
@@ -1765,6 +1771,13 @@ def stream_message(request, conversation_id, message_id, token):
                 yield _sse_event("done", "")
                 return
 
+            ai_metrics.record_success(
+                model_config.provider.slug,
+                model_config.model_id,
+                (time.monotonic() - call_started) * 1000,
+                fallback=attempt_index > 0,
+                truncated=truncated,
+            )
             if truncated and full_text:
                 # Say so, instead of presenting half an answer (possibly cut mid-sentence or
                 # mid-URL) as a finished one.

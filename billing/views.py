@@ -519,6 +519,8 @@ def _eligible_recipients(request):
     None-never-matches guard."""
     qs = User.objects.select_related("department", "department__plan")
     if _is_scoped_admin(request.user):
+        if request.user.department_id is None:  # filter(department_id=None) would match every department-less user
+            return qs.none()
         qs = qs.filter(department_id=request.user.department_id)
     return qs.order_by("department__name", "email")
 
@@ -552,7 +554,10 @@ def _invoices_context(request):
     departments = None
     selected_department = ""
     if _is_scoped_admin(request.user):
-        qs = qs.filter(department_id=request.user.department_id)
+        if request.user.department_id is None:
+            qs = qs.none()
+        else:
+            qs = qs.filter(department_id=request.user.department_id)
     else:
         departments = Department.objects.order_by("name")
         selected_department = request.GET.get("department", "").strip()
@@ -1037,6 +1042,8 @@ def _scoped_pending_refund_requests(request):
         status=RefundRequest.Status.PENDING
     )
     if _is_scoped_admin(request.user):
+        if request.user.department_id is None:
+            return qs.none()
         qs = qs.filter(invoice__department_id=request.user.department_id)
     return qs
 

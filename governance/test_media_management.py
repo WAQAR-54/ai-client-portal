@@ -165,6 +165,17 @@ class MediaListingTests(MediaBase):
         self.assertEqual(names(date_from="2999-01-01"), [])
         self.assertEqual(names(date_from="not-a-date", ext="../etc"), sorted(names()))
 
+    def test_the_media_service_never_writes_to_the_database(self):
+        """The branding row is a singleton that SiteBranding.load() would INSERT on first read. (The
+        request itself may still create it: the site-wide branding context processor does that.)"""
+        SiteBranding.objects.all().delete()
+        self.message_with_file()
+        media.run_scan()
+        media.list_items({})
+        media.get_item("branding", 1)
+        media.referenced_names()
+        self.assertEqual(SiteBranding.objects.count(), 0)
+
     def test_visibility_is_reported_not_changed(self):
         self.message_with_file()
         self.make_invoice()

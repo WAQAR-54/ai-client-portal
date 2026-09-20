@@ -199,12 +199,20 @@ def _proof_qs(filters):
     return qs.order_by("-submitted_at", "-pk")
 
 
-def _branding_items(filters):
+def _branding():
+    """The branding row if it exists. Never SiteBranding.load(): that INSERTs the row when it is
+    missing, and looking at media (or running the read-only ops_verify) must not write."""
     from governance.models import SiteBranding
 
+    return SiteBranding.objects.filter(pk=1).first()
+
+
+def _branding_items(filters):
     if filters.get("owner") or filters.get("size_min") is not None or filters.get("size_max") is not None:
         return []
-    branding = SiteBranding.load()
+    branding = _branding()
+    if branding is None:
+        return []
     items = []
     for label, field_file in (("Logo", branding.logo), ("Favicon", branding.favicon)):
         if not field_file or not field_file.name:
@@ -310,7 +318,6 @@ def get_item(source, pk):
     """One item by (source, pk), or None. The lookup key is never a path."""
     from billing.models import Invoice
     from chat.models import Message
-    from governance.models import SiteBranding
 
     if source in (SOURCE_CHAT, SOURCE_GENERATED):
         role = Message.Role.USER if source == SOURCE_CHAT else Message.Role.ASSISTANT
@@ -332,8 +339,8 @@ def get_item(source, pk):
         )
         return _fill_state(_to_item(source, obj)) if obj else None
     if source == SOURCE_BRANDING and pk in (1, 2):
-        branding = SiteBranding.load()
-        field_file = branding.logo if pk == 1 else branding.favicon
+        branding = _branding()
+        field_file = None if branding is None else (branding.logo if pk == 1 else branding.favicon)
         if field_file and field_file.name:
             return _fill_state(_to_item(source, field_file.name, "Logo" if pk == 1 else "Favicon"))
     return None
@@ -374,7 +381,6 @@ def read_head(item, size=TEXT_PREVIEW_BYTES):
 def referenced_names():
     from billing.models import Invoice
     from chat.models import Message
-    from governance.models import SiteBranding
 
     names = set(
         Message.objects.exclude(attachment="").exclude(attachment__isnull=True).values_list("attachment", flat=True)
@@ -384,8 +390,8 @@ def referenced_names():
         .exclude(submitted_proof_image__isnull=True)
         .values_list("submitted_proof_image", flat=True)
     )
-    branding = SiteBranding.load()
-    for field_file in (branding.logo, branding.favicon):
+    branding = _branding()
+    for field_file in (branding.logo, branding.favicon) if branding else ():
         if field_file and field_file.name:
             names.add(field_file.name)
     return names

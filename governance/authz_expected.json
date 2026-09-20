@@ -82,6 +82,7 @@
  "/chat/templates/": "user",
  "/chat/templates/999999/delete/": "user",
  "/chat/templates/save/": "user",
+ "/client-errors/": "anonymous",
  "/docs/": "anonymous",
  "/docs/guides/": "anonymous",
  "/domains/": "admin",
