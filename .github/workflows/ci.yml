@@ -218,17 +218,19 @@ jobs:
           command_timeout: 4m
           script: |
             cd ~/ai-client-portal
+            # GitHub keeps only 10 notices / 10 warnings / 10 errors per step, so each topic is ONE
+            # annotation (ops_verify groups its own the same way) instead of one line per item.
             expected="${{ github.sha }}"
+            level=notice
+            summary=""
             for svc in web worker beat; do
               running=$(docker compose exec -T "$svc" printenv RELEASE_SHA 2>/dev/null || echo unreachable)
-              if [ "$running" = "$expected" ]; then
-                echo "::notice title=release $svc::$svc runs $expected"
-              else
-                echo "::error title=release $svc::$svc runs $running but this deploy was $expected"
-              fi
+              [ "$running" = "$expected" ] || level=error
+              summary="$summary $svc=$(printf %s "$running" | cut -c1-12)"
             done
-            docker compose ps --format '{{.Service}} state={{.State}} health={{.Health}}' | while read -r line; do echo "::notice title=container::$line"; done
-            docker system df --format '{{.Type}}: {{.Size}}, reclaimable {{.Reclaimable}}' | while read -r line; do echo "::notice title=docker disk::$line"; done
+            echo "::$level title=release::this deploy is $(printf %s "$expected" | cut -c1-12); running:$summary"
+            echo "::notice title=containers::$(docker compose ps --format '{{.Service}}={{.State}}/{{.Health}}' | tr '\n' ' ')"
+            echo "::notice title=docker disk::$(docker system df --format '{{.Type}} {{.Size}} (reclaimable {{.Reclaimable}})' | tr '\n' ';')"
             docker compose exec -T web python manage.py ops_verify --annotate || true
 
       # Only runs if something above failed. Reverts the CODE to whatever was

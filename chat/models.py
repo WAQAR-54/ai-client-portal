@@ -3,8 +3,12 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
+from config.files import delete_file_after_commit
 
 
 def _chat_attachment_upload_path(instance, filename):
@@ -447,3 +451,10 @@ class PromptTemplate(models.Model):
 
     def __str__(self):
         return self.name
+
+
+@receiver(post_delete, sender=Message)
+def delete_message_attachment_file(sender, instance, **kwargs):
+    """A deleted message (directly, by the retention sweep, by an edit that drops later turns, or by
+    deleting the user) takes its uploaded file with it - see config/files.py."""
+    delete_file_after_commit(instance.attachment)

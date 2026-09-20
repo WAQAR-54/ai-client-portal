@@ -4,10 +4,13 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 from accounts.models import Department
 from billing.tax_rules import tax_rule_for_country
+from config.files import delete_file_after_commit
 from governance.models import Plan
 
 # Refund & Cancellation Policy section 1: full refund, no questions asked,
@@ -380,3 +383,9 @@ def billing_profile_for_invoice(invoice):
         profile, _created = UserBillingProfile.objects.get_or_create(user=invoice.recipient_user)
         return profile
     return None
+
+
+@receiver(post_delete, sender=Invoice)
+def delete_invoice_proof_file(sender, instance, **kwargs):
+    """A deleted invoice takes its payment-proof screenshot with it - see config/files.py."""
+    delete_file_after_commit(instance.submitted_proof_image)

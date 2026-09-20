@@ -64,7 +64,22 @@ class OpsVerifyTests(TestCase):
     def test_annotations_are_only_printed_when_asked(self):
         self.assertNotIn("::notice", run("--skip-feeds"))
         annotated = run("--skip-feeds", "--annotate")
-        self.assertIn("::notice title=ops_verify migrations::", annotated)
+        self.assertIn("title=ops_verify database::", annotated)
+
+    def test_annotations_are_grouped_to_stay_inside_githubs_per_step_limit(self):
+        """GitHub keeps only 10 notices, 10 warnings and 10 errors per step."""
+        annotations = [line for line in run("--annotate").splitlines() if line.startswith("::")]
+        for level in ("notice", "warning", "error"):
+            self.assertLessEqual(sum(1 for line in annotations if line.startswith(f"::{level} ")), 10)
+        titles = {line.split("::")[1] for line in annotations}
+        self.assertEqual(len(titles), len(annotations))  # one annotation per group
+
+    def test_a_group_is_annotated_at_the_level_of_its_worst_finding(self):
+        with patch.object(ops_verify, "EXPECTED_COLUMNS", {"chat_message": ("no_such_column",)}):
+            annotated = run("--skip-feeds", "--annotate")
+        database = next(line for line in annotated.splitlines() if "title=ops_verify database::" in line)
+        self.assertTrue(database.startswith("::error "))
+        self.assertIn("FAIL schema: chat_message.no_such_column: MISSING", database)
 
     def test_exactly_one_request_per_news_source_and_no_other_fetching(self):
         sources = {source[1] for category in li.CATEGORIES.values() for source in category["sources"]}

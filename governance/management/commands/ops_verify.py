@@ -28,6 +28,23 @@ from django.core.management.base import BaseCommand
 from django.db import connection
 from django.utils import timezone
 
+# Sections reported together as one annotation (see _write_annotations).
+ANNOTATION_GROUPS = {
+    "release": "platform",
+    "settings": "platform",
+    "migrations": "database",
+    "schema": "database",
+    "database": "database",
+    "redis": "services",
+    "celery": "services",
+    "beat": "services",
+    "providers": "providers",
+    "feeds": "feeds",
+    "disk": "storage",
+    "logs": "storage",
+    "retention": "retention",
+}
+SEVERITY = {"OK": 0, "SKIP": 0, "WARN": 1, "FAIL": 2}
 EXPECTED_CHAT_MIGRATIONS = ("0023_message_generation_started_at_message_is_generating", "0024_message_live_intel")
 EXPECTED_COLUMNS = {"chat_message": ("is_generating", "generation_started_at", "live_intel")}
 # A credential-looking value after key= in a log line (see config/redaction.py).
@@ -69,9 +86,19 @@ class Command(BaseCommand):
         line = f"{status} {section}: {detail}"
         self.results.append((status, section, detail))
         self.stdout.write(line)
-        if self.annotate:
-            level = {"OK": "notice", "SKIP": "notice", "WARN": "warning", "FAIL": "error"}[status]
-            self.stdout.write(f"::{level} title=ops_verify {section}::{detail}")
+
+    def _write_annotations(self):
+        """One GitHub annotation per GROUP, at the level of its worst finding. GitHub keeps only 10
+        notices / 10 warnings / 10 errors per step, so one annotation per finding silently dropped
+        most of the OK results; grouped, every result stays readable on the run's checks."""
+        groups = {}
+        for status, section, detail in self.results:
+            groups.setdefault(ANNOTATION_GROUPS.get(section, "other"), []).append((status, section, detail))
+        for group, findings in groups.items():
+            worst = max((status for status, _s, _d in findings), key=lambda status: SEVERITY[status])
+            level = {"OK": "notice", "SKIP": "notice", "WARN": "warning", "FAIL": "error"}[worst]
+            body = " | ".join(f"{status} {section}: {detail}" for status, section, detail in findings)
+            self.stdout.write(f"::{level} title=ops_verify {group}::{body}")
 
     def _run(self, name, func):
         """One section failing must never stop the others."""
@@ -105,6 +132,8 @@ class Command(BaseCommand):
             self._run(name, func)
         failed = sum(1 for status, _s, _d in self.results if status == "FAIL")
         self.stdout.write(f"SUMMARY: {len(self.results)} findings, {failed} FAIL")
+        if self.annotate:
+            self._write_annotations()
         if options["strict"] and failed:
             raise SystemExit(1)
 

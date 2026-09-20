@@ -220,6 +220,13 @@ CELERY_BROKER_URL = REDIS_URL or "memory://"
 CELERY_RESULT_BACKEND = REDIS_URL or None
 CELERY_TASK_ALWAYS_EAGER = not REDIS_URL
 CELERY_TASK_EAGER_PROPAGATES = True
+# A task that hangs (a stuck SMTP/S3/pg_dump call) used to hold a worker process forever, with no
+# time limit at all. Soft limit raises SoftTimeLimitExceeded inside the task (so it can log and
+# stop); the hard limit kills it. Generous on purpose - the nightly database backup is the longest
+# task - and both can be raised with an environment variable.
+CELERY_TASK_TIME_LIMIT = env.int("CELERY_TASK_TIME_LIMIT", default=1800)
+CELERY_TASK_SOFT_TIME_LIMIT = env.int("CELERY_TASK_SOFT_TIME_LIMIT", default=1500)
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
@@ -393,8 +400,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 if not DEBUG:
     FORCE_HTTPS = env.bool("FORCE_HTTPS", default=True)
     SECURE_SSL_REDIRECT = FORCE_HTTPS
-    SESSION_COOKIE_SECURE = FORCE_HTTPS
-    CSRF_COOKIE_SECURE = FORCE_HTTPS
+    # The two cookie flags default to FORCE_HTTPS (unchanged) but can be set on their own. A
+    # deployment behind Cloudflare with FORCE_HTTPS=False (the origin only speaks plain HTTP) can
+    # still mark the cookies Secure: that attribute is enforced by the visitor's browser on its
+    # connection to Cloudflare, not by the origin, so it costs nothing and stops the session
+    # cookie ever travelling over an http:// request.
+    SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=FORCE_HTTPS)
+    CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=FORCE_HTTPS)
     SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=31536000) if FORCE_HTTPS else 0
     SECURE_HSTS_INCLUDE_SUBDOMAINS = FORCE_HTTPS
     SECURE_HSTS_PRELOAD = FORCE_HTTPS
