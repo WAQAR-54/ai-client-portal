@@ -118,8 +118,10 @@ matches `deployment/nginx.conf.example`, and close the direct door (see "Transpo
 
 ## Transport security (Cloudflare in front, plain HTTP to the origin)
 
-What production showed before this was configured (anonymous requests, 2026-09-21): `http://` answered 200 with no
-redirect, the CSRF cookie had no `Secure` flag, and no HSTS header was sent. Cloudflare terminates TLS and speaks
+What production showed before this was configured (anonymous requests, before the deploy that added it): `http://`
+answered 200 with no redirect, the CSRF cookie had no `Secure` flag, and no HSTS header was sent. After that deploy
+(f38d6e6, 2026-09-20): `http://` GET -> 301 and POST -> 308 to https, https 200 with `Strict-Transport-Security:
+max-age=86400`, CSRF cookie `Secure`, `/healthz/` and `/healthz/deep/` 200 on both schemes. Cloudflare terminates TLS and speaks
 plain HTTP to the origin, so Django never sees HTTPS (`request.is_secure()` is False): Django's own
 `SECURE_SSL_REDIRECT`/HSTS cannot be used. `accounts/middleware.py::CloudflareHttpsMiddleware` uses the
 `CF-Visitor` header Cloudflare adds instead (the scheme the **visitor** used):
