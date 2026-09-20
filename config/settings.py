@@ -383,6 +383,24 @@ DEFAULT_ALLOWED_FILE_EXTENSIONS = env(
     default="pdf,txt,csv,md,png,jpg,jpeg,docx,xlsx,json",
 )
 
+# Server Media (SuperAdmin): storage-health thresholds for the media disk, in percent used.
+MEDIA_DISK_WARN_PCT = env.int("MEDIA_DISK_WARN_PCT", default=80)
+MEDIA_DISK_CRITICAL_PCT = env.int("MEDIA_DISK_CRITICAL_PCT", default=90)
+
+# How much conversation a single request may send (chat/context_window.py). The provider metadata
+# that would state each model's real window is not stored, so these are configured, deliberately
+# conservative assumptions - never unlimited. Precedence: a MODEL_CONTEXT_TOKENS_BY_MODEL entry
+# (model id substring -> tokens), then MODEL_CONTEXT_TOKENS (adapter type -> tokens), then the
+# default. A plan's own max_context_tokens still applies on top (the smaller wins).
+MODEL_CONTEXT_TOKENS_DEFAULT = env.int("MODEL_CONTEXT_TOKENS_DEFAULT", default=32000)
+MODEL_CONTEXT_TOKENS = {
+    "anthropic": 100000,
+    "gemini": 100000,
+    "openai_compatible": 32000,
+    **env.json("MODEL_CONTEXT_TOKENS", default={}),
+}
+MODEL_CONTEXT_TOKENS_BY_MODEL = env.json("MODEL_CONTEXT_TOKENS_BY_MODEL", default={})
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 

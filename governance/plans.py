@@ -478,11 +478,32 @@ def check_session_creation_limit(user):
     from chat.models import Conversation
 
     today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    started_today = Conversation.objects.filter(user=user, created_at__gte=today_start).count()
+    # all_objects, not objects: a conversation the user already deleted was still started today.
+    # Counting only the visible ones let "start, delete, start, delete..." walk past the limit.
+    started_today = Conversation.all_objects.filter(user=user, created_at__gte=today_start).count()
     if started_today >= plan.sessions_per_day_limit:
         raise UsageLimitExceeded(
             f"You've reached your plan's limit of {plan.sessions_per_day_limit} new conversation(s) per day."
         )
+
+
+def create_conversation_within_quota(user, **fields):
+    """Check the daily new-conversation limit and create the conversation as ONE step.
+
+    check_session_creation_limit() alone is check-then-act: two requests arriving together (a
+    double click, two tabs, a script) both count N-1 started, both pass, and both create - the
+    user ends up over their limit. Here the user's own row is locked for the transaction, so a
+    second request for the SAME user waits, then re-counts and sees the first one's conversation.
+    Other users are not blocked (the lock is per row). Raises UsageLimitExceeded, creating nothing."""
+    from django.contrib.auth import get_user_model
+    from django.db import transaction
+
+    from chat.models import Conversation
+
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        check_session_creation_limit(user)
+        return Conversation.objects.create(user=user, **fields)
 
 
 def check_message_length_limit(user, content):

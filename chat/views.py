@@ -21,13 +21,8 @@ from sentry_sdk import capture_exception, new_scope
 from chat.models import ArenaComparison, Conversation, Message, MessageFeedback, Project, PromptTemplate
 from chat.prompts import build_system_prompt
 from chat.providers import ProviderError, get_provider
-from chat.document_extraction import (
-    EXTRACTABLE_EXTENSIONS,
-    IMAGE_EXTENSIONS,
-    extract_image,
-    extract_text,
-    wrap_for_prompt,
-)
+from chat import context_window
+from chat.document_extraction import IMAGE_EXTENSIONS
 from chat.export import render_conversation_markdown, render_conversation_pdf, render_conversation_text
 from chat.response_cache import get_cached_response, store_cached_response
 from chat.router import (
@@ -550,13 +545,7 @@ def create_conversation(request):
     from django.contrib import messages
 
     from governance.limits import UsageLimitExceeded
-    from governance.plans import check_session_creation_limit
-
-    try:
-        check_session_creation_limit(request.user)
-    except UsageLimitExceeded as exc:
-        messages.warning(request, str(exc))
-        return redirect("chat:chat_home")
+    from governance.plans import create_conversation_within_quota
 
     # So "New chat" from inside a selected project lands already grouped -
     # re-validated against this user's own projects rather than trusted
@@ -564,7 +553,11 @@ def create_conversation(request):
     project_id = request.POST.get("project_id", "").strip()
     project = Project.objects.filter(id=project_id, user=request.user).first() if project_id else None
 
-    conversation = Conversation.objects.create(user=request.user, title=_("New conversation"), project=project)
+    try:
+        conversation = create_conversation_within_quota(request.user, title=_("New conversation"), project=project)
+    except UsageLimitExceeded as exc:
+        messages.warning(request, str(exc))
+        return redirect("chat:chat_home")
     url = reverse("chat:chat_conversation", kwargs={"conversation_id": conversation.id})
     starter_text = request.POST.get("starter_text", "").strip()
     # A Live Intelligence quick command (see live_intelligence.COMMANDS):
@@ -1458,54 +1451,11 @@ def _notify_if_usage_warning(user):
     )
 
 
-def _history_with_attachments(conversation, exclude_message_id):
-    """Message history as provider-ready dicts, with the text content of
-    any attachment we can extract from (txt/csv/md/json/pdf/docx/xlsx)
-    appended inline, delimited via document_extraction.wrap_for_prompt()
-    so the model treats it as reference material, never instructions (see
-    that module's docstring and the system prompt in chat/prompts.py -
-    this is the other required half of the same defense).
-
-    An image attachment instead gets an "images" key - [{"data": base64,
-    "mime_type": ...}] - built here regardless of which model will
-    ultimately handle it. The vision-capability gate (ProviderModel.
-    supports_vision) is applied later in stream_message, per candidate
-    model, via _strip_images() - not here, since the history built once
-    per request may end up tried against several fallback candidates
-    that don't all support vision the same way. chat/providers.py turns
-    this generic "images" key into each provider's own wire format."""
-    history = []
-    messages = conversation.messages.exclude(id=exclude_message_id).order_by("created_at")
-    for msg in messages:
-        content = msg.content
-        images = None
-        if msg.attachment:
-            name = msg.attachment_original_name
-            extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-            if extension in IMAGE_EXTENSIONS:
-                image = extract_image(msg.attachment, extension)
-                if image is not None:
-                    images = [image]
-                else:
-                    content = f"{content}\n\n[Attached image: {name} (couldn't be read)]"
-            else:
-                extracted = extract_text(msg.attachment, extension) if extension in EXTRACTABLE_EXTENSIONS else None
-                if extracted is not None:
-                    content = f"{content}\n\n{wrap_for_prompt(name, extracted)}"
-                else:
-                    content = f"{content}\n\n[Attached file: {name} (not readable by the assistant yet)]"
-        turn = {"role": msg.role, "content": content}
-        if images:
-            turn["images"] = images
-        history.append(turn)
-    return history
-
-
 def _strip_images(history):
     """Drops the "images" key before sending history to a candidate model
-    whose ProviderModel.supports_vision is False - see
-    _history_with_attachments's own docstring for why this gate lives
-    here instead of at history-build time."""
+    whose ProviderModel.supports_vision is False. The vision gate lives here, per
+    candidate, rather than where the history is built (chat/context_window.py),
+    because one request may try several fallback models that differ in vision support."""
     return [{k: v for k, v in turn.items() if k != "images"} for turn in history]
 
 
@@ -1573,7 +1523,8 @@ def stream_message(request, conversation_id, message_id, token):
         response["X-Accel-Buffering"] = "no"
         return response
 
-    history = _history_with_attachments(conversation, exclude_message_id=message.id)
+    window = context_window.load_window(conversation, exclude_message_id=message.id)
+    history = window.turns
     requested_model_id = request.GET.get("model_id", "").strip()
     research = request.GET.get("research") == "1"
     # Set by regenerate_message below - "Regenerate" means "give me a
@@ -1700,8 +1651,14 @@ def stream_message(request, conversation_id, message_id, token):
 
         from governance.plans import validate_context_tokens
 
+        # What is sent is bounded (chat/context_window.py): newest turns that fit, the conversation's
+        # opening message and short notes about anything older. The plan cap is applied by fitting;
+        # validate_context_tokens then only fires when the CURRENT message cannot fit at all.
+        plan_limit = context_window.plan_budget(request.user)
+        context_history = context_window.fit(window, system_prompt, plan_limit).turns
+
         try:
-            validate_context_tokens(request.user, system_prompt, history)
+            validate_context_tokens(request.user, system_prompt, context_history)
         except UsageLimitExceeded as exc:
             message.content = str(exc)
             message.save(update_fields=["content"])
@@ -1720,7 +1677,7 @@ def stream_message(request, conversation_id, message_id, token):
         cached = (
             None
             if (research or is_regenerate)
-            else get_cached_response(request.user.id, candidates[0].id, system_prompt, history)
+            else get_cached_response(request.user.id, candidates[0].id, system_prompt, context_history)
         )
         if cached is not None:
             yield _sse_event("message", cached["text"])
@@ -1755,7 +1712,18 @@ def stream_message(request, conversation_id, message_id, token):
             input_tokens = output_tokens = None
             truncated = False
             is_last_candidate = attempt_index == len(candidates) - 1
-            history_for_model = history if model_config.supports_vision else _strip_images(history)
+            model_limit = context_window.model_budget(model_config)
+            fitted = context_window.fit(
+                window, system_prompt, model_limit if plan_limit is None else min(model_limit, plan_limit)
+            )
+            if not fitted.fits:
+                if not is_last_candidate:
+                    continue  # a later candidate may have a larger window
+                message.content = str(context_window.MESSAGE_TOO_LARGE)
+                message.save(update_fields=["content"])
+                yield _sse_event("done", "")
+                return
+            history_for_model = fitted.turns if model_config.supports_vision else _strip_images(fitted.turns)
 
             try:
                 for chunk in provider.stream_chat(
@@ -1802,6 +1770,10 @@ def stream_message(request, conversation_id, message_id, token):
                 # mid-URL) as a finished one.
                 full_text += str(TRUNCATED_REPLY_NOTICE)
                 yield _sse_event("message", str(TRUNCATED_REPLY_NOTICE))
+            cache_text = full_text  # the reply as the model wrote it: notes below are never cached
+            if fitted.omitted and full_text and context_window.should_announce(conversation.id):
+                full_text += str(context_window.CONTEXT_TRIMMED_NOTICE)
+                yield _sse_event("message", str(context_window.CONTEXT_TRIMMED_NOTICE))
             message.content = full_text
             message.provider_model_used = model_config
             message.input_tokens = input_tokens
@@ -1818,8 +1790,8 @@ def stream_message(request, conversation_id, message_id, token):
                     request.user.id,
                     model_config.id,
                     system_prompt,
-                    history,
-                    text=full_text,
+                    context_history,
+                    text=cache_text,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 )
