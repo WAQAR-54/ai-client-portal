@@ -77,6 +77,9 @@ class CiGateTests(SimpleTestCase):
         step = _step("test", "Failure diagnostics")
         self.assertEqual(step["if"], "failure()")  # only after a real failure
         self.assertTrue(step["continue-on-error"])  # and can never turn a green run red
+        # GitHub runs `run:` scripts with -e: without `set +e` the failing re-run would stop the
+        # script before the annotations were ever printed.
+        self.assertTrue(step["run"].lstrip().startswith("set +e"))
 
     def test_the_health_check_gates_the_deploy_and_a_failure_rolls_back(self):
         health = _step("deploy", "Health check")

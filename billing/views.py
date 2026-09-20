@@ -19,6 +19,7 @@ from accounts.geo import country_code_for_ip
 from accounts.models import Department, Team, User
 from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, role_required
 from accounts.rate_limit import client_ip
+from accounts.redirects import safe_next_url
 from billing.emails import send_invoice_email, share_url_for_invoice
 from billing.invoicing import InvoiceGenerationError, generate_invoice_for_team, generate_invoice_for_user
 from billing.models import (
@@ -447,7 +448,7 @@ def update_plan_regional_pricing(request, plan_id):
         updated[code] = {"price": str(rp.price), "extra_seat_price": str(rp.extra_seat_price)}
 
     log_action(request.user, "billing.regional_pricing_update", plan, new_value=str(updated))
-    return redirect(request.POST.get("next") or "billing:regional_pricing")
+    return redirect(safe_next_url(request, "billing:regional_pricing"))
 
 
 @role_required(User.Role.SUPERADMIN, exact=True)

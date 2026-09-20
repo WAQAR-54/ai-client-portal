@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_http_methods
 
+from accounts.redirects import safe_next_url
 from governance.features import require_feature
 from notifications.models import EMAIL_TOGGLE_LABELS, EmailLog, Notification, NotificationPreference
 from notifications.notify import notification_action_url
@@ -80,7 +81,7 @@ def mark_read(request, notification_id):
     notification.save(update_fields=["is_read"])
     if request.headers.get("HX-Request"):
         return render(request, "notifications/_bell_dropdown.html", _bell_context(request))
-    return redirect(request.POST.get("next") or "notifications:list")
+    return redirect(safe_next_url(request, "notifications:list"))
 
 
 @login_required
@@ -90,7 +91,7 @@ def mark_all_read(request):
     Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
     if request.headers.get("HX-Request"):
         return render(request, "notifications/_bell_dropdown.html", _bell_context(request))
-    return redirect(request.POST.get("next") or "notifications:list")
+    return redirect(safe_next_url(request, "notifications:list"))
 
 
 @login_required
@@ -102,7 +103,7 @@ def delete_notifications(request):
     else:
         notification_ids = request.POST.getlist("notification_ids")
         Notification.objects.filter(user=request.user, id__in=notification_ids).delete()
-    return redirect(request.POST.get("next") or "notifications:list")
+    return redirect(safe_next_url(request, "notifications:list"))
 
 
 @login_required

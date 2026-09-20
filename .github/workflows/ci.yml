@@ -93,6 +93,7 @@ jobs:
         if: failure()
         continue-on-error: true
         run: |
+          set +e
           python manage.py test --noinput > test-rerun.log 2>&1
           python deployment/ci_annotate_failures.py < test-rerun.log
 

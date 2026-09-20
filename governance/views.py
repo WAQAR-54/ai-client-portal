@@ -19,6 +19,7 @@ from django.views.generic import ListView, TemplateView
 
 from accounts.models import Department, Team, User
 from accounts.permissions import AdminRequiredMixin, ManagerRequiredMixin, SuperAdminRequiredMixin, role_required
+from accounts.redirects import safe_next_url
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from governance.audit import log_action
 from governance.system_status import build_system_status
@@ -1262,7 +1263,7 @@ class PlanFormView(SuperAdminRequiredMixin, TemplateView):
                 plan.save(update_fields=["is_most_popular"])
 
         log_action(request.user, "plan.create" if is_new else "plan.update", plan, new_value=plan.name)
-        next_url = request.POST.get("next") or reverse("governance:plan_manage", kwargs={"plan_id": plan.pk})
+        next_url = safe_next_url(request, reverse("governance:plan_manage", kwargs={"plan_id": plan.pk}))
         if request.headers.get("HX-Request"):
             response = HttpResponse(status=204)
             response["HX-Redirect"] = next_url
@@ -1403,7 +1404,7 @@ def update_plan_access(request, plan_id):
             f"public={plan.show_on_public_pricing} popular={plan.is_most_popular}"
         ),
     )
-    return redirect(request.POST.get("next") or reverse("governance:plan_manage", kwargs={"plan_id": plan.pk}))
+    return redirect(safe_next_url(request, reverse("governance:plan_manage", kwargs={"plan_id": plan.pk})))
 
 
 class BudgetAutomationView(SuperAdminRequiredMixin, TemplateView):
@@ -1447,7 +1448,7 @@ def update_budget_automation(request, plan_id):
         old_value=old_value,
         new_value=f"enabled={plan.auto_downgrade_enabled} threshold={plan.auto_downgrade_threshold_pct}",
     )
-    return redirect(request.POST.get("next") or "governance:budget_automation")
+    return redirect(safe_next_url(request, "governance:budget_automation"))
 
 
 class RoutingRuleListView(SuperAdminRequiredMixin, ListView):
@@ -1680,7 +1681,7 @@ def update_capability_limits(request, plan_id):
             {field: getattr(plan, field) for field in numeric_fields} | {f"flag_{k}": v for k, v in new_flags.items()}
         ),
     )
-    return redirect(request.POST.get("next") or "governance:capability_limits")
+    return redirect(safe_next_url(request, "governance:capability_limits"))
 
 
 _PII_RULE_ORDER = ["national_id", "credit_card", "phone_number"]
