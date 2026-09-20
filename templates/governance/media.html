@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Server Media" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1rem; flex-wrap:wrap;">
+        <div>
+            <h1 style="margin-bottom:0.25rem;">{% trans "Server Media" %}</h1>
+            <p style="margin:0;">{% trans "Every file the portal stores, and which record owns it. SuperAdmin only. Files stay private: downloads are audited and nothing here changes who can see a file." %}</p>
+        </div>
+        <form method="post" action="{% url 'governance:media_rescan' %}" style="flex-shrink:0;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-small">{% trans "Scan storage now" %}</button>
+        </form>
+    </div>
+
+    {% if storage_error %}
+    <div class="alert alert-danger" role="alert">{{ storage_error }} {% trans "The list below may be incomplete." %}</div>
+    {% endif %}
+    {% if scan.partial %}
+    <div class="alert alert-warning" role="status">{% trans "The storage is large: the scan stopped at its limit, so the totals, orphan candidates and missing-file list are partial." %}</div>
+    {% endif %}
+
+    {% if disk %}
+    <div class="media-health media-health-{{ disk.state|lower }}">
+        <div class="media-health-head">
+            <span class="badge {% if disk.state == 'CRITICAL' %}badge-danger{% elif disk.state == 'WARNING' %}badge-warn{% else %}badge-success{% endif %}">{{ disk.state }}</span>
+            <span>{% blocktrans with pct=disk.percent used=disk.used|filesizeformat free=disk.free|filesizeformat total=disk.total|filesizeformat %}Disk {{ pct }}% used — {{ used }} of {{ total }}, {{ free }} free{% endblocktrans %}</span>
+        </div>
+        <div class="media-meter" role="img" aria-label="{% blocktrans with pct=disk.percent %}Disk {{ pct }}% used{% endblocktrans %}"><span style="width:{{ disk.percent }}%"></span></div>
+    </div>
+    {% endif %}
+
+    <div class="email-stats-bar media-stats">
+        <div class="email-stat"><div class="email-stat-value">{{ scan.files }}</div><div class="email-stat-label">{% trans "Files" %}</div></div>
+        <div class="email-stat"><div class="email-stat-value">{{ scan.bytes|filesizeformat }}</div><div class="email-stat-label">{% trans "Total size" %}</div></div>
+        <div class="email-stat"><div class="email-stat-value">{{ scan.by_category.image.files }}</div><div class="email-stat-label">{% trans "Images" %} · {{ scan.by_category.image.bytes|filesizeformat }}</div></div>
+        <div class="email-stat"><div class="email-stat-value">{{ scan.by_category.document.files }}</div><div class="email-stat-label">{% trans "Documents" %} · {{ scan.by_category.document.bytes|filesizeformat }}</div></div>
+        <div class="email-stat"><div class="email-stat-value">{{ scan.by_category.other.files }}</div><div class="email-stat-label">{% trans "Other" %} · {{ scan.by_category.other.bytes|filesizeformat }}</div></div>
+    </div>
+    <p class="text-faint" style="font-size:0.75rem; margin:-0.5rem 0 1rem;">
+        {% if scanned_at %}{% blocktrans with when=scanned_at|date:"Y-m-d H:i" ms=scan.duration_ms %}Scanned {{ when }} UTC in {{ ms }} ms. Totals are cached for 10 minutes.{% endblocktrans %}{% endif %}
+    </p>
+
+    <div class="media-tabs" role="tablist">
+        <a role="tab" aria-selected="{% if view == 'files' %}true{% else %}false{% endif %}" class="media-tab{% if view == 'files' %} active{% endif %}" href="?view=files">{% trans "Files" %}</a>
+        <a role="tab" aria-selected="{% if view == 'orphans' %}true{% else %}false{% endif %}" class="media-tab{% if view == 'orphans' %} active{% endif %}" href="?view=orphans">{% trans "Orphan candidates" %} <span class="badge {% if scan.orphan_count %}badge-warn{% else %}badge-muted{% endif %}">{{ scan.orphan_count }}</span></a>
+        <a role="tab" aria-selected="{% if view == 'missing' %}true{% else %}false{% endif %}" class="media-tab{% if view == 'missing' %} active{% endif %}" href="?view=missing">{% trans "Missing on disk" %} <span class="badge {% if scan.missing_count %}badge-danger{% else %}badge-muted{% endif %}">{{ scan.missing_count }}</span></a>
+    </div>
+
+    {% if view == "files" %}
+    <form method="get" class="media-filters" role="search">
+        <input type="text" name="q" value="{{ raw.q }}" placeholder="{% trans 'Search file, owner, conversation, invoice' %}" aria-label="{% trans 'Search' %}">
+        <select name="source" aria-label="{% trans 'Related object' %}">
+            <option value="">{% trans "All sources" %}</option>
+            {% for value, label in sources %}<option value="{{ value }}"{% if filters.source == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <select name="category" aria-label="{% trans 'Type' %}">
+            <option value="">{% trans "All types" %}</option>
+            {% for c in categories %}<option value="{{ c }}"{% if filters.category == c %} selected{% endif %}>{{ c|capfirst }}</option>{% endfor %}
+        </select>
+        <input type="text" name="ext" value="{{ filters.ext }}" placeholder="{% trans 'Extension (pdf)' %}" aria-label="{% trans 'Extension' %}" size="10">
+        <input type="text" name="owner" value="{{ raw.owner }}" placeholder="{% trans 'Owner email' %}" aria-label="{% trans 'Owner' %}">
+        <select name="size" aria-label="{% trans 'Minimum size' %}">
+            <option value="">{% trans "Any size" %}</option>
+            {% for s in size_filters %}<option value="{{ s }}"{% if filters.size == s %} selected{% endif %}>&ge; {{ s|upper }}</option>{% endfor %}
+        </select>
+        <label class="media-date">{% trans "From" %} <input type="date" name="date_from" value="{{ raw.date_from }}"></label>
+        <label class="media-date">{% trans "To" %} <input type="date" name="date_to" value="{{ raw.date_to }}"></label>
+        <button type="submit" class="btn btn-small">{% trans "Filter" %}</button>
+        <a class="btn btn-small btn-ghost" href="{% url 'governance:media' %}">{% trans "Reset" %}</a>
+    </form>
+
+    <div class="filter-result-count">{% blocktrans with total=total %}<span class="mono">{{ total }}</span> file(s) match{% endblocktrans %}</div>
+    <div class="media-table-wrap">
+    <table class="data">
+        <thead><tr>
+            <th style="width:2rem;"></th><th>{% trans "File" %}</th><th>{% trans "Type" %}</th><th>{% trans "Size" %}</th>
+            <th>{% trans "Owner" %}</th><th>{% trans "Related" %}</th><th>{% trans "Uploaded" %}</th><th>{% trans "Visibility" %}</th><th>{% trans "Storage" %}</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for item in items %}
+        <tr>
+            <td>{% include "governance/_media_icon.html" with category=item.category %}</td>
+            <td><div class="media-name" title="{{ item.display_name }}">{{ item.display_name }}</div><div class="text-faint" style="font-size:0.72rem;">{{ item.source_label }}</div></td>
+            <td class="mono" title="{{ item.mime }}">{{ item.ext|default:"—" }}</td>
+            <td class="mono">{% if item.size is not None %}{{ item.size|filesizeformat }}{% else %}—{% endif %}</td>
+            <td class="text-muted">{{ item.owner }}</td>
+            <td class="text-muted">{{ item.related }}</td>
+            <td class="text-muted mono">{{ item.uploaded|date:"Y-m-d H:i"|default:"—" }}</td>
+            <td><span class="badge {% if item.is_public %}badge-info{% else %}badge-muted{% endif %}">{{ item.visibility }}</span></td>
+            <td>{% if item.state == "present" %}<span class="badge badge-success">{% trans "On disk" %}</span>{% elif item.state == "missing" %}<span class="badge badge-danger">{% trans "Missing" %}</span>{% else %}<span class="badge badge-muted">{% trans "Unknown" %}</span>{% endif %}</td>
+            <td class="media-actions">
+                {% if item.state != "missing" %}
+                {% if item.can_preview %}<a class="btn btn-small btn-ghost" href="{% url 'governance:media_preview' item.source item.pk %}" target="_blank" rel="noopener noreferrer">{% trans "Preview" %}</a>{% endif %}
+                <a class="btn btn-small btn-ghost" href="{% url 'governance:media_download' item.source item.pk %}">{% trans "Download" %}</a>
+                {% endif %}
+                <span class="text-faint" style="font-size:0.72rem;" title="{% trans 'Files in use by a record cannot be deleted here. Remove the record (message, invoice) instead.' %}">{% trans "In use" %}</span>
+            </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="10">{% trans "No files match. Try clearing a filter." %}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if pages > 1 %}
+    <div class="pagination-bar">
+        {% if has_previous %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&amp;{% endif %}page={{ page|add:'-1' }}">← {% trans "Prev" %}</a>{% endif %}
+        <span class="text-faint">{% blocktrans with number=page total_pages=pages %}Page {{ number }} of {{ total_pages }}{% endblocktrans %}</span>
+        {% if has_next %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&amp;{% endif %}page={{ page|add:'1' }}">{% trans "Next" %} →</a>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="media-side">
+        <div>
+            <h2 class="media-h">{% trans "Largest files" %}</h2>
+            {% for f in large %}<div class="media-mini">{% include "governance/_media_icon.html" with category=f.category %}<span class="media-name">{{ f.display }}</span><span class="mono">{{ f.size|filesizeformat }}</span></div>{% empty %}<p class="text-faint">{% trans "Nothing stored yet." %}</p>{% endfor %}
+        </div>
+        <div>
+            <h2 class="media-h">{% trans "Recently modified" %}</h2>
+            {% for f in recent %}<div class="media-mini">{% include "governance/_media_icon.html" with category=f.category %}<span class="media-name">{{ f.display }}</span><span class="mono text-muted">{{ f.when|date:"Y-m-d H:i" }}</span></div>{% empty %}<p class="text-faint">{% trans "Nothing stored yet." %}</p>{% endfor %}
+        </div>
+    </div>
+
+    {% elif view == "orphans" %}
+    <p class="text-muted">{% trans "Files on disk that no message, invoice or branding setting refers to. Nothing is deleted automatically. Deleting one is a deliberate action: type DELETE, and the portal re-checks at that moment that no record uses the file." %}</p>
+    <div class="media-table-wrap">
+    <table class="data">
+        <thead><tr><th style="width:2rem;"></th><th>{% trans "File" %}</th><th>{% trans "Size" %}</th><th>{% trans "Detected" %}</th><th>{% trans "Possible reason" %}</th><th>{% trans "References" %}</th><th>{% trans "Delete" %}</th></tr></thead>
+        <tbody>
+        {% for o in orphans %}
+        <tr>
+            <td>{% include "governance/_media_icon.html" with category=o.category %}</td>
+            <td><div class="media-name" title="{{ o.display }}">{{ o.display }}</div></td>
+            <td class="mono">{{ o.size|filesizeformat }}</td>
+            <td class="text-muted mono">{{ o.when|date:"Y-m-d H:i" }}</td>
+            <td class="text-muted">{{ o.reason }}</td>
+            <td><span class="badge badge-warn">{% trans "None found" %}</span></td>
+            <td>
+                <form method="post" action="{% url 'governance:media_delete_orphan' %}" class="media-delete-form" onsubmit="return confirm('{% trans 'Delete this file permanently? This cannot be undone.' %}');">
+                    {% csrf_token %}
+                    <input type="hidden" name="file" value="{{ o.id }}">
+                    <input type="text" name="confirm" placeholder="{{ delete_word }}" autocomplete="off" size="8" aria-label="{% trans 'Type DELETE to confirm' %}" required>
+                    <button type="submit" class="btn btn-small btn-danger">{% trans "Delete" %}</button>
+                </form>
+            </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="7">{% trans "No orphan candidates. Every file on disk belongs to a record." %}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if scan.orphan_count > orphans|length %}<p class="text-faint">{% blocktrans with shown=orphans|length total=scan.orphan_count %}Showing the first {{ shown }} of {{ total }}.{% endblocktrans %}</p>{% endif %}
+
+    {% else %}
+    <p class="text-muted">{% trans "Records that point to a file the storage no longer has (deleted by hand, lost in a restore, or never written). The record is kept; nothing is changed here." %}</p>
+    <div class="media-table-wrap">
+    <table class="data">
+        <thead><tr><th style="width:2rem;"></th><th>{% trans "File" %}</th></tr></thead>
+        <tbody>
+        {% for m in missing %}
+        <tr><td>{% include "governance/_media_icon.html" with category=m.category %}</td><td class="media-name">{{ m.display }}</td></tr>
+        {% empty %}
+        <tr class="empty-state-row"><td colspan="2">{% if scan.partial %}{% trans "The scan was partial, so missing files cannot be determined." %}{% else %}{% trans "Every referenced file is present." %}{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

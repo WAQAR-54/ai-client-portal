@@ -1,6 +1,6 @@
 from django.urls import path
 
-from governance import views
+from governance import media_views, views
 
 app_name = "governance"
 
@@ -97,6 +97,11 @@ urlpatterns = [
         views.update_capability_limits,
         name="update_capability_limits",
     ),
+    path("media/", media_views.MediaDashboardView.as_view(), name="media"),
+    path("media/rescan/", media_views.media_rescan, name="media_rescan"),
+    path("media/orphans/delete/", media_views.media_delete_orphan, name="media_delete_orphan"),
+    path("media/<str:source>/<int:pk>/preview/", media_views.media_preview, name="media_preview"),
+    path("media/<str:source>/<int:pk>/download/", media_views.media_download, name="media_download"),
     path("email-logs/", views.EmailLogListView.as_view(), name="email_logs"),
     path("email-logs/delete/", views.delete_email_logs, name="delete_email_logs"),
     path("email-logs/settings/update/", views.update_email_settings, name="update_email_settings"),
