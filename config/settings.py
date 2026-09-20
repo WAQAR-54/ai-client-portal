@@ -123,6 +123,8 @@ MIDDLEWARE = [
     # logged-out-for-inactivity redirect) and AuthenticationMiddleware
     # (needs request.user, set up above).
     "accounts.middleware.SessionTimeoutMiddleware",
+    # Right after it: a browser whose account signed in elsewhere is signed out (accounts/single_session.py).
+    "accounts.middleware.SingleSessionMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",  # must stay last (see django-axes docs)
 ]
@@ -317,6 +319,9 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_AGE = 60 * 60 * 12
 SESSION_SAVE_EVERY_REQUEST = True
+# One signed-in browser per account: a new login signs the previous one out (accounts/single_session.py).
+# Set SINGLE_SESSION_PER_USER=False to allow any number of browsers again (no data change needed).
+SINGLE_SESSION_PER_USER = env.bool("SINGLE_SESSION_PER_USER", default=True)
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = "Lax"
 

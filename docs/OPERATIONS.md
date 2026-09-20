@@ -89,6 +89,25 @@ and Managers of their own department only - not another department, a peer Admin
 and an Admin with no department has no scope at all. Chat conversations are owner-only for every
 role, SuperAdmin included.
 
+## One signed-in browser per account
+
+Signing in on a second browser or device signs the first one out (`accounts/single_session.py`). Every login
+(password, after MFA, Google, signup) writes a fresh random token to `User.active_session_token` and to that
+browser's session; `SingleSessionMiddleware` compares them on every authenticated request. A browser whose token
+no longer matches is logged out, sent to the login page with "You were signed out because your account was signed
+in on another browser or device.", and an `auth.session_superseded` row is written to the audit log (browser
+requests made by htmx get an `HX-Redirect` instead). The newest login always wins; the old browser is signed out
+on its **next request**, not instantly (a reply already streaming finishes).
+
+* Applies to every role. Password change in your own browser does not sign you out (the token lives in the
+  session data, not the session key).
+* Accounts already signed in when this shipped hold no token: the first request from any of their sessions adopts
+  one, so an existing user is not logged out by the deploy itself; two such sessions at once leave exactly one.
+* Kill switch: `SINGLE_SESSION_PER_USER=False` in the server's `.env` (then `docker compose up -d`). Nothing else
+  needs undoing; the token column is harmless when unused.
+* Limits: this is "latest login wins", not a device manager. There is no list of active sessions, no "sign out
+  everywhere else" button, and a shared account will keep signing its own users out of each other.
+
 ## Rate limits and Redis
 
 Limits are counted in Redis. What happens when Redis is unreachable depends on the kind of limit
@@ -283,6 +302,7 @@ key written without a TTL would never leave. None of the new keys is written wit
 | `ADMINS` | `Name:email` pairs that receive crash emails. |
 | `ENFORCE_HTTPS_VIA_CLOUDFLARE`, `CLOUDFLARE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | Transport security (see above); `docker-compose.yml` defaults them to True / 86400 / True / True. |
 | `CLOUDFLARE_IP_RANGES` | Comma-separated Cloudflare proxy ranges used by `client_ip` (defaults to the published list). |
+| `SINGLE_SESSION_PER_USER` | Default True: a new login signs the account's other browser out (see "One signed-in browser per account"). |
 | `WEB_BIND_ADDRESS` | Compose only: interface Gunicorn's port 8000 is published on (default `0.0.0.0`; `127.0.0.1` closes direct access once Nginx is confirmed to proxy to it). |
 | `LOGIN_IP_FAILURE_LIMIT` | Failed logins per IP per hour across all usernames (default 30). |
 | `MODEL_CONTEXT_TOKENS_DEFAULT`, `MODEL_CONTEXT_TOKENS`, `MODEL_CONTEXT_TOKENS_BY_MODEL` | Input budget per model (default 32000; adapter defaults in `config/settings.py`). |

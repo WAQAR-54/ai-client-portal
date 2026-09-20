@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.http import HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone, translation
 
 from accounts.geo import language_for_ip
@@ -204,6 +205,43 @@ class SessionTimeoutMiddleware:
                 messages.info(request, translation.gettext("You were logged out after a period of inactivity."))
                 return redirect("accounts:login")
             request.session["last_activity"] = now
+        return self.get_response(request)
+
+
+class SingleSessionMiddleware:
+    """Signs out a browser whose account has since been signed in somewhere else (accounts/single_session.py).
+
+    After MessageMiddleware (explains why) and AuthenticationMiddleware (needs request.user, whose token
+    column is already loaded, so this adds no query for a current session). Anonymous requests and the
+    SINGLE_SESSION_PER_USER=False setting pass straight through. An htmx request gets HX-Redirect instead of a
+    302, so the login page replaces the whole page rather than being swapped into a fragment."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from accounts import single_session
+
+        if single_session.enabled() and request.user.is_authenticated and not single_session.check_session(request):
+            from governance.audit import log_action
+
+            user = request.user
+            log_action(
+                actor=user, action_type="auth.session_superseded", target=user, new_value=f"ip={client_ip(request)}"
+            )
+            logout(request)
+            messages.info(
+                request,
+                translation.gettext(
+                    "You were signed out because your account was signed in on another browser or device."
+                ),
+            )
+            login_url = reverse("accounts:login")
+            if request.headers.get("HX-Request"):
+                response = HttpResponse(status=204)
+                response["HX-Redirect"] = login_url
+                return response
+            return redirect(login_url)
         return self.get_response(request)
 
 

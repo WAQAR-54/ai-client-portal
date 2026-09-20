@@ -83,6 +83,14 @@ def _log_successful_login(sender, request, user, **kwargs):
     log_action(actor=user, action_type="auth.login", target=user, new_value=f"ip={client_ip(request)}")
 
 
+def _start_single_session(sender, request, user, **kwargs):
+    """Every login makes that browser the account's only current session (accounts/single_session.py)."""
+    from accounts import single_session
+
+    if request is not None and single_session.enabled():
+        single_session.start_session(request, user)
+
+
 def connect_axes_signals():
     from axes.signals import user_locked_out
 
@@ -93,3 +101,4 @@ def connect_login_signal():
     from django.contrib.auth.signals import user_logged_in
 
     user_logged_in.connect(_log_successful_login, dispatch_uid="accounts.log_successful_login")
+    user_logged_in.connect(_start_single_session, dispatch_uid="accounts.start_single_session")

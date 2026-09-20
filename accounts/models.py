@@ -192,6 +192,11 @@ class User(AbstractUser):
     # being read. A User/Manager can turn it on/off themselves from Settings.
     mfa_enabled = models.BooleanField(default=False)
 
+    # One browser at a time (accounts/single_session.py): every login stores a fresh random token here AND in
+    # that browser's session; a session whose token no longer matches has been superseded by a newer login
+    # and is signed out on its next request. Not a credential (it cannot be used to sign in), just a marker.
+    active_session_token = models.CharField(max_length=64, blank=True, default="", editable=False)
+
     # Sign in with Google (accounts/google_auth.py) - google_sub is the
     # stable, never-reused Google account id ("sub" claim), the actual link
     # key; unique+nullable so multiple never-linked accounts can all sit at
