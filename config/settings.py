@@ -398,6 +398,11 @@ LOGIN_IP_FAILURE_LIMIT = env.int("LOGIN_IP_FAILURE_LIMIT", default=30)
 
 MEDIA_DISK_WARN_PCT = env.int("MEDIA_DISK_WARN_PCT", default=80)
 MEDIA_DISK_CRITICAL_PCT = env.int("MEDIA_DISK_CRITICAL_PCT", default=90)
+# Server Media size filter: Small < MEDIUM_MIN <= Medium < LARGE_MIN <= Large, then the "large file"
+# thresholds in MB (operational visibility only - nothing is ever deleted by size).
+MEDIA_MEDIUM_MIN_BYTES = env.int("MEDIA_MEDIUM_MIN_BYTES", default=1024**2)
+MEDIA_LARGE_MIN_BYTES = env.int("MEDIA_LARGE_MIN_BYTES", default=10 * 1024**2)
+MEDIA_LARGE_THRESHOLDS_MB = env.list("MEDIA_LARGE_THRESHOLDS_MB", cast=int, default=[50, 100, 500])
 
 # How much conversation a single request may send (chat/context_window.py). The provider metadata
 # that would state each model's real window is not stored, so these are configured, deliberately

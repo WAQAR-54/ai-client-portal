@@ -4501,9 +4501,69 @@ table.data tbody th.sys-rowhead {
 .media-table-wrap th, .media-table-wrap td { white-space: nowrap; }
 .media-table-wrap .media-name { max-width: 15rem; }
 .media-sub { font-size: 0.72rem; }
-.media-table-wrap th, .media-table-wrap td { padding-inline: 0.45rem; }
+.media-table-wrap th, .media-table-wrap td { padding-inline: 0.4rem; }
 .media-table-wrap table.data { font-size: 0.82rem; }
 .media-table-wrap th:first-child, .media-table-wrap td:first-child { width: 2rem; padding-inline: 0.3rem; }
 .media-actions .media-sub { white-space: normal; max-width: 11rem; }
 .media-table-wrap .media-owner { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; }
 .media-table-wrap .media-actions .btn-small { padding: 0.3rem 0.6rem; }
+
+/* ---------- Server Media: chips, filters, detail page, dialog, stacked rows ---------- */
+.media-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: var(--space-3); }
+.media-chip { padding: 0.35rem 0.9rem; border: 1px solid var(--color-border); border-radius: 999px; font-size: 0.82rem; font-weight: 600; color: var(--color-text-muted); text-decoration: none; }
+.media-chip:hover { border-color: var(--accent); color: var(--accent-text); }
+.media-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.media-search { flex: 1 1 16rem; min-width: 12rem; }
+.media-more { flex-basis: 100%; }
+.media-more summary { cursor: pointer; font-size: 0.8rem; color: var(--color-text-muted); }
+.media-more-body { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.media-more-body input[type="text"], .media-more-body select { width: auto; min-width: 8rem; }
+.media-stat-link { text-decoration: none; color: inherit; }
+.media-stat-link:hover .email-stat-value { color: var(--warn); }
+.media-empty { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; padding: var(--space-6) var(--space-4); border: 1px dashed var(--color-border); border-radius: var(--radius-md); color: var(--color-text-muted); }
+.media-empty strong { color: var(--color-text); font-size: 1rem; }
+.media-table-wrap { container-type: inline-size; }
+.media-table-wrap.is-loading { opacity: 0.55; pointer-events: none; transition: opacity 120ms; }
+.media-table th[scope="row"], .media-table tbody th { font-weight: inherit; text-align: left; text-transform: none; letter-spacing: normal; font-size: inherit; color: var(--color-text); }
+.media-delete-btn:not([disabled]) { color: var(--color-danger); border-color: var(--color-danger); }
+.media-delete-btn:not([disabled]):hover { background: var(--color-danger-soft); color: var(--color-danger-text); border-color: var(--color-danger); }
+.media-delete-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.media-delete-name { word-break: break-all; }
+.media-back { font-size: 0.85rem; color: var(--color-text-muted); text-decoration: none; }
+.media-back:hover { color: var(--accent-text); }
+.media-detail-title { overflow-wrap: anywhere; }
+.media-detail-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+.media-detail { display: grid; grid-template-columns: minmax(0, 3fr) minmax(16rem, 2fr); gap: var(--space-5, 1.5rem); align-items: start; }
+.media-preview { border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); padding: var(--space-3); min-height: 12rem; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.media-preview-image { max-width: 100%; max-height: 70vh; height: auto; object-fit: contain; border-radius: var(--radius-sm, 6px); }
+.media-preview-pdf { width: 100%; height: 70vh; border: 0; background: #fff; }
+.media-preview-text { width: 100%; max-height: 70vh; overflow: auto; margin: 0; padding: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 0.8rem; background: var(--color-surface); border-radius: var(--radius-sm, 6px); }
+.media-unavailable { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; padding: var(--space-5, 1.5rem); color: var(--color-text-muted); }
+.media-unavailable strong { color: var(--color-text); font-size: 1rem; }
+.media-facts { margin: 0; display: flex; flex-direction: column; }
+.media-facts > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.75rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.85rem; }
+.media-facts dt { color: var(--color-text-faint); }
+.media-facts dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+    .media-detail { grid-template-columns: minmax(0, 1fr); }
+    .media-preview-pdf { height: 55vh; }
+}
+
+/* Narrow containers (phones, tablets beside the sidebar): a row becomes a stacked block - name on
+   top, labelled facts beneath - instead of a table that can only scroll sideways. */
+@container (max-width: 980px) {
+    table.media-table { min-width: 0; }
+    table.media-table thead { display: none; }
+    table.media-table, table.media-table tbody, table.media-table tr, table.media-table td, table.media-table th { display: block; width: 100%; }
+    table.media-table tr { position: relative; padding: 0.75rem 0 0.75rem 2.4rem; border-bottom: 1px solid var(--color-border); }
+    table.media-table td, table.media-table th { padding: 2px 0; border: 0; text-align: left; white-space: normal; }
+    table.media-table td.media-col-icon { position: absolute; left: 0; top: 0.85rem; width: auto; }
+    table.media-table .media-name { max-width: none; white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
+    table.media-table td[data-label] { display: inline-flex; align-items: center; gap: 6px; width: auto; margin: 4px 14px 0 0; font-size: 12px; }
+    table.media-table td[data-label]::before { content: attr(data-label); color: var(--color-text-faint); font-size: 11px; }
+    table.media-table td.media-owner { max-width: 100%; }
+    table.media-table td.media-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+    table.media-table td.media-actions .btn-small { min-height: 2.4rem; padding: 0.4rem 0.9rem; }
+}
+.media-table thead th { letter-spacing: 0.02em; font-size: 0.68rem; }
+.media-table-wrap .media-owner { max-width: 7.5rem; }

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% load i18n governance_extras %}
+{% block title %}{{ item.display_name }} — {% trans "Server Media" %} — {{ site_branding.site_name }}{% endblock %}
+{% block extra_head %}<script src="{% static_v 'js/media-admin.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="card">
+    <a class="media-back" href="{{ back_url }}">← {% trans "Back to Server Media" %}</a>
+    <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin:0.75rem 0 1rem; flex-wrap:wrap;">
+        <div style="min-width:0;">
+            <h1 class="media-detail-title" style="margin-bottom:0.25rem;">{{ item.display_name }}</h1>
+            <p style="margin:0;">{{ item.category_label }}{% if item.ext %} · {{ item.ext|upper }}{% endif %} · {{ item.source_label }}</p>
+        </div>
+        <div class="media-detail-actions">
+            {% if not error %}<a class="btn btn-small" href="{{ urls.download }}">{% trans "Download" %}</a>{% endif %}
+            {% if item.is_orphan and reference_state == "orphan" %}
+            <button type="button" class="btn btn-small btn-ghost media-delete-btn" data-media-delete data-token="{{ item.token }}" data-name="{{ item.display_name }}">{% trans "Delete" %}</button>
+            {% else %}
+            <button type="button" class="btn btn-small btn-ghost media-delete-btn" disabled aria-disabled="true" title="{% trans 'In use by a record, so it cannot be deleted here.' %}">{% trans "Delete" %}</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="media-detail">
+        <section class="media-preview" aria-label="{% trans 'Preview' %}">
+            {% if error %}
+            <div class="media-unavailable" role="alert"><strong>{% trans "The file could not be read" %}</strong><span>{{ error }}</span></div>
+            {% elif preview_kind == "image" %}
+            <img class="media-preview-image" src="{{ urls.preview }}" alt="{% blocktrans with name=item.display_name %}Preview of {{ name }}{% endblocktrans %}">
+            {% elif preview_kind == "pdf" %}
+            <iframe class="media-preview-pdf" src="{{ urls.preview }}" title="{% blocktrans with name=item.display_name %}Preview of {{ name }}{% endblocktrans %}"></iframe>
+            <p class="text-faint" style="margin:0.5rem 0 0; font-size:0.8rem;">{% trans "If the PDF does not appear, your browser has no built-in PDF viewer: use Download." %}</p>
+            {% elif preview_kind == "text" %}
+            <pre class="media-preview-text" tabindex="0">{{ text }}</pre>
+            {% if truncated %}<p class="text-faint" style="margin:0.5rem 0 0; font-size:0.8rem;">{% trans "Only the start of the file is shown. Download it to read the rest." %}</p>{% endif %}
+            {% else %}
+            <div class="media-unavailable" role="status">
+                <strong>{% trans "Preview not available" %}</strong>
+                <span>{% blocktrans with kind=item.category_label ext=item.ext|default:"unknown" %}{{ kind }} file ({{ ext }}). This type is never displayed in the browser, because it could carry active content. Download it instead.{% endblocktrans %}</span>
+                <span class="mono">{{ item.mime }} · {% if item.size is not None %}{{ item.size|filesizeformat }}{% else %}—{% endif %}</span>
+                <a class="btn btn-small" href="{{ urls.download }}">{% trans "Download" %}</a>
+            </div>
+            {% endif %}
+        </section>
+
+        <dl class="media-facts">
+            <div><dt>{% trans "File name" %}</dt><dd>{{ item.display_name }}</dd></div>
+            <div><dt>{% trans "Type" %}</dt><dd>{{ item.category_label }}{% if item.ext %} · {{ item.ext }}{% endif %}</dd></div>
+            <div><dt>{% trans "MIME type" %}</dt><dd class="mono">{{ item.mime }}</dd></div>
+            <div><dt>{% trans "Size" %}</dt><dd>{% if item.size is not None %}{{ item.size|filesizeformat }} <span class="text-faint">({{ item.size }} bytes)</span>{% else %}—{% endif %}</dd></div>
+            {% if dimensions %}<div><dt>{% trans "Dimensions" %}</dt><dd class="mono">{{ dimensions.0 }} × {{ dimensions.1 }} px</dd></div>{% endif %}
+            <div><dt>{% trans "Owner" %}</dt><dd>{{ item.owner }}</dd></div>
+            <div><dt>{% trans "Related to" %}</dt><dd>{{ item.related }}</dd></div>
+            <div><dt>{% trans "Uploaded" %}</dt><dd>{{ item.uploaded|date:"Y-m-d H:i"|default:"—" }}{% if item.uploaded %} UTC{% endif %}</dd></div>
+            <div><dt>{% trans "Last modified" %}</dt><dd>{{ item.modified|date:"Y-m-d H:i"|default:"—" }}{% if item.modified %} UTC{% endif %}</dd></div>
+            <div><dt>{% trans "Reference status" %}</dt><dd>
+                {% if reference_state == "referenced" %}<span class="badge badge-info">{% trans "Referenced" %}</span>
+                {% elif reference_state == "orphan" %}<span class="badge badge-warn">{% trans "Orphan candidate" %}</span>
+                {% else %}<span class="badge badge-danger">{% trans "Missing on disk" %}</span>{% endif %}
+                <div class="text-faint" style="font-size:0.8rem; margin-top:0.25rem;">{{ reference_text }}</div>
+            </dd></div>
+            <div><dt>{% trans "Visibility" %}</dt><dd>{{ item.visibility }} <span class="text-faint">— {% trans "viewing a file never changes who can see it" %}</span></dd></div>
+            <div><dt>{% trans "Storage" %}</dt><dd>{% if item.state == "present" %}{% trans "On disk" %}{% elif item.state == "missing" %}{% trans "Missing" %}{% else %}{% trans "Unknown" %}{% endif %}</dd></div>
+        </dl>
+    </div>
+</div>
+{% include "governance/_media_delete_modal.html" %}
+{% endblock %}

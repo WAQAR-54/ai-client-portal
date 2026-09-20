@@ -76,7 +76,8 @@ The SuperAdmin "Server Media" page (`governance/media_views.py`) is not a second
 SuperAdmin-only, addresses a file by (source, database id) and never by path, sends every download
 as an opaque attachment, previews only images/PDF/plain text whose first bytes match their
 extension (never SVG or HTML), audits each download and preview of a private file, and can delete
-only a file that no record refers to.
+only a file that no record refers to. Its "View" page shows a file and its facts without ever making
+it public; anything it cannot show safely says "Preview not available" and offers a download.
 
 Object-level rules (`governance/test_object_authorization.py`): a department Admin manages the Users
 and Managers of their own department only - not another department, a peer Admin or a SuperAdmin -
@@ -172,8 +173,9 @@ key written without a TTL would never leave. None of the new keys is written wit
   NORMAL/WARNING/CRITICAL state (`MEDIA_DISK_WARN_PCT`/`MEDIA_DISK_CRITICAL_PCT`) and lists files no
   record refers to. Database size and largest tables are in `ops_verify` (`database`); Docker's own
   disk use is not visible from inside a container - run `docker system df` on the host. Nothing is
-  ever deleted automatically; an orphan is deleted one at a time, by a SuperAdmin, after a typed
-  confirmation and a fresh check that nothing refers to it.
+  ever deleted automatically; an orphan is deleted one at a time, by a SuperAdmin, after a "Delete
+  file?" confirmation and - the part that matters - a fresh server-side check that nothing refers to
+  it (a file that became referenced after the page loaded is refused).
 * Docker container logs are capped at 3 x 10 MB per container. The app writes `logs/app.log`
   (5 MB x 3 rotated) **inside the container**, so it is replaced on every deploy.
 * Docker build cache is not pruned automatically; run `docker builder prune` occasionally.
@@ -190,6 +192,7 @@ key written without a TTL would never leave. None of the new keys is written wit
 | `LOGIN_IP_FAILURE_LIMIT` | Failed logins per IP per hour across all usernames (default 30). |
 | `MODEL_CONTEXT_TOKENS_DEFAULT`, `MODEL_CONTEXT_TOKENS`, `MODEL_CONTEXT_TOKENS_BY_MODEL` | Input budget per model (default 32000; adapter defaults in `config/settings.py`). |
 | `MEDIA_DISK_WARN_PCT`, `MEDIA_DISK_CRITICAL_PCT` | Server Media disk thresholds (80 / 90). |
+| `MEDIA_MEDIUM_MIN_BYTES`, `MEDIA_LARGE_MIN_BYTES`, `MEDIA_LARGE_THRESHOLDS_MB` | Server Media size filter: Small/Medium/Large limits (1 MB / 10 MB) and the extra large-file thresholds (50, 100, 500 MB). Visibility only - nothing is deleted by size. |
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | Opt-in PostgreSQL timeouts (default off). |
 
 Every variable the code reads is listed in `.env.example` (a test fails otherwise); names only,

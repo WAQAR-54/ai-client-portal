@@ -25,7 +25,7 @@ from datetime import datetime, timezone as dt_timezone
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.storage import FileSystemStorage, default_storage
-from django.db.models import Q
+from django.db.models import F, Q
 
 SOURCE_CHAT = "chat"  # a file a user attached to a message
 SOURCE_GENERATED = "generated"  # an image/video/document the assistant produced
@@ -45,9 +45,46 @@ VISIBILITY = {
     SOURCE_BRANDING: "PUBLIC",
 }
 
-IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico"}
-DOCUMENT_EXTS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "csv", "json", "rtf"}
+# Classification follows what the application itself accepts or produces, not what an extension looks
+# like: uploads allow pdf/txt/csv/md/png/jpg/jpeg/docx/xlsx/json (settings.DEFAULT_ALLOWED_FILE_EXTENSIONS,
+# content-checked in governance/uploads.py); generated files add pptx (chat/document_generation.py) and
+# webp/gif images. Anything else - svg/html/exe, legacy office formats, video - is "other", so it is
+# never presented as a safe document or image.
+IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
+DOCUMENT_EXTS = {"pdf", "txt", "md", "csv", "json", "docx", "xlsx", "pptx"}
 CATEGORIES = ("image", "document", "other")
+CATEGORY_LABELS = {"image": "Image", "document": "Document", "other": "Other"}
+SORTS = ("newest", "oldest", "largest", "smallest")
+SORT_LABELS = {"newest": "Newest", "oldest": "Oldest", "largest": "Largest", "smallest": "Smallest"}
+REFERENCE_FILTERS = ("referenced", "orphan")
+SOURCE_ORPHAN = "orphan"  # a file on disk that no record refers to (found by the storage scan)
+SOURCE_LABELS[SOURCE_ORPHAN] = "Orphan candidate"
+VISIBILITY[SOURCE_ORPHAN] = "PRIVATE (no owner record)"  # it is not served anywhere; treat as private
+
+
+def size_options():
+    """[(key, label, min_bytes, max_bytes)] for the size filter, from settings (not hard-coded):
+    Small < MEDIA_MEDIUM_MIN_BYTES <= Medium < MEDIA_LARGE_MIN_BYTES <= Large, plus the operational
+    'large file' thresholds (MEDIA_LARGE_THRESHOLDS_MB). Only files with a recorded size can match
+    (chat uploads, generated files and orphans); payment proofs and branding record none."""
+    medium = int(getattr(settings, "MEDIA_MEDIUM_MIN_BYTES", 1024**2))
+    large = int(getattr(settings, "MEDIA_LARGE_MIN_BYTES", 10 * 1024**2))
+    options = [
+        ("small", f"Small (under {_mb(medium)})", None, medium - 1),
+        ("medium", f"Medium ({_mb(medium)} to {_mb(large)})", medium, large - 1),
+        ("large", f"Large ({_mb(large)} and over)", large, None),
+    ]
+    for mb in getattr(settings, "MEDIA_LARGE_THRESHOLDS_MB", (50, 100, 500)):
+        if mb * 1024**2 > large:
+            options.append((f"ge{mb}", f"{mb} MB and over", mb * 1024**2, None))
+    return options
+
+
+def _mb(num_bytes):
+    mb = num_bytes / 1024**2
+    return f"{mb:g} MB"
+
+
 # Inline preview is limited to formats that cannot run code in the browser and whose content is
 # checked (magic bytes) before it is sent. SVG and HTML are never previewed: they can carry script.
 RASTER_PREVIEW = {"png": b"\x89PNG\r\n\x1a\n", "jpg": b"\xff\xd8\xff", "jpeg": b"\xff\xd8\xff", "gif": b"GIF8"}
@@ -107,6 +144,19 @@ class MediaItem:
         return SOURCE_LABELS[self.source]
 
     @property
+    def is_orphan(self):
+        return self.source == SOURCE_ORPHAN
+
+    @property
+    def token(self):
+        """Opaque id of an orphan (a digest of its storage name); orphans have no database id."""
+        return self.extra.get("token", "")
+
+    @property
+    def category_label(self):
+        return CATEGORY_LABELS[self.category]
+
+    @property
     def can_preview(self):
         return self.state != "missing" and (
             self.ext in RASTER_PREVIEW or self.ext in TEXT_PREVIEW_EXTS or self.ext == "pdf"
@@ -164,6 +214,13 @@ def _message_qs(source, filters):
         qs = qs.filter(attachment_size__gte=filters["size_min"])
     if filters.get("size_max") is not None:
         qs = qs.filter(attachment_size__lte=filters["size_max"])
+    sort = filters.get("sort") or "newest"
+    if sort == "oldest":
+        return qs.order_by("created_at", "pk")
+    if sort == "largest":  # files with no recorded size go last, in both size orders
+        return qs.order_by(F("attachment_size").desc(nulls_last=True), "-created_at", "-pk")
+    if sort == "smallest":
+        return qs.order_by(F("attachment_size").asc(nulls_last=True), "-created_at", "-pk")
     return qs.order_by("-created_at", "-pk")
 
 
@@ -196,7 +253,9 @@ def _proof_qs(filters):
         qs = qs.filter(submitted_at__date__lte=filters["date_to"])
     if filters.get("size_min") is not None or filters.get("size_max") is not None:
         return qs.none()  # payment proofs record no size, so a size filter cannot match them
-    return qs.order_by("-submitted_at", "-pk")
+    if filters.get("sort") == "oldest":
+        return qs.order_by("submitted_at", "pk")
+    return qs.order_by("-submitted_at", "-pk")  # no size to sort by: newest first for the size sorts
 
 
 def _branding():
@@ -276,11 +335,85 @@ def _fill_state(item, storage=None):
     return item
 
 
+def _sort_key(sort):
+    """(key function, reverse) for merging the per-source streams in one global order. Items whose
+    date or size is unknown always sort last, whichever way the sort runs."""
+    epoch = datetime.min.replace(tzinfo=dt_timezone.utc)
+    if sort == "oldest":
+        return (lambda i: (i.uploaded is None, i.uploaded or epoch)), False
+    if sort == "largest":
+        return (lambda i: (i.size is not None, i.size or 0, i.uploaded or epoch)), True
+    if sort == "smallest":
+        return (lambda i: (i.size is None, i.size or 0, -(i.uploaded or epoch).timestamp())), False
+    return (lambda i: (i.uploaded is not None, i.uploaded or epoch)), True
+
+
+def _orphan_items(filters):
+    """Orphan candidates from the CACHED storage scan (never a fresh walk), filtered in memory. The scan
+    keeps at most 500 of them; an orphan has no owner, related record or upload date, only what the disk
+    says (its modification time), so a filter on those fields cannot match it."""
+    if filters.get("owner") or filters.get("source"):
+        return []
+    scan = get_scan()
+    if scan.get("error"):
+        return []
+    q = (filters.get("q") or "").lower()
+    items = []
+    for entry in scan.get("orphans", []):
+        name = entry["name"]
+        display = safe_display_name(name)
+        if q and q not in display.lower() and q not in entry["reason"].lower():
+            continue
+        category = category_of(name)
+        if filters.get("category") and category != filters["category"]:
+            continue
+        if filters.get("ext") and ext_of(name) != filters["ext"]:
+            continue
+        size = entry["size"]
+        if filters.get("size_min") is not None and size < filters["size_min"]:
+            continue
+        if filters.get("size_max") is not None and size > filters["size_max"]:
+            continue
+        modified = datetime.fromtimestamp(entry["mtime"], tz=dt_timezone.utc)
+        if filters.get("date_from") and modified.date() < filters["date_from"]:
+            continue
+        if filters.get("date_to") and modified.date() > filters["date_to"]:
+            continue
+        items.append(
+            MediaItem(
+                SOURCE_ORPHAN,
+                0,
+                name,
+                display,
+                ext_of(name),
+                category,
+                mimetypes.guess_type(name)[0] or "application/octet-stream",
+                size,
+                "No owner record",
+                "No record refers to this file",
+                modified,
+                VISIBILITY[SOURCE_ORPHAN],
+                state="present",
+                modified=modified,
+                extra={"token": entry["id"], "reason": entry["reason"]},
+            )
+        )
+    return items
+
+
 def list_items(filters, page=1, page_size=PAGE_SIZE):
-    """(items_on_this_page, total_matching, storage_error). Newest first across all sources."""
-    sources = [s for s in SOURCES if filters.get("source") in (None, "", s)]
+    """(items_on_this_page, total_matching, storage_error) across every source in one global order.
+
+    Referenced files come from the database (SQL search, filters, ordering and a bounded slice per
+    source); orphan candidates come from the cached scan. `reference` limits the list to one of them."""
+    reference = filters.get("reference") or ""
+    if reference == "orphan":
+        sources = []
+    else:
+        sources = [s for s in SOURCES if filters.get("source") in (None, "", s)]
     page = max(1, min(int(page or 1), MAX_PAGE))
     offset = (page - 1) * page_size
+    key, reverse = _sort_key(filters.get("sort") or "newest")
     streams, total = [], 0
     for source in sources:
         if source in (SOURCE_CHAT, SOURCE_GENERATED):
@@ -294,11 +427,14 @@ def list_items(filters, page=1, page_size=PAGE_SIZE):
         else:
             raw = _branding_items(filters)
             count = len(raw)
-            rows = [_to_item(source, name, label) for label, name in raw]
+            rows = sorted((_to_item(source, name, label) for label, name in raw), key=key, reverse=reverse)
         total += count
         streams.append(rows)
-    epoch = datetime.min.replace(tzinfo=dt_timezone.utc)
-    merged = heapq.merge(*streams, key=lambda item: item.uploaded or epoch, reverse=True)
+    if reference != "referenced":
+        orphans = sorted(_orphan_items(filters), key=key, reverse=reverse)
+        total += len(orphans)
+        streams.append(orphans)
+    merged = heapq.merge(*streams, key=key, reverse=reverse)
     window = []
     for index, item in enumerate(merged):
         if index >= offset + page_size:
@@ -308,10 +444,63 @@ def list_items(filters, page=1, page_size=PAGE_SIZE):
     storage_error = None
     try:
         for item in window:
-            _fill_state(item)
+            if not item.is_orphan:  # an orphan's size and existence come from the scan that found it
+                _fill_state(item)
     except Exception:  # noqa: BLE001
         storage_error = "The storage backend could not be read."
     return window, total, storage_error
+
+
+def get_orphan_item(token):
+    """One orphan candidate by the digest the list gave out, or None. Only a file the storage scan
+    flagged can be addressed this way, and the digest is never a path."""
+    for entry in get_scan().get("orphans", []):
+        if entry["id"] == token:
+            name = entry["name"]
+            item = MediaItem(
+                SOURCE_ORPHAN,
+                0,
+                name,
+                safe_display_name(name),
+                ext_of(name),
+                category_of(name),
+                mimetypes.guess_type(name)[0] or "application/octet-stream",
+                None,
+                "No owner record",
+                "No record refers to this file",
+                None,
+                VISIBILITY[SOURCE_ORPHAN],
+                extra={"token": token, "reason": entry["reason"]},
+            )
+            return _fill_state(item)
+    return None
+
+
+def reference_status(item):
+    """('referenced' | 'orphan' | 'missing', short text) - decided NOW, not from the cached scan."""
+    if item.state == "missing":
+        return "missing", "The record points at a file that is no longer on disk"
+    if item.is_orphan:
+        if is_referenced(item.relative_name):
+            return "referenced", "This file is now in use by a record"
+        return "orphan", item.extra.get("reason") or "No record refers to this file"
+    return "referenced", item.related
+
+
+def image_info(item):
+    """(width, height) read from the file HEADER only (Pillow does not decode the pixels here), and
+    only when the format Pillow finds matches the extension. None when it cannot be determined."""
+    try:
+        from PIL import Image
+
+        with default_storage.open(item.relative_name, "rb") as handle:
+            with Image.open(handle) as image:
+                expected = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "gif": "GIF", "webp": "WEBP"}.get(item.ext)
+                if expected is None or image.format != expected:
+                    return None
+                return image.size
+    except Exception:  # noqa: BLE001 - dimensions are a nicety, never a reason to fail the page
+        return None
 
 
 def get_item(source, pk):
@@ -568,6 +757,7 @@ DELETE_OK = "deleted"
 DELETE_REFERENCED = "referenced"
 DELETE_INVALID = "invalid"
 DELETE_MISSING = "missing"
+DELETE_STORAGE_ERROR = "storage_error"
 
 
 def normalise_relative_name(raw):
@@ -580,11 +770,17 @@ def normalise_relative_name(raw):
     return name
 
 
+def token_is_referenced(token):
+    """True when the digest belongs to a file some record refers to RIGHT NOW. Lets the delete flow say
+    'this file is now in use' for a file that was an orphan when the page loaded but no longer is."""
+    return any(name_digest(name) == token for name in referenced_names())
+
+
 def delete_orphan(raw_name):
     """Delete ONE file that no record refers to. Returns (status, size).
 
-    Everything is re-checked here, at the moment of deletion, whatever an earlier scan said:
-    the name must stay inside the storage, the file must exist, and NO record may reference it."""
+    Everything is re-checked here, at the moment of deletion, whatever an earlier scan or page said:
+    the name must stay inside the storage, NO record may reference it, and the file must exist."""
     name = normalise_relative_name(raw_name)
     if name is None:
         return DELETE_INVALID, 0
@@ -600,7 +796,7 @@ def delete_orphan(raw_name):
             return DELETE_MISSING, 0
         size = storage.size(name)
         storage.delete(name)
-    except Exception:  # noqa: BLE001
-        return DELETE_INVALID, 0
+    except Exception:  # noqa: BLE001 - reported as a fixed status; the raw error is for the log only
+        return DELETE_STORAGE_ERROR, 0
     clear_scan_cache()
     return DELETE_OK, size

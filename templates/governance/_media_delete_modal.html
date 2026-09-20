@@ -1,0 +1,27 @@
+{% load i18n %}
+{# One shared "Delete file?" dialog. The Delete buttons carry only an opaque token and a display name; the #}
+{# dialog is a courtesy - the server re-checks that no record refers to the file before it removes anything. #}
+<div class="modal-overlay" id="mediaDeleteModal" role="dialog" aria-modal="true" aria-labelledby="mediaDeleteTitle" aria-describedby="mediaDeleteText">
+    <div class="modal-box" style="width:min(440px, 100%);">
+        <form method="post" action="{% url 'governance:media_delete_orphan' %}" id="mediaDeleteForm">
+            {% csrf_token %}
+            <input type="hidden" name="file" id="mediaDeleteToken" value="">
+            <input type="hidden" name="back" value="{{ back_query }}">
+            <div class="modal-head">
+                <h3 class="modal-title" id="mediaDeleteTitle">{% trans "Delete file?" %}</h3>
+                <button type="button" class="modal-close" data-media-cancel aria-label="{% trans 'Close' %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="mediaDeleteText" style="margin:0;">{% trans "This file will be permanently removed." %}</p>
+                <p style="margin:0;"><strong class="media-delete-name" id="mediaDeleteName"></strong></p>
+                <p class="text-faint" style="margin:0; font-size:0.8rem;">{% trans "It cannot be restored. If a record has started using it, it will not be deleted." %}</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-media-cancel id="mediaDeleteCancel">{% trans "Cancel" %}</button>
+                <button type="submit" class="btn btn-danger" id="mediaDeleteSubmit" data-busy-label="{% trans 'Deleting…' %}">{% trans "Delete" %}</button>
+            </div>
+        </form>
+    </div>
+</div>

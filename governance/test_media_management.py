@@ -3,6 +3,7 @@
 Everything runs against a throw-away MEDIA_ROOT with synthetic files."""
 
 import os
+import re
 import shutil
 import tempfile
 from datetime import timedelta
@@ -109,7 +110,7 @@ class MediaAccessTests(MediaBase):
             self.assertEqual(self.client.post(reverse("governance:media_rescan")).status_code, 403)
             resp = self.client.post(
                 reverse("governance:media_delete_orphan"),
-                {"file": self.stray_token("chat_attachments/user_1/stray.txt"), "typed_word": "DELETE"},
+                {"file": self.stray_token("chat_attachments/user_1/stray.txt")},
             )
             self.assertEqual(resp.status_code, 403)
         self.assertTrue(Path(self.media_root, "chat_attachments/user_1/stray.txt").exists())
@@ -161,7 +162,7 @@ class MediaListingTests(MediaBase):
         self.assertEqual(names(ext="pdf"), ["budget.pdf"])
         self.assertEqual(names(source="proof"), ["proof.png"])
         self.assertEqual(names(q="Quarterly", source="chat"), ["budget.pdf", "photo.png"])
-        self.assertEqual(names(size="1mb"), [])
+        self.assertEqual(names(size="large"), [])
         self.assertEqual(names(date_from="2999-01-01"), [])
         self.assertEqual(names(date_from="not-a-date", ext="../etc"), sorted(names()))
 
@@ -328,9 +329,7 @@ class MediaPathSafetyTests(MediaBase):
         self.addCleanup(lambda: outside.unlink(missing_ok=True))
         self.login(self.superadmin)
         for token in ("../outside-target2.txt", str(outside), "0" * 16, ""):
-            response = self.client.post(
-                reverse("governance:media_delete_orphan"), {"file": token, "typed_word": "DELETE"}
-            )
+            response = self.client.post(reverse("governance:media_delete_orphan"), {"file": token})
             self.assertEqual(response.status_code, 302)
         self.assertTrue(outside.exists())
         self.assertEqual(AuditLog.objects.filter(action_type="media_orphan_deleted").count(), 0)
@@ -365,7 +364,7 @@ class MediaOrphanTests(MediaBase):
         self.assertTrue(Path(message.attachment.path).exists())
         self.login(self.superadmin)
         token = media.name_digest(name)
-        self.client.post(reverse("governance:media_delete_orphan"), {"file": token, "typed_word": "DELETE"})
+        self.client.post(reverse("governance:media_delete_orphan"), {"file": token})
         self.assertTrue(Path(message.attachment.path).exists())
 
     def test_a_file_that_became_referenced_after_the_scan_is_not_deleted(self):
@@ -374,9 +373,7 @@ class MediaOrphanTests(MediaBase):
         self.client.get(reverse("governance:media"))  # scan cached: file is flagged as an orphan
         conversation = Conversation.objects.create(user=self.owner)
         Message.objects.create(conversation=conversation, role=Message.Role.USER, attachment=self.ORPHAN)
-        response = self.client.post(
-            reverse("governance:media_delete_orphan"), {"file": media.name_digest(self.ORPHAN), "typed_word": "DELETE"}
-        )
+        response = self.client.post(reverse("governance:media_delete_orphan"), {"file": media.name_digest(self.ORPHAN)})
         self.assertEqual(response.status_code, 302)
         self.assertTrue(path.exists())
         blocked = AuditLog.objects.get(action_type="media_delete_blocked")
@@ -391,16 +388,13 @@ class MediaOrphanTests(MediaBase):
         self.assertEqual(media.delete_orphan(invoice.submitted_proof_image.name)[0], media.DELETE_REFERENCED)
         self.assertEqual(media.delete_orphan(branding.favicon.name)[0], media.DELETE_REFERENCED)
 
-    def test_deleting_an_orphan_needs_the_typed_word_and_is_audited_without_the_name(self):
+    def test_deleting_an_orphan_needs_no_typed_word_and_is_audited_without_the_name(self):
         path = self.write_stray(self.ORPHAN, b"y" * 2048)
         self.login(self.superadmin)
         self.client.get(reverse("governance:media"))
         url = reverse("governance:media_delete_orphan")
         token = media.name_digest(self.ORPHAN)
-        self.client.post(url, {"file": token})
-        self.client.post(url, {"file": token, "typed_word": "delete me"})
-        self.assertTrue(path.exists())  # no or wrong confirmation: nothing happens
-        response = self.client.post(url, {"file": token, "typed_word": "DELETE"})
+        response = self.client.post(url, {"file": token})
         self.assertEqual(response.status_code, 302)
         self.assertFalse(path.exists())
         row = AuditLog.objects.get(action_type="media_orphan_deleted")
@@ -412,19 +406,19 @@ class MediaOrphanTests(MediaBase):
         # gone from the cached scan too, so it cannot be offered again
         self.assertEqual(media.get_scan()["orphan_count"], 0)
 
-    def test_the_delete_form_does_not_shadow_window_confirm(self):
-        """Regression (found in a real browser): an <input name="confirm"> inside the form made the
-        inline onsubmit="return confirm(...)" call the INPUT ("confirm is not a function"), the handler
-        threw, and the form submitted with no confirmation dialog at all."""
+    def test_the_delete_dialog_has_no_field_that_shadows_a_window_function(self):
+        """Regression (found in a real browser): an <input name="confirm"> inside a form made an inline
+        onsubmit="return confirm(...)" call the INPUT, the handler threw, and the form submitted with no
+        dialog at all. The dialog is now script-driven; its form may carry only these fields."""
         self.write_stray(self.ORPHAN)
         self.login(self.superadmin)
-        html = self.client.get(reverse("governance:media"), {"view": "orphans"}).content.decode()
-        form = html[
-            html.index('class="media-delete-form"') : html.index("</form>", html.index('class="media-delete-form"'))
-        ]
-        self.assertIn("window.confirm(", form)
-        for shadowing in ('name="confirm"', 'name="alert"', 'name="submit"', 'id="confirm"'):
-            self.assertNotIn(shadowing, form)
+        html = self.client.get(reverse("governance:media")).content.decode()
+        start = html.index('id="mediaDeleteForm"')
+        form = html[start : html.index("</form>", start)]
+        names = sorted(set(re.findall(r'name="([^"]+)"', form)))
+        self.assertEqual(names, ["back", "csrfmiddlewaretoken", "file"])
+        self.assertNotIn("onsubmit=", form)
+        self.assertNotIn("DELETE", form.replace("Delete", ""))  # nothing to type
 
     def test_there_is_no_bulk_delete_route(self):
         self.write_stray(self.ORPHAN)
@@ -438,7 +432,6 @@ class MediaOrphanTests(MediaBase):
                     media.name_digest(self.ORPHAN),
                     media.name_digest("chat_attachments/user_99/2026/01/other.pdf"),
                 ],
-                "typed_word": "DELETE",
             },
         )
         self.assertEqual(response.status_code, 302)
