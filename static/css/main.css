@@ -3539,6 +3539,15 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
    is actually visible, not just trusted to work silently. */
 .attach-btn.has-file { background: var(--accent-soft); color: var(--accent); animation: copy-pop 280ms var(--ease-spring); }
 .attach-btn:hover { background: var(--color-border); color: var(--color-text); }
+/* A quick-start card (e.g. "Summarize a document") is asking for a file: ring the
+   paperclip so the next step is obvious. Pulses a few times, not forever. */
+.attach-btn.attention { background: var(--accent-soft); color: var(--color-text); outline: 2px solid var(--accent); outline-offset: 2px; animation: attach-attention 1.4s ease-in-out 3; }
+@keyframes attach-attention { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .attach-btn.attention { animation: none; } }
+.starter-hint { max-width: 760px; margin: 0 auto var(--space-2); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 8px 8px 8px 14px; background: var(--accent-soft); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-xs); color: var(--color-text); }
+.starter-hint[hidden] { display: none; }
+.starter-hint-close { flex: none; width: 24px; height: 24px; padding: 0; background: transparent; color: var(--color-text-muted); font-size: 18px; line-height: 1; border-radius: 50%; }
+.starter-hint-close:hover { background: var(--color-border); color: var(--color-text); }
 .attach-btn:active { transform: scale(0.92); }
 /* Solid navy, not the cyan gradient every other primary button gets - the
    approved concept's send button is deliberately the "structural" brand
@@ -4362,6 +4371,10 @@ table.data tbody th.sys-rowhead {
 .chat-home-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-home-scroll > .chat-hero { flex: none; padding-top: var(--space-6); padding-bottom: var(--space-6); }
 .chat-home-scroll .quick-grid { margin-top: var(--space-5); }
+/* The title and intro were capped at ~half the column, leaving the right half of the
+   welcome empty; let them use the width (they still wrap on narrow screens). */
+.chat-home-scroll .hero-title { max-width: none; }
+.chat-home-scroll .hero-sub { max-width: 640px; }
 .chat-home-scroll .hero-plain-start { margin-top: var(--space-4); }
 /* The home "Ask anything" box: one compact row (field + send) lined up with the content
    above it, instead of a tall empty field with the button on its own line below. */

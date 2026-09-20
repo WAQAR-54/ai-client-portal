@@ -542,6 +542,15 @@ function portalCloseUpgradeModal() {
         </div>
     </div>
     <div class="chat-composer-wrap">
+        <div id="starter-hint" class="starter-hint" role="status" hidden
+             data-summarize="{% trans 'Attach your document with the paperclip (PDF, Word, Excel or text), then press send.' %}"
+             data-report="{% trans 'Finish the sentence with your topic, then press send.' %}"
+             data-report-doc="{% trans 'Finish the sentence with your topic, then press send - the reply opens as a document you can download.' %}"
+             data-code="{% trans 'Code-focused answers are on. Paste your code under the prompt, then press send.' %}"
+             data-can-doc="{% if can_generate_document %}1{% endif %}">
+            <span class="starter-hint-text"></span>
+            <button type="button" class="starter-hint-close" aria-label="{% trans 'Dismiss' %}">&times;</button>
+        </div>
         <div id="edit-banner" class="edit-banner" style="display:none;">
             <span>{% trans "Editing message — sending will regenerate the reply" %}</span>
             <button type="button" class="link-btn" onclick="portalCancelEdit()">{% trans "Cancel" %}</button>
@@ -754,6 +763,52 @@ function portalCloseUpgradeModal() {
         });
     })();
     (function() {
+        // ?start=summarize|report|code (from a quick-start card on the chat home):
+        // switch the matching composer feature on and say what to do next. The
+        // starter text itself is already placed by the ?starter= handler below.
+        var params = new URLSearchParams(window.location.search);
+        var start = params.get("start");
+        if (["summarize", "report", "code"].indexOf(start) === -1) return;
+        window.addEventListener("DOMContentLoaded", function() {
+            var textarea = document.getElementById("composer-textarea");
+            var hint = document.getElementById("starter-hint");
+            var attachLabel = document.getElementById("attach-btn-label");
+            var form = document.getElementById("composer-form");
+            var message = "";
+            if (start === "summarize") {
+                message = hint.dataset.summarize;
+                if (attachLabel) attachLabel.classList.add("attention");
+            } else if (start === "code") {
+                message = hint.dataset.code;
+                var codeBtn = document.getElementById("code-mode-toggle-btn");
+                if (codeBtn) portalToggleCodeMode(codeBtn);
+                if (textarea) textarea.value = textarea.value.replace(/\s+$/, "") + "\n\n";
+            } else if (start === "report") {
+                message = hint.dataset.canDoc ? hint.dataset.reportDoc : hint.dataset.report;
+                if (textarea) textarea.value = textarea.value.replace(/\s+$/, "") + " ";
+            }
+            function clearHint() {
+                hint.hidden = true;
+                if (attachLabel) attachLabel.classList.remove("attention");
+            }
+            hint.querySelector(".starter-hint-text").textContent = message;
+            hint.hidden = false;
+            hint.querySelector(".starter-hint-close").addEventListener("click", clearHint);
+            var attachInput = document.getElementById("attach-input");
+            if (attachInput) attachInput.addEventListener("change", clearHint);
+            if (form) form.addEventListener("reset", clearHint);
+            if (textarea) {
+                textarea.style.height = "auto";
+                textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+                textarea.focus();
+                textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+            }
+            params.delete("start");
+            var qs = params.toString();
+            window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+        });
+    })();
+    (function() {
         // ?compare=1 (from "Compare" on the chat home): open the pick-two-models
         // screen once the page's own scripts have defined it, then strip the flag.
         var params = new URLSearchParams(window.location.search);
@@ -834,7 +889,7 @@ function portalCloseUpgradeModal() {
     <div class="chat-home-scroll">
     <div class="chat-hero">
         <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span>{% trans "Route any model, one workspace" %}</div>
-        <h1 class="hero-title">{% trans "What are we routing" %}<br>{% trans "through today?" %}</h1>
+        <h1 class="hero-title">{% trans "What are we routing through today?" %}</h1>
         <p class="hero-sub">{% trans "Chat with any allowed model, compare responses, and keep every conversation inside your team's budget and access rules." %}</p>
         <div class="quick-grid" data-stagger data-stagger-items=".quick-card">
             <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
@@ -848,6 +903,7 @@ function portalCloseUpgradeModal() {
             <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
                 {% csrf_token %}
                 <input type="hidden" name="starter_text" value="{% trans 'Summarize this document and pull out the key points' %}">
+                <input type="hidden" name="start" value="summarize">
                 <button type="submit" class="quick-card">
                     <div class="quick-card-title">{% trans "Summarize a document" %}</div>
                     <div class="quick-card-sub">{% trans "Upload and get key points" %}</div>
@@ -855,7 +911,8 @@ function portalCloseUpgradeModal() {
             </form>
             <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
                 {% csrf_token %}
-                <input type="hidden" name="starter_text" value="{% trans 'Draft a first pass of this report' %}">
+                <input type="hidden" name="starter_text" value="{% trans 'Draft a report on' %}">
+                <input type="hidden" name="start" value="report">
                 <button type="submit" class="quick-card">
                     <div class="quick-card-title">{% trans "Draft a report" %}</div>
                     <div class="quick-card-sub">{% trans "Structured first pass, ready to edit" %}</div>
@@ -863,7 +920,8 @@ function portalCloseUpgradeModal() {
             </form>
             <form method="post" action="{% url 'chat:create_conversation' %}" class="quick-card-form">
                 {% csrf_token %}
-                <input type="hidden" name="starter_text" value="{% trans 'Review this code and flag issues' %}">
+                <input type="hidden" name="starter_text" value="{% trans 'Review this code and flag issues:' %}">
+                <input type="hidden" name="start" value="code">
                 <button type="submit" class="quick-card">
                     <div class="quick-card-title">{% trans "Review this code" %}</div>
                     <div class="quick-card-sub">{% trans "Paste a snippet or a file" %}</div>

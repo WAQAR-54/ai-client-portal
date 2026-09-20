@@ -537,6 +537,12 @@ def request_upgrade(request):
     return redirect("chat:chat_home")
 
 
+# Quick-start cards on the chat home that switch a composer feature on once the
+# new conversation opens: summarize -> the attach button, report -> document
+# output, code -> the code-focused answer mode. (Compare has its own ?compare=1.)
+START_FEATURES = ("summarize", "report", "code")
+
+
 @login_required
 @require_http_methods(["POST"])
 def create_conversation(request):
@@ -575,8 +581,14 @@ def create_conversation(request):
         starter_text = live_intelligence.prompt_for(intel)
     if starter_text:
         url = f"{url}?starter={quote(starter_text)}"
+        start = request.POST.get("start", "").strip()
         if intel_allowed:
             url = f"{url}&intel={quote(intel)}"
+        elif start in START_FEATURES:
+            # A quick-start card that switches a composer feature on (see
+            # START_FEATURES). Whitelisted here; chat_home.html only ever acts
+            # on the same three values, so nothing else can ride in this param.
+            url = f"{url}&start={start}"
     elif request.POST.get("compare") == "1":
         # "Compare" from the chat home: open the new conversation straight on
         # the pick-two-models screen (the screen only exists inside a

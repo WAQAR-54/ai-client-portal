@@ -67,3 +67,60 @@ class ChatHomeUsabilityTests(LiveIntelligenceViewBase):
         response = self.client.post(reverse("chat:create_conversation"), {"intel": "ai", "compare": "1"})
         self.assertIn("intel=ai", response.url)
         self.assertNotIn("compare=1", response.url)
+
+
+@override_settings(LIVE_INTELLIGENCE_ENABLED=True)
+class QuickStartCardTests(LiveIntelligenceViewBase):
+    """Each quick-start card on the chat home switches its own feature on once
+    the new conversation opens."""
+
+    def _home(self):
+        return self.client.get(reverse("chat:chat_home")).content.decode()
+
+    def test_every_card_says_which_feature_it_starts(self):
+        html = self._home()
+        for key in ("summarize", "report", "code"):
+            self.assertIn(f'name="start" value="{key}"', html)
+        self.assertIn('name="compare" value="1"', html)  # Compare has its own flag
+
+    def test_the_report_and_code_cards_carry_a_prompt_that_needs_finishing(self):
+        html = self._home()
+        self.assertIn('value="Draft a report on"', html)
+        self.assertIn('value="Review this code and flag issues:"', html)
+        self.assertNotIn("Draft a first pass of this report", html)
+
+    def test_a_card_start_flag_rides_along_with_its_starter_text(self):
+        for key in ("summarize", "report", "code"):
+            response = self.client.post(
+                reverse("chat:create_conversation"), {"starter_text": "Some prompt", "start": key}
+            )
+            self.assertIn("starter=Some%20prompt", response.url)
+            self.assertTrue(response.url.endswith(f"&start={key}"), response.url)
+
+    def test_an_unknown_start_value_is_ignored(self):
+        """The value comes from a POST field and is echoed into a URL: only the
+        three known keys may pass."""
+        for bad in ("evil", "compare", "<script>", "summarize&x=1", ""):
+            response = self.client.post(
+                reverse("chat:create_conversation"), {"starter_text": "Some prompt", "start": bad}
+            )
+            self.assertNotIn("start=", response.url, bad)
+
+    def test_a_start_flag_without_a_starter_text_is_ignored(self):
+        response = self.client.post(reverse("chat:create_conversation"), {"start": "code"})
+        self.assertNotIn("start=", response.url)
+
+    def test_a_quick_command_wins_over_a_start_flag(self):
+        response = self.client.post(reverse("chat:create_conversation"), {"intel": "ai", "start": "code"})
+        self.assertIn("intel=ai", response.url)
+        self.assertNotIn("start=", response.url)
+
+    def test_the_conversation_page_switches_the_matching_feature_on(self):
+        conversation = Conversation.objects.create(user=self.user)
+        html = self.client.get(reverse("chat:chat_conversation", args=[conversation.id])).content.decode()
+        self.assertIn('id="starter-hint"', html)
+        self.assertIn('params.get("start")', html)
+        self.assertIn('classList.add("attention")', html)  # summarize -> the paperclip
+        self.assertIn("portalToggleCodeMode(codeBtn)", html)  # code -> code-focused answers
+        for message in ("data-summarize=", "data-report=", "data-report-doc=", "data-code="):
+            self.assertIn(message, html)
