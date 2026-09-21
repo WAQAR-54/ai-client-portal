@@ -140,13 +140,81 @@
         if (option) portalSelectModel(option.getAttribute("data-value"), option.getAttribute("data-label"));
     };
 
-    window.portalSetProjectFilter = function(id, el) {
-        activeProjectFilter = (activeProjectFilter === id) ? "" : id;
-        document.querySelectorAll(".project-item").forEach(function(item) {
-            item.classList.toggle("active", item === el && activeProjectFilter !== "");
+    // The selected project survives page loads (opening a conversation is a full navigation) and every re-render of
+    // the Projects section: the JS state is the truth, the highlight is derived from it. sessionStorage only, so a
+    // new tab starts unfiltered; every access is guarded (storage can be blocked).
+    var PROJECT_KEY = "portal.projectFilter";
+    function storeProjectFilter() {
+        try {
+            if (activeProjectFilter) sessionStorage.setItem(PROJECT_KEY, activeProjectFilter);
+            else sessionStorage.removeItem(PROJECT_KEY);
+        } catch (e) { /* storage unavailable: the filter simply is not remembered */ }
+    }
+    function syncProjectHighlight() {
+        var items = document.querySelectorAll(".project-item");
+        var exists = false;
+        items.forEach(function(item) {
+            var on = activeProjectFilter !== "" && item.dataset.projectFilter === activeProjectFilter;
+            if (on) exists = true;
+            item.classList.toggle("active", on);
+            item.setAttribute("aria-pressed", on ? "true" : "false");
         });
+        // The selected project was deleted (or belongs to another account): fall back to "all", never an empty list.
+        if (activeProjectFilter !== "" && !exists && document.getElementById("projects-section-container")) {
+            activeProjectFilter = "";
+            storeProjectFilter();
+            applyFilter();
+        }
+    }
+    window.portalActiveProjectId = function() { return activeProjectFilter; };
+
+    window.portalSetProjectFilter = function(id) {
+        activeProjectFilter = (activeProjectFilter === id) ? "" : id;
+        storeProjectFilter();
+        syncProjectHighlight();
         applyFilter();
     };
+
+    try { activeProjectFilter = sessionStorage.getItem(PROJECT_KEY) || ""; } catch (e) { activeProjectFilter = ""; }
+    syncProjectHighlight();
+    if (activeProjectFilter) applyFilter();
+
+    document.body.addEventListener("htmx:oobAfterSwap", syncProjectHighlight);
+    // The delete response names the project (HX-Trigger): its rows become ungrouped and the filter is cleared,
+    // without re-rendering the list.
+    document.body.addEventListener("portalProjectDeleted", function(evt) {
+        var id = String((evt.detail && evt.detail.id) || "");
+        if (!id) return;
+        document.querySelectorAll('.conv-item[data-project-id="' + id + '"]').forEach(function(item) {
+            item.dataset.projectId = "";
+        });
+        if (activeProjectFilter === id) { activeProjectFilter = ""; storeProjectFilter(); }
+        syncProjectHighlight();
+        applyFilter();
+    });
+    document.addEventListener("keydown", function(evt) {
+        var item = evt.target.classList && evt.target.classList.contains("project-item") ? evt.target : null;
+        if (item && (evt.key === "Enter" || evt.key === " ")) {
+            evt.preventDefault();
+            window.portalSetProjectFilter(item.dataset.projectFilter);
+        }
+    });
+    // "New conversation" (sidebar button, home cards, quick switcher) lands inside the selected project: the
+    // server already accepts project_id and re-validates it against this user's own projects.
+    document.addEventListener("submit", function(evt) {
+        var form = evt.target;
+        if (!form.action || form.method.toLowerCase() !== "post") return;
+        if (new URL(form.action, location.href).pathname !== "{% url 'chat:create_conversation' %}") return;
+        var field = form.querySelector('input[name="project_id"]');
+        if (!activeProjectFilter) { if (field) field.remove(); return; }
+        if (!field) {
+            field = document.createElement("input");
+            field.type = "hidden";
+            field.name = "project_id";
+            form.appendChild(field);
+        }
+        field.value = activeProjectFilter;
+    }, true);
 
     // Exposed for _conversation_list_more.html's "Load more" button
     // (hx-on::after-swap="portalApplyConversationFilter()") - that swap's
@@ -160,36 +228,114 @@
     // #conv-list-container itself (search, pin/unpin, delete, project
     // changes all replace it wholesale).
     document.body.addEventListener("htmx:afterSwap", function(evt) {
-        if (evt.target.id === "conv-list-container") {
+        var path = (evt.detail && evt.detail.pathInfo && evt.detail.pathInfo.requestPath) || "";
+        // A moved conversation swaps only its own row: the new row must obey the active filter too.
+        if (evt.target.id === "conv-list-container" || path.indexOf("/move-to-project/") !== -1) {
             applyFilter();
         }
     });
 })();
 
-function portalToggleNewProjectForm() {
+// "Move to project": the choices come from the sidebar's CURRENT Projects list, built when the menu opens.
+document.addEventListener("toggle", function(evt) {
+    var details = evt.target;
+    if (!details.matches || !details.matches("details.conv-move-menu")) return;
+    var row = details.closest(".conv-item");
+    if (row) row.classList.toggle("menu-open", details.open);
+    if (!details.open) return;
+    var panel = details.querySelector(".export-menu-panel");
+    var tokenField = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    var current = details.dataset.projectId || "";
+    panel.textContent = "";
+    function option(label, projectId, disabled) {
+        var form = document.createElement("form");
+        form.method = "post";
+        form.action = details.dataset.moveUrl;
+        form.setAttribute("hx-post", details.dataset.moveUrl);
+        form.setAttribute("hx-target", "closest .conv-item");
+        form.setAttribute("hx-swap", "outerHTML");
+        [["csrfmiddlewaretoken", tokenField ? tokenField.value : ""], ["project_id", projectId]].forEach(function(pair) {
+            var input = document.createElement("input");
+            input.type = "hidden";
+            input.name = pair[0];
+            input.value = pair[1];
+            form.appendChild(input);
+        });
+        var button = document.createElement("button");
+        button.type = "submit";
+        button.textContent = label;  // a project name is text, never markup
+        if (disabled) button.setAttribute("aria-disabled", "true");
+        form.appendChild(button);
+        panel.appendChild(form);
+    }
+    var projects = document.querySelectorAll(".project-item");
+    projects.forEach(function(item) {
+        option(item.querySelector(".project-item-name").textContent, item.dataset.projectFilter, item.dataset.projectFilter === current);
+    });
+    if (!projects.length) {
+        var hint = document.createElement("p");
+        hint.className = "projects-empty";
+        hint.textContent = "{% trans 'No projects yet. Use + in the sidebar to create one.' %}";
+        panel.appendChild(hint);
+    }
+    if (current) option("{% trans 'Remove from project' %}", "", false);
+    if (window.htmx) htmx.process(panel);
+}, true);
+
+function portalToggleNewProjectForm(show) {
     var form = document.getElementById("new-project-form");
     if (!form) return;
     var showing = form.style.display !== "none";
-    form.style.display = showing ? "none" : "flex";
-    if (!showing) form.querySelector("input").focus();
+    var next = (typeof show === "boolean") ? show : !showing;
+    form.style.display = next ? "flex" : "none";
+    if (next) form.querySelector('input[name="name"]').focus();  // not the hidden CSRF field, which comes first
 }
 
-// Rename uses a plain browser prompt (matching this composer's already-
-// minimal-UI philosophy for one-off text input) rather than a second
-// inline form, then fills+submits the per-project hidden rename form
-// (already carrying its own hx-post) so htmx's own out-of-band-swap
-// handling stays in the loop, same as calling .requestSubmit() on the
-// composer's own textarea-driven form elsewhere in this file.
-function portalRenameProject(projectId, currentName) {
-    var newName = prompt("{% trans 'Rename project' %}", currentName);
-    if (!newName || newName === currentName) return;
-    var input = document.getElementById("rename-project-name-" + projectId);
-    var form = document.getElementById("rename-project-form-" + projectId);
-    if (input && form) {
-        input.value = newName;
-        form.requestSubmit();
-    }
+// Rename happens in place: the row's name becomes an input (Enter saves, Escape or clicking away cancels, an
+// unchanged or empty name sends nothing) - no browser prompt() window. The save is the row's own hx-post form, so
+// the Projects section refreshes through the same out-of-band swap as every other project action.
+function portalStartRenameProject(button) {
+    var item = button.closest(".project-item");
+    if (!item) return;
+    var details = button.closest("details");
+    if (details) details.removeAttribute("open");
+    var form = item.querySelector(".project-rename-form");
+    var input = form.querySelector('input[name="name"]');
+    input.value = input.dataset.original;
+    item.classList.add("is-renaming");
+    form.hidden = false;
+    input.focus();
+    input.select();
 }
+function portalEndRenameProject(form) {
+    var item = form.closest(".project-item");
+    form.hidden = true;
+    if (item) item.classList.remove("is-renaming");
+    delete form.dataset.busy;
+}
+document.addEventListener("keydown", function(evt) {
+    var input = evt.target;
+    if (evt.key === "Escape" && input.closest && input.closest(".project-rename-form")) {
+        portalEndRenameProject(input.closest("form"));
+    } else if (evt.key === "Escape" && input.closest && input.closest("#new-project-form")) {
+        portalToggleNewProjectForm(false);
+    }
+});
+document.addEventListener("focusout", function(evt) {
+    var form = evt.target.closest && evt.target.closest(".project-rename-form");
+    if (form && !form.dataset.busy) portalEndRenameProject(form);
+});
+document.body.addEventListener("htmx:beforeRequest", function(evt) {
+    var form = evt.detail.elt;
+    if (!form || !form.classList || !form.classList.contains("project-rename-form")) return;
+    var input = form.querySelector('input[name="name"]');
+    if (input.value.trim() === input.dataset.original) {  // nothing changed: no request
+        evt.preventDefault();
+        portalEndRenameProject(form);
+    } else {
+        form.dataset.busy = "1";
+    }
+});
 </script>
 <div class="app-sidebar-footer">
     <div class="sidebar-user-chip">

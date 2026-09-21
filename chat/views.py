@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import time
@@ -277,6 +278,23 @@ def _load_more_url(cursor, last_label, active_conversation_id):
     return f"{reverse('chat:load_more_conversations')}?{urlencode(params)}"
 
 
+def _user_projects(request):
+    """This user's own projects with their active-conversation counts (one query)."""
+    return Project.objects.filter(user=request.user).annotate(
+        conversation_count=Count("conversations", filter=Q(conversations__is_deleted=False))
+    )
+
+
+def _projects_section_html(request, projects=None):
+    """The sidebar's Projects section as an htmx out-of-band fragment. Project create/rename/delete/move only ever
+    change THIS (a name, a count, a new row), so they return it alone instead of re-rendering the whole conversation
+    list - which used to collapse "Load more", reset the sidebar scroll and flash the list on every action."""
+    from django.template.loader import render_to_string
+
+    projects = _user_projects(request) if projects is None else projects
+    return render_to_string("chat/_projects_section.html", {"user_projects": projects}, request=request)
+
+
 def _conversation_list_context(request, active_conversation=None):
     """Shared context for the sidebar list, used both on full page loads and
     on the pin/delete/project htmx partial re-renders. Always starts from
@@ -295,9 +313,7 @@ def _conversation_list_context(request, active_conversation=None):
     # regardless of which manager touches Conversation elsewhere (the
     # is_deleted=False filter here matches ActiveConversationManager's own
     # default exactly, rather than relying on it).
-    user_projects = Project.objects.filter(user=request.user).annotate(
-        conversation_count=Count("conversations", filter=Q(conversations__is_deleted=False))
-    )
+    user_projects = _user_projects(request)
     active_id = active_conversation.id if active_conversation else None
     return {
         "pinned_conversations": pinned,
@@ -633,30 +649,12 @@ def delete_conversation(request, conversation_id):
         response["HX-Redirect"] = reverse("chat:chat_home")
         return response
 
-    return render(
-        request,
-        "chat/_conversation_list.html",
-        _conversation_list_context(
-            request,
-            active_conversation=_active_conversation_from_htmx_referrer(request),
-        ),
-    )
-
-
-def _conv_list_and_projects_response(request):
-    """Shared by every Project CRUD view below: the conv list re-render
-    (in-band, matching toggle_pin/delete_conversation's own hx-target) plus
-    the sidebar's Projects section as an htmx out-of-band swap - project
-    create/rename/delete/move can all change what either partial shows
-    (a new project, a renamed one, a changed per-project conversation
-    count), so both always refresh together rather than drifting stale
-    until the next full page load."""
+    context = _conversation_list_context(request, active_conversation=_active_conversation_from_htmx_referrer(request))
     from django.template.loader import render_to_string
 
-    context = _conversation_list_context(request, active_conversation=_active_conversation_from_htmx_referrer(request))
     html = render_to_string("chat/_conversation_list.html", context, request=request)
-    html += render_to_string("chat/_projects_section.html", context, request=request)
-    return HttpResponse(html)
+    # A deleted conversation changes its project's count: refresh the Projects section in the same response.
+    return HttpResponse(html + _projects_section_html(request, context["user_projects"]))
 
 
 @login_required
@@ -667,7 +665,7 @@ def create_project(request):
     if not name:
         return HttpResponseBadRequest("Project name is required")
     Project.objects.create(user=request.user, name=name[:100])
-    return _conv_list_and_projects_response(request)
+    return HttpResponse(_projects_section_html(request))
 
 
 @login_required
@@ -680,7 +678,7 @@ def rename_project(request, project_id):
         return HttpResponseBadRequest("Project name is required")
     project.name = name[:100]
     project.save(update_fields=["name"])
-    return _conv_list_and_projects_response(request)
+    return HttpResponse(_projects_section_html(request))
 
 
 @login_required
@@ -688,8 +686,12 @@ def rename_project(request, project_id):
 @require_http_methods(["POST"])
 def delete_project(request, project_id):
     project = get_object_or_404(Project, id=project_id, user=request.user)
+    deleted_id = project.id
     project.delete()  # SET_NULL on Conversation.project - never deletes the conversations themselves
-    return _conv_list_and_projects_response(request)
+    response = HttpResponse(_projects_section_html(request))
+    # The page clears its filter and the rows' project marker for this id (no list re-render needed).
+    response["HX-Trigger"] = json.dumps({"portalProjectDeleted": {"id": deleted_id}})
+    return response
 
 
 @login_required
@@ -704,7 +706,20 @@ def move_conversation_to_project(request, conversation_id):
     project = Project.objects.filter(id=project_id, user=request.user).first() if project_id else None
     conversation.project = project
     conversation.save(update_fields=["project"])
-    return _conv_list_and_projects_response(request)
+    # Swap only this row (its project marker and menu) plus the Projects counts; the rest of the list, its scroll
+    # position and any "Load more" pages stay exactly as they are.
+    from django.template.loader import render_to_string
+
+    projects = list(_user_projects(request))
+    row = render_to_string(
+        "chat/_conversation_item.html",
+        {
+            "c": Conversation.objects.select_related("last_provider_model__provider").get(pk=conversation.pk),
+            "active_conversation_id": getattr(_active_conversation_from_htmx_referrer(request), "id", None),
+        },
+        request=request,
+    )
+    return HttpResponse(row + _projects_section_html(request, projects))
 
 
 @login_required
