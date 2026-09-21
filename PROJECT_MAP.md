@@ -463,6 +463,27 @@ Ek user = **ek active trusted device**. Password ke baad agar browser ke paas us
 
 MFA policy (disable MFA, admin ke liye lazmi MFA) nahi badli. **Limitation:** session invalidation mojooda single-session rule par tikti hai (`SINGLE_SESSION_PER_USER=False` par purane sessions band nahi hote, sirf device revoke hota hai); trusted-device skip par bhi login naya session banata hai, isliye doosre browsers ke sessions nikal jate hain.
 
+## 8i. Legal pages (2026-09-21)
+
+Chaar **public** pages (sign-in ki zaroorat nahi), poore SaaS/AI wording ke saath — sab kuch application ke asli behaviour se likha gaya; jo business/legal faisla hai woh jhoota bharne ke bajaye `[BUSINESS / LEGAL CONFIRMATION REQUIRED]` marker (`templates/legal/_todo.html`) mein chhoda gaya. **Yeh legal counsel se approved nahi hain** (har page par yeh likha hai).
+
+| Route | Page | Sections |
+|---|---|---|
+| `/legal/privacy/` (`legal:privacy`) | Privacy Policy | 31 (account, MFA/trusted device, conversations, files, projects, billing, usage, logs, cookies, AI processing, providers, retention, rights, closure ...) |
+| `/legal/terms/` (`legal:terms`) | Terms & Conditions | 42 (registration, MFA/trusted devices, acceptable/prohibited use, AI services & output, IP, availability, limits, billing/invoices/payment verification, refunds, cancellation, chargebacks, maintenance, liability, law ...) |
+| `/legal/refunds/` (`legal:refund`) | Refund & Cancellation Policy | 22 (cancellation, invoices, payment verification, 7-day full refund window, review, approved/rejected, duplicates, chargebacks, outages ...) |
+| `/legal/ai-usage/` (`legal:ai_usage`) | AI & Third-Party Model Usage Policy | 24 (business model: "own platform + integrations with third-party AI providers", API keys kabhi users ko nahi diye jate, providers ki list, confidentiality, outages, rate limits, prohibited use ...) |
+
+| File | Kaam |
+|---|---|
+| `legal/` (`views.py::PolicyView`, `urls.py`, `policy.py`) | Naya chhota app (`INSTALLED_APPS`, `config/urls.py`): sirf pages, koi model/migration nahi. `policy.py` mein version/last-updated aur wohi 5 providers jo application support karti hai (Anthropic, OpenAI, Google Gemini, xAI Grok, DeepSeek) |
+| `templates/legal/_page.html` | Shared layout: title, meta (service, legal entity, effective date, last updated, version, contact = `SUPPORT_EMAIL` ya marker), notice, 4 pages ka switcher, sticky contents (JS se banta hai, tablet/phone par band), CSS counters se numbered sections; `base.html` extend karta hai isliye branding 1/2/3/Custom aur light/dark automatic |
+| `templates/legal/privacy.html`, `terms.html`, `refund.html`, `ai_usage.html` | Poora text |
+| `templates/legal/_links.html` | Footer links (Privacy Policy, Terms & Conditions, Refund Policy, AI Usage Policy): sign-in, sign-up, public pricing, signed-in sidebar footer aur har legal page par |
+| `legal/tests.py` | 15 tests: chaaron pages anonymous 200, section counts + unique anchors, global legal info + placeholders, AI page ki zaroori wording, sirf supported providers, koi unsupported claim nahi (zero retention / no logging / no training / money-back guarantee / 30-day ...), refund page `REFUND_WINDOW_DAYS` (7) se match, footer links, sab internal links + anchors, external links `rel=noopener noreferrer`, branding presets, CSS mein sirf tokens |
+
+**Asli behaviour jo pages mein hai:** email/password signup + Google sign-in, MFA (email code) + trusted device (ek browser, hash-only token, 30 din) + "Sign out all sessions", lockout, ek active browser, conversations/projects (personal), uploads (validated) provider ko jate hain, plans/limits, manual proof-of-payment (koi card checkout nahi), 7-din full refund auto-approved (`billing/models.py::REFUND_WINDOW_DAYS`), uske baad admin review, cancel = future invoices band + paid period tak access, overdue invoice par reminder + chat access restriction, maintenance windows + emails, audit/email logs, Sentry (PII off), Cloudflare, cookies, admin-only account deletion (invoices retain). **Placeholders (business ko tay karna):** legal entity/address, effective date, minimum age, governing law/jurisdiction, liability cap, retention periods, servers/hosting/email/backup providers ki jagah aur naam, transfer mechanisms, payment methods aur payout timing, refund review/payout timelines, partial refunds, non-refundable payments, chargeback fees, har provider ki asli data-handling terms. Authorization matrix mein `/legal/` public allowlist hai.
+
 ## 9. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |

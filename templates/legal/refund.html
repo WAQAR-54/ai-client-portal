@@ -1,0 +1,105 @@
+{% extends "legal/_page.html" %}
+{% block policy_body %}
+
+<section id="overview"><h2>Overview</h2>
+<p>This policy explains how plans are billed, how you can cancel a plan, and when and how you can get a refund. It is part of our <a href="{% url 'legal:terms' %}">Terms &amp; Conditions</a>. It describes how the service currently behaves:</p>
+<ul>
+<li>You can cancel a paid plan yourself. Cancelling stops <em>future</em> invoices; you keep access for the period you have already paid for.</li>
+<li>Payments are made outside the application and are confirmed by an administrator; there is no card checkout inside the application.</li>
+<li>A paid invoice can be refunded in full if you ask within <strong>7 days</strong> of the date your payment was verified; the request is approved and recorded straight away.</li>
+<li>After that period a refund request is reviewed by an administrator, who approves or rejects it and tells you the outcome.</li>
+</ul>
+<p>{% include "legal/_todo.html" with what="the business must confirm that the 7-day full-refund window and the review of later requests are the policy it wants to publish, because these are the rules the application enforces today" %}</p>
+</section>
+
+<section id="subscription-cancellation"><h2>Subscription Cancellation</h2>
+<p>A paid plan that renews periodically can be cancelled by you at any time from your dashboard (&ldquo;Cancel plan&rdquo;) or the plans page. You are asked to confirm, and the cancellation is recorded against your account. Free trial or demonstration plans have nothing to cancel and are not billed; they end on their own when their trial period ends. If your organisation&rsquo;s administrator manages your plan, they may change or end it for you.</p>
+</section>
+
+<section id="cancellation-timing"><h2>Cancellation Timing</h2>
+<p>A cancellation takes effect from the moment you confirm it, for the purpose of billing: no further invoices are generated for that plan after that point. It does not cancel or refund an invoice that has already been issued or paid. {% include "legal/_todo.html" with what="whether an invoice that has already been generated but not yet paid when the plan is cancelled remains payable" %}</p>
+</section>
+
+<section id="effect-of-cancellation"><h2>Effect of Cancellation</h2>
+<p>Cancelling does not change the plan you are currently on. You keep the plan&rsquo;s features and allowances until the end of the period you have already paid for, and after that your access reverts as described in the Terms. While a plan is cancelled the dashboard shows it as cancelled and offers &ldquo;Resume plan&rdquo;; if you resume before the period ends, billing continues as before. You receive an in-app notification and an email when a plan is cancelled or resumed. Cancelling does not delete your conversations or files; those are handled under the Privacy Policy.</p>
+</section>
+
+<section id="invoice-creation"><h2>Invoice Creation</h2>
+<p>Invoices are created for the plan, region and currency that apply to you or your organisation. They can be issued by an administrator, or generated automatically shortly before the next billing period&rsquo;s due date for a plan that has not been cancelled. The due date is set when the invoice is generated (a standard period is used unless the plan or an administrator sets another). Each invoice shows the plan, line items, seats where relevant, tax, total, currency, issue and due dates and can be viewed online, downloaded as a PDF or opened from a share link. Your billing details (company name, country, address, tax identifier) come from your billing profile.</p>
+</section>
+
+<section id="payment-process"><h2>Payment Process</h2>
+<p>You pay the invoice outside the application and then tell us that you have paid by submitting a transaction reference and/or a proof-of-payment file (for example a screenshot of the transfer) against the invoice under &ldquo;My invoices&rdquo;. {% include "legal/_todo.html" with what="accepted payment methods, the bank or payment account details shown to customers, and any payment processor used" %} If an invoice is not paid by its due date, a single reminder email is sent and access to the chat features can be restricted until it is settled.</p>
+</section>
+
+<section id="payment-verification"><h2>Payment Verification</h2>
+<p>When you submit proof, the invoice changes to &ldquo;pending verification&rdquo; and the administrators who manage billing are notified. An administrator checks the proof against the payment received and either marks the invoice as paid or rejects the submission. A rejected submission returns the invoice to unpaid so that you can see the outcome and submit again. Only an administrator&rsquo;s confirmation makes an invoice paid; your submission alone does not. The date of that confirmation is the date used for the refund window described below. {% include "legal/_todo.html" with what="the time within which payments are normally verified" %}</p>
+</section>
+
+<section id="refund-eligibility"><h2>Refund Eligibility</h2>
+<p>Only an invoice that has been verified as paid can be refunded. Under the service&rsquo;s current rules:</p>
+<ul>
+<li><strong>Within 7 days of verification:</strong> you can ask for a full refund of the invoice and no reason is required. The request is approved automatically and the invoice is recorded as refunded.</li>
+<li><strong>After 7 days:</strong> you can still ask, but the request is not automatic: it is reviewed by an administrator. Requests after the window are intended for cases such as a documented failure of the service or a billing error or dispute. {% include "legal/_todo.html" with what="the exact grounds on which requests after the 7-day window will be considered, and whether any are excluded" %}</li>
+</ul>
+<p>Only one refund request can be pending for an invoice at a time.</p>
+</section>
+
+<section id="refund-request-process"><h2>Refund Request Process</h2>
+<p>To ask for a refund, open &ldquo;My invoices&rdquo;, choose the paid invoice and use the refund request option. You may add a short explanation of your reason; for a request that needs review it is what the reviewer reads. When the request is decided you receive an in-app notification and, where email notifications are on, an email about the decision.</p>
+</section>
+
+<section id="refund-review"><h2>Refund Review</h2>
+<p>Requests that are not automatically approved are shown to the administrators responsible for the invoice (the administrator of your department, or platform administrators). The reviewer approves or rejects the request and may add notes. Each decision, and who made it, is recorded in the audit log. {% include "legal/_todo.html" with what="the target time for reviewing a refund request" %}</p>
+</section>
+
+<section id="approved-refunds"><h2>Approved Refunds</h2>
+<p>When a refund is approved &mdash; automatically or by a reviewer &mdash; the invoice is marked as refunded, the amount and date are recorded, and you are notified. The refund amount recorded is the total of the invoice. Because payments are made outside the application, the application records the refund but does not itself return the money; it is returned to you by the same or an agreed method outside the application. {% include "legal/_todo.html" with what="how and how quickly approved refunds are actually paid back, and who bears any bank or transfer charges" %}</p>
+</section>
+
+<section id="rejected-refunds"><h2>Rejected Refunds</h2>
+<p>If a request is rejected, the invoice stays paid, you are notified that the request was reviewed and not approved, and any note the reviewer added is shown to you. You may contact us if you believe the decision was wrong; you may also make a new request if circumstances change, but a request that is already pending for the same invoice must be decided first.</p>
+</section>
+
+<section id="duplicate-payments"><h2>Duplicate Payments</h2>
+<p>The application does not detect duplicate payments automatically. If you paid the same invoice twice, or paid an amount that does not match the invoice, contact us with both payment references. We will check against the payments received and correct it. {% include "legal/_todo.html" with what="how duplicate or over-payments are corrected (refund or credit) and the timing" %}</p>
+</section>
+
+<section id="failed-payments"><h2>Failed Payments</h2>
+<p>A payment that never reaches us, or a submitted proof that cannot be verified, does not mark the invoice as paid. The invoice stays unpaid (or returns to unpaid after a rejected proof) and can be paid or resubmitted until it is settled. Overdue invoices trigger a reminder email, may restrict access to the chat features until settled, and may lead to suspension under the Terms. Access is restored once the invoice is verified as paid.</p>
+</section>
+
+<section id="partial-refunds"><h2>Partial Refunds</h2>
+<p>The standard request process refunds the whole invoice total. The application can record a refund of a different amount when an administrator processes it, but the request process does not let you ask for one. {% include "legal/_todo.html" with what="whether partial or pro-rata refunds (for example for unused time) are offered and on what basis; none is promised here" %}</p>
+</section>
+
+<section id="chargebacks"><h2>Chargebacks</h2>
+<p>Please contact us before you ask your bank or payment provider to reverse a payment, so that we can fix a problem quickly. If a payment is reversed, recalled or charged back, we may treat the invoice as unpaid, restrict or suspend the related access and recover the amount owed under the Terms. {% include "legal/_todo.html" with what="how chargebacks are handled, including any fees" %}</p>
+</section>
+
+<section id="payment-disputes"><h2>Payment Disputes</h2>
+<p>If you disagree with an invoice, its amount, its tax treatment or a verification decision, contact us using the details below and include the invoice number. Keep paying any undisputed amount. We will review the invoice and the payment record and tell you the outcome. A billing error found in your favour is corrected by a corrected invoice, a refund or a credit. {% include "legal/_todo.html" with what="dispute handling process and the time limit for raising a dispute" %}</p>
+</section>
+
+<section id="service-interruptions"><h2>Service Interruptions</h2>
+<p>The service depends on our systems and on third-party AI providers, so interruptions can occur. An interruption does not by itself entitle you to a refund or credit, and no automatic credit is given for downtime. If a serious or prolonged failure of the service prevented you from using what you paid for, you can ask for a refund review as described above. {% include "legal/_todo.html" with what="any compensation, credit or service level offered for outages (none is assumed)" %}</p>
+</section>
+
+<section id="maintenance-related-issues"><h2>Maintenance-Related Issues</h2>
+<p>Scheduled and emergency maintenance is a normal part of running the service. While maintenance is active the service is unavailable to non-administrators; users are notified by email and in the service when maintenance is scheduled, when it starts, when it ends and if it is cancelled. Time lost to maintenance is not refundable by itself. If maintenance lasts far longer than announced and you were unable to use the service for a substantial period, you may ask for a refund review.</p>
+</section>
+
+<section id="promotional-and-non-refundable-payments"><h2>Promotional / Non-Refundable Payments</h2>
+<p>{% include "legal/_todo.html" with what="whether any payments (promotional or discounted plans, setup or one-off fees, usage overage, third-party costs) are non-refundable or follow different rules; none are declared non-refundable by this draft" %} Trial plans are free and involve no payment.</p>
+</section>
+
+<section id="processing-timelines"><h2>Processing Timelines</h2>
+<p>What the application does immediately: an automatically approved refund is recorded at once, and you are notified. What is not fixed by the application, and therefore needs a business decision before it can be promised: the time to verify a payment, the time to review a refund request after the 7-day window, and the time it takes for approved refund money to reach you. {% include "legal/_todo.html" with what="processing times for payment verification, refund review and refund payout" %}</p>
+</section>
+
+<section id="how-to-contact-support"><h2>How to Contact Support</h2>
+<p>For questions about cancellation, invoices, payments or refunds, contact {{ site_branding.site_name }}{% if support_email %} at <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %} at {% include "legal/_todo.html" with what="billing support contact e-mail address" %}{% endif %}, quoting your invoice number and the email address on your account. Also see the <a href="{% url 'legal:terms' %}">Terms &amp; Conditions</a>, <a href="{% url 'legal:privacy' %}">Privacy Policy</a> and <a href="{% url 'legal:ai_usage' %}">AI &amp; Third-Party Model Usage Policy</a>.</p>
+{% include "legal/_links.html" %}
+</section>
+
+{% endblock %}

@@ -1,0 +1,180 @@
+{% extends "legal/_page.html" %}
+{% block policy_body %}
+
+<section id="introduction"><h2>Introduction</h2>
+<p>This Privacy Policy explains what personal information {{ site_branding.site_name }} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;the service&rdquo;) collects when you visit or use the platform, why we collect it, who we share it with and what choices you have. We provide our own software platform and AI-powered functionality through integrations with third-party AI service providers, so a part of this policy is specifically about how your prompts, conversation context and files are handled when an AI request is made.</p>
+<p>The operating company responsible for your personal information is {% include "legal/_todo.html" with what="legal name and registered address of the data controller" %}. Please read this policy together with our <a href="{% url 'legal:terms' %}">Terms &amp; Conditions</a> and our <a href="{% url 'legal:ai_usage' %}">AI &amp; Third-Party Model Usage Policy</a>.</p>
+</section>
+
+<section id="scope"><h2>Scope</h2>
+<p>This policy applies to the web application, its sign-in and sign-up pages, the public pricing page, the shared invoice links we send to clients, and the emails the service sends. It applies to every kind of account: users, managers, department administrators and platform administrators. It does not apply to websites or services operated by other companies, including the AI providers described below, even where you reach them through the platform.</p>
+<p>If your account was created for you by your organisation (for example by a department administrator), your organisation may have its own rules about your use of the service and may be an independent controller of some of your information. In that case, questions about what your organisation does with the information should be directed to your organisation.</p>
+</section>
+
+<section id="information-we-collect"><h2>Information We Collect</h2>
+<p>We collect only the information needed to run the service. It comes from three places: information you give us (for example when you sign up, type a prompt or upload a file), information created while you use the service (for example usage counts, security events and invoices), and information from other services you choose to connect (for example Google sign-in). The following sections describe each category in detail.</p>
+</section>
+
+<section id="account-information"><h2>Account Information</h2>
+<p>When an account is created we store your email address (which is also your sign-in name), your password in hashed form only (we never store or can read your plain-text password), your role (user, manager, administrator or platform administrator), the department and team you belong to, and your display preferences (interface language and light/dark theme). You may add a first and last name to your profile. We also keep whether you have completed or skipped the first-login guided tour.</p>
+<p>If you sign in with Google, we receive and store your Google account identifier, the email address and profile picture link Google provides, and the time the accounts were linked, so that the same person can be recognised on the next sign-in. We do not receive your Google password.</p>
+<p>Your plan assignment (for example a trial or paid plan), its start and expiry dates, and whether you have cancelled it are stored against your account.</p>
+</section>
+
+<section id="authentication-and-security-information"><h2>Authentication and Security Information</h2>
+<p>To protect accounts we process the following security information:</p>
+<ul>
+<li><strong>Two-step verification (MFA).</strong> Where two-step verification applies to your account (it is mandatory for administrator roles when the platform setting is on, and optional for other users who can turn it on in Settings), we generate a short-lived six-digit code, email it to you and keep it in your pre-sign-in session only until it is used or expires. The number of wrong attempts and resend requests is counted to prevent guessing.</li>
+<li><strong>Failed sign-in tracking.</strong> Repeated failed sign-ins for an account lock that account for a cooling-off period, and failed attempts are counted per address to slow automated attacks. Lock-out events are written to the security record together with the network address they came from.</li>
+<li><strong>Password reset.</strong> A password-reset request creates a single-use link that is emailed to the address on the account.</li>
+<li><strong>Session controls.</strong> A signed-in session ends after a period of inactivity. Signing in on a second browser or device signs the first one out, and a marker stored in the session is compared with the one stored on your account to do this.</li>
+</ul>
+</section>
+
+<section id="trusted-device-and-session-information"><h2>Trusted Device / Session Information</h2>
+<p>If you use two-step verification, the browser you have just verified in becomes your one trusted device. We give that browser a random token in a cookie and store only a one-way hash of the token together with a short label (for example &ldquo;Chrome on Windows&rdquo;, derived only from the browser and operating-system names), when it was registered, when it was last used, when it expires and, if applicable, when it was revoked. We do not identify a device by fingerprinting, and the network address alone never makes a device trusted.</p>
+<p>A trusted browser can sign in with your password without a new code until the trust expires or is revoked. Verifying on a different browser or computer replaces the previous trusted device, signs the earlier session out and sends you a &ldquo;New trusted device&rdquo; notice. In Settings you can see the current trusted device and use &ldquo;Sign out all sessions&rdquo; to revoke it and end every session.</p>
+</section>
+
+<section id="conversations-and-prompts"><h2>Conversations and Prompts</h2>
+<p>We store the conversations you have with the service: the messages you send (prompts), the responses returned, conversation titles, timestamps, which model produced each response, the number of input and output tokens used and an estimate of their cost, and any feedback you give on a response. Conversations you pin, prompt templates you save and the order of your conversation list are stored so the interface behaves as you left it.</p>
+<p>Conversations belong to the account that created them. Other users, including managers of your team, do not see the content of your conversations through the team and dashboard screens; those screens show counts and usage figures. Platform administrators operate the system and its stored records and may be able to access stored records when needed to operate, secure or support the service.</p>
+</section>
+
+<section id="uploaded-files-and-documents"><h2>Uploaded Files and Documents</h2>
+<p>You can attach files to a message where your plan and role allow it. Attachments are checked against size and type limits and their content is inspected so that a file cannot pretend to be a different type or carry an executable. Accepted files are stored in the service&rsquo;s file storage under your account, and the text or image content needed to answer your request is extracted and, when you ask the AI to work with the file, sent to the AI provider that handles the request (see AI Processing). Files you upload to prove payment of an invoice (a screenshot of a transfer, for example) are stored separately and are visible to the administrators who verify payments.</p>
+<p>Please do not upload files you do not have the right to share, or files containing information you would not want processed by a third-party AI provider.</p>
+</section>
+
+<section id="ai-generated-outputs"><h2>AI-Generated Outputs</h2>
+<p>Responses generated for you are stored as part of your conversation so you can read them again. Depending on your plan you can export a conversation or a single response to common document formats; those exports are produced on request from what is already stored. Output generated by an AI model may be inaccurate, and we treat it, for storage and privacy purposes, like the rest of your conversation content.</p>
+</section>
+
+<section id="project-information"><h2>Project Information</h2>
+<p>Projects are personal folders you create to group your own conversations. We store the project name, when it was created and which conversations belong to it. Projects are private to your account; team and department views show only how many projects exist, not their names or contents. Deleting a project does not delete the conversations that were in it.</p>
+</section>
+
+<section id="billing-and-payment-information"><h2>Billing and Payment Information</h2>
+<p>To issue invoices we store a billing profile for your organisation or account (company name, country, billing address, tax identifier and tax-exempt status, where you provide them) and the invoices themselves: the plan, amounts, tax, currency, issue and due dates, status and line items. When you tell us you have paid, we store the transaction reference and/or the proof-of-payment file you submit, who verified it and when. If you ask for a refund we store the request, your stated reason and the decision.</p>
+<p>The application does not contain an online card-payment form and does not store payment card numbers. Payments are made outside the application and are confirmed by an administrator against the proof you submit. {% include "legal/_todo.html" with what="the payment methods accepted and the name of any payment processor or bank that handles funds" %}</p>
+</section>
+
+<section id="usage-and-analytics-information"><h2>Usage and Analytics Information</h2>
+<p>We measure how much of the service is used so that usage limits, plan allowances, budgets and invoices work: tokens used per day and month, estimated cost, number of requests, which features and models were used, and warnings when you approach a limit. Administrators see aggregated dashboards of this information for the people in their scope. The application does not include third-party advertising or behavioural-analytics trackers.</p>
+</section>
+
+<section id="technical-and-device-information"><h2>Technical and Device Information</h2>
+<p>When you connect we receive your network (IP) address and your browser&rsquo;s user-agent string. We use them to operate and protect the service: to rate-limit abusive traffic, to record security events, to label a trusted device with browser and system names, and to make an initial guess of your interface language (a country-level lookup performed on our own server with an offline database, with no request to an outside service; the guess is only a starting point and any language you choose overrides it). Each request is also given a random request identifier that appears in our logs so that a problem can be traced.</p>
+</section>
+
+<section id="logs-security-and-audit-information"><h2>Logs, Security and Audit Information</h2>
+<p>We keep several kinds of record:</p>
+<ul>
+<li><strong>Audit log.</strong> A record of important actions (sign-ins and lock-outs, role, plan and department changes, provider and model configuration, maintenance windows, billing and refund decisions and similar), with who did it, what it concerned and when. It is used for accountability and security investigations.</li>
+<li><strong>Email log.</strong> For emails the service sends (verification codes, notifications, invoices, reminders) we keep the recipient, subject, delivery status and whether the message was opened, which is detected by a tiny image in the email. Message bodies are not needed for this log.</li>
+<li><strong>Server and error logs.</strong> Technical logs with request identifiers. Where error monitoring is switched on, crash reports are sent to our error-monitoring provider with default personal data collection turned off and with credentials and secrets removed before sending.</li>
+<li><strong>Task and health records.</strong> Status of scheduled background jobs and system health checks, which contain no conversation content.</li>
+</ul>
+</section>
+
+<section id="cookies-and-similar-technologies"><h2>Cookies and Similar Technologies</h2>
+<p>We use only cookies and browser storage that the service needs to work. We do not use advertising cookies.</p>
+<table class="legal-table">
+<thead><tr><th>Item</th><th>Purpose</th><th>Lifetime</th></tr></thead>
+<tbody>
+<tr><td>Session cookie</td><td>Keeps you signed in and holds the one-time state of a sign-in that is waiting for its verification code.</td><td>Until you sign out or the session expires (after a period of inactivity, or at its maximum age).</td></tr>
+<tr><td>Security (CSRF) cookie</td><td>Protects forms and actions from being triggered by other sites.</td><td>Persistent; renewed automatically.</td></tr>
+<tr><td>Language cookie</td><td>Remembers the interface language you or our language guess selected.</td><td>Persistent, as set by the browser.</td></tr>
+<tr><td>Trusted-device cookie</td><td>Holds the random token that identifies your one trusted browser (see above). HttpOnly and Secure; not readable by page scripts.</td><td>Up to 30 days, or until revoked.</td></tr>
+<tr><td>Browser storage</td><td>Small interface preferences such as which navigation groups are open.</td><td>Until you clear your browser data.</td></tr>
+</tbody></table>
+<p>Some pages load fonts and script libraries from third-party content networks (see Third-Party Service Providers); your browser sends those networks your network address and browser details when it requests them. You can block or delete cookies in your browser settings, but the service will not work without its session and security cookies.</p>
+</section>
+
+<section id="how-we-use-information"><h2>How We Use Information</h2>
+<p>We use information to: create and secure your account; sign you in and verify it is you; provide chat, comparison, document, project and other features you use; route each AI request to a model and provider; apply your plan&rsquo;s allowances and limits; prepare invoices, verify payments and handle refunds; send service emails and in-app notifications; monitor performance, detect abuse and investigate incidents; comply with legal obligations; and improve the reliability of the service. We do not sell personal information and we do not use your conversation content for advertising.</p>
+</section>
+
+<section id="ai-processing"><h2>AI Processing</h2>
+<p>The AI features are provided through third-party AI service providers. When you send a message and choose or are routed to a model, <strong>your prompt, the relevant earlier messages of the conversation that are needed to give context, any file content you attach, and the configuration needed to answer (such as instructions set by your organisation) are sent to the third-party AI provider that runs that model, so that the provider can process the request and return a response.</strong> Those providers process the content on their own systems, and the processing is governed by their own terms and privacy documentation as well as by this policy. For features that use several models at once (for example comparing two models) the same prompt is sent to each selected provider.</p>
+<p>We do not promise that a provider does not keep, log or review requests, that requests never leave a particular country, or that a provider does not use content to improve its models: those practices depend on each provider and on the terms and settings applying to the connection, and they can change. The platform records, for each connected provider, whether the provider is understood to train on submitted data and administrators can restrict which providers and regions a department may use, but this is a configuration aid and not a guarantee. See our <a href="{% url 'legal:ai_usage' %}">AI &amp; Third-Party Model Usage Policy</a> and the providers&rsquo; own policies. {% include "legal/_todo.html" with what="confirm, for each enabled provider, the account type and data-handling terms (retention, training, region) that actually apply and then state them here" %}</p>
+</section>
+
+<section id="third-party-service-providers"><h2>Third-Party Service Providers</h2>
+<p>We use other companies to operate the service. They process information only as needed to provide their function:</p>
+<ul>
+<li><strong>Hosting and infrastructure.</strong> The service runs on a virtual server operated by {% include "legal/_todo.html" with what="name and location of the hosting provider" %}, with a database, a cache and file storage.</li>
+<li><strong>Network protection and delivery.</strong> Traffic to the service passes through Cloudflare, which acts as a reverse proxy and security layer and therefore handles request metadata.</li>
+<li><strong>Email delivery.</strong> Service emails are sent through the email (SMTP) service configured for the platform, {% include "legal/_todo.html" with what="name of the email delivery provider" %}.</li>
+<li><strong>Error monitoring.</strong> Crash reports go to Sentry when it is enabled, configured as described under Logs.</li>
+<li><strong>Google.</strong> Sign in with Google, if enabled, is provided by Google; some pages also load Google Fonts.</li>
+<li><strong>Script and font networks.</strong> Some interface libraries are loaded by your browser from public content networks (for example unpkg and jsDelivr).</li>
+<li><strong>Backup storage.</strong> If database backups to external S3-compatible storage are configured, encrypted-in-transit copies of the database are held by that storage provider. {% include "legal/_todo.html" with what="whether external backup storage is in use, its provider and location" %}</li>
+<li><strong>News sources.</strong> The optional Live Intelligence feature fetches public news feeds; no personal information is sent to them.</li>
+</ul>
+</section>
+
+<section id="ai-model-providers"><h2>AI Model Providers</h2>
+<p>The platform is built to connect to the following AI providers, and which of them (and which of their models) is available to you depends on what our administrators have enabled and on your plan:</p>
+<ul>{% for name, models, url in providers %}<li><strong>{{ name }}</strong> ({{ models }}) &mdash; <a href="{{ url }}" target="_blank" rel="noopener noreferrer">official policies</a></li>{% endfor %}</ul>
+<p>Other OpenAI-compatible providers can be added by administrators; the list of providers actually shown inside the service at any time is the authoritative one. We are an independent service. The presence of a provider on this list does not mean that the provider endorses, sponsors or is affiliated with us. The provider links open the providers&rsquo; own sites, whose terms, privacy policies and acceptable-use rules apply to their processing.</p>
+</section>
+
+<section id="data-storage"><h2>Data Storage</h2>
+<p>Account, conversation, project, billing and audit records are stored in the service&rsquo;s database. Uploaded files, invoice proofs and generated media are stored in the service&rsquo;s file storage. A cache holds temporary data such as rate-limit counters and short-lived status information and is not a permanent record. The servers are located in {% include "legal/_todo.html" with what="country / region of the production servers and of any backup storage" %}.</p>
+</section>
+
+<section id="data-retention"><h2>Data Retention</h2>
+<p>We keep information only for as long as it is needed for the purposes above. In practice:</p>
+<ul>
+<li><strong>Conversations and files.</strong> Kept until you delete them, or until an automatic retention rule set for your department removes conversations that have had no activity for the chosen period (the available choices are configured per department; by default conversations are kept). A conversation you delete disappears from your account immediately; {% include "legal/_todo.html" with what="how long deleted conversations and their attached files remain in backups and storage before they are permanently removed" %}.</li>
+<li><strong>Account records.</strong> Kept while your account exists. If an account is removed, its conversations and personal settings are removed with it, whereas invoices and billing history are kept so that financial records stay complete.</li>
+<li><strong>Billing and tax records.</strong> {% include "legal/_todo.html" with what="the period invoices, payment proofs and refund records are kept, which should follow the applicable accounting and tax rules" %}</li>
+<li><strong>Audit, security and email logs.</strong> {% include "legal/_todo.html" with what="retention period for audit, security and email logs" %} Administrators can delete email-log entries.</li>
+<li><strong>Trusted device records.</strong> Expire after 30 days and are revoked earlier when you verify on another browser or use &ldquo;Sign out all sessions&rdquo;.</li>
+</ul>
+<p>Information held by third-party AI and service providers is kept according to their own policies.</p>
+</section>
+
+<section id="data-security"><h2>Data Security</h2>
+<p>We use measures appropriate to the service, including: password hashing; two-step verification and a limited number of trusted devices; account lock-out and rate limits against guessing; session time-outs and one active browser per account; role-based access controls that limit what each role can see and change; audit and security logging; encryption of provider credentials at rest and their exclusion from logs and error reports; encrypted connections (HTTPS) between your browser and the service; content checks on uploaded files; and regular backups where configured. No system is perfectly secure, and we cannot guarantee absolute security. Please keep your password and email account secure and tell us at once if you suspect misuse.</p>
+</section>
+
+<section id="data-sharing"><h2>Data Sharing</h2>
+<p>We do not sell personal information. We share it only: with the AI and service providers described above to the extent needed to deliver the service; with the administrators of your organisation and of the platform, who see account, role, usage, billing and audit information within their scope; when you direct us to, for example when you use a shared invoice link; where required by law, court order or a valid request from a public authority; to protect the rights, safety and security of users or the service; and with a successor if the business is reorganised or transferred, in which case this policy will continue to apply until you are told otherwise.</p>
+</section>
+
+<section id="international-data-transfers"><h2>International Data Transfers</h2>
+<p>The AI providers and some of our service providers operate in several countries, so your prompts, files and other information may be processed outside the country in which you live, including outside the country in which our servers are located. Where the law requires safeguards for such transfers we will put them in place. {% include "legal/_todo.html" with what="the transfer mechanisms relied on (for example contractual clauses) and each provider's processing locations" %}</p>
+</section>
+
+<section id="user-rights"><h2>User Rights</h2>
+<p>Depending on where you live, you may have rights over your personal information, including to be informed about how it is used, to access it, to have inaccurate information corrected, to have it deleted, to restrict or object to certain processing, to receive it in a portable form, to withdraw consent given earlier, and to complain to your data-protection authority. Some of these rights are limited by law or by our need to keep certain records (for example billing records). {% include "legal/_todo.html" with what="the specific privacy laws whose rights the business will honour (for example GDPR, UK GDPR, CCPA) and the response time promised" %}</p>
+</section>
+
+<section id="access-correction-and-deletion-requests"><h2>Access / Correction / Deletion Requests</h2>
+<p>You can do a lot yourself: edit your profile and preferences in Settings, turn optional emails on or off by type, turn two-step verification on or off where it is optional, export your conversations in supported formats where your plan includes it, delete conversations and projects, and revoke your trusted device and sessions. For anything else, including a copy of your information, correction, or deletion of your account, contact us using the details in the Contact Information section, from the email address on the account. We may ask you to confirm your identity first and will tell you if a request cannot be fully met and why.</p>
+</section>
+
+<section id="account-closure"><h2>Account Closure</h2>
+<p>Accounts are closed by an administrator. At present there is no self-service &ldquo;delete my account&rdquo; button: you can ask for closure by contacting us, or your organisation&rsquo;s administrator can remove your account. When an account is removed its conversations, projects and personal settings are removed with it; invoices and billing history are retained, and security and audit entries about past actions may remain. Third-party providers that already processed your requests keep information under their own policies.</p>
+</section>
+
+<section id="childrens-privacy"><h2>Children&rsquo;s Privacy</h2>
+<p>The service is intended for businesses and adults and is not directed at children. We do not knowingly collect personal information from children. The minimum age to use the service is {% include "legal/_todo.html" with what="minimum age (for example 18, or the age of digital consent in your jurisdiction)" %}. If you believe a child has provided information to the service, contact us and we will take appropriate steps to delete it.</p>
+</section>
+
+<section id="third-party-links"><h2>Third-Party Links</h2>
+<p>The service contains links to other websites, such as AI providers&rsquo; policy pages and news sources shown by the Live Intelligence feature. We are not responsible for the content or privacy practices of those sites, and we encourage you to read their policies.</p>
+</section>
+
+<section id="changes-to-this-privacy-policy"><h2>Changes to This Privacy Policy</h2>
+<p>We may update this policy as the service or the law changes. The &ldquo;Last updated&rdquo; date and version at the top show the current text. If a change is significant we will tell you through the service or by email before it takes effect where the law requires it. Continuing to use the service after a change takes effect means you accept the updated policy, to the extent the law allows.</p>
+</section>
+
+<section id="contact-information"><h2>Contact Information</h2>
+<p>For questions about this policy or to make a privacy request, contact {{ site_branding.site_name }}{% if support_email %} at <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %} at {% include "legal/_todo.html" with what="privacy / support contact e-mail address" %}{% endif %}. Postal address: {% include "legal/_todo.html" with what="registered business address" %}. Data protection contact or representative, if one is required: {% include "legal/_todo.html" with what="name and contact of the data protection officer or representative, if applicable" %}.</p>
+{% include "legal/_links.html" %}
+</section>
+
+{% endblock %}

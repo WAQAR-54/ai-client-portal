@@ -34,7 +34,7 @@ REFUSED = ("DENY", "LOGIN")
 
 # Routes an anonymous visitor may reach on purpose.
 PUBLIC_EXACT = {"/", "/docs/", "/docs/guides/", "/admin/login/", "/billing/pricing/"}
-PUBLIC_PREFIXES = ("/billing/share/", "/notifications/track/")
+PUBLIC_PREFIXES = ("/billing/share/", "/notifications/track/", "/legal/")  # /legal/: the four policy pages
 # Manager-only on purpose: a Manager runs a team, and Admin/SuperAdmin manage teams through the
 # governance pages instead - so these are the only routes where a higher role is refused.
 MANAGER_ONLY = {

@@ -30,6 +30,7 @@
             {% include "accounts/_google_signin_button.html" %}
             <p class="auth-footer">{% trans "Already have an account?" %} <a href="{% url 'accounts:login' %}">{% trans "Log in" %}</a></p>
             <p class="auth-footer"><a href="{% url 'billing:public_pricing' %}">{% trans "View pricing" %}</a></p>
+            {% include "legal/_links.html" %}
         </div>
     </div>
 </div>

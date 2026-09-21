@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% comment %}
+Shared layout of the four legal pages (privacy, terms, refund, ai_usage). Public: no sign-in needed. The page text is in the
+child template's `policy_body` block as <section id="..."><h2>...</h2>...</section>; sections and sub-sections are numbered
+by CSS counters and the table of contents is built from those headings by the small script below (the page reads fine
+without it). Everything visual uses the global tokens, so every branding and both themes apply.
+{% endcomment %}
+{% block title %}{{ policy.title }} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="legal" data-legal="{{ policy.key }}">
+    <header class="legal-head">
+        <h1>{{ policy.title }}</h1>
+        <dl class="legal-meta">
+            <div><dt>{% trans "Service" %}</dt><dd>{{ site_branding.site_name }}</dd></div>
+            <div><dt>{% trans "Legal entity" %}</dt><dd>{% include "legal/_todo.html" with what="legal name of the operating company" %}</dd></div>
+            <div><dt>{% trans "Effective date" %}</dt><dd>{% include "legal/_todo.html" with what="date this policy takes effect" %}</dd></div>
+            <div><dt>{% trans "Last updated" %}</dt><dd>{{ policy.last_updated }}</dd></div>
+            <div><dt>{% trans "Version" %}</dt><dd>{{ policy.version }}</dd></div>
+            <div><dt>{% trans "Contact" %}</dt><dd>{% if support_email %}<a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %}{% include "legal/_todo.html" with what="support / legal contact e-mail address" %}{% endif %}</dd></div>
+        </dl>
+        <p class="legal-notice" role="note">{% trans "This document describes how the service works today. It has not yet been reviewed or approved by legal counsel, and the items marked in the text are decisions the business must confirm before it is treated as final." %}</p>
+        <nav class="legal-switch" aria-label="{% trans 'Legal documents' %}">
+            {% for page in policy_pages %}<a href="{% url page.url_name %}"{% if page.key == policy.key %} aria-current="page"{% endif %}>{{ page.label }}</a>{% endfor %}
+        </nav>
+    </header>
+    <div class="legal-layout">
+        <nav class="legal-toc" aria-label="{% trans 'Contents' %}">
+            <details class="legal-toc-box" open>
+                <summary>{% trans "Contents" %}</summary>
+                <ol id="legal-toc-list"></ol>
+            </details>
+        </nav>
+        <article class="legal-body" id="legal-body">
+            {% block policy_body %}{% endblock %}
+        </article>
+    </div>
+</div>
+<script>
+(function () {
+  var body = document.getElementById("legal-body"), list = document.getElementById("legal-toc-list");
+  if (!body || !list) return;
+  var heads = body.querySelectorAll("section[id] > h2"), links = {};
+  heads.forEach(function (h) {
+    var li = document.createElement("li"), a = document.createElement("a");
+    a.href = "#" + h.parentNode.id; a.textContent = h.textContent; li.appendChild(a); list.appendChild(li);
+    links[h.parentNode.id] = a;
+  });
+  if (window.matchMedia && window.matchMedia("(max-width: 979px)").matches) list.closest("details").removeAttribute("open");
+  if (!("IntersectionObserver" in window)) return;
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { Object.keys(links).forEach(function (k) { links[k].removeAttribute("aria-current"); }); links[e.target.id].setAttribute("aria-current", "true"); }
+    });
+  }, { rootMargin: "0px 0px -70% 0px" });
+  heads.forEach(function (h) { io.observe(h.parentNode); });
+})();
+</script>
+{% endblock %}

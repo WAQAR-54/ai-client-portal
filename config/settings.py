@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "accounts",
     "billing",
+    "legal",
     "chat",
     "domaingen",
     "governance",

@@ -1,0 +1,2 @@
+{% load i18n %}{% comment %}The four policy links, reused in the sidebar, the sign-in / sign-up pages, public pricing and the legal pages themselves.{% endcomment %}
+<nav class="legal-links" aria-label="{% trans 'Legal' %}"><a href="{% url 'legal:privacy' %}">{% trans "Privacy Policy" %}</a><a href="{% url 'legal:terms' %}">{% trans "Terms & Conditions" %}</a><a href="{% url 'legal:refund' %}">{% trans "Refund Policy" %}</a><a href="{% url 'legal:ai_usage' %}">{% trans "AI Usage Policy" %}</a></nav>

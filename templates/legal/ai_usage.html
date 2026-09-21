@@ -1,0 +1,104 @@
+{% extends "legal/_page.html" %}
+{% block policy_body %}
+
+<section id="what-the-ai-service-is"><h2>What the AI Service Is</h2>
+<p>{{ site_branding.site_name }} is a software platform we operate. It gives you a single workspace in which you can chat with AI models, compare their answers, work on documents and code, organise conversations into projects and manage usage and billing for your organisation. <strong>We provide our own software platform and AI-powered functionality through integrations with third-party AI service providers.</strong> The AI models themselves are built and run by those providers; the platform around them &mdash; accounts, access control, plans, limits, conversations, projects, exports, notifications, invoicing and administration &mdash; is ours.</p>
+<p>Users access supported AI models through our platform. We do not sell, transfer, sublicense, or provide users with third-party provider API keys or provider accounts, and users do not receive credentials to any provider. What you get from us is access to features of our platform, according to your plan.</p>
+</section>
+
+<section id="how-ai-requests-work"><h2>How AI Requests Work</h2>
+<p>When you send a message, the platform first checks that you are signed in, that your plan and role allow the feature, that you are within your usage limits and that the model you selected (or the model our routing chooses for you) is enabled for you. It then assembles the request &mdash; your prompt, the earlier messages of the conversation that give context, any file content you attached, and any instructions configured by your organisation &mdash; and sends it over the provider&rsquo;s API to the third-party AI provider that runs the model. The provider returns a response, which the platform streams back to you and stores in your conversation together with the model used, token counts and an estimate of cost.</p>
+</section>
+
+<section id="third-party-model-providers"><h2>Third-Party Model Providers</h2>
+<p>The platform can connect to the following providers, and models from a provider appear in the service only after an administrator has connected that provider and enabled the model:</p>
+<ul>{% for name, models, url in providers %}<li><strong>{{ name }}</strong> &mdash; {{ models }}. Official policies: <a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ url }}</a></li>{% endfor %}</ul>
+<p>Other OpenAI-compatible providers may also be connected by administrators. We are an independent company. We do not own any of these providers or models, and we do not claim any partnership, sponsorship or endorsement by them. Provider and model names are used only to tell you what a feature connects to. The list above describes what the platform is built to support; which providers and models you can actually use is shown inside the service and can change.</p>
+</section>
+
+<section id="available-model-and-provider-selection"><h2>Available Model / Provider Selection</h2>
+<p>Depending on your plan you may be able to choose the model for a conversation, or the platform may pick one for you using routing rules set by administrators. Administrators may restrict models by plan, by department, by team, by individual and, for compliance, by provider region. A model that is not enabled for you cannot be used even if it exists in the platform. Some features, such as comparing two models, send your prompt to each selected model.</p>
+</section>
+
+<section id="api-based-processing"><h2>API-Based Processing</h2>
+<p>All AI processing happens through the providers&rsquo; APIs. The platform authenticates to each provider with credentials held by our administrators; those credentials are stored encrypted and are never shown to users, included in logs or exposed to your browser. Requests are made from our servers, not from your browser, so your browser does not talk to the providers directly.</p>
+</section>
+
+<section id="user-prompts-and-context"><h2>User Prompts and Context</h2>
+<p>Everything relevant to your request can be sent to the provider: the prompt you type, the earlier messages in the same conversation that are needed for context, saved templates you insert, instructions set by your organisation and, when you use them, content from the files you attach. To keep requests within model limits and budgets the platform may shorten or summarise long conversation history before it is sent. Do not include information in a prompt that you are not permitted to share with a third-party AI provider.</p>
+</section>
+
+<section id="uploaded-documents-and-files"><h2>Uploaded Documents / Files</h2>
+<p>Files you attach are checked for size, type and content safety, stored by the platform under your account, and, when you ask the AI to read or analyse them, converted to the text or image form the model needs and sent to the provider along with your prompt. Document reading, image reading, document generation, image or video generation and similar capabilities depend on your plan and on the provider and model used. Only upload files you have the right to use and that you accept being processed by the selected provider.</p>
+</section>
+
+<section id="ai-generated-responses"><h2>AI-Generated Responses</h2>
+<p>Responses are generated by the provider&rsquo;s model. They are stored in your conversation, can be regenerated, rated, copied or exported (where your plan allows) and are treated like the rest of your conversation content. Responses are created automatically, are not reviewed by us before you see them, and may differ each time even for the same prompt.</p>
+</section>
+
+<section id="provider-limitations"><h2>Provider Limitations</h2>
+<p>Each provider and model has its own limits: maximum context length, supported languages and file types, knowledge cut-off, response speed, output length, and features that only some models support. A model may decline a request, may not know recent events and may behave differently after the provider updates it. The platform passes requests through and cannot remove these limitations.</p>
+</section>
+
+<section id="provider-availability"><h2>Provider Availability</h2>
+<p>Because the providers run the models, our service depends on theirs. A provider can be slow, unavailable, change its pricing or policies, suspend or restrict our access, or retire a model. When a provider or model is unavailable, the platform shows an error or a temporary message and the affected features may not work until access returns. We do not guarantee that any given provider or model will be available at any time.</p>
+</section>
+
+<section id="provider-specific-terms"><h2>Provider-Specific Terms</h2>
+<p>Providers have their own terms of service, privacy policies, data-processing terms and usage policies, and those apply to how they handle the requests they receive from the platform. We do not reproduce or replace them. Please read them at the official sites linked above. If a provider&rsquo;s terms change in a way that affects the service, we may change or remove the related features.</p>
+</section>
+
+<section id="provider-acceptable-use-requirements"><h2>Provider Acceptable-Use Requirements</h2>
+<p>Providers prohibit certain uses of their models, typically including illegal activity, generating malware or deceptive content, harassment or hateful content, sexual content involving minors, weapons development, violating privacy or intellectual-property rights, and misleading people into thinking machine output is human-written where that matters. Your use of any model through the platform must comply with the acceptable-use policy of the provider that runs it as well as with our <a href="{% url 'legal:terms' %}">Terms</a>. A provider may refuse or block a request, and we may suspend access if use breaches those rules.</p>
+</section>
+
+<section id="user-responsibility"><h2>User Responsibility</h2>
+<p>You are responsible for the prompts and files you submit, for having the right to submit them, for choosing an appropriate model, for reviewing every response before you use it, and for how you use or publish it. You are responsible for following any instructions your organisation gives about which information may be entered into AI tools and for complying with the laws that apply to you (for example, confidentiality, data-protection and sector rules).</p>
+</section>
+
+<section id="accuracy-limitations"><h2>Accuracy Limitations</h2>
+<p>AI models generate plausible text and can be wrong. They can state false information confidently, invent references, misread documents, make errors in calculations and code, reflect bias, and produce output that is incomplete or out of date. Output should be checked against reliable sources and, for important matters, by a qualified person. It is not legal, medical, financial, tax or other professional advice.</p>
+</section>
+
+<section id="confidentiality-considerations"><h2>Confidentiality Considerations</h2>
+<p>Because content is sent to third-party providers, treat the service the way you would treat any external online tool. Avoid submitting secrets (passwords, keys, private credentials), highly sensitive personal data, information covered by a confidentiality duty you cannot delegate, or regulated data unless you have confirmed that doing so is permitted. Administrators can turn on scanning that warns about, redacts or blocks certain kinds of personal data (for example national ID numbers, payment card numbers and phone numbers) before a message is sent, and can restrict a department to providers in a chosen region; these are safeguards, not guarantees, and they do not detect every kind of sensitive information.</p>
+</section>
+
+<section id="data-processing"><h2>Data Processing</h2>
+<p>We process your prompts, files and responses to operate the service and to send them to the provider that handles your request, as explained in the <a href="{% url 'legal:privacy' %}">Privacy Policy</a>. Providers process what they receive on their own systems. How long a provider keeps a request, whether it reviews requests for safety or abuse, whether it uses content to train or improve models and where it processes data depend on that provider and on the terms and settings applying to our connection to it, and can change over time. The platform records, for each connected provider, whether the provider is understood to train on submitted data, and administrators can use this when deciding what to enable. We do not promise that any provider keeps no data, has no access to it, or never processes it outside a particular country. {% include "legal/_todo.html" with what="for each enabled provider, the exact data-handling terms that apply to the connection (retention, training use, region) so they can be stated here" %}</p>
+</section>
+
+<section id="model-changes"><h2>Model Changes</h2>
+<p>Models are updated, renamed and retired by their providers, and administrators can enable, disable or replace them. New models discovered from a provider are off until an administrator turns them on. A change can alter the style, accuracy, speed, cost or limits of the results you receive. We may change routing rules or default models without notice.</p>
+</section>
+
+<section id="provider-outages"><h2>Provider Outages</h2>
+<p>If a provider has an outage, is rate-limited, or rejects requests, the affected requests fail or are delayed. The platform reports the problem to administrators through its status views but cannot repair a provider&rsquo;s service. We do not automatically resend a request to a different provider unless an administrator has configured routing to do that, and doing so may send your content to another provider. Outages of a provider are not outages caused by us, and the Terms&rsquo; provisions on availability apply.</p>
+</section>
+
+<section id="rate-limits"><h2>Rate Limits</h2>
+<p>To keep the service stable and fair, the platform limits how quickly requests can be made, how many new conversations can be started in a day and how many tokens and how much budget you can use in a day or month, according to your plan and any administrator overrides. Providers apply their own rate limits as well. When a limit is reached the request is refused with a message and can be retried later or after the allowance resets.</p>
+</section>
+
+<section id="safety-restrictions"><h2>Safety Restrictions</h2>
+<p>Providers build safety controls into their models and may refuse, filter or alter responses. The platform adds its own controls, including plan-based feature access, file-type checks, optional personal-data scanning and administrator restrictions. Some requests may be refused even though they do not break our rules, because they conflict with a provider&rsquo;s safety policy. Attempting to bypass safety restrictions is prohibited.</p>
+</section>
+
+<section id="prohibited-ai-use"><h2>Prohibited AI Use</h2>
+<p>In addition to the prohibited uses in the Terms, you must not use the service to: create or spread malware or attacks on systems; generate content intended to deceive people at scale, harass or defraud; produce sexual content involving minors; create content that promotes violence, terrorism or self-harm; develop weapons capable of mass harm; make solely automated decisions with legal or similarly significant effects on individuals; identify or profile people in violation of the law; infringe others&rsquo; intellectual-property, privacy or other rights; impersonate a person or organisation; or attempt to extract another provider&rsquo;s credentials, training data or model weights.</p>
+</section>
+
+<section id="intellectual-property-considerations"><h2>Intellectual Property Considerations</h2>
+<p>Output may resemble existing works and may not be eligible for copyright in some places. You should not assume that Output is free of third-party rights. Do not submit content that infringes others&rsquo; rights, and check Output before you publish or commercialise it. Ownership terms between you and us are in the Terms; rights that a provider claims or grants in output are set by that provider&rsquo;s terms.</p>
+</section>
+
+<section id="no-guarantee-of-model-output"><h2>No Guarantee of Model Output</h2>
+<p>We do not guarantee any result from any model: not its accuracy, completeness, consistency, safety, legality, originality, fitness for a purpose or availability. We are not responsible for the content of Output or for decisions made on the strength of it. A more capable or more expensive model is not guaranteed to give a better answer to your particular question.</p>
+</section>
+
+<section id="contact-and-support"><h2>Contact / Support</h2>
+<p>Questions about this policy, or a concern about an AI response or provider, can be sent to {{ site_branding.site_name }}{% if support_email %} at <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %} at {% include "legal/_todo.html" with what="support contact e-mail address" %}{% endif %}. See also the <a href="{% url 'legal:privacy' %}">Privacy Policy</a> and <a href="{% url 'legal:terms' %}">Terms &amp; Conditions</a>.</p>
+{% include "legal/_links.html" %}
+</section>
+
+{% endblock %}

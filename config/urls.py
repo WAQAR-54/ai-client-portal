@@ -111,6 +111,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("accounts.urls")),
     path("billing/", include("billing.urls")),
+    path("legal/", include("legal.urls")),
     path("chat/", include("chat.urls")),
     path("governance/", include("governance.urls")),
     path("providers/", include("providers.urls")),
