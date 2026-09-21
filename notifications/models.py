@@ -37,6 +37,8 @@ class NotificationType(models.TextChoices):
     # (notifications/_email_content_plan_change.html) would otherwise
     # show on a cancellation confirmation that has no new plan to show.
     PLAN_CANCELLATION = "plan_cancellation", "Plan cancellation"
+    # Scheduled / started / completed / cancelled maintenance (governance/maintenance.py). Sent to every active user.
+    MAINTENANCE = "maintenance", "Maintenance"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see

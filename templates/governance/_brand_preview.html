@@ -78,7 +78,8 @@ re-declares the previewed branding's tokens on .brand-preview, so the real class
         <input type="checkbox" name="acknowledge_contrast" value="1" form="theme-form" style="width:auto;"> {% trans "I have reviewed these warnings and want to apply this branding anyway." %}
     </label>
     {% else %}
-    <div class="alert alert-success" role="status">{% blocktrans with n=report|length %}All {{ n }} checked color pairs (light and dark) meet 4.5 : 1.{% endblocktrans %}</div>
+    <div class="alert alert-success" role="status">{% if accepted %}{% blocktrans with n=report|length k=accepted|length %}{{ n }} color pairs (light and dark) were checked; all but {{ k }} meet 4.5 : 1.{% endblocktrans %}{% else %}{% blocktrans with n=report|length %}All {{ n }} checked color pairs (light and dark) meet 4.5 : 1.{% endblocktrans %}{% endif %}</div>
+    {% for row in accepted|slice:":1" %}<p class="text-faint" style="font-size:0.8rem; margin:0.4rem 0 0;">{% trans "Accepted pairing:" %} {{ row.label }} — {{ row.ratio }} : 1. {{ row.note }}</p>{% endfor %}
     {% endif %}
 </div>
 {% endif %}

@@ -873,3 +873,60 @@ class PIIRule(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} ({self.get_action_display()})"
+
+
+class MaintenanceWindow(models.Model):
+    """One maintenance window: OFF is simply "no open row"; SCHEDULED and ACTIVE are the two open states; COMPLETED
+    (ran to its end, automatically or by hand) and CANCELLED (withdrawn before it started) are history.
+
+    `open_slot` is what makes two conflicting open windows impossible: it is True while the row is scheduled/active and
+    NULL once closed, and a unique column allows any number of NULLs but only one True - the database itself refuses a
+    second open window, whatever the code path. All the rules (transitions, times, emails, audit) live in
+    governance/maintenance.py; nothing else should write these rows."""
+
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "Scheduled"
+        ACTIVE = "active", "Active"
+        COMPLETED = "completed", "Completed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    class Kind(models.TextChoices):
+        IMMEDIATE = "immediate", "Immediate"
+        SCHEDULED = "scheduled", "Scheduled"
+
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    status = models.CharField(max_length=10, choices=Status.choices, db_index=True)
+    reason = models.CharField(max_length=200)
+    message = models.TextField(blank=True, max_length=1000)
+    # Scheduled start (a scheduled window only) and the end time. For an immediate window the end is optional; when it
+    # is set the window completes by itself at that time.
+    scheduled_start = models.DateTimeField(null=True, blank=True)
+    scheduled_end = models.DateTimeField(null=True, blank=True)
+    actual_start = models.DateTimeField(null=True, blank=True)
+    actual_end = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Whoever ended it by hand / withdrew it; NULL with a closed status means "automatically".
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    open_slot = models.BooleanField(null=True, blank=True, unique=True, editable=False)
+    # Whether the users are emailed about this window at all, and the moment each notice was claimed: a notice is sent
+    # by whoever first flips its column from NULL (an UPDATE ... WHERE column IS NULL), so it goes out exactly once
+    # however many workers or the beat task notice the transition at the same time.
+    notify_users = models.BooleanField(default=True)
+    notified_scheduled_at = models.DateTimeField(null=True, blank=True)
+    notified_started_at = models.DateTimeField(null=True, blank=True)
+    notified_completed_at = models.DateTimeField(null=True, blank=True)
+    notified_cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"Maintenance ({self.status}): {self.reason}"
+
+    @property
+    def is_open(self):
+        return self.status in (self.Status.SCHEDULED, self.Status.ACTIVE)

@@ -140,7 +140,7 @@ class PresetLoadingTests(BrandingCase):
         self.assertIn('id="brand-tokens"', html)
         # the printed hex values of Brand Kit.pdf (pages 7-9)
         for value in (
-            "#008cff",
+            "#2c6ef8",
             "#0055a5",
             "#c7fc35",
             "#00172a",
@@ -385,7 +385,15 @@ class AccessibilityTests(BrandingCase):
         for brand in (branding.BRANDING_1, branding.BRANDING_2, branding.BRANDING_3):
             report = branding.contrast_report(brand)
             self.assertEqual({r["theme"] for r in report}, {"light", "dark"})
-            self.assertEqual([r for r in report if not r["ok"]], [], brand["key"])
+            self.assertEqual(branding.contrast_warnings(brand), [], brand["key"])
+            unaccepted = [r for r in report if not r["ok"] and not r["accepted"]]
+            self.assertEqual(unaccepted, [], brand["key"])
+        # the ONE known shortfall is documented, not hidden: Branding 2's white-on-Brand-Kit-blue button label
+        accepted = [r for r in branding.contrast_report(branding.BRANDING_2) if r["accepted"]]
+        self.assertEqual({r["label"] for r in accepted}, {"Primary button label"})
+        self.assertTrue(all(4.4 <= r["ratio"] < 4.5 for r in accepted), accepted)
+        self.assertEqual([r for r in branding.contrast_report(branding.BRANDING_1) if r["accepted"]], [])
+        self.assertEqual([r for r in branding.contrast_report(branding.BRANDING_3) if r["accepted"]], [])
 
     def poor_custom(self):
         return {
@@ -514,12 +522,12 @@ class SafetyTests(BrandingCase):
 class CacheTests(BrandingCase):
     def test_changing_the_branding_invalidates_the_cached_css_immediately(self):
         self.apply({"preset": "branding_2"})
-        self.assertIn("--accent: #008cff", self.page())  # rendered (and cached) under Branding 2
-        self.assertIn("--accent: #008cff", self.page())  # served from the cache
+        self.assertIn("--accent: #2c6ef8", self.page())  # rendered (and cached) under Branding 2
+        self.assertIn("--accent: #2c6ef8", self.page())  # served from the cache
         self.apply({"preset": "branding_3"})
         html = self.page()
         self.assertIn("--accent: #4f3fe0", html)
-        self.assertNotIn("--accent: #008cff", html)
+        self.assertNotIn("--accent: #2c6ef8", html)
         self.apply({"preset": "branding_1"})
         self.assertNotIn('id="brand-tokens"', self.page())
 
@@ -568,7 +576,7 @@ class DocumentsTests(BrandingCase):
                 send_notification_email(notification.id)
             html[preset] = mail.outbox[0].alternatives[0][0]
         self.assertIn("#00aef0", html["branding_1"])
-        self.assertIn("#008cff", html["branding_2"])
+        self.assertIn("#2c6ef8", html["branding_2"])
         self.assertNotIn("#00aef0", html["branding_2"])
         self.assertIn("#4f3fe0", html["branding_3"])
         self.assertIn("Web Host Era", html["branding_2"])  # the brand name in the header (Branding 2's own)
@@ -585,7 +593,7 @@ class DocumentsTests(BrandingCase):
             mail.outbox = []
             send_invoice_email(invoice)
         body = mail.outbox[0].alternatives[0][0] if mail.outbox[0].alternatives else mail.outbox[0].body
-        self.assertIn("#008cff", body)
+        self.assertIn("#2c6ef8", body)
         self.assertNotIn("#00aef0", body)
         self.assertIn("Web Host Era", mail.outbox[0].subject)
 
@@ -597,7 +605,7 @@ class DocumentsTests(BrandingCase):
         page = self.client.get(
             reverse("billing:public_invoice", kwargs={"token": invoice.share_token})
         ).content.decode()
-        self.assertIn("#008cff", page)
+        self.assertIn("#2c6ef8", page)
         self.assertNotIn("#00aef0", page)
         self.assertIn("Web Host Era", page)
         self.assertTrue(render_invoice_pdf(invoice).startswith(b"%PDF"))
@@ -611,7 +619,7 @@ class DocumentsTests(BrandingCase):
 
     def test_the_maintenance_page_uses_the_active_branding(self):
         client = self.as_user(self.superadmin)
-        expected = {"branding_1": None, "branding_2": "#008cff", "branding_3": "#4f3fe0"}
+        expected = {"branding_1": None, "branding_2": "#2c6ef8", "branding_3": "#4f3fe0"}
         for preset, accent in expected.items():
             self.set_preset(preset)
             html = client.get(reverse("governance:brand_maintenance_preview")).content.decode()
@@ -634,10 +642,10 @@ class DocumentsTests(BrandingCase):
         self.page()  # any normal page render records the branding
         for template in ("500.html", "maintenance.html"):
             html = render_to_string(template)  # no request, no context processors, no database
-            self.assertIn("--accent: #008cff", html, template)
+            self.assertIn("--accent: #2c6ef8", html, template)
         self.assertIn("Web Host Era", render_to_string("maintenance.html"))
         cache.clear()
-        self.assertNotIn("#008cff", render_to_string("500.html"))  # nothing known yet: the default look
+        self.assertNotIn("#2c6ef8", render_to_string("500.html"))  # nothing known yet: the default look
 
     def test_the_login_page_titles_and_dashboard_chart_hook_follow_the_branding(self):
         self.set_preset("branding_2")
@@ -682,3 +690,58 @@ class PreviewAndLogoContextTests(BrandingCase):
         finally:
             row.custom_logo_light.delete(save=False)
             row.custom_logo_dark.delete(save=False)
+
+
+class ConsolePagesTests(BrandingCase):
+    """Domain Generator and Code Playground are role-gated tools that end users work in (client-facing surfaces), so
+    they consume the global tokens like every other page instead of carrying a palette of their own."""
+
+    URLS = (reverse_lazy_home := ("domaingen:home", "playground:home"))
+
+    def page_of(self, name):
+        return self.as_user(self.superadmin).get(reverse(name)).content.decode()
+
+    def test_they_carry_the_full_token_set_of_the_active_branding(self):
+        for name in self.URLS:
+            for preset, accent, bg in (
+                ("branding_1", "#00aef0", "#f1f0eb"),
+                ("branding_2", "#2c6ef8", "#ffffff"),
+                ("branding_3", "#4f3fe0", "#f4f6fb"),
+            ):
+                with self.subTest(page=name, preset=preset):
+                    self.set_preset(preset)
+                    html = self.page_of(name)
+                    self.assertIn(f"--accent: {accent}", html)
+                    self.assertIn(f"--color-bg: {bg}", html)
+                    self.assertIn("@media (prefers-color-scheme: dark)", html)  # light AND dark, like the app
+                    self.assertIn(
+                        f'href="{branding.PRESETS[preset]["fonts"]["google_url"].replace("&", "&amp;")}"', html
+                    )
+
+    def test_their_old_private_palette_is_gone(self):
+        self.set_preset("branding_2")
+        for name in self.URLS:
+            html = self.page_of(name)
+            for old in (
+                "#00D9FF",
+                "#0B0D12",
+                "#12151C",
+                "#F2F3F5",
+                "#0A2E38",
+                "#3ECF8E",
+                "#F2B84B",
+                "'Inter'",
+                "'Space Grotesk'",
+            ):
+                self.assertNotIn(old, html, (name, old))
+            self.assertIn("var(--color-bg)", html)
+            self.assertIn("var(--accent-text)", html)
+            self.assertIn("var(--font-sans)", html)
+
+    def test_custom_branding_reaches_them(self):
+        clean, _e = branding.validate_custom(VALID_CUSTOM)
+        self.set_preset("custom", custom_config=clean)
+        for name in self.URLS:
+            html = self.page_of(name)
+            self.assertIn("--accent: #d6336c", html)
+            self.assertIn("Acme AI", html)  # the tab title

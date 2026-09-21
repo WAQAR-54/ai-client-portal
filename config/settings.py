@@ -125,6 +125,9 @@ MIDDLEWARE = [
     "accounts.middleware.SessionTimeoutMiddleware",
     # Right after it: a browser whose account signed in elsewhere is signed out (accounts/single_session.py).
     "accounts.middleware.SingleSessionMiddleware",
+    # Then Maintenance Mode: while a window is ACTIVE everyone but a SuperAdmin gets the maintenance page
+    # (governance/middleware.py).
+    "governance.middleware.MaintenanceMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",  # must stay last (see django-axes docs)
 ]
@@ -602,6 +605,8 @@ if EMAIL_HOST:
 # in production; the localhost default only matters for local dev, where
 # nothing external will ever fetch the pixel anyway.
 SITE_URL = env("SITE_URL", default="http://localhost:8000")
+# Shown on the maintenance page as the place to ask for help ("" = no support line).
+SUPPORT_EMAIL = env("SUPPORT_EMAIL", default="")
 
 if not EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"

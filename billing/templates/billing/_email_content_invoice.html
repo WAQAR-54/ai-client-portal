@@ -1,0 +1,16 @@
+{% load i18n branding_tags %}{% brand_email as brand %}
+<div style="font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:{{ brand.faint }};">{% trans "Invoice" %}</div>
+<h1 style="margin:2px 0 14px; font-size:22px; line-height:1.3; color:{{ brand.secondary }};">{{ invoice.invoice_number }}</h1>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:{{ brand.primary_soft }}; border-radius:10px; margin-bottom:16px;">
+    <tr>
+        <td style="padding:18px 20px;">
+            <div style="font-size:13px; color:{{ brand.primary_text }};">{% trans "Amount due" %}</div>
+            <div style="font-size:26px; font-weight:700; color:{{ brand.secondary }}; margin-top:2px;">{{ invoice.currency }} {{ invoice.total }}</div>
+        </td>
+        <td style="padding:18px 20px; text-align:right;">
+            <div style="font-size:13px; color:{{ brand.primary_text }};">{% trans "Due date" %}</div>
+            <div style="font-size:16px; font-weight:700; color:{{ brand.secondary }}; margin-top:2px;">{{ invoice.due_date|date:"Y-m-d" }}</div>
+        </td>
+    </tr>
+</table>
+<p style="margin:0; font-size:14px; line-height:1.6; color:{{ brand.muted }};">{% blocktrans with plan=invoice.plan.name %}For your {{ plan }} plan. The full invoice, including payment details, is attached as a PDF.{% endblocktrans %}</p>

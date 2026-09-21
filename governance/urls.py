@@ -1,6 +1,6 @@
 from django.urls import path
 
-from governance import branding_views, media_views, views
+from governance import branding_views, maintenance_views, media_views, views
 
 app_name = "governance"
 
@@ -57,6 +57,11 @@ urlpatterns = [
     path("branding/theme/apply/", branding_views.brand_theme_apply, name="brand_theme_apply"),
     path("branding/theme/reset-custom/", branding_views.brand_theme_reset_custom, name="brand_theme_reset_custom"),
     path("branding/preview/maintenance/", branding_views.brand_maintenance_preview, name="brand_maintenance_preview"),
+    path("maintenance/", maintenance_views.maintenance_settings, name="maintenance"),
+    path("maintenance/enable/", maintenance_views.maintenance_enable_now, name="maintenance_enable_now"),
+    path("maintenance/schedule/", maintenance_views.maintenance_schedule, name="maintenance_schedule"),
+    path("maintenance/<int:window_id>/cancel/", maintenance_views.maintenance_cancel, name="maintenance_cancel"),
+    path("maintenance/<int:window_id>/end/", maintenance_views.maintenance_end, name="maintenance_end"),
     path("teams/", views.TeamListView.as_view(), name="teams"),
     path("teams/add/", views.add_team, name="add_team"),
     path("teams/<int:team_id>/delete/", views.delete_team, name="delete_team"),

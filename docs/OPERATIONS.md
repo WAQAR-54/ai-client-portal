@@ -69,20 +69,28 @@ stays: those are the identity of **Branding 1**.
    next request already builds and caches the new one).
    * **Branding 1** uses the site name, logo and favicon saved on the old Branding page, and emits no extra CSS: the
      stylesheet alone renders it (`governance/test_branding.py` checks its preset data against `static/css/main.css`).
-   * **Branding 2** takes its values from *Brand Kit.pdf* (pages 7-9): Too Blue to be True `#008CFF`, Matt Black
-     `#151515`, White, Void `#00172A`, Soulstone Blue `#0055A5`, High Seas `#7DB5DC`, Halloween `#F96939`, Fennel Fiesta
-     `#01C970`, Lime Fizz `#C7FC35`, Pearl Powder `#F9FFEB`, Dark Charcoal `#333333`, Nickel `#737373`, Philippine
-     Silver `#B3B3B3`, Light Silver `#D9D9D9`, Plaster `#E9EAE9`. Two values are derived, not from the kit: muted text
-     `#4D4D4D` and muted surface `#F3F4F3` (so muted text passes AA on Plaster). The PDF is raster artwork, so the
-     values are the printed labels; sampled pixels agree within +-1 (compression), **except** the page-7 "Too Blue to be
-     True" swatch and the logo are drawn in `#2C6EF8` while the label says `#008CFF`. The token uses the printed
-     `#008CFF`; the logo files are cut from the artwork unchanged (`static/branding/whe-logo-blue.png`, `-white.png`,
-     `whe-mark.png`). If `#2C6EF8` is the intended brand blue, change `colors.primary` in `BRANDING_2`
-     (`governance/branding.py`); nothing else needs editing.
-   * **Fonts:** Gilroy and Mont-Trial are commercial fonts and are **not bundled or downloaded**. Branding 2 declares
-     `"Gilroy"` / `"Mont-Trial"` first, so a visitor who has them installed sees them; everyone else gets the closest
-     open fonts from Google Fonts (Urbanist for Gilroy, Montserrat for Mont-Trial), then Inter and the system font. To use
-     the real fonts, add licensed `@font-face` files and keep the same names.
+   * **Branding 2** takes its values from *Brand Kit.pdf* (pages 7-9): Too Blue to be True `#2C6EF8` (see the decision
+     below), Matt Black `#151515`, White, Void `#00172A`, Soulstone Blue `#0055A5`, High Seas `#7DB5DC`, Halloween
+     `#F96939`, Fennel Fiesta `#01C970`, Lime Fizz `#C7FC35`, Pearl Powder `#F9FFEB`, Dark Charcoal `#333333`, Nickel
+     `#737373`, Philippine Silver `#B3B3B3`, Light Silver `#D9D9D9`, Plaster `#E9EAE9`. Two values are derived, not from
+     the kit: muted text `#4D4D4D` and muted surface `#F3F4F3` (so muted text passes AA on Plaster).
+   * **Branding 2 primary blue - decision (2026-09-21): `#2C6EF8`.** The kit's page-7 *label* says `#008CFF`, but the
+     artwork disagrees with it: sampled from the rendered pages, `#2C6EF8` is the colour of the "Too Blue to be True"
+     swatch itself, of the logo on every page (the kit's own "never change to colors other than specified" rule protects
+     exactly this blue), of the cover and of the Color-section divider. `#008CFF` appears only in the printed label and in
+     one of the nine logo-background tiles on page 4. The colour the brand actually wears is `#2C6EF8`, so it is the
+     primary and the label is treated as a typo. White on `#2C6EF8` is 4.47:1 - 0.03 under WCAG AA for small text (it passes
+     for large text); this is the kit's own pairing (cover, logo tiles), so it is kept and shown in the accessibility report
+     as an *accepted* pair rather than hidden or "fixed" by changing the brand colour. To switch to `#008CFF` instead,
+     change `colors.primary` (and the three literals marked `# PRIMARY`) in `BRANDING_2` (`governance/branding.py`).
+     Branding 1 and Branding 3 are untouched by this.
+   * **Fonts - requested vs fallback.** *Requested* (the Brand Kit): **Gilroy** (primary) and **Mont-Trial** (secondary).
+     They are commercial fonts and **no licensed file exists in this project**, so they are **not bundled, downloaded,
+     scraped or made a runtime dependency** (no font is fetched from any foundry). *Fallback in use:* the stacks declare
+     `"Gilroy"` / `"Mont-Trial"` first (a visitor who has them installed sees them), then the closest open Google Fonts -
+     **Urbanist** for Gilroy, **Montserrat** for Mont-Trial - then Inter and the system font. The Google Fonts stylesheet
+     is the same optional CSS link every branding uses; if it is blocked the system font is shown. To use the real fonts
+     later: obtain a licence, add the licensed `@font-face` files under `static/fonts/`, and keep the same family names.
    * **Branding 3:** deep indigo `#4F3FE0` (primary), deep slate-indigo `#1F2A5C` (structure), electric cyan `#22D3EE`
      (accent) on cool slate neutrals, crisp 4/6/10 px radii, a light sidebar with an indigo pill, Sora + Inter, its own
      mark (`static/branding/modern-mark-*.svg`).
@@ -119,15 +127,82 @@ stays: those are the identity of **Branding 1**.
 user's own Light / Dark / System choice still wins.
 
 **Limits (by design or not built).**
-* The application has **no maintenance mode**: nothing serves the maintenance page to visitors. The branded page exists
-  (`templates/maintenance.html`, previewable from Brand themes) so the branding can be reviewed on it. Like the 500
-  page it renders without the database, from the last branding rendered (kept in the cache).
-* The Domain Generator and Code Playground pages are standalone dark consoles: their accent follows the branding; their
-  fixed dark surfaces and fonts do not.
+* The Domain Generator and Code Playground pages are **client-facing** (role-gated tools their users open like any other
+  page), so they follow the branding fully: surfaces, text, borders, accent, status colours, code syntax colours, focus
+  and the fonts come from the same tokens as the rest of the application, in light and dark. (They load no `main.css`, so
+  they take the complete token set from `{{ site_branding.full_css }}`; on Branding 1 they now use the standard palette
+  instead of their old fixed dark console.) Deliberately fixed: the white label on the provider-icon chips and black
+  drop-shadows.
 * Two sentences that embed the product name inside translated text ("Welcome to AI Client Portal" and the
   admin-created-account email) are rewritten at send time by replacing the default name; a translation that does not
   contain the default name would keep its own wording.
 * Email clients cannot render SVG, so Branding 3's mark is not shown in emails (its name is).
+
+## Maintenance mode (SuperAdmin)
+
+A real switch that puts the application behind the branded maintenance page. **Where:** sidebar Admin > **Maintenance**
+(`/governance/maintenance/`), SuperAdmin only (every other role gets 403, anonymous visitors are sent to login).
+States: **OFF** (no open window), **SCHEDULED** (waiting for its start), **ACTIVE**, and, as history, **COMPLETED** and
+**CANCELLED**. There is at most one open (scheduled or active) window at a time - the database itself refuses a second.
+All times are in the configured time zone (`TIME_ZONE`, currently UTC); the page, the maintenance page, the emails and the
+history all show its name.
+
+**What happens while it is ACTIVE.** `governance.middleware.MaintenanceMiddleware` (after authentication) answers every
+request from a normal user, Manager, Admin, department Admin **or anonymous visitor** with the branded maintenance page,
+HTTP **503**, `Retry-After`, `Cache-Control: no-store` - for any URL (typed and bookmarked links are blocked exactly like
+menu items; htmx requests are sent to the page). **SuperAdmins carry on as normal.** Never blocked: `/healthz/` and
+`/healthz/deep/` (Docker, the deploy check and monitors keep seeing the truth), static files and `media/branding/` (the
+page is branded), and the sign-in flow (login, MFA step, Google sign-in, logout), so a SuperAdmin can always get in; the
+sign-in pages behave exactly as they do outside maintenance and reveal nothing about accounts. If the maintenance check
+itself ever fails, the site stays **open** (it never locks everyone out by mistake).
+
+**How the clock works.** The site does not depend on a background job: every request applies a window's due start or end
+by the clock. The beat task "Maintenance windows: apply due start/end" (every minute, seeded by a migration, editable in
+the beat schedule) only makes the audit rows and the emails appear on time when nobody is visiting.
+
+1. **Enable maintenance immediately.** Maintenance > "Enable now": Reason (required, 200 characters), Message for visitors
+   (optional, 1000 characters, plain text), End time (optional - when set, the window ends by itself then), "Email users"
+   tick. Press **Enable Now**, confirm the dialog. Everyone except SuperAdmins is locked out at once.
+2. **Schedule maintenance.** "Schedule": Reason, Message, **Start** and **End** (both required; the start must be in the
+   future; the end after the start; at most 7 days). Press **Schedule**, confirm. Nothing changes for visitors until the
+   start: then it becomes ACTIVE by itself, and COMPLETED by itself at the end.
+3. **Cancel a scheduled window.** While SCHEDULED, press **Cancel Scheduled**, confirm. Nothing was switched on; users who
+   were told about it get a "cancelled" email.
+4. **End maintenance.** While ACTIVE, press **End Maintenance**, confirm. Everyone can use the site again at once (a
+   window with an end time also ends by itself).
+5. **Check maintenance history.** The "History" table on the same page: type (Immediate / Scheduled), status, scheduled
+   and actual start/end, reason, who initiated it (a name, never an email address) and who ended or cancelled it (or
+   "automatically"). The full trail is in the audit log: `maintenance.scheduled`, `maintenance.enabled` (also for an
+   automatic start), `maintenance.ended` (by hand), `maintenance.completed` (automatic), `maintenance.cancelled`.
+6. **Verify the status.** The badge at the top of the Maintenance page (OFF / SCHEDULED / ACTIVE). From outside, as any
+   non-SuperAdmin: `curl -sI https://<domain>/` returns `503` while ACTIVE and the normal answer otherwise.
+7. **Verify the health endpoints during maintenance.** `curl -s -o /dev/null -w "%{http_code}\n" https://<domain>/healthz/`
+   and `.../healthz/deep/` keep returning `200` (or their honest `503` if a dependency is really down) - maintenance never
+   changes them.
+8. **Change the active branding.** Admin > Branding > "Brand themes" (see Branding above). The maintenance page and the
+   maintenance emails follow the active branding like every other page; there is no second design.
+9. **Branding 2 font fallback.** See "Fonts - requested vs fallback" under Branding: Gilroy / Mont-Trial are requested,
+   Urbanist / Montserrat are what visitors get until licensed font files are added.
+
+**Emails.** "Email users" sends four notices - scheduled, started, completed, cancelled (the last only if the scheduled
+notice was sent) - to every active user through the normal notification path, so they use the global email shell and the
+active branding. Each notice is claimed with one database update, so it is sent **exactly once** however many workers or
+the beat task notice the transition. Untick "Email users" to switch all of them off for a window. Testing must not use
+this on production: preview the page from Maintenance > "Preview the page visitors see" (nothing is activated).
+
+**Support line.** Set `SUPPORT_EMAIL` (an address) to show "Need help? ..." on the maintenance page; empty = no line.
+
+**Recovery.** If you are locked out of the UI, the site is still open to SuperAdmins: sign in and press **End
+Maintenance**. If no SuperAdmin can sign in (they cannot reach the server either), on the host:
+`docker compose exec web python manage.py shell -c "from governance.models import MaintenanceWindow as M; M.objects.filter(open_slot=True).update(status='completed', open_slot=None)"`
+then clear the cache key (`docker compose exec web python manage.py shell -c "from django.core.cache import cache; cache.delete('maintenance:state')"`)
+or wait 30 seconds.
+
+**Emails in general.** Every email the server sends is rendered from the global email shell
+(`templates/notifications/_email_shell.html`): notifications, MFA and password-reset emails, invoices and reminders, the
+deploy email, crash alerts, the SMTP test email and maintenance notices. Callers that pass no HTML (deploy, alerts, the SMTP
+test) get the shell wrapped around their text automatically in `send_via_connection`, so a future sender cannot leak a
+bare-text email (`notifications/test_email_shell.py` exercises every sender).
 
 ## Deploy emails
 

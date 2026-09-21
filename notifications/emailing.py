@@ -35,6 +35,17 @@ def _tracking_pixel_html(tracking_token):
     return f'<img src="{url}" width="1" height="1" alt="" style="display:none;">'
 
 
+def render_shell_email(subject, text_body):
+    """The global email shell around a plain-text message (deploy notices, crash alerts, the SMTP test email ...).
+    The title is the subject without its "[Brand]" prefix; the text is escaped and keeps its line breaks."""
+    import re
+
+    from django.template.loader import render_to_string
+
+    title = re.sub(r"^\[[^\]]*\]\s*", "", subject or "")
+    return render_to_string("notifications/email_plain.html", {"email_title": title, "email_text": text_body})
+
+
 def send_via_connection(connection, from_email, to_email, subject, text_body, html_body=None, attachments=None):
     """Sends one email over an already-built connection, always logging an
     EmailLog row first so a send that raises mid-flight still leaves a
@@ -46,6 +57,13 @@ def send_via_connection(connection, from_email, to_email, subject, text_body, ht
     invoice PDF, not just a link to it."""
     from notifications.models import EmailLog
 
+    if html_body is None:
+        # THE rule: no email leaves the server as bare text. A caller that supplies no HTML gets the global email
+        # shell (branding, header, footer) around its text; a rendering failure must never stop the email itself.
+        try:
+            html_body = render_shell_email(subject, text_body)
+        except Exception:  # noqa: BLE001
+            logger.warning("Email shell could not be rendered for %r; sending the plain text only", subject)
     log = EmailLog.objects.create(recipient=to_email, subject=subject, status=EmailLog.Status.FAILED)
     try:
         message = EmailMultiAlternatives(

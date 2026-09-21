@@ -1,0 +1,15 @@
+{% load i18n %}{% load branding_tags %}{% brand_email as brand %}
+{% comment %}
+Maintenance notices (governance/maintenance.py). The reason and message are plain text typed by a SuperAdmin: they are
+printed with autoescape (never |safe), so they can never carry markup. One layout for all four kinds of notice.
+{% endcomment %}
+<span style="display:inline-block; padding:4px 10px; border-radius:999px; background:{{ accent_soft }}; color:{{ accent }}; font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase;">{{ notification.get_notification_type_display }}</span>
+<h1 style="margin:14px 0 12px; font-size:20px; line-height:1.35; color:{{ brand.text }};">{{ notification.title }}</h1>
+<p style="margin:0 0 16px; font-size:14px; line-height:1.6; color:{{ brand.muted }};">{{ notification.body }}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid {{ brand.border }}; border-radius:8px; background:{{ brand.surface_muted }};">
+    {% if notification.metadata.reason %}<tr><td style="padding:10px 14px 4px; font-size:12px; color:{{ brand.faint }};">{% trans "Reason" %}</td></tr>
+    <tr><td style="padding:0 14px 8px; font-size:14px; color:{{ brand.text }};">{{ notification.metadata.reason }}</td></tr>{% endif %}
+    {% if notification.metadata.message %}<tr><td style="padding:4px 14px 8px; font-size:14px; line-height:1.55; color:{{ brand.muted }};">{{ notification.metadata.message|linebreaksbr }}</td></tr>{% endif %}
+    {% if notification.metadata.start %}<tr><td style="padding:4px 14px; font-size:13px; color:{{ brand.muted }};">{% if notification.metadata.kind == "started" or notification.metadata.kind == "completed" %}{% trans "Started" %}{% else %}{% trans "Starts" %}{% endif %}: <strong style="color:{{ brand.text }};">{{ notification.metadata.start }} {{ notification.metadata.timezone }}</strong></td></tr>{% endif %}
+    {% if notification.metadata.end %}<tr><td style="padding:4px 14px 12px; font-size:13px; color:{{ brand.muted }};">{% trans "Expected end" %}: <strong style="color:{{ brand.text }};">{{ notification.metadata.end }} {{ notification.metadata.timezone }}</strong></td></tr>{% endif %}
+</table>

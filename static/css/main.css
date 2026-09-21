@@ -4543,6 +4543,48 @@ main .sys-status > .server-health.card { margin-top: 0; }
     .chat-home-scroll + .chat-composer-wrap { position: sticky; bottom: 0; z-index: 5; background: var(--color-bg); }
 }
 .intel-card-action button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Wide screens: the home is ONE page in two columns instead of one long scrolling stack - the welcome and the
+   quick-start cards on the left, Live intelligence (commands, the three feeds, headlines) on the right - so nothing
+   has to be scrolled to reach. Below 1100px it stays the single stacked column it has always been. */
+@media (min-width: 1100px) {
+    /* ONE screen, no page scroll: the hero is exactly as tall as the space it has, the welcome and quick-start on the
+       left, Live intelligence on the right. Only the right column scrolls (inside itself) if the headlines outgrow it. */
+    .chat-home-scroll > .chat-hero,
+    .chat-home-scroll > .chat-hero:has(.chat-intel) {
+        max-width: 1160px;
+        height: 100%;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        column-gap: var(--space-6);
+        align-items: center;
+        padding: var(--space-4) var(--space-6);
+    }
+    .chat-home-scroll > .chat-hero:not(:has(.chat-intel)) { grid-template-columns: minmax(0, 660px); justify-content: center; }
+    .chat-home-scroll .home-main { min-width: 0; max-height: 100%; overflow-y: auto; }
+    .chat-home-scroll .chat-intel {
+        margin-top: 0; padding-top: 0; border-top: 0;
+        padding-inline-start: var(--space-6); border-inline-start: 1px solid var(--color-border);
+        align-self: center; min-width: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+    }
+    .chat-home-scroll .intel-commands { margin-bottom: var(--space-3); }
+    .chat-home-scroll .intel-statusbar { margin-top: var(--space-2); }
+    .chat-home-scroll .intel-headlines-wrap { margin-top: var(--space-3); }
+    /* The three feeds as slim rows (name + freshness on the left, View on the right) instead of three tall cards. */
+    .chat-home-scroll .intel-cards { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+    .chat-home-scroll .intel-card {
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-3); align-items: center;
+        min-height: 0; padding: 9px 14px;
+    }
+    .chat-home-scroll .intel-card > * { grid-column: 1; }
+    .chat-home-scroll .intel-card-blurb { display: none; }
+    .chat-home-scroll .intel-card-meta { margin: 0; }
+    .chat-home-scroll .intel-card-action { grid-column: 2; grid-row: 1 / span 3; margin: 0; padding: 0; }
+    .chat-home-scroll .intel-card-loading { min-height: 52px; }
+}
+
 .intel-card-action button[disabled]:hover { background: transparent; color: inherit; border-color: inherit; }
 
 /* ---------- Server Media (SuperAdmin) ---------- */

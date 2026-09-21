@@ -92,7 +92,8 @@ def _preview_context(row, brand):
         "scoped_css": branding.render_css(brand, scope=SCOPE),
         "fonts_url": brand["fonts"]["google_url"],
         "report": report,
-        "warnings": [r for r in report if not r["ok"]],
+        "warnings": [r for r in report if not r["ok"] and not r["accepted"]],
+        "accepted": [r for r in report if r["accepted"]],
     }
 
 
@@ -217,6 +218,8 @@ def brand_theme_reset_custom(request):
 @role_required(User.Role.SUPERADMIN)
 @require_GET
 def brand_maintenance_preview(request):
-    """The maintenance page as it would look under the active branding. (The app has no maintenance mode: nothing
-    serves this page to visitors; it exists so the branding can be reviewed on it.)"""
-    return render(request, "maintenance.html", {"preview": True})
+    """The maintenance page as it would look under the active branding, with sample text: nothing is activated. It is
+    the very template real maintenance serves (governance/middleware.py)."""
+    from governance import maintenance
+
+    return render(request, "maintenance.html", maintenance.page_context(maintenance.sample_state(), preview=True))

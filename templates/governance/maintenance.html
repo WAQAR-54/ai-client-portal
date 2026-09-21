@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Maintenance" %} — {{ site_branding.site_name }}{% endblock %}
+{% block admin_page_title %}{% trans "Maintenance" %}{% endblock %}
+{% block content %}
+<div class="card mt-card" data-maintenance-status="{{ status }}">
+    <div class="mt-head">
+        <div>
+            <h1>{% trans "Maintenance mode" %}</h1>
+            <p class="text-muted mt-lead">{% blocktrans %}While maintenance is active, everyone except SuperAdmins sees the maintenance page; sign-in and the health checks keep working. Times are in {{ timezone_name }}.{% endblocktrans %}</p>
+        </div>
+        <span class="badge mt-badge {% if status == 'active' %}badge-danger{% elif status == 'scheduled' %}badge-warn{% else %}badge-success{% endif %}" id="mt-status">
+            {% if status == "active" %}{% trans "ACTIVE" %}{% elif status == "scheduled" %}{% trans "SCHEDULED" %}{% else %}{% trans "OFF" %}{% endif %}
+        </span>
+    </div>
+
+    {% if window %}
+    <dl class="mt-facts">
+        <dt>{% trans "Reason" %}</dt><dd>{{ window.reason }}</dd>
+        {% if window.message %}<dt>{% trans "Message" %}</dt><dd>{{ window.message|linebreaksbr }}</dd>{% endif %}
+        {% if window.status == "scheduled" %}<dt>{% trans "Starts" %}</dt><dd>{{ window.scheduled_start|date:"M j, Y H:i" }} {{ timezone_name }}</dd>
+        {% else %}<dt>{% trans "Started" %}</dt><dd>{{ window.actual_start|date:"M j, Y H:i" }} {{ timezone_name }}</dd>{% endif %}
+        <dt>{% trans "Expected end" %}</dt><dd>{% if window.scheduled_end %}{{ window.scheduled_end|date:"M j, Y H:i" }} {{ timezone_name }} <span class="text-faint">({% trans "the window ends by itself" %})</span>{% else %}{% trans "Not set — end it by hand" %}{% endif %}</dd>
+    </dl>
+    <div class="mt-actions">
+        {% if window.status == "scheduled" %}
+        <form method="post" action="{% url 'governance:maintenance_cancel' window_id=window.id %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Cancel the scheduled maintenance? Nothing will be switched on." %}');">
+            {% csrf_token %}<button type="submit" class="btn btn-ghost">{% trans "Cancel Scheduled" %}</button>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'governance:maintenance_end' window_id=window.id %}" onsubmit="return portalConfirmSubmit(event, '{% trans "End maintenance now? Everyone can use the site again immediately." %}');">
+            {% csrf_token %}<button type="submit" class="btn btn-danger">{% trans "End Maintenance" %}</button>
+        </form>
+        {% endif %}
+        <a class="btn btn-ghost" href="{% url 'governance:brand_maintenance_preview' %}" target="_blank" rel="noopener">{% trans "Preview the page visitors see" %}</a>
+    </div>
+    {% else %}
+    <p class="mt-off">{% trans "The site is open. No maintenance is scheduled." %}</p>
+    <a class="btn btn-ghost btn-small" href="{% url 'governance:brand_maintenance_preview' %}" target="_blank" rel="noopener">{% trans "Preview the page visitors see" %}</a>
+    {% endif %}
+</div>
+
+{% if not window %}
+<div class="mt-forms">
+    <form class="card" method="post" action="{% url 'governance:maintenance_enable_now' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Enable maintenance now? Everyone except SuperAdmins is locked out immediately." %}');">
+        {% csrf_token %}
+        <h2 class="mt-h2">{% trans "Enable now" %}</h2>
+        <label for="en-reason">{% trans "Reason" %}</label>
+        <input class="input" type="text" id="en-reason" name="reason" maxlength="200" required value="{{ values.reason }}" placeholder="{% trans 'e.g. Database upgrade' %}">
+        <label for="en-message">{% trans "Message for visitors (optional)" %}</label>
+        <textarea class="input" id="en-message" name="message" rows="3" maxlength="1000">{{ values.message }}</textarea>
+        <label for="en-end">{% trans "End time (optional — the window ends by itself then)" %}</label>
+        <input class="input" type="datetime-local" id="en-end" name="end" value="{{ values.end }}">
+        <label class="mt-check"><input type="checkbox" name="notify_users" value="1" checked> {% trans "Email users when it starts and ends" %}</label>
+        <button type="submit" class="btn btn-danger">{% trans "Enable Now" %}</button>
+    </form>
+
+    <form class="card" method="post" action="{% url 'governance:maintenance_schedule' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Schedule this maintenance window?" %}');">
+        {% csrf_token %}
+        <h2 class="mt-h2">{% trans "Schedule" %}</h2>
+        <label for="sc-reason">{% trans "Reason" %}</label>
+        <input class="input" type="text" id="sc-reason" name="reason" maxlength="200" required value="{{ values.reason }}" placeholder="{% trans 'e.g. Database upgrade' %}">
+        <label for="sc-message">{% trans "Message for visitors (optional)" %}</label>
+        <textarea class="input" id="sc-message" name="message" rows="3" maxlength="1000">{{ values.message }}</textarea>
+        <div class="form-row-2">
+            <div><label for="sc-start">{% trans "Start" %}</label><input class="input" type="datetime-local" id="sc-start" name="start" required value="{{ values.start }}"></div>
+            <div><label for="sc-end">{% trans "End" %}</label><input class="input" type="datetime-local" id="sc-end" name="end" required value="{{ values.end }}"></div>
+        </div>
+        <label class="mt-check"><input type="checkbox" name="notify_users" value="1" checked> {% trans "Email users now, and when it starts and ends" %}</label>
+        <button type="submit" class="btn">{% trans "Schedule" %}</button>
+    </form>
+</div>
+{% else %}
+<p class="text-muted mt-lead mt-open-note">{% trans "A window is already open. End or cancel it to create another." %}</p>
+{% endif %}
+
+<div class="card">
+    <h2 class="mt-h2">{% trans "History" %}</h2>
+    {% if history %}
+    <div class="mt-table-wrap">
+        <table class="data" id="mt-history">
+            <thead><tr>
+                <th>{% trans "Type" %}</th><th>{% trans "Status" %}</th><th>{% trans "Scheduled" %}</th><th>{% trans "Actual" %}</th>
+                <th>{% trans "Reason" %}</th><th>{% trans "Initiated by" %}</th><th>{% trans "Ended / cancelled" %}</th>
+            </tr></thead>
+            <tbody>
+            {% for row in history %}{% with w=row.window %}
+            <tr data-status="{{ w.status }}">
+                <td>{{ w.get_kind_display }}</td>
+                <td><span class="badge {% if w.status == 'active' %}badge-danger{% elif w.status == 'scheduled' %}badge-warn{% elif w.status == 'completed' %}badge-success{% else %}badge-muted{% endif %}">{{ w.get_status_display }}</span></td>
+                <td>{% if w.scheduled_start %}{{ w.scheduled_start|date:"M j, H:i" }}{% else %}—{% endif %} → {% if w.scheduled_end %}{{ w.scheduled_end|date:"M j, H:i" }}{% else %}—{% endif %}</td>
+                <td>{% if w.actual_start %}{{ w.actual_start|date:"M j, H:i" }}{% else %}—{% endif %} → {% if w.actual_end %}{{ w.actual_end|date:"M j, H:i" }}{% else %}—{% endif %}</td>
+                <td>{{ w.reason }}</td>
+                <td>{{ row.initiated_by }}</td>
+                <td>{% if w.closed_at %}{% if row.closed_by %}{% blocktrans with who=row.closed_by %}by {{ who }}{% endblocktrans %}{% else %}{% trans "automatically" %}{% endif %}, {{ w.closed_at|date:"M j, H:i" }}{% else %}—{% endif %}</td>
+            </tr>
+            {% endwith %}{% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-faint mt-note">{% blocktrans %}Times are in {{ timezone_name }}. The full trail is in the audit log (maintenance.*).{% endblocktrans %}</p>
+    {% else %}
+    <p class="text-muted">{% trans "No maintenance has been scheduled yet." %}</p>
+    {% endif %}
+</div>
+
+<style>
+  .mt-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+  .mt-head h1 { margin: 0 0 0.3rem; }
+  .mt-lead { margin: 0 0 1rem; max-width: 62ch; }
+  .mt-badge { font-size: 0.85rem; padding: 0.35rem 0.9rem; letter-spacing: 0.04em; }
+  .mt-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1.2rem; margin: 0 0 1rem; }
+  .mt-facts dt { color: var(--color-text-muted); }
+  .mt-facts dd { margin: 0; overflow-wrap: anywhere; }
+  .mt-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+  .mt-actions form { margin: 0; }
+  .mt-off { margin: 0 0 0.8rem; }
+  .mt-open-note { margin: var(--space-4) 0; }
+  .mt-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-5); margin: var(--space-5) 0; }
+  .mt-forms .card { margin: 0; }
+  .mt-forms label { display: block; margin: 0.7rem 0 0.25rem; font-weight: 500; }
+  .mt-forms .mt-check { display: flex; align-items: center; gap: 0.5rem; margin: 0.9rem 0; font-weight: 400; }
+  .mt-forms .mt-check input { width: auto; }
+  .mt-h2 { font-size: 1.1rem; margin: 0 0 0.4rem; }
+  .mt-table-wrap { overflow-x: auto; }
+  #mt-history td, #mt-history th { white-space: nowrap; }
+  #mt-history td:nth-child(5) { white-space: normal; min-width: 12rem; }
+  .mt-note { font-size: 0.8rem; margin: 0.6rem 0 0; }
+</style>
+{% endblock %}

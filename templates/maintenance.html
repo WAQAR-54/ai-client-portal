@@ -1,44 +1,61 @@
 <!DOCTYPE html>
 {% load i18n branding_tags %}
 {% comment %}
-The maintenance page. Standalone like 500.html (it must render when the application or its database is unavailable):
-no base.html, no static files needed. It takes the ACTIVE branding from `site_branding` when a request rendered it
-normally (the SuperAdmin preview), otherwise from the last branding the application rendered (cache only, no
-database). NOTE: the application has no maintenance mode - nothing serves this page to visitors; it exists so the
-branding can be reviewed on it and so a future maintenance switch has a branded page to show.
+THE maintenance page - served with HTTP 503 by governance/middleware.py to everyone but a SuperAdmin while a maintenance
+window is ACTIVE, and (with sample text) by the SuperAdmin's "Preview the maintenance page" link. There is no second
+design: it takes the ACTIVE branding (logo, name, every colour, the fonts, light and dark) from `site_branding`; only when
+a request could not supply that does it fall back to the last branding the application rendered (cache only).
+
+Standalone like 500.html: no base.html and no static files, so it renders whatever the application is doing. Nothing
+here is a fixed colour: the fallbacks in var() are the browser's own system colours (Canvas/CanvasText), which also follow
+light/dark. `maintenance.reason` and `maintenance.message` are plain text typed by a SuperAdmin and are only ever printed
+with autoescape - never |safe.
 {% endcomment %}
-<html lang="en">
+<html lang="{{ LANGUAGE_CODE|default:'en' }}"{% if request.user.is_authenticated and request.user.theme_preference != "system" %} data-theme="{{ request.user.theme_preference }}"{% endif %}>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% if site_branding %}{{ site_branding.site_name }}{% else %}{% trans "Back soon" %}{% endif %} — {% trans "Scheduled maintenance" %}</title>
+<meta name="robots" content="noindex">
+<title>{% if site_branding %}{{ site_branding.site_name }}{% else %}{% trans "Back soon" %}{% endif %} — {% trans "Maintenance" %}</title>
 {% if site_branding %}
 <link href="{{ site_branding.fonts_url }}" rel="stylesheet">
-{% if site_branding.css %}<style id="brand-tokens">{{ site_branding.css|safe }}</style>{% endif %}
+<style id="brand-tokens">{{ site_branding.full_css|safe }}</style>
 {% else %}{% brand_head_cached %}{% endif %}
 <style>
-  :root { --m-bg: var(--color-bg, #f1f0eb); --m-surface: var(--color-surface, #f9f8f4); --m-border: var(--color-border, rgba(32,26,10,0.09)); --m-text: var(--color-text, #232019); --m-muted: var(--color-text-muted, #6f6c62); --m-accent: var(--accent, #00aef0); --m-on-accent: var(--on-accent, #122268); --m-accent-soft: var(--accent-soft, #e3f6fd); --m-accent-text: var(--accent-text, #122268); --m-radius: var(--radius-lg, 16px); --m-font: var(--font-sans, "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif); --m-display: var(--font-display, "Space Grotesk", var(--m-font)); }
-  @media (prefers-color-scheme: dark) {
-    :root { --m-bg: var(--color-bg, #0e1015); --m-surface: var(--color-surface, #12151c); --m-border: var(--color-border, #262b37); --m-text: var(--color-text, #edeef2); --m-muted: var(--color-text-muted, #aeb2be); --m-accent-soft: var(--accent-soft, #123244); --m-accent-text: var(--accent-text, #7fddfb); }
-  }
+  :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--m-bg); color: var(--m-text); font-family: var(--m-font); }
-  .card { max-width: 480px; width: calc(100% - 2rem); margin: 1rem; padding: 2.25rem 2rem; text-align: center; background: var(--m-surface); border: 1px solid var(--m-border); border-radius: var(--m-radius); }
-  .logo { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1.5rem; font-family: var(--m-display); font-weight: 700; font-size: 1.15rem; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg, Canvas); color: var(--color-text, CanvasText); font-family: var(--font-sans, system-ui, sans-serif); }
+  .card { max-width: 520px; width: calc(100% - 2rem); margin: 1rem; padding: 2.25rem 2rem; text-align: center; background: var(--color-surface, Canvas); border: 1px solid var(--color-border, currentColor); border-radius: var(--radius-lg, 16px); }
+  .logo { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1.5rem; font-family: var(--font-display, inherit); font-weight: 700; font-size: 1.15rem; }
   .logo img { height: 38px; width: auto; max-width: 220px; object-fit: contain; }
-  .logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--m-accent); }
+  .logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent, Highlight); }
   .logo .dark { display: none; }
-  @media (prefers-color-scheme: dark) { .logo.has-dark .light { display: none; } .logo.has-dark .dark { display: inline-block; } }
-  .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; background: var(--m-accent-soft); color: var(--m-accent-text); font-size: 0.78rem; font-weight: 600; margin-bottom: 0.9rem; }
-  h1 { font-family: var(--m-display); font-size: 1.5rem; margin: 0 0 0.6rem; }
-  p { color: var(--m-muted); font-size: 0.95rem; line-height: 1.55; margin: 0 0 1.4rem; }
-  a.button { display: inline-block; padding: 0.65rem 1.4rem; background: var(--m-accent); color: var(--m-on-accent); border-radius: var(--radius-md, 10px); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
-  a.button:hover { opacity: 0.92; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .logo.has-dark .light { display: none; } :root:not([data-theme="light"]) .logo.has-dark .dark { display: inline-block; } }
+  :root[data-theme="dark"] .logo.has-dark .light { display: none; }
+  :root[data-theme="dark"] .logo.has-dark .dark { display: inline-block; }
+  .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; background: var(--accent-soft, transparent); color: var(--accent-text, inherit); font-size: 0.78rem; font-weight: 600; margin-bottom: 0.9rem; }
+  h1 { font-family: var(--font-display, inherit); font-size: 1.6rem; margin: 0 0 0.6rem; text-wrap: balance; }
+  p { color: var(--color-text-muted, inherit); font-size: 0.95rem; line-height: 1.55; margin: 0 0 1.2rem; overflow-wrap: anywhere; }
+  .reason { color: var(--color-text, inherit); font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem; }
+  dl.when { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 0 0 1.2rem; padding: 0.9rem 1rem; text-align: start; font-size: 0.88rem; background: var(--color-surface-muted, transparent); border: 1px solid var(--color-border, currentColor); border-radius: var(--radius-md, 10px); }
+  dl.when dt { color: var(--color-text-muted, inherit); }
+  dl.when dd { margin: 0; text-align: end; font-variant-numeric: tabular-nums; }
+  .countdown { margin: 0 0 1.2rem; }
+  .countdown .label { display: block; color: var(--color-text-muted, inherit); font-size: 0.82rem; margin-bottom: 0.2rem; }
+  .countdown .time { font-family: var(--font-mono, ui-monospace, monospace); font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent-text, inherit); }
+  .countdown.over .time { display: none; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; align-items: center; }
+  a.button, button.button { display: inline-block; padding: 0.65rem 1.4rem; background: var(--accent, Highlight); color: var(--on-accent, HighlightText); border: 0; border-radius: var(--radius-md, 10px); text-decoration: none; font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+  a.button:hover, button.button:hover { opacity: 0.92; }
+  a.button:focus-visible, button.button:focus-visible, a.link:focus-visible { outline: 2px solid var(--accent, Highlight); outline-offset: 2px; }
+  a.link { color: var(--link, var(--accent-text, inherit)); font-size: 0.85rem; }
+  .support { margin: 1.4rem 0 0; font-size: 0.85rem; }
+  .support a { color: var(--link, var(--accent-text, inherit)); }
 </style>
 </head>
 <body>
 {% brand_last_known as known %}
-<main class="card" data-page="maintenance" data-brand="{{ site_branding.preset|default:'cached' }}">
+<main class="card" data-page="maintenance" data-brand="{{ site_branding.preset|default:'cached' }}"{% if maintenance.reason %} data-maintenance="active"{% endif %}>
     <div class="logo{% if site_branding.logo_dark or known.logo_dark %} has-dark{% endif %}">
         {% if site_branding %}
             {% if site_branding.logo %}<img class="light" src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}">{% if site_branding.logo_dark %}<img class="dark" src="{{ site_branding.logo_dark.url }}" alt="{{ site_branding.site_name }}">{% endif %}{% if site_branding.mark_only %}<span>{{ site_branding.site_name }}</span>{% endif %}{% else %}<span class="dot"></span><span>{{ site_branding.site_name }}</span>{% endif %}
@@ -48,10 +65,61 @@ branding can be reviewed on it and so a future maintenance switch has a branded 
             <span class="dot"></span><span>{{ known.name|default:"AI Client Portal" }}</span>
         {% endif %}
     </div>
-    <span class="badge">{% trans "Scheduled maintenance" %}</span>
+    <span class="badge">{% if preview %}{% trans "Preview — nothing is switched on" %}{% else %}{% trans "Scheduled maintenance" %}{% endif %}</span>
     <h1>{% trans "We'll be right back" %}</h1>
-    <p>{% trans "The service is briefly unavailable while we make improvements. Your data is safe. Please try again in a few minutes." %}</p>
-    <a class="button" href="">{% trans "Try again" %}</a>
+    {% if maintenance.reason %}<p class="reason">{{ maintenance.reason }}</p>{% endif %}
+    {% if maintenance.message %}<p>{{ maintenance.message|linebreaksbr }}</p>
+    {% else %}<p>{% trans "The service is briefly unavailable while we make improvements. Your data is safe." %}</p>{% endif %}
+
+    {% if maintenance.started or maintenance.expected_end %}
+    <dl class="when">
+        {% if maintenance.started %}<dt>{% trans "Started" %}</dt><dd>{{ maintenance.started|date:"M j, Y H:i" }}</dd>{% endif %}
+        {% if maintenance.expected_end %}<dt>{% trans "Expected end" %}</dt><dd>{{ maintenance.expected_end|date:"M j, Y H:i" }}</dd>{% endif %}
+        <dt>{% trans "Time zone" %}</dt><dd>{{ maintenance.timezone }}</dd>
+    </dl>
+    {% endif %}
+
+    {% if maintenance.end_epoch %}
+    <div class="countdown" id="countdown" data-end="{{ maintenance.end_epoch }}" data-now="{{ maintenance.now_epoch }}" data-ended="{% trans 'The maintenance window has ended.' %}">
+        <span class="label">{% trans "Estimated time remaining" %}</span>
+        <span class="time" id="countdown-time" aria-live="off">--:--:--</span>
+        <span class="label" id="countdown-ended" hidden></span>
+    </div>
+    {% endif %}
+
+    <div class="actions">
+        <button type="button" class="button" onclick="window.location.reload()">{% trans "Refresh" %}</button>
+        {% if not preview and not request.user.is_authenticated %}<a class="link" href="{% url 'accounts:login' %}">{% trans "Administrator sign-in" %}</a>{% endif %}
+    </div>
+    {% if maintenance.support_email %}<p class="support">{% trans "Need help?" %} <a href="mailto:{{ maintenance.support_email }}">{{ maintenance.support_email }}</a></p>{% endif %}
 </main>
+{% if maintenance.end_epoch %}
+<script>
+(function () {
+  var box = document.getElementById("countdown");
+  if (!box) return;
+  var end = parseInt(box.getAttribute("data-end"), 10) * 1000;
+  /* the server's clock is the reference, so a visitor whose own clock is off still sees the right time left */
+  var skew = parseInt(box.getAttribute("data-now"), 10) * 1000 - Date.now();
+  var time = document.getElementById("countdown-time");
+  var ended = document.getElementById("countdown-ended");
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function tick() {
+    var left = Math.max(0, Math.round((end - (Date.now() + skew)) / 1000));
+    if (left === 0) {
+      /* At zero the page only says the window has ended: whether the site is open again is the server's call, so the
+         Refresh button (always shown) asks it - and a window that was extended simply shows this page again. */
+      box.className = "countdown over";
+      ended.hidden = false;
+      ended.textContent = box.getAttribute("data-ended");
+      return;
+    }
+    time.textContent = pad(Math.floor(left / 3600)) + ":" + pad(Math.floor(left / 60) % 60) + ":" + pad(left % 60);
+    setTimeout(tick, 250);
+  }
+  tick();
+})();
+</script>
+{% endif %}
 </body>
 </html>

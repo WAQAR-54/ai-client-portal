@@ -38,3 +38,24 @@ def sweep_conversation_retention():
                 department.retention_days,
             )
     return total_deleted
+
+
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=300, max_retries=3)
+def send_maintenance_notice(window_id, kind):
+    """Emails one kind of maintenance notice (scheduled / started / completed / cancelled) to the active users through
+    the normal notification path (and so the global email shell). Safe to run twice: the notice is claimed atomically
+    (governance/maintenance.py::deliver_notice), so a retry or a second worker never sends it again."""
+    from governance.maintenance import deliver_notice
+
+    return deliver_notice(window_id, kind)
+
+
+@shared_task
+def advance_maintenance():
+    """Every minute (beat): applies a maintenance window's due start or end so the audit row and the emails appear on
+    time even when nobody is visiting. The site itself never depends on this - the request middleware applies the same
+    transitions by the clock (governance/maintenance.py::current_state)."""
+    from governance.maintenance import advance, invalidate
+
+    advance()
+    invalidate()

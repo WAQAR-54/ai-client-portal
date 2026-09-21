@@ -40,8 +40,19 @@ _EMAIL_TYPE_STYLE = {
     "refund_requested": ("#0f9b8e", "#e1f5f3", "notifications/_email_content_default.html"),
     "refund_decision": ("#1e9a6c", "#e3f5ec", "notifications/_email_content_default.html"),
     "plan_cancellation": ("#5b5fc7", "#eceafd", "notifications/_email_content_default.html"),
+    # Amber like the other "heads-up" types; a finished window is recoloured green and a withdrawn one takes the
+    # brand colour in _maintenance_style() below (one type, four kinds of notice).
+    "maintenance": ("#b5761e", "#fcf0dc", "notifications/_email_content_maintenance.html"),
 }
 _DEFAULT_EMAIL_STYLE = ("brand", "brand", "notifications/_email_content_default.html")
+
+
+def _maintenance_style(kind, accent, accent_soft):
+    if kind == "completed":
+        return "#1e9a6c", "#e3f5ec"
+    if kind == "cancelled":
+        return "brand", "brand"
+    return accent, accent_soft
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=300, max_retries=3)
@@ -66,6 +77,8 @@ def send_notification_email(notification_id):
     from notifications.emailing import send_tracked_email
 
     accent, accent_soft, content_template = _EMAIL_TYPE_STYLE.get(notification.notification_type, _DEFAULT_EMAIL_STYLE)
+    if notification.notification_type == "maintenance":
+        accent, accent_soft = _maintenance_style((notification.metadata or {}).get("kind"), accent, accent_soft)
     if accent == "brand":  # an informational type: the active branding's primary colour (governance/branding.py)
         from governance.branding import email_tokens
 

@@ -1972,9 +1972,7 @@ def send_test_email(request):
         subject="AI Client Portal — test email",
         text_body="This is a test email from your AI Client Portal admin console. "
         "If you're reading this, your SMTP settings work.",
-        html_body="<p>This is a test email from your AI Client Portal admin console. "
-        "If you're reading this, your SMTP settings work.</p>",
-    )
+    )  # no html_body: send_via_connection puts it in the global email shell
 
     settings_row.last_tested_at = timezone.now()
     settings_row.status = EmailSettings.Status.CONNECTED if success else EmailSettings.Status.FAILED

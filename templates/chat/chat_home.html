@@ -1054,6 +1054,7 @@ function portalCloseUpgradeModal() {
     {% else %}
     <div class="chat-home-scroll">
     <div class="chat-hero">
+        <div class="home-main">
         <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span>{% trans "Route any model, one workspace" %}</div>
         <h1 class="hero-title">{% trans "What are we routing through today?" %}</h1>
         <p class="hero-sub">{% trans "Chat with any allowed model, compare responses, and keep every conversation inside your team's budget and access rules." %}</p>
@@ -1101,6 +1102,7 @@ function portalCloseUpgradeModal() {
                 {% trans "New conversation" %}
             </button>
         </form>
+        </div>
         {% if live_intelligence_enabled and user|has_feature:"live_intelligence" %}
         {% include "chat/_live_intelligence_section.html" %}
         {% endif %}

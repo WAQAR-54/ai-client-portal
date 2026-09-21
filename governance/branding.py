@@ -256,13 +256,23 @@ BRANDING_1 = {
 }  # fmt: skip
 
 # Branding 2 - Web Host Era Brand Kit (Brand Kit.pdf). Hex values are the printed labels on pages 7-9:
-#   Too Blue to be True 008CFF | Matt Black 151515 | White FFFFFF | Void 00172A | Soulstone Blue 0055A5
+#   Too Blue to be True (see below) | Matt Black 151515 | White FFFFFF | Void 00172A | Soulstone Blue 0055A5
 #   High Seas 7DB5DC | Halloween F96939 | Fennel Fiesta 01C970 | Lime Fizz C7FC35 | Pearl Powder F9FFEB
 #   Dark Charcoal 333333 | Nickel 737373 | Philippine Silver B3B3B3 | Light Silver D9D9D9 | Plaster E9EAE9
-# (The page-7 swatch and the logo are drawn in #2C6EF8 while its label says 008CFF; the printed value is used for the
-# token and the logo artwork is left exactly as supplied. See docs/OPERATIONS.md.)
-# Derived (not in the kit): #4d4d4d muted text (Dark Charcoal-Nickel midpoint, so muted text passes AA on Plaster),
-# #f3f4f3 muted surface (Plaster lightened).
+#
+# PRIMARY BLUE - DECISION (recorded 2026-09-21, re-inspected from the supplied PDF): the page-7 label says 008CFF, but
+# the artwork disagrees with it. Sampled from the rendered pages, #2C6EF8 is the colour of (a) the page-7 "Too Blue to
+# be True" swatch itself, (b) the logo on every page (pages 3, 4, 5 - the kit's own "never change to colors other than
+# specified" rule protects exactly this blue), (c) the cover and the Color section divider, (d) one of the nine logo
+# background tiles on page 4. #008CFF appears only in the printed label and as another of those nine tiles (page 4,
+# azure). The colour the brand actually wears everywhere - the logo and the named swatch - is #2C6EF8, so it is the
+# primary; the label is treated as a typo. To switch to 008CFF instead, change "primary" (and the three literals
+# marked PRIMARY below) - nothing else depends on it. Derived (not in the kit): muted text #4D4D4D (Dark Charcoal /
+# Nickel midpoint, so muted text passes AA on Plaster) and muted surface #F3F4F3 (Plaster lightened).
+#
+# CONTRAST NOTE: white on #2C6EF8 is 4.47:1 - 0.03 under WCAG AA for small text (it passes for large text). White on
+# this blue is the kit's own pairing (cover, logo tiles), so it is kept and listed as an ACCEPTED pair in the report
+# instead of being hidden or "fixed" by changing the brand colour.
 BRANDING_2 = {
     "key": "branding_2",
     "label": "Branding 2",
@@ -274,13 +284,13 @@ BRANDING_2 = {
         "dark": "branding/whe-logo-white.png",
         "favicon": "branding/whe-mark.png",
     },
-    "colors": {"primary": "#008cff", "secondary": "#0055a5", "accent": "#c7fc35"},
+    "colors": {"primary": "#2c6ef8", "secondary": "#0055a5", "accent": "#c7fc35"},  # PRIMARY
     "light": {
         "background": "#ffffff", "surface": "#ffffff", "text": "#151515", "muted": "#4d4d4d", "border": "#d9d9d9",
         "surface_muted": "#f3f4f3", "surface_active": "#e9eae9", "border_strong": "#b3b3b3", "faint": "#737373",
         "sidebar": {
-            "bg": "#00172a", "text": "#ffffff", "muted": "#7db5dc", "hover": "#0a2740", "active_bg": "#008cff",
-            "active_text": "#151515", "border": "#0a2740",
+            "bg": "#00172a", "text": "#ffffff", "muted": "#7db5dc", "hover": "#0a2740", "active_bg": "#2c6ef8",
+            "active_text": "#ffffff", "border": "#0a2740",
         },
     },
     "dark": {
@@ -288,8 +298,8 @@ BRANDING_2 = {
         "surface_muted": "#0b2b45", "surface_active": "#12395a", "border_strong": "#1f4f7a", "faint": "#93a9bb",
         "secondary_text": "#7db5dc",
         "sidebar": {
-            "bg": "#001220", "text": "#ffffff", "muted": "#7db5dc", "hover": "#0a2740", "active_bg": "#008cff",
-            "active_text": "#151515", "border": "#0a2740",
+            "bg": "#001220", "text": "#ffffff", "muted": "#7db5dc", "hover": "#0a2740", "active_bg": "#2c6ef8",
+            "active_text": "#ffffff", "border": "#0a2740",
         },
     },
     "semantic": {
@@ -298,13 +308,21 @@ BRANDING_2 = {
         "dark": {"success": "#01c970", "success_soft": "#06332a", "success_text": "#3ee39a", "danger": "#f96939",
                  "danger_soft": "#3a1a10", "danger_text": "#ff9a78", "danger_hover": "#ff8256"},
     },
+    "accepted_contrast": {
+        "Primary button label": (
+            "White on the Brand Kit blue is the kit's own pairing: 4.47:1, 0.03 under AA for small text."
+        ),
+    },
     "radii": ("10px", "14px", "22px"),
-    "showcase": "linear-gradient(160deg, #00172a 0%, #0055a5 60%, #008cff 100%)",
+    "showcase": "linear-gradient(160deg, #00172a 0%, #0055a5 60%, #2c6ef8 100%)",  # PRIMARY
     "fonts": {
         "primary": "Gilroy",
         "secondary": "Mont-Trial",
-        # Gilroy and Mont-Trial are commercial fonts and are NOT bundled or downloaded. Until licensed copies are added
-        # as @font-face, the closest open Google Fonts (Urbanist ~ Gilroy, Montserrat ~ Mont) are used, then Inter.
+        # REQUESTED brand fonts: Gilroy (primary) and Mont-Trial (secondary). They are commercial and NO licensed
+        # file is in the project, so they are NOT bundled, downloaded or made a runtime dependency. FALLBACK: a
+        # visitor who has them installed sees them; everyone else gets the closest open Google Fonts (Urbanist ~
+        # Gilroy, Montserrat ~ Mont), then Inter and the system font. To use the real fonts, add licensed @font-face
+        # files under static/fonts/.
         "primary_stack": '"Gilroy", "Urbanist", Inter, system-ui, sans-serif',
         "secondary_stack": '"Mont-Trial", "Montserrat", Inter, system-ui, sans-serif',
         "google_url": (
@@ -359,6 +377,9 @@ BRANDING_3 = {
         ),
     },
 }  # fmt: skip
+
+# The monospace stack main.css has always used (code, numbers, the Playground editor).
+MONO_STACK = '"JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace'
 
 PRESETS = {"branding_1": BRANDING_1, "branding_2": BRANDING_2, "branding_3": BRANDING_3}
 
@@ -543,10 +564,6 @@ def tokens_for(brand, theme):
         "--warn": sem["warn"], "--warn-soft": sem["warn_soft"], "--warn-dim": sem["warn_dim"],
         "--on-danger": readable_on(bad), "--on-success": readable_on(ok), "--check-mark": i["on_primary"],
         "--alert-danger-text": bad_text, "--alert-success-text": ok_text, "--alert-info-text": i["accent_text"],
-        "--console-accent": ensure_contrast(i["primary"], "#0b0d12", 4.5),
-        "--console-accent-dim": mix("#0b0d12", i["primary"], 0.25),
-        "--console-hover": mix("#0b0d12", i["primary"], 0.32),
-        "--console-on-accent": readable_on(ensure_contrast(i["primary"], "#0b0d12", 4.5), dark="#04141a"),
         "--showcase-text": readable_on(i["secondary"]),
         "--showcase-icon": mix(i["primary"], "#ffffff", 0.55),
     }  # fmt: skip
@@ -576,7 +593,11 @@ def tokens_for(brand, theme):
 def shared_tokens(brand):
     """Tokens that do not change with the light/dark theme: fonts, radii, the login showcase gradient."""
     fonts = brand["fonts"]
-    tokens = {"--font-sans": fonts["primary_stack"], "--font-display": fonts["secondary_stack"]}
+    tokens = {
+        "--font-sans": fonts["primary_stack"],
+        "--font-display": fonts["secondary_stack"],
+        "--font-mono": MONO_STACK,
+    }
     if brand.get("exact"):
         tokens.update(
             {
@@ -607,14 +628,14 @@ def _declarations(tokens, indent="    "):
     return "\n".join(lines)
 
 
-def render_css(brand, scope=None):
+def render_css(brand, scope=None, full=False):
     """The override stylesheet for `brand`. scope=None: the real page (light, then dark via media query and
     [data-theme=dark], exactly the structure main.css uses). scope='.sel': the preview box, where the theme is picked
     by [data-preview-theme]. Branding 1 on the real page needs no override (main.css already is Branding 1)."""
     shared = shared_tokens(brand)
     light, dark = tokens_for(brand, "light"), tokens_for(brand, "dark")
     if scope is None:
-        if brand.get("exact"):
+        if brand.get("exact") and not full:
             return ""
         return (
             "::selection { background: var(--brand-accent); color: var(--on-brand-accent); }\n"
@@ -668,16 +689,27 @@ def contrast_report(brand):
         ]
         if r.get("nav_active_bg"):
             pairs.append(("Active navigation item", r["nav_active_text"], r["nav_active_bg"]))
+        accepted = brand.get("accepted_contrast") or {}
         for label, fg, bg in pairs:
             ratio = contrast(fg, bg)
+            ok = ratio >= AA_TEXT
             rows.append(
-                {"theme": theme, "label": label, "ratio": round(ratio, 2), "required": AA_TEXT, "ok": ratio >= AA_TEXT}
+                {
+                    "theme": theme,
+                    "label": label,
+                    "ratio": round(ratio, 2),
+                    "required": AA_TEXT,
+                    "ok": ok,
+                    "accepted": (not ok) and label in accepted,
+                    "note": accepted.get(label, "") if not ok else "",
+                }
             )
     return rows
 
 
 def contrast_warnings(brand):
-    return [row for row in contrast_report(brand) if not row["ok"]]
+    """The pairs below AA that nobody has explicitly accepted (an accepted pair is documented on the brand)."""
+    return [row for row in contrast_report(brand) if not row["ok"] and not row["accepted"]]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -711,6 +743,9 @@ class ActiveBranding:
         self.mark_only = bool(brand.get("mark_only"))  # the logo is a symbol only: the name is written beside it
         self.fonts_url = brand["fonts"]["google_url"]
         self.css = _cached_css(row, brand)
+        # The complete token set for pages that do not load main.css (Domain Generator, Code Playground): unlike
+        # `css` it is not empty for Branding 1, because there main.css is not there to supply the values.
+        self.full_css = _cached_css(row, brand, full=True)
 
 
 def logos_for(row, brand):
@@ -753,14 +788,14 @@ def _flatten_config(config):
     return flat
 
 
-def _cached_css(row, brand):
+def _cached_css(row, brand, full=False):
     """The generated CSS, cached per (preset, row version): saving the branding bumps the version, so the next request
     builds (and caches) the new CSS - nothing stale survives, and nothing is polled."""
-    key = f"branding:css:{brand['key']}:{getattr(row, 'version', 1)}"
+    key = f"branding:{'fullcss' if full else 'css'}:{brand['key']}:{getattr(row, 'version', 1)}"
     try:
         css = cache.get(key)
         if css is None:
-            css = render_css(brand)
+            css = render_css(brand, full=full)
             cache.set(key, css, 3600)
         logos = logos_for(row, brand)
         cache.set(
@@ -777,7 +812,7 @@ def _cached_css(row, brand):
         )
         return css
     except Exception:  # noqa: BLE001 - branding must never take a page down
-        return render_css(brand)
+        return render_css(brand, full=full)
 
 
 LAST_KNOWN_KEY = "branding:last_known"
@@ -831,6 +866,7 @@ def _email_tokens_from(brand, name, logo_url=""):
         "success": tokens["--color-success"],
         "success_soft": tokens["--color-success-soft"],
         "danger": tokens["--color-danger"],
+        "on_danger": tokens.get("--on-danger", "#ffffff"),
         "danger_soft": tokens["--color-danger-soft"],
         "warn": tokens["--warn"],
         "warn_soft": tokens["--warn-soft"],
