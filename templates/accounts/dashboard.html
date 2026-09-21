@@ -43,12 +43,22 @@ role dashboards at this same address (accounts/views.py::DashboardView). Data: g
         <section class="dash-section" data-dash="projects" aria-labelledby="my-projects-title">
             <h2 class="dash-section-title" id="my-projects-title">{% include "dashboards/_icon.html" with name="t_projects" %}{% trans "My projects" %}</h2>
             {% if dash.projects %}
-            <ul class="dash-list">
+            <div class="dash-projects">
                 {% for project in dash.projects %}
-                <li><a href="{{ project.url }}"><strong>{{ project.name }}</strong></a>
-                    <span class="dash-list-meta">{% blocktrans count n=project.count %}{{ n }} conversation{% plural %}{{ n }} conversations{% endblocktrans %}{% if project.age %} · {{ project.age }} {% trans "ago" %}{% endif %}</span></li>
+                <a class="dash-project" href="{{ project.url }}">
+                    <span class="dash-project-ico">{% include "dashboards/_icon.html" with name="projects" %}</span>
+                    <span class="dash-project-body">
+                        <strong class="dash-project-name">{{ project.name }}</strong>
+                        <span class="dash-project-meta">{% blocktrans count n=project.count %}{{ n }} conversation{% plural %}{{ n }} conversations{% endblocktrans %}{% if project.age %} · {{ project.age }} {% trans "ago" %}{% endif %}</span>
+                    </span>
+                    <span class="dash-project-go" aria-hidden="true">→</span>
+                </a>
                 {% endfor %}
-            </ul>
+                <a class="dash-project dash-project-new" href="{% url 'chat:chat_home' %}#new-project">
+                    <span class="dash-project-ico">{% include "dashboards/_icon.html" with name="qa_project" %}</span>
+                    <span class="dash-project-body"><strong class="dash-project-name">{% trans "New project" %}</strong><span class="dash-project-meta">{% trans "Group your conversations" %}</span></span>
+                </a>
+            </div>
             {% else %}
             <div class="dash-empty-card">
                 <strong>{% trans "No projects yet" %}</strong>
