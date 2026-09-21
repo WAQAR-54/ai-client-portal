@@ -449,6 +449,20 @@ Har role ko apna dashboard **usi ek address par** milta hai jahan har sign-in fl
 
 **Verification (2026-09-21, local scratch server + synthetic data):** real Chromium par **885/885 checks**: 4 roles x 4 brandings (1/2/3/Custom) x 1440/820/390 x light/dark (koi horizontal overflow nahi, koi JS error nahi, sahi `data-brand`/accent, non-SuperAdmin ko Redis/Celery/PostgreSQL/Server health/Background jobs kahin nahi), har role ke sab links (200), User ka New conversation asli conversation banata hai, New project link project form kholta hai (390px par drawer ke saath), khali user ki empty states, aur masle hal hone par Needs attention se items ghayab. PARTIALLY VERIFIED: production par dashboards asli data ke saath nahi dekhe gaye (sirf anonymous read-only checks).
 
+## 8h. Trusted device (MFA) — 2026-09-21
+
+Ek user = **ek active trusted device**. Password ke baad agar browser ke paas us user ka valid trusted-device token hai to email MFA skip; warna mojooda MFA (`_begin_mfa_challenge_if_required` — password login aur Google sign-in dono). Dusra browser, dusra computer, cookies clear, private window: koi valid token nahi => MFA. IP / user agent / fingerprint se kabhi trust nahi diya jata (user agent sirf "Chrome on Windows" jaisa label banata hai).
+
+| File | Kaam | Status |
+|---|---|---|
+| `accounts/models.py::TrustedDevice` (+ `accounts/migrations/0015_trusted_device.py`) | user, `token_hash` (sirf SHA-256; asli token DB mein kabhi nahi), label, created_at, last_used_at, expires_at (30 din, `TRUSTED_DEVICE_DAYS`), revoked_at | IMPLEMENTED aur VERIFIED |
+| `accounts/trusted_device.py` | `is_trusted`, `register` (pehle purane sab revoke, phir naya; cookie `trusted_device`: HttpOnly, Secure (DEBUG ke siwa), SameSite=Lax, 30 din), `revoke_all`, `notify_new_device` | IMPLEMENTED aur VERIFIED |
+| `accounts/views.py` (`MFAVerifyView`, `sign_out_all_sessions`) | MFA kamyab => `login()` (mojooda single-session rule purane sessions nikalta hai, naya session nahi) => device register => "New trusted device" notification/email (`notifications/models.py::NotificationType.NEW_TRUSTED_DEVICE`, `notifications/migrations/0011_new_trusted_device.py`, global email shell). "Sign out all sessions" (profile > Security): sirf apne devices revoke + saare sessions band + cookie delete => agla login MFA | IMPLEMENTED aur VERIFIED |
+| `templates/accounts/profile.html` | Security tab: Trusted device card (Current device, label, last used) + Sign out all sessions | IMPLEMENTED |
+| `accounts/test_trusted_device.py` | 18 tests: pehla login MFA, register, cookie flags, hash-only storage, skip MFA, invalid/expired/revoked token, doosra browser, ek active device, purana session invalid, sign-out-all, doosre user ka device safe, mojooda MFA (galat code) | IMPLEMENTED aur VERIFIED |
+
+MFA policy (disable MFA, admin ke liye lazmi MFA) nahi badli. **Limitation:** session invalidation mojooda single-session rule par tikti hai (`SINGLE_SESSION_PER_USER=False` par purane sessions band nahi hote, sirf device revoke hota hai); trusted-device skip par bhi login naya session banata hai, isliye doosre browsers ke sessions nikal jate hain.
+
 ## 9. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |

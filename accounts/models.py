@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
@@ -234,3 +235,25 @@ class User(AbstractUser):
     @property
     def is_manager(self):
         return self.role == self.Role.MANAGER
+
+
+class TrustedDevice(models.Model):
+    """The ONE browser that may skip the e-mail MFA step for a user (accounts/trusted_device.py).
+
+    Only a SHA-256 hash of the random device token is stored - the raw token lives solely in that browser's HttpOnly
+    cookie, so a database leak cannot be replayed. A user has at most one non-revoked row: registering a new device
+    (after a successful MFA) revokes the previous one."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="trusted_devices")
+    token_hash = models.CharField(max_length=64, unique=True, editable=False)
+    label = models.CharField(max_length=80, blank=True)  # e.g. "Chrome on Windows" - browser and OS names only
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"TrustedDevice({self.user_id}, {self.label or 'device'})"

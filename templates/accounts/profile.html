@@ -175,6 +175,22 @@
             {% endif %}
         </div>
 
+        {% if trusted_device or user.mfa_enabled or user.is_admin %}
+        <div class="card mt-4" data-section="trusted-device">
+            <h2>{% trans "Trusted device" %}</h2>
+            {% if trusted_device %}
+            <p style="margin:0;"><span class="badge badge-success">&#9679; {% trans "Current device" %}</span> <strong>{{ trusted_device.label|default:_("This browser") }}</strong></p>
+            <p class="text-muted" style="margin:0.3rem 0 0.8rem; font-size:0.85rem;">{% trans "Last used" %}: {{ trusted_device.last_used_at|default:trusted_device.created_at|timesince }} {% trans "ago" %}. {% trans "Only this browser skips the verification code; signing in from another one replaces it." %}</p>
+            {% else %}
+            <p class="text-muted" style="margin:0 0 0.8rem;">{% trans "No trusted device yet - the next successful verification on this browser registers it." %}</p>
+            {% endif %}
+            <form method="post" action="{% url 'accounts:sign_out_all_sessions' %}" onsubmit="return confirm('{% trans "Sign out everywhere? You will need a verification code to sign in again." %}');">
+                {% csrf_token %}
+                <button type="submit" class="btn-small btn-ghost">{% trans "Sign out all sessions" %}</button>
+            </form>
+        </div>
+        {% endif %}
+
         <div class="card mt-4">
             <h2>{% trans "Connected accounts" %}</h2>
             <div style="display:flex; align-items:center; gap:0.75rem;">

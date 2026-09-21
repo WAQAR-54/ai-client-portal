@@ -11,6 +11,7 @@ urlpatterns = [
     path("mfa/verify/", views.MFAVerifyView.as_view(), name="mfa_verify"),
     path("mfa/resend/", views.resend_mfa_code, name="resend_mfa_code"),
     path("profile/mfa/toggle/", views.toggle_own_mfa, name="toggle_own_mfa"),
+    path("profile/sign-out-all/", views.sign_out_all_sessions, name="sign_out_all_sessions"),
     path("signup/", views.signup_view, name="signup"),
     path("password-reset/", views.password_reset_request_view, name="password_reset_request"),
     path(

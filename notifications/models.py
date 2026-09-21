@@ -39,6 +39,8 @@ class NotificationType(models.TextChoices):
     PLAN_CANCELLATION = "plan_cancellation", "Plan cancellation"
     # Scheduled / started / completed / cancelled maintenance (governance/maintenance.py). Sent to every active user.
     MAINTENANCE = "maintenance", "Maintenance"
+    # A new browser became the account's trusted device after MFA (accounts/trusted_device.py).
+    NEW_TRUSTED_DEVICE = "new_trusted_device", "New trusted device"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see

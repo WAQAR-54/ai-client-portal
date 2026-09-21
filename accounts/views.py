@@ -28,6 +28,7 @@ from accounts.google_auth import (
     google_signin_enabled,
     verify_google_credential,
 )
+from accounts import trusted_device
 from accounts.mfa import (
     MAX_MFA_ATTEMPTS,
     MAX_MFA_RESENDS,
@@ -147,6 +148,8 @@ def _begin_mfa_challenge_if_required(request, user, next_url):
     instead of logging them in directly) - False means log them in now."""
     if not user_requires_mfa(user):
         return False
+    if trusted_device.is_trusted(request, user):
+        return False  # this browser holds the user's valid trusted-device token (accounts/trusted_device.py)
     code = start_mfa_challenge(request, user, next_url)
     # A genuinely fresh challenge - reset the resend cap here, not in
     # start_mfa_challenge itself (see its docstring).
@@ -303,8 +306,13 @@ class MFAVerifyView(TemplateView):
         user = User.objects.get(id=request.session["mfa_user_id"])
         next_url = _mfa_redirect_target(request)
         clear_mfa_session(request)
+        # login() signs the user's older sessions out (single-session rule); registering the device makes THIS
+        # browser the only trusted one and revokes the previous one.
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-        return redirect(next_url)
+        response = redirect(next_url)
+        device = trusted_device.register(request, response, user)
+        trusted_device.notify_new_device(user, device)
+        return response
 
 
 @require_POST
@@ -327,6 +335,28 @@ def resend_mfa_code(request):
     _send_mfa_code_email(request, user, code)
     messages.success(request, translation.gettext("A new code is on its way."))
     return redirect("accounts:mfa_verify")
+
+
+@login_required
+@require_POST
+def sign_out_all_sessions(request):
+    """Revokes the trusted device and every session of the CURRENT user (never anyone else's), so the next sign-in
+    anywhere needs MFA again."""
+    import secrets
+
+    from governance.audit import log_action
+
+    user = request.user
+    trusted_device.revoke_all(user)
+    User.objects.filter(pk=user.pk).update(active_session_token=secrets.token_urlsafe(32))
+    log_action(actor=user, action_type="auth.sign_out_all", target=user, new_value=f"ip={client_ip(request)}")
+    logout(request)
+    messages.info(
+        request, translation.gettext("You were signed out everywhere. Signing in again needs a verification code.")
+    )
+    response = redirect("accounts:login")
+    trusted_device.clear_cookie(response)
+    return response
 
 
 @login_required
@@ -612,6 +642,9 @@ class ProfileView(LoginRequiredMixin, TemplateView):
 
         preference, _ = NotificationPreference.objects.get_or_create(user=self.request.user)
         return super().get_context_data(**kwargs) | {
+            "trusted_device": (
+                trusted_device.active_device(self.request.user) if user_requires_mfa(self.request.user) else None
+            ),
             "profile_form": ProfileForm(instance=self.request.user),
             "password_form": PasswordChangeForm(user=self.request.user),
             "notification_preference": preference,
