@@ -46,6 +46,26 @@ the commit that was deployed; "git is current" says nothing about the image that
 A 503 from either is logged as a WARNING, not an ERROR (`HealthProbeDowngradeFilter`), so a dependency
 outage does not produce one alert per poll. A crash *inside* a probe is still an ERROR.
 
+## Deploy emails
+
+After every deploy the workflow runs `manage.py send_deploy_notification` inside the `web` container
+(`notifications/management/commands/send_deploy_notification.py`): one email per **active SuperAdmin**, sent through the
+same path as every other email (the SMTP settings saved under Email Logs, else the `EMAIL_*` environment). Subject
+`[AI Client Portal] Deploy succeeded (<commit>)`, or `... Deploy FAILED - rolled back` after a rollback.
+
+* **Placeholder addresses are skipped** (`example.com/.org/.net`, `.test`, `.invalid`, `.localhost`): they can never
+  receive mail, so the demo `admin@example.com` account would otherwise bounce (550) on every deploy. Deactivate or
+  re-address such a SuperAdmin to stop it also receiving crash alerts (`alert_recipients`).
+* **The run page tells you the outcome**: a `Deploy email` annotation says how many SuperAdmins the mail server
+  accepted the message for, or a warning if some were refused. The step never fails a deploy.
+* **"Accepted" is not "delivered".** The app can only see what the mail server answered. If the annotation says
+  accepted but nothing arrives, look in Spam/Promotions (search `Deploy succeeded`) and see Email Logs (status, and the
+  reason for a refusal). The sending domain's SPF record covers the mail server; DKIM and DMARC records for it are not
+  published (checked in public DNS), which makes Gmail more likely to file automated plain-text mail as spam.
+  Publishing DKIM (the mail host's "Email Deliverability" page) and a DMARC record are DNS changes, not code.
+* `manage.py ops_verify` (section `settings`, line `email:`) shows which mail path is live and the last 24 hours as
+  counts (accepted / refused), never an address, subject or error text.
+
 ## Alerts
 
 * Unhandled server errors go to **Sentry** (`SENTRY_DSN`) and to the admins in `ADMINS` by email,

@@ -603,6 +603,31 @@ class Command(BaseCommand):
             f"newest backup {hours:.1f}h old, {_human(size)}; {len(found)} kept (daily backup expected within 26h)",
         )
 
+    def _check_email(self):
+        """Which mail path is live and what the mail server did with the last 24 hours of mail. Counts only (no
+        address, subject or error text). "sent" means the server ACCEPTED the message, not that it reached an inbox."""
+        from notifications.models import EmailLog, EmailSettings
+
+        row = EmailSettings.objects.first()  # not .load(): that creates the row, and this command writes nothing
+        if row is not None and row.is_configured():
+            path = "SMTP from the Email Logs settings"
+        else:
+            backend = settings.EMAIL_BACKEND.rsplit(".", 2)[-2]
+            path = (
+                "Django EMAIL_* fallback ("
+                + backend
+                + ")"
+                + (" - mail is only printed to the log, never sent" if backend == "console" else "")
+            )
+        since = timezone.now() - timedelta(hours=24)
+        recent = EmailLog.objects.filter(created_at__gte=since)
+        sent = recent.filter(status=EmailLog.Status.SENT).count()
+        failed = recent.filter(status=EmailLog.Status.FAILED).count()
+        broken = (failed and not sent) or path.endswith("never sent")
+        self._emit(
+            "WARN" if broken else "OK", "settings", f"email: {path}; last 24h: {sent} accepted, {failed} refused"
+        )
+
     def check_settings(self):
         self._emit("OK" if not settings.DEBUG else "FAIL", "settings", f"DEBUG={settings.DEBUG}")
         # Presence only (never a value) of the variables production depends on.
@@ -644,8 +669,11 @@ class Command(BaseCommand):
             f"session_cookie_secure={settings.SESSION_COOKIE_SECURE} csrf_cookie_secure={settings.CSRF_COOKIE_SECURE} "
             f"https_redirect={settings.ENFORCE_HTTPS_VIA_CLOUDFLARE} hsts_seconds={settings.CLOUDFLARE_HSTS_SECONDS}",
         )
+        self._check_email()
         sentry = bool(getattr(settings, "SENTRY_DSN", ""))
-        backend = settings.EMAIL_BACKEND.rsplit(".", 1)[-1]
+        backend = settings.EMAIL_BACKEND.rsplit(".", 2)[
+            -2
+        ]  # "smtp" / "console" (the last part is always "EmailBackend")
         self._emit(
             "OK", "settings", f"Sentry configured={sentry} ADMINS={len(settings.ADMINS)} email_backend={backend}"
         )

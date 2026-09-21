@@ -672,10 +672,10 @@ class SendDeployNotificationCommandTests(TestCase):
 
     def setUp(self):
         self.superadmin = User.objects.create_user(
-            email="super@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+            email="super@acme-corp.io", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
         )
         self.other_superadmin = User.objects.create_user(
-            email="super2@example.com", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
+            email="super2@acme-corp.io", password="pw12345!", role=User.Role.SUPERADMIN, is_staff=True
         )
         self.admin = User.objects.create_user(
             email="admin@example.com", password="pw12345!", role=User.Role.ADMIN, is_staff=True
@@ -688,7 +688,7 @@ class SendDeployNotificationCommandTests(TestCase):
         call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456")
         self.assertEqual(len(mail.outbox), 2)
         recipients = {m.to[0] for m in mail.outbox}
-        self.assertEqual(recipients, {"super@example.com", "super2@example.com"})
+        self.assertEqual(recipients, {"super@acme-corp.io", "super2@acme-corp.io"})
         self.assertIn("succeeded", mail.outbox[0].subject)
         self.assertIn("abc123def456", mail.outbox[0].subject)
 
@@ -700,7 +700,7 @@ class SendDeployNotificationCommandTests(TestCase):
 
         call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456")
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ["super@example.com"])
+        self.assertEqual(mail.outbox[0].to, ["super@acme-corp.io"])
 
     def test_failure_mentions_rollback_target(self):
         from django.core.management import call_command
@@ -724,3 +724,62 @@ class SendDeployNotificationCommandTests(TestCase):
         User.objects.filter(role=User.Role.SUPERADMIN).delete()
         call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456")
         self.assertEqual(len(mail.outbox), 0)
+
+    def run_command(self, *extra):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("send_deploy_notification", "--status", "success", "--sha", "abc123def456", *extra, stdout=out)
+        return out.getvalue()
+
+    def test_placeholder_addresses_are_skipped_not_bounced(self):
+        User.objects.create_user(email="placeholder@example.com", password="pw12345!", role=User.Role.SUPERADMIN)
+        User.objects.create_user(email="demo@corp.test", password="pw12345!", role=User.Role.SUPERADMIN)
+        output = self.run_command()
+        self.assertEqual({m.to[0] for m in mail.outbox}, {"super@acme-corp.io", "super2@acme-corp.io"})
+        self.assertIn("2 placeholder address(es) skipped", output)
+
+    def test_only_placeholder_superadmins_means_nothing_is_sent(self):
+        User.objects.filter(role=User.Role.SUPERADMIN).delete()
+        User.objects.create_user(email="placeholder@example.com", password="pw12345!", role=User.Role.SUPERADMIN)
+        self.assertIn("real email address", self.run_command())
+        self.assertEqual(mail.outbox, [])
+
+    def test_subject_carries_the_portal_prefix_like_every_other_email(self):
+        self.run_command()
+        self.assertTrue(mail.outbox[0].subject.startswith("[AI Client Portal] Deploy succeeded"))
+
+    def test_a_delivered_deploy_email_is_annotated_as_accepted_with_a_spam_hint(self):
+        output = self.run_command()
+        self.assertIn("::notice title=Deploy email::Accepted by the mail server for 2 SuperAdmin(s)", output)
+        self.assertIn("check Spam", output)
+        self.assertNotIn("@", output)  # no address ever reaches the (public) run log
+
+    def test_a_refused_deploy_email_is_a_warning_annotation_and_never_an_error(self):
+        from unittest.mock import patch
+
+        with patch(
+            "notifications.management.commands.send_deploy_notification.send_tracked_email",
+            side_effect=[(True, None), (False, "550")],
+        ):
+            output = self.run_command()
+        self.assertIn("::warning title=Deploy email::1 of 2 SuperAdmin(s) did NOT get the deploy email", output)
+        self.assertNotIn("550", output)  # the SMTP error text stays in Email Logs
+
+    def test_reserved_domain_detection(self):
+        from notifications.management.commands.send_deploy_notification import can_receive_mail
+
+        for bad in (
+            "a@example.com",
+            "a@EXAMPLE.org",
+            "a@mail.example.net",
+            "a@x.test",
+            "a@y.invalid",
+            "a@host.localhost",
+            "a@z.example",
+        ):
+            self.assertFalse(can_receive_mail(bad), bad)
+        for good in ("a@gmail.com", "a@myaiwhe.com", "a@notexample.com", "a@example.com.pk"):
+            self.assertTrue(can_receive_mail(good), good)

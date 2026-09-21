@@ -215,3 +215,53 @@ class OpsVerifyRedisAndSecretsTests(TestCase):
             cmd.check_settings()
         self.assertIn(("OK", "settings", "database password is the public compose placeholder: no"), cmd.results)
         self.assertNotIn(real, cmd.stdout.getvalue())
+
+
+class OpsVerifyEmailLineTests(TestCase):
+    """The email line: which path is live and what the mail server did in the last 24 hours. Counts only."""
+
+    def line(self):
+        return [row for row in run("--skip-feeds").splitlines() if " settings: email:" in row][0]
+
+    def make_log(self, status, hours_ago=1, recipient="someone@corp.io"):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from notifications.models import EmailLog
+
+        log = EmailLog.objects.create(
+            recipient=recipient, subject="secret subject", status=status, error_message="secret error"
+        )
+        EmailLog.objects.filter(pk=log.pk).update(created_at=timezone.now() - timedelta(hours=hours_ago))
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend")
+    def test_the_console_backend_is_flagged_because_nothing_is_really_sent(self):
+        line = self.line()
+        self.assertTrue(line.startswith("WARN"), line)
+        self.assertIn("never sent", line)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
+    def test_counts_only_the_last_24_hours_and_prints_nothing_private(self):
+        self.make_log("sent")
+        self.make_log("sent")
+        self.make_log("failed")
+        self.make_log("sent", hours_ago=48)  # too old to count
+        line = self.line()
+        self.assertIn("2 accepted, 1 refused", line)
+        self.assertTrue(line.startswith("OK"), line)
+        for private in ("someone@corp.io", "secret subject", "secret error"):
+            self.assertNotIn(private, line)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
+    def test_everything_refused_is_a_warning(self):
+        self.make_log("failed")
+        self.assertTrue(self.line().startswith("WARN"))
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
+    def test_it_does_not_create_the_email_settings_row(self):
+        from notifications.models import EmailSettings
+
+        EmailSettings.objects.all().delete()
+        self.line()
+        self.assertFalse(EmailSettings.objects.exists())
