@@ -161,6 +161,7 @@
  "/governance/routing-rules/999999/edit/": "superadmin",
  "/governance/routing-rules/new/": "superadmin",
  "/governance/search/": "admin",
+ "/governance/system-status/server-health/": "superadmin",
  "/governance/teams/": "admin",
  "/governance/teams/999999/delete/": "none",
  "/governance/teams/add/": "admin",

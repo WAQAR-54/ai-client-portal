@@ -405,6 +405,12 @@ LOGIN_IP_FAILURE_LIMIT = env.int("LOGIN_IP_FAILURE_LIMIT", default=30)
 
 MEDIA_DISK_WARN_PCT = env.int("MEDIA_DISK_WARN_PCT", default=80)
 MEDIA_DISK_CRITICAL_PCT = env.int("MEDIA_DISK_CRITICAL_PCT", default=90)
+# SuperAdmin "Server health" panel (governance/server_health.py). Disk reuses the two MEDIA_DISK_* thresholds above.
+SERVER_HEALTH_CACHE_SECONDS = env.int("SERVER_HEALTH_CACHE_SECONDS", default=45)
+SERVER_HEALTH_CPU_WARN_PCT = env.int("SERVER_HEALTH_CPU_WARN_PCT", default=70)
+SERVER_HEALTH_CPU_CRITICAL_PCT = env.int("SERVER_HEALTH_CPU_CRITICAL_PCT", default=85)
+SERVER_HEALTH_MEMORY_WARN_PCT = env.int("SERVER_HEALTH_MEMORY_WARN_PCT", default=75)
+SERVER_HEALTH_MEMORY_CRITICAL_PCT = env.int("SERVER_HEALTH_MEMORY_CRITICAL_PCT", default=90)
 # Server Media size filter: Small < MEDIUM_MIN <= Medium < LARGE_MIN <= Large, then the "large file"
 # thresholds in MB (operational visibility only - nothing is ever deleted by size).
 MEDIA_MEDIUM_MIN_BYTES = env.int("MEDIA_MEDIUM_MIN_BYTES", default=1024**2)

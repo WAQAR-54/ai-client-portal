@@ -97,6 +97,7 @@ urlpatterns = [
         views.update_capability_limits,
         name="update_capability_limits",
     ),
+    path("system-status/server-health/", views.server_health_panel, name="server_health"),
     path("media/", media_views.MediaDashboardView.as_view(), name="media"),
     path("media/rescan/", media_views.media_rescan, name="media_rescan"),
     path("media/orphans/delete/", media_views.media_delete_orphan, name="media_delete_orphan"),

@@ -1,0 +1,45 @@
+{% load i18n %}
+{% comment %}
+SuperAdmin-only (rendered inside _system_status.html, and alone by governance:server_health for its 60 s refresh).
+Data: governance/server_health.py - real /proc / statvfs readings from one cached snapshot; a reading that cannot be
+taken shows "Unavailable", never 0 %. Service rows are inferred from checks System status already runs; container
+(Docker) state is not readable from this process. Nothing here prints a path, address, credential or container id.
+{% endcomment %}
+<article class="card sys-panel server-health" id="server-health" data-panel="server-health" aria-labelledby="server-health-title"
+         hx-get="{% url 'governance:server_health' %}" hx-trigger="every 60s [!document.hidden]" hx-swap="outerHTML">
+    <header class="sys-panel-head">
+        <h3 id="server-health-title" class="sys-panel-title">{% trans "Server health" %}</h3>
+        <span class="sys-panel-summary" data-role="updated">{% blocktrans with ago=server_health.updated_ago %}Last updated: {{ ago }} ago{% endblocktrans %}</span>
+    </header>
+
+    <div class="sh-metrics">
+        {% for m in server_health.metrics %}
+        <div class="sh-metric" data-metric="{{ m.key }}" data-state="{{ m.state|default:'info' }}">
+            <div class="sh-metric-label">{{ m.label }}</div>
+            {% if m.available %}
+            <div class="sh-metric-value">{{ m.value }}</div>
+            {% if m.state == "healthy" %}<span class="badge badge-success sys-badge"><span aria-hidden="true">✓</span> {% trans "Healthy" %}</span>
+            {% elif m.state == "warning" %}<span class="badge badge-warn sys-badge"><span aria-hidden="true">⚠</span> {% trans "Warning" %}</span>
+            {% elif m.state == "critical" %}<span class="badge badge-danger sys-badge"><span aria-hidden="true">✕</span> {% trans "Critical" %}</span>{% endif %}
+            {% if m.detail %}<div class="sh-metric-detail">{{ m.detail }}</div>{% endif %}
+            {% else %}
+            <div class="sh-metric-value sh-unavailable">{% trans "Unavailable" %}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <h4 class="sh-subhead">{% trans "Services" %}</h4>
+    <ul class="sh-services">
+        {% for s in server_health.services %}
+        <li class="sh-service" data-service="{{ s.key }}" data-state="{{ s.state }}" title="{{ s.detail }}">
+            <span class="sh-service-name">{{ s.label }}</span>
+            {% if s.state == "healthy" %}<span class="badge badge-success sys-badge"><span aria-hidden="true">✓</span> {% trans "Healthy" %}</span>
+            {% elif s.state == "warning" %}<span class="badge badge-warn sys-badge"><span aria-hidden="true">⚠</span> {% trans "Warning" %}</span>
+            {% elif s.state == "critical" %}<span class="badge badge-danger sys-badge"><span aria-hidden="true">✕</span> {% trans "Critical" %}</span>
+            {% else %}<span class="badge badge-muted sys-badge">{% trans "Unavailable" %}</span>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    <p class="sys-panel-note sh-note">{% trans "Docker status unavailable: this application has no Docker access, by design. Service states are inferred from the database and Redis checks and the background-job records on this page." %}</p>
+</article>

@@ -38,6 +38,8 @@ load; provider and job data is HISTORY and is labelled as such.
         {% endfor %}
     </div>
 
+    {% include "governance/_server_health.html" with server_health=system_status.server_health %}
+
     <div class="sys-panels">
         <article class="card sys-panel" data-panel="providers" aria-labelledby="sys-providers-title">
             <header class="sys-panel-head">

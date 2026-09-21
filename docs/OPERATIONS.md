@@ -135,6 +135,17 @@ the live Nginx does not send `X-Real-IP` (its config is not in this repository),
 (`CF-Connecting-IP` is believed) rather than making every visitor look like the proxy. Confirm the live Nginx
 matches `deployment/nginx.conf.example`, and close the direct door (see "Transport security").
 
+## Server health panel (SuperAdmin, System status)
+
+`/governance/` -> System status -> **Server health**: CPU, memory, disk, uptime, load and the five services. Real
+readings from `/proc` (a container reads its host's, so these are the server's numbers) and statvfs; a reading that
+cannot be taken says **Unavailable**, never 0 %. One snapshot is cached for `SERVER_HEALTH_CACHE_SECONDS` (45 s) and
+the panel refreshes itself every 60 s while the tab is visible. Thresholds: CPU 70/85 %, memory 75/90 %
+(`SERVER_HEALTH_*_PCT`), disk 80/90 % (`MEDIA_DISK_WARN_PCT`/`MEDIA_DISK_CRITICAL_PCT`, shared with Server Media).
+The service rows are inferred from the checks System status already runs; **container (Docker) state is not
+readable from the app** (no Docker socket is mounted, on purpose), so use `docker compose ps` on the server for that.
+The same numbers are in `ops_verify` (`capacity` memory, `disk`), which remains the deploy-time check.
+
 ## Transport security (Cloudflare in front, plain HTTP to the origin)
 
 What production showed before this was configured (anonymous requests, before the deploy that added it): `http://`

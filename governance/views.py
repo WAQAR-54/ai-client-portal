@@ -538,6 +538,19 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         }
 
 
+@role_required(User.Role.SUPERADMIN)
+@require_GET
+def server_health_panel(request):
+    """The Server health panel alone, for its 60 s refresh (htmx swaps it in place). SuperAdmin only. Uses the same
+    cheap checks System status already runs plus the cached metrics snapshot."""
+    from config.health import check_database, check_redis
+    from governance import server_health
+    from governance.system_status import check_jobs
+
+    panel = server_health.build_panel(check_database(), check_redis(), check_jobs())
+    return render(request, "governance/_server_health.html", {"server_health": panel})
+
+
 class UserListView(FilterableListMixin, AdminRequiredMixin, ListView):
     model = User
     template_name = "governance/users.html"

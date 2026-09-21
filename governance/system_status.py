@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from chat.utils import age_label
 from config.health import check_database, check_redis
+from governance import server_health
 from providers.errors import describe
 
 # How many of the newest model-routed replies to look through for "last
@@ -242,4 +243,6 @@ def build_system_status():
         "redis": redis_status,
         "providers": providers,
         "jobs": jobs,
+        # Reuses the three results above (no extra probe); the metrics themselves come from a cached snapshot.
+        "server_health": server_health.build_panel(database, redis_status, jobs),
     }

@@ -4342,6 +4342,25 @@ table.data tbody th.sys-rowhead {
 .sys-empty .row-btn { margin-top: 8px; }
 .sys-providers .col-provider { width: 34%; }
 
+/* Server health: one full-width panel between the summary cards and the two tables. Metric tiles wrap by
+   available width (5 across on desktop, 2 across on a phone) so nothing ever scrolls sideways. */
+.server-health { margin-bottom: var(--space-4); }
+main .sys-status > .server-health.card { margin-top: 0; }
+.sh-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+.sh-metric {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;
+    padding: 12px 14px; background: var(--color-surface-muted); border-radius: var(--radius-md);
+}
+.sh-metric-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); }
+.sh-metric-value { font-size: 1.35rem; font-weight: 700; line-height: 1.15; color: var(--color-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sh-metric-value.sh-unavailable { font-size: var(--text-sm); font-weight: 600; color: var(--color-text-faint); }
+.sh-metric-detail { font-size: 11.5px; line-height: 1.35; color: var(--color-text-faint); overflow-wrap: anywhere; }
+.sh-subhead { margin: var(--space-4) 0 var(--space-2); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-muted); }
+.sh-services { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.sh-service { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 12.5px; }
+.sh-service-name { font-weight: 600; }
+.sh-note { margin: var(--space-3) 0 0; }
+
 @media (max-width: 1100px) {
     .sys-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -4352,6 +4371,10 @@ table.data tbody th.sys-rowhead {
 }
 @media (max-width: 560px) {
     .sys-grid { grid-template-columns: minmax(0, 1fr); }
+    /* Server health: two tiles per row on a phone (five stacked one-per-row made the panel a full screen tall). */
+    .sh-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .sh-metric { padding: 10px 12px; }
+    .sh-metric-value { font-size: 1.15rem; }
     .sys-card { min-height: 0; }
     .sys-when { white-space: normal; }
 
