@@ -97,11 +97,12 @@ class RulesTests(MaintenanceTestCase):
         self.assertIsNone(window.actual_start)
 
     def test_invalid_time_ranges_are_refused(self):
+        later = hours(2)  # one moment, read once: two now() calls differ by microseconds on Linux
         bad = [
             (hours(-1), hours(1)),  # starts in the past
             (hours(2), hours(1)),  # ends before it starts
-            (hours(2), hours(2)),  # empty
-            (hours(1), hours(1) + timedelta(days=8)),  # longer than 7 days
+            (later, later),  # empty
+            (later, later + timedelta(days=8)),  # longer than 7 days
             (None, hours(2)),  # no start
             (hours(2), None),  # no end
         ]
