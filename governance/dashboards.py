@@ -720,11 +720,11 @@ def superadmin_dashboard(request, system_status, org_usage, pending_upgrade_requ
         tile(
             "providers",
             _("AI providers"),
-            _("%(n)s connected") % {"n": providers["total"]} if providers["total"] else _("None connected"),
+            providers["total"],
             (
                 _("%(n)s warning(s)") % {"n": provider_warnings}
                 if provider_warnings
-                else _("All synced") if providers["total"] else ""
+                else _("all synced") if providers["total"] else _("none connected")
             ),
             "warn" if provider_warnings else "ok" if providers["total"] else "muted",
             reverse("providers:list"),
@@ -739,18 +739,18 @@ def superadmin_dashboard(request, system_status, org_usage, pending_upgrade_requ
         ),
         tile(
             "requests",
-            _("AI requests today"),
+            _("AI requests"),
             usage["today"],
             (
                 (
-                    _("%(arrow)s %(pct)s %% vs same time yesterday")
+                    _("today · %(arrow)s %(pct)s %% vs yesterday")
                     % {
                         "arrow": "↑" if trend["direction"] == "up" else "↓" if trend["direction"] == "down" else "→",
                         "pct": trend["pct"],
                     }
                 )
                 if trend
-                else _("%(n)s this week") % {"n": usage["week"]}
+                else _("today · %(n)s this week") % {"n": usage["week"]}
             ),
             "muted",
             reverse("governance:usage"),
@@ -766,11 +766,11 @@ def superadmin_dashboard(request, system_status, org_usage, pending_upgrade_requ
         tile(
             "invoices",
             _("Invoices"),
-            _("%(n)s pending") % {"n": invoices["unpaid"] + invoices["verification"]},
+            invoices["unpaid"] + invoices["verification"],
             (
-                _("%(n)s to verify") % {"n": invoices["verification"]}
+                _("pending · %(n)s to verify") % {"n": invoices["verification"]}
                 if invoices["verification"]
-                else _("%(n)s paid") % {"n": invoices["paid"]}
+                else _("pending · %(n)s paid") % {"n": invoices["paid"]}
             ),
             "warn" if invoices["verification"] else "muted",
             reverse("billing:invoices"),

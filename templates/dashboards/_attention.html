@@ -10,9 +10,9 @@ what an empty list says.
     <ul class="dash-attention">
         {% for item in attention %}
         <li class="dash-attention-item" data-level="{{ item.level }}" data-key="{{ item.key }}">
-            <i class="dash-dot" aria-hidden="true"></i>
+            <span class="dash-chip" aria-hidden="true"><i class="dash-dot"></i></span>
             <div class="dash-attention-body"><strong>{{ item.area }}</strong><span>{{ item.text }}</span></div>
-            <a class="btn btn-ghost btn-small" href="{{ item.url }}">{{ item.action }}</a>
+            <a class="dash-link" href="{{ item.url }}">{{ item.action }} <span aria-hidden="true">→</span></a>
         </li>
         {% endfor %}
     </ul>

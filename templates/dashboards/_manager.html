@@ -8,26 +8,28 @@ project names. No infrastructure, no billing administration (governance/dashboar
 {% include "dashboards/_attention.html" with attention=dash.attention ok_text=_("Nothing needs your attention right now.") %}
 
 <div class="dash-cols">
-    <div class="dash-col">
-        <section class="dash-section" data-dash="projects" aria-labelledby="projects-title">
-            <h2 class="dash-section-title" id="projects-title">{% trans "Project overview" %}</h2>
-            {% if dash.projects.total %}
-            <div class="dash-kv">
-                <div><span class="dash-kv-label">{% trans "Active" %}</span><span class="dash-kv-value">{{ dash.projects.active }}</span></div>
-                <div><span class="dash-kv-label">{% trans "Updated this week" %}</span><span class="dash-kv-value">{{ dash.projects.recent }}</span></div>
-                <div><span class="dash-kv-label">{% trans "All projects" %}</span><span class="dash-kv-value">{{ dash.projects.total }}</span></div>
-            </div>
-            <p class="dash-note">{% trans "Counts only - members' project names stay private." %} <a href="{% url 'chat:chat_home' %}">{% trans "Open your projects" %}</a></p>
-            {% else %}
-            <p class="dash-empty">{% trans "Nobody on your team has created a project yet." %}</p>
-            {% endif %}
-        </section>
-        {% include "dashboards/_ai_usage.html" with usage=dash.ai_usage %}
+    <div class="dash-col dash-main">
+        <div class="dash-pair">
+            <section class="dash-section" data-dash="projects" aria-labelledby="projects-title">
+                <h2 class="dash-section-title" id="projects-title">{% trans "Project overview" %}</h2>
+                {% if dash.projects.total %}
+                <div class="dash-kv">
+                    <div><span class="dash-kv-label">{% trans "Active" %}</span><span class="dash-kv-value">{{ dash.projects.active }}</span></div>
+                    <div><span class="dash-kv-label">{% trans "Updated this week" %}</span><span class="dash-kv-value">{{ dash.projects.recent }}</span></div>
+                    <div><span class="dash-kv-label">{% trans "All projects" %}</span><span class="dash-kv-value">{{ dash.projects.total }}</span></div>
+                </div>
+                <p class="dash-note">{% trans "Counts only - members' project names stay private." %} <a href="{% url 'chat:chat_home' %}">{% trans "Open your projects" %}</a></p>
+                {% else %}
+                <p class="dash-empty">{% trans "Nobody on your team has created a project yet." %}</p>
+                {% endif %}
+            </section>
+            {% include "dashboards/_ai_usage.html" with usage=dash.ai_usage %}
+        </div>
+        {% include "dashboards/_activity.html" with events=dash.activity empty_text=_("No team activity yet.") %}
     </div>
-    <div class="dash-col">
+    <div class="dash-col dash-side">
         {% include "dashboards/_continue.html" with item=dash.continue_item %}
         {% include "dashboards/_quick_actions.html" with actions=dash.quick_actions %}
-        {% include "dashboards/_activity.html" with events=dash.activity empty_text=_("No team activity yet.") %}
         {% include "dashboards/_notifications.html" with notes=dash.notifications %}
     </div>
 </div>
