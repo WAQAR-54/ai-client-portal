@@ -1,0 +1,30 @@
+{% load i18n %}
+{% comment %}
+Admin (their department): team + projects + daily operations. Only their own scope (governance/dashboards.py::admin_dashboard
+uses the same scoping helpers as the pages it links to) and none of the infrastructure a SuperAdmin sees.
+{% endcomment %}
+<div data-dashboard="admin">
+{% include "dashboards/_tiles.html" with tiles=dash.overview %}
+{% include "dashboards/_attention.html" with attention=dash.attention ok_text=_("Nothing is waiting for you.") %}
+
+<div class="dash-cols">
+    <div class="dash-col">
+        <section class="dash-section" data-dash="team" aria-labelledby="team-title">
+            <h2 class="dash-section-title" id="team-title">{% trans "Team overview" %}{% if dash.department %} <span class="dash-more">{{ dash.department }}</span>{% endif %}</h2>
+            <div class="dash-kv">
+                <div><span class="dash-kv-label">{% trans "Members" %}</span><span class="dash-kv-value">{{ dash.team.members }}</span><span class="dash-kv-sub">{{ dash.team.active_week }} {% trans "active this week" %}</span></div>
+                <div><span class="dash-kv-label">{% trans "Teams" %}</span><span class="dash-kv-value">{{ dash.team.teams }}</span></div>
+                <div><span class="dash-kv-label">{% trans "Projects" %}</span><span class="dash-kv-value">{{ dash.projects.total }}</span><span class="dash-kv-sub">{{ dash.projects.active }} {% trans "active" %} · {{ dash.projects.recent }} {% trans "updated this week" %}</span></div>
+            </div>
+            <p class="dash-note">{% trans "Counts only - people's projects and conversations stay private." %}</p>
+        </section>
+        {% include "dashboards/_ai_usage.html" with usage=dash.ai_usage more_url=dash.usage_url %}
+    </div>
+    <div class="dash-col">
+        {% include "dashboards/_continue.html" with item=dash.continue_item %}
+        {% include "dashboards/_quick_actions.html" with actions=dash.quick_actions %}
+        {% include "dashboards/_activity.html" with events=dash.activity more_url=dash.audit_url empty_text=_("No recent activity yet.") %}
+        {% include "dashboards/_notifications.html" with notes=dash.notifications %}
+    </div>
+</div>
+</div>

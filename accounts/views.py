@@ -507,7 +507,22 @@ def password_reset_confirm_view(request, uidb64, token):
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
+    """The post-login home. Each role gets its own dashboard at this address: Admin/SuperAdmin the governance
+    overview (scoped to their department for an Admin), a Manager their team page, everyone else the workspace
+    dashboard below. Delegating (not redirecting) keeps this one URL that every sign-in flow already lands on."""
+
     template_name = "accounts/dashboard.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        user = request.user
+        if user.is_authenticated:
+            from governance import views as governance_views
+
+            if user.role in (User.Role.ADMIN, User.Role.SUPERADMIN):
+                return governance_views.DashboardView.as_view()(request, *args, **kwargs)
+            if user.role == User.Role.MANAGER:
+                return governance_views.ManagerDashboardView.as_view()(request, *args, **kwargs)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         from governance.limits import get_usage_status
@@ -530,6 +545,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             plan_capability_summary(plan_status["plan"]) if plan_status["plan"] else []
         )
         context["usage"] = get_usage_status(self.request.user)
+        from governance import dashboards
+
+        context["dash"] = dashboards.user_dashboard(self.request.user)
         return context
 
     @staticmethod

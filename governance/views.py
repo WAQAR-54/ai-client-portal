@@ -23,6 +23,8 @@ from accounts.redirects import safe_next_url
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from governance.audit import log_action
 from governance.branding import localize_product_name
+from accounts.views import DashboardView as AccountsDashboardView
+from governance import dashboards
 from governance.system_status import build_system_status
 from governance.features import RequireFeatureMixin, require_feature
 from governance.limits import _effective_limit, _metric
@@ -477,6 +479,15 @@ class DashboardView(AdminRequiredMixin, TemplateView):
                 offset += seg_len
             return segments
 
+        org_usage = _org_usage_overview(scoped_users)
+        pending_upgrade_count = pending_requests_qs.count()
+        # Org-wide infrastructure status - SuperAdmin-only, computed ONCE and reused by the dashboard summary below.
+        system_status = build_system_status() if self.request.user.is_superadmin else None
+        if system_status is not None:
+            dash = dashboards.superadmin_dashboard(self.request, system_status, org_usage, pending_upgrade_count)
+        else:
+            dash = dashboards.admin_dashboard(self.request, org_usage, pending_upgrade_count)
+
         tokens_all_time = assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
         tokens_all_time_target, tokens_all_time_suffix = _compact(tokens_all_time)
         month_tokens_total = month_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"] or 0
@@ -518,9 +529,9 @@ class DashboardView(AdminRequiredMixin, TemplateView):
             "has_cost_data": any(daily_cost),
             "has_token_data": any(daily_tokens),
             "has_model_data": bool(model_labels),
-            "org_usage": _org_usage_overview(scoped_users),
+            "org_usage": org_usage,
             "is_department_scoped": _is_scoped_admin(self.request.user),
-            "pending_upgrade_requests": pending_requests_qs.count(),
+            "pending_upgrade_requests": pending_upgrade_count,
             "recent_upgrade_requests": recent_upgrade_requests,
             "spark_tokens": _spark(daily_tokens),
             "spark_cost": _spark(daily_cost),
@@ -535,7 +546,10 @@ class DashboardView(AdminRequiredMixin, TemplateView):
             # access" etc. A department-scoped Admin doesn't get it: it's
             # not department data, and Provider credentials/Celery
             # internals aren't part of their scope.
-            "system_status": build_system_status() if self.request.user.is_superadmin else None,
+            "system_status": system_status,
+            "dash": dash,
+            "dash_role": "superadmin" if system_status is not None else "admin",
+            "admin_setup_checklist": AccountsDashboardView._admin_setup_checklist(self.request.user),
         }
 
 
@@ -2907,7 +2921,12 @@ class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         team = getattr(self.request.user, "managed_team", None)
         if team is None:
-            return super().get_context_data(**kwargs) | {"team": None, "members": [], "model_rows": []}
+            return super().get_context_data(**kwargs) | {
+                "team": None,
+                "members": [],
+                "model_rows": [],
+                "dash": dashboards.manager_dashboard(self.request, None, User.objects.none()),
+            }
 
         members = User.objects.filter(team=team).order_by("email")
         month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -2935,6 +2954,7 @@ class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
 
         return super().get_context_data(**kwargs) | {
             "team": team,
+            "dash": dashboards.manager_dashboard(self.request, team, members),
             "members": member_stats,
             "model_rows": model_rows,
             "total_tokens_all_time": assistant_messages.aggregate(total=Sum(F("input_tokens") + F("output_tokens")))[

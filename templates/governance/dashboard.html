@@ -20,15 +20,33 @@
     </div>
     {% endif %}
 </div>
+{% if admin_setup_checklist %}
+<div class="card mt-4" data-dash="setup-checklist">
+    <h2 style="margin-bottom:0.25rem;">{% trans "Finish setting up your department" %}</h2>
+    <p class="text-muted" style="margin-top:0;">{% trans "A few quick steps — this disappears once they're all done." %}</p>
+    <ul style="list-style:none; padding:0; margin:0.75rem 0 0; display:flex; flex-direction:column; gap:0.5rem;">
+        {% for item in admin_setup_checklist %}
+        <li style="display:flex; align-items:center; gap:0.6rem;">
+            {% if item.done %}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-success); flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-faint" style="text-decoration:line-through;">{{ item.label }}</span>
+            {% else %}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-text-faint); flex-shrink:0;"><circle cx="12" cy="12" r="9"/></svg>
+            <a href="{{ item.url }}">{{ item.label }}</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="mt-4">
+{% if dash_role == "superadmin" %}{% include "dashboards/_superadmin.html" %}{% else %}{% include "dashboards/_admin.html" %}{% endif %}
+</div>
+
+<h2 class="dash-section-title dash-usage-cost-title mt-5">{% trans "Usage & cost" %}</h2>
 <div class="kpi-grid mt-4">
-    <div class="kpi-card"><div class="kpi-label">{% trans "Users" %}</div><div class="kpi-value mono" data-target="{{ total_users_display }}">{{ total_users_display }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">{% trans "Conversations" %}</div><div class="kpi-value mono" data-target="{{ total_conversations_display }}">{{ total_conversations_display }}</div></div>
     <div class="kpi-card"><div class="kpi-label">{% trans "Enabled models" %}</div><div class="kpi-value mono" data-target="{{ enabled_model_count }}">{{ enabled_model_count }}</div></div>
-    <div class="kpi-card">
-        <div class="kpi-label">{% trans "Pending upgrade requests" %}</div>
-        <div class="kpi-value mono" data-target="{{ pending_upgrade_requests }}">{{ pending_upgrade_requests }}</div>
-        {% if pending_upgrade_requests %}<div class="kpi-delta warn">{% trans "Needs review" %}</div>{% endif %}
-    </div>
     <div class="kpi-card"><div class="kpi-label">{% trans "Tokens (all time)" %}</div><div class="kpi-value mono" data-target="{{ tokens_all_time_target }}" data-suffix="{{ tokens_all_time_suffix }}">{{ tokens_all_time_target }}{{ tokens_all_time_suffix }}</div></div>
     <div class="kpi-card"><div class="kpi-label">{% trans "Cost (all time)" %}</div><div class="kpi-value mono" data-target="{{ cost_all_time_display }}">{{ cost_all_time_display }}</div></div>
     <div class="kpi-card">

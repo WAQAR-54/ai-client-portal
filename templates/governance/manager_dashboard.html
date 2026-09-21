@@ -2,13 +2,20 @@
 {% load i18n humanize %}
 {% block title %}{% trans "My Team" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
+<div class="dash-head">
+    <div>
+        <h1>{% blocktrans with part=dash.greeting.part name=dash.greeting.name %}Good {{ part }}, {{ name }}{% endblocktrans %}</h1>
+        <p class="dash-sub">{% if team %}{% blocktrans with team=team.name %}Here's what's happening with {{ team }}.{% endblocktrans %}{% else %}{% trans "Here's what's happening with your workspace." %}{% endif %}</p>
+    </div>
+</div>
+<div class="mt-4">{% include "dashboards/_manager.html" %}</div>
 {% if not team %}
-<div class="card">
+<div class="card mt-5">
     <h1>{% trans "My Team" %}</h1>
     <p>{% trans "You haven't been assigned a team yet — ask your Admin to assign you one." %}</p>
 </div>
 {% else %}
-<div class="card">
+<div class="card mt-5" id="team-activity-summary">
     <h1>{{ team.name }}</h1>
     <p class="text-muted" style="margin-top:-0.5rem;">
         {% blocktrans with department=team.department.name %}{{ department }} — usage oversight and model access for your team. For anything else (limits, budget, plan changes), reach out to your department's Admin.{% endblocktrans %}
@@ -28,7 +35,7 @@
     {% include "governance/_manager_model_rows.html" %}
 </div>
 
-<div class="card mt-5">
+<div class="card mt-5" id="team-activity">
     <h2>{% trans "Team activity" %}</h2>
     <div>
         {% for row in members %}

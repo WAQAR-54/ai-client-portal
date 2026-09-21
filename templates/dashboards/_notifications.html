@@ -1,0 +1,24 @@
+{% load i18n %}
+{% comment %}
+Notification summary (governance/dashboards.py::notification_summary): the existing notifications, action-required first.
+`notes` is None when the role has notifications switched off - then nothing renders. A notification an attention item
+already covers is not listed again (it is still in the unread count).
+{% endcomment %}
+{% if notes %}
+<section class="dash-section" data-dash="notifications" aria-labelledby="notes-title">
+    <h2 class="dash-section-title" id="notes-title">{% trans "Notifications" %}</h2>
+    {% if notes.unread %}
+    <p class="dash-notes-count"><strong>{% blocktrans count n=notes.unread %}{{ n }} unread notification{% plural %}{{ n }} unread notifications{% endblocktrans %}</strong>
+        <a href="{{ notes.url }}">{% trans "View notifications" %}</a></p>
+    {% if notes.items %}
+    <ul class="dash-notes">
+        {% for n in notes.items %}
+        <li data-priority="{{ n.priority }}"><i class="dash-dot" aria-hidden="true"></i><a href="{{ n.url }}">{{ n.title }}</a><span class="dash-timeline-age">{{ n.age }} {% trans "ago" %}</span></li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% else %}
+    <p class="dash-empty">{% trans "You're all caught up." %}</p>
+    {% endif %}
+</section>
+{% endif %}

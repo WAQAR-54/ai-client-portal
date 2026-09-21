@@ -1,0 +1,22 @@
+{% load i18n %}
+{% comment %}
+"Needs attention": only actionable items, each with a link to the existing page that handles it (governance/dashboards.py
+::Attention - one underlying problem is one item). `attention` = list of {key,level,area,text,url,action}. `ok_text` is
+what an empty list says.
+{% endcomment %}
+<section class="dash-section" id="needs-attention" data-dash="attention" aria-labelledby="needs-attention-title">
+    <h2 class="dash-section-title" id="needs-attention-title">{% trans "Needs attention" %}{% if attention %} <span class="badge badge-warn">{{ attention|length }}</span>{% endif %}</h2>
+    {% if attention %}
+    <ul class="dash-attention">
+        {% for item in attention %}
+        <li class="dash-attention-item" data-level="{{ item.level }}" data-key="{{ item.key }}">
+            <i class="dash-dot" aria-hidden="true"></i>
+            <div class="dash-attention-body"><strong>{{ item.area }}</strong><span>{{ item.text }}</span></div>
+            <a class="btn btn-ghost btn-small" href="{{ item.url }}">{{ item.action }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="dash-allclear"><i class="dash-dot" data-tone="ok" aria-hidden="true"></i> {{ ok_text|default:_("Nothing needs your attention right now.") }}</p>
+    {% endif %}
+</section>

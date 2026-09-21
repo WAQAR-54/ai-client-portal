@@ -1,0 +1,32 @@
+{% load i18n %}
+{% comment %}
+SuperAdmin: system + business + AI usage + operations + alerts. Order: summary tiles, Needs attention, then a main column
+(business, AI usage) beside a side column (continue, quick actions, activity, notifications). `dash` comes from
+governance/dashboards.py::superadmin_dashboard. The detailed charts and System status further down the page are the
+existing sections, unchanged.
+{% endcomment %}
+<div data-dashboard="superadmin">
+{% include "dashboards/_tiles.html" with tiles=dash.overview %}
+{% include "dashboards/_attention.html" with attention=dash.attention ok_text=_("All critical systems are operational.") %}
+
+<div class="dash-cols">
+    <div class="dash-col">
+        <section class="dash-section" data-dash="business" aria-labelledby="business-title">
+            <h2 class="dash-section-title" id="business-title">{% trans "Business overview" %}</h2>
+            <div class="dash-kv">
+                <div><span class="dash-kv-label">{% trans "Users" %}</span><span class="dash-kv-value">{{ dash.business.users.total }}</span><span class="dash-kv-sub">{{ dash.business.users.active }} {% trans "active" %} · {{ dash.business.users.new }} {% trans "new this week" %}</span></div>
+                <div><span class="dash-kv-label">{% trans "Projects" %}</span><span class="dash-kv-value">{{ dash.business.projects.total }}</span><span class="dash-kv-sub">{{ dash.business.projects.active }} {% trans "active (30 days)" %}</span></div>
+                <div><span class="dash-kv-label">{% trans "Conversations" %}</span><span class="dash-kv-value">{{ dash.business.conversations.total }}</span><span class="dash-kv-sub">{{ dash.business.conversations.week }} {% trans "this week" %}</span></div>
+                <div><span class="dash-kv-label">{% trans "Invoices" %}</span><span class="dash-kv-value">{{ dash.business.invoices.paid }} {% trans "paid" %}</span><span class="dash-kv-sub">{{ dash.business.invoices.unpaid }} {% trans "unpaid" %} · {{ dash.business.invoices.verification }} {% trans "to verify" %}</span></div>
+            </div>
+        </section>
+        {% include "dashboards/_ai_usage.html" with usage=dash.ai_usage provider_errors=dash.provider_errors more_url=dash.usage_url %}
+    </div>
+    <div class="dash-col">
+        {% include "dashboards/_continue.html" with item=dash.continue_item %}
+        {% include "dashboards/_quick_actions.html" with actions=dash.quick_actions %}
+        {% include "dashboards/_activity.html" with events=dash.activity more_url=dash.audit_url empty_text=_("No recent activity yet.") %}
+        {% include "dashboards/_notifications.html" with notes=dash.notifications %}
+    </div>
+</div>
+</div>

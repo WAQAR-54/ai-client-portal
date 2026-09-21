@@ -1,0 +1,17 @@
+{% load i18n %}
+{% comment %}
+Recent activity. `events` = list of {who,text,age}. Names of people and the kind of event only - never old/new values,
+titles, messages or secrets (governance/dashboards.py). `empty_text` is what an empty list says.
+{% endcomment %}
+<section class="dash-section" data-dash="activity" aria-labelledby="activity-title">
+    <h2 class="dash-section-title" id="activity-title">{% trans "Recent activity" %}{% if more_url %} <a class="dash-more" href="{{ more_url }}">{% trans "View all" %}</a>{% endif %}</h2>
+    {% if events %}
+    <ul class="dash-timeline">
+        {% for event in events %}
+        <li><span class="dash-timeline-age">{{ event.age }} {% trans "ago" %}</span><span class="dash-timeline-text"><strong>{{ event.who }}</strong> {{ event.text }}</span></li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="dash-empty">{{ empty_text|default:_("No recent activity yet.") }}</p>
+    {% endif %}
+</section>

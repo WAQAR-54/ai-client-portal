@@ -291,6 +291,13 @@ function portalToggleNewProjectForm(show) {
     if (next) form.querySelector('input[name="name"]').focus();  // not the hidden CSRF field, which comes first
 }
 
+// The dashboards' "New project" action links here with #new-project: open the same inline form the "+" button opens.
+document.addEventListener("DOMContentLoaded", function() {
+    if (window.location.hash !== "#new-project") return;
+    if (window.innerWidth <= 900) document.body.classList.add("sidebar-open");  // the projects list lives in the drawer here
+    portalToggleNewProjectForm(true);
+});
+
 // Rename happens in place: the row's name becomes an input (Enter saves, Escape or clicking away cancels, an
 // unchanged or empty name sends nothing) - no browser prompt() window. The save is the row's own hx-post form, so
 // the Projects section refreshes through the same out-of-band swap as every other project action.

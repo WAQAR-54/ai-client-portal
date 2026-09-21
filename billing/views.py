@@ -540,6 +540,16 @@ def _querystring_without(request, *exclude_keys):
     return qd.urlencode()
 
 
+def scoped_invoices(user):
+    """The invoices this Admin/SuperAdmin manages: an Admin's own department only (none at all without a
+    department), a SuperAdmin's every department. The one place that rule lives - the invoice list and the
+    dashboards (governance/dashboards.py) both read it."""
+    qs = Invoice.objects.all()
+    if _is_scoped_admin(user):
+        return qs.none() if user.department_id is None else qs.filter(department_id=user.department_id)
+    return qs
+
+
 def _invoices_context(request):
     """Shared by InvoiceListView and the htmx re-render after a toggle/
     verify/reject, same reasoning as governance's _models_table_context:
@@ -551,15 +561,11 @@ def _invoices_context(request):
     they always land back on page 1 after an action - already true for
     the department filter today (also GET-param-based), not a new
     regression this introduces."""
-    qs = Invoice.objects.select_related("department", "plan", "recipient_user").order_by("-issue_date", "-id")
+    qs = scoped_invoices(request.user).select_related("department", "plan", "recipient_user")
+    qs = qs.order_by("-issue_date", "-id")
     departments = None
     selected_department = ""
-    if _is_scoped_admin(request.user):
-        if request.user.department_id is None:
-            qs = qs.none()
-        else:
-            qs = qs.filter(department_id=request.user.department_id)
-    else:
+    if not _is_scoped_admin(request.user):
         departments = Department.objects.order_by("name")
         selected_department = request.GET.get("department", "").strip()
         if selected_department.isdigit():

@@ -43,9 +43,9 @@
                 <div class="app-switch-pill" id="appSwitchPill"></div>
                 <a href="{% url 'chat:chat_home' %}" id="appSwitchChat" class="{% if request.resolver_match.app_name == 'chat' %}active{% endif %}">{% trans "Chat" %}</a>
                 {% if user.is_admin %}
-                <a href="{% url 'governance:dashboard' %}" id="appSwitchAdmin" class="{% if request.resolver_match.app_name == 'governance' %}active{% endif %}">{% trans "Admin" %}</a>
+                <a href="{% url 'governance:dashboard' %}" id="appSwitchAdmin" class="{% if request.resolver_match.app_name == 'governance' or request.resolver_match.view_name == 'accounts:dashboard' %}active{% endif %}">{% trans "Admin" %}</a>
                 {% else %}
-                <a href="{% url 'governance:manager_dashboard' %}" id="appSwitchAdmin" class="{% if request.resolver_match.app_name == 'governance' %}active{% endif %}">{% trans "My Team" %}</a>
+                <a href="{% url 'governance:manager_dashboard' %}" id="appSwitchAdmin" class="{% if request.resolver_match.app_name == 'governance' or request.resolver_match.view_name == 'accounts:dashboard' %}active{% endif %}">{% trans "My Team" %}</a>
                 {% endif %}
             </div>
             <script>

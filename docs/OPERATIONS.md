@@ -204,6 +204,25 @@ deploy email, crash alerts, the SMTP test email and maintenance notices. Callers
 test) get the shell wrapped around their text automatically in `send_via_connection`, so a future sender cannot leak a
 bare-text email (`notifications/test_email_shell.py` exercises every sender).
 
+## Dashboards (what each role sees)
+
+The home page after sign-in (`/accounts/dashboard/`) is role-aware. **SuperAdmin:** system, providers, users, AI requests
+today, storage, invoices, maintenance and alerts at a glance, then **Needs attention** (each item links to the page that
+fixes it), business and AI usage, recent activity and quick actions; the detailed charts and System status stay below.
+**Admin:** the same idea for their own department (team, projects, approvals, billing) - no infrastructure. **Manager:**
+their team. **User:** their own workspace (continue where they left off, projects, usage, notifications).
+
+* **Needs attention** lists an underlying problem once. For a SuperAdmin it includes "Database backup is not configured"
+  until `BACKUP_S3_BUCKET` is set on the server (see docs/BACKUP_RESTORE.md), failing scheduled jobs, a provider whose sync
+  failed, disk above the Server Media thresholds, payment proofs to verify, overdue invoices, refund and plan requests,
+  users above 80 % of their limit, and maintenance that is scheduled or active.
+* A figure the application cannot measure is shown as "Unavailable", never as zero. A trend appears only when yesterday
+  gives a real baseline (10 or more requests in the same hours).
+* Admins and Managers see counts for their own scope only; other people's conversation titles and project names are never
+  shown. A dashboard link never grants access - the page behind it still checks the role.
+* Nothing to configure: no new settings, no migration, no cache to clear. The page reads what the application already
+  stores; System status (SuperAdmin) is the same single probe it always ran.
+
 ## Deploy emails
 
 After every deploy the workflow runs `manage.py send_deploy_notification` inside the `web` container

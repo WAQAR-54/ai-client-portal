@@ -2,82 +2,145 @@
 {% load i18n %}
 {% block title %}{% trans "Dashboard" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
-{% trans "No department assigned" as no_dept_label %}
-<div class="card">
-    <h1>{% blocktrans %}Welcome, {{ user.email }}{% endblocktrans %}</h1>
-    <p>
-        <span class="badge">{{ user.get_role_display }}</span>
-        <span class="text-muted" style="margin-left:0.5rem;">{{ user.department|default:no_dept_label }}</span>
-    </p>
-    <p class="mt-4"><a href="{% url 'chat:chat_home' %}" class="btn">{% trans "Open Chat" %} →</a></p>
-</div>
-
-<div class="dashboard-cards-row mt-4">
-    <div class="card">
-        <h2 style="margin-bottom:0.75rem;">{% trans "Your plan" %}</h2>
-        {% if plan_status.plan %}
-        <p style="margin:0;">
-            <span class="badge">{{ plan_status.plan.name }}</span>
-            {% if plan_status.state == "grace" %}
-            <span class="badge badge-danger" style="margin-left:0.4rem;">{% blocktrans with days=plan_status.grace_days_remaining %}Trial ended — {{ days }}d left{% endblocktrans %}</span>
-            {% elif plan_status.state == "expired" %}
-            <span class="badge badge-danger" style="margin-left:0.4rem;">{% trans "Trial ended" %}</span>
-            {% elif plan_status.days_remaining is not None %}
-            <span class="badge badge-muted" style="margin-left:0.4rem;">{% blocktrans with days=plan_status.days_remaining %}{{ days }}d left{% endblocktrans %}</span>
-            {% else %}
-            <span class="badge badge-success" style="margin-left:0.4rem;">{% trans "Active" %}</span>
-            {% endif %}
-        </p>
-        {% if plan_status.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem; margin-bottom:0;">{{ plan_status.plan.description }}</p>{% endif %}
-        {% if current_plan_capabilities %}
-        <div class="plan-capabilities" style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
-            {% include "billing/_plan_capability_list.html" with capabilities=current_plan_capabilities %}
-        </div>
-        {% endif %}
-        {% if not plan_status.plan.is_demo %}
-        <div style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
-            {% if plan_status.assignment.cancelled_at %}
-            <p class="text-faint" style="font-size:0.82rem; margin:0 0 0.6rem;">{% trans "Cancelled — no further invoices will be generated. You'll keep access until the period you already paid for ends." %}</p>
-            <form method="post" action="{% url 'billing:resume_plan' %}">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="dashboard">
-                <button type="submit" class="btn-small btn-ghost">{% trans "Resume plan" %}</button>
-            </form>
-            {% else %}
-            <form method="post" action="{% url 'billing:cancel_plan' %}" onsubmit="return confirm('{% trans "Cancel your plan? This stops future billing - you keep access until the period you already paid for ends." %}');">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="dashboard">
-                <button type="submit" class="btn-small btn-ghost">{% trans "Cancel plan" %}</button>
-            </form>
-            {% endif %}
-        </div>
-        {% endif %}
-        {% else %}
-        <p class="text-faint" style="margin:0;">{% trans "No plan assigned yet." %}</p>
-        {% endif %}
-    </div>
-    <div class="card">
-        {% include "chat/_usage_widget.html" %}
+{% comment %}
+The user's workspace dashboard: what was I working on, and what should I do next. Work, projects, usage and
+notifications only - nothing about servers, providers or infrastructure. Managers, Admins and SuperAdmins get their own
+role dashboards at this same address (accounts/views.py::DashboardView). Data: governance/dashboards.py::user_dashboard.
+{% endcomment %}
+<div data-dashboard="user">
+<div class="dash-head">
+    <div>
+        <h1>{% blocktrans with part=dash.greeting.part name=dash.greeting.name %}Good {{ part }}, {{ name }}{% endblocktrans %}</h1>
+        <p class="dash-sub">{% trans "Here's what's happening with your workspace." %}</p>
     </div>
 </div>
 
-{% if admin_setup_checklist %}
-<div class="card mt-4">
-    <h2 style="margin-bottom:0.25rem;">{% trans "Finish setting up your department" %}</h2>
-    <p class="text-muted" style="margin-top:0;">{% trans "A few quick steps — this disappears once they're all done." %}</p>
-    <ul style="list-style:none; padding:0; margin:0.75rem 0 0; display:flex; flex-direction:column; gap:0.5rem;">
-        {% for item in admin_setup_checklist %}
-        <li style="display:flex; align-items:center; gap:0.6rem;">
-            {% if item.done %}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-success); flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
-            <span class="text-faint" style="text-decoration:line-through;">{{ item.label }}</span>
-            {% else %}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-text-faint); flex-shrink:0;"><circle cx="12" cy="12" r="9"/></svg>
-            <a href="{{ item.url }}">{{ item.label }}</a>
-            {% endif %}
-        </li>
-        {% endfor %}
-    </ul>
+{% if dash.usage_warning %}
+<div class="alert alert-{% if dash.usage_warning.level == 'danger' %}danger{% else %}warning{% endif %}" role="status" data-dash="usage-warning" style="margin-top:var(--space-4);">
+    {{ dash.usage_warning.text }} <a href="{{ dash.usage_warning.url }}">{% trans "View plans" %}</a>
 </div>
 {% endif %}
+
+<div style="margin-top:var(--space-4);">
+{% if dash.continue_item %}
+{% include "dashboards/_continue.html" with item=dash.continue_item %}
+{% else %}
+<section class="dash-continue dash-continue-empty" data-dash="continue-empty">
+    <div class="dash-continue-text">
+        <strong class="dash-continue-title">{% trans "No conversations yet" %}</strong>
+        <span class="dash-continue-meta">{% trans "Start a conversation with an AI model." %}</span>
+    </div>
+    <form method="post" action="{% url 'chat:create_conversation' %}">{% csrf_token %}<button type="submit" class="btn">{% trans "New conversation" %} →</button></form>
+</section>
+{% endif %}
+</div>
+
+<div class="dash-cols">
+    <div class="dash-col">
+        {% include "dashboards/_quick_actions.html" with actions=dash.quick_actions %}
+
+        {% if dash.projects is not None %}
+        <section class="dash-section" data-dash="projects" aria-labelledby="my-projects-title">
+            <h2 class="dash-section-title" id="my-projects-title">{% trans "My projects" %}</h2>
+            {% if dash.projects %}
+            <ul class="dash-list">
+                {% for project in dash.projects %}
+                <li><a href="{{ project.url }}"><strong>{{ project.name }}</strong></a>
+                    <span class="dash-list-meta">{% blocktrans count n=project.count %}{{ n }} conversation{% plural %}{{ n }} conversations{% endblocktrans %}{% if project.age %} · {{ project.age }} {% trans "ago" %}{% endif %}</span></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="dash-empty-card">
+                <strong>{% trans "No projects yet" %}</strong>
+                <p>{% trans "Create your first project to organize your work." %}</p>
+                <a class="btn btn-small" href="{% url 'chat:chat_home' %}#new-project">{% trans "Create project" %}</a>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        <section class="dash-section" data-dash="recent-conversations" aria-labelledby="recent-title">
+            <h2 class="dash-section-title" id="recent-title">{% trans "Recent conversations" %}</h2>
+            {% if dash.recent_conversations %}
+            <ul class="dash-list">
+                {% for c in dash.recent_conversations %}
+                <li><a href="{{ c.url }}"><strong>{{ c.title }}</strong></a>
+                    <span class="dash-list-meta">{% if c.project %}{{ c.project }} · {% endif %}{{ c.age }} {% trans "ago" %}</span></li>
+                {% endfor %}
+            </ul>
+            {% elif not dash.has_conversations %}
+            <p class="dash-empty">{% trans "Start a conversation with an AI model." %}</p>
+            {% else %}
+            <p class="dash-empty">{% trans "Your latest conversation is shown above." %}</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <div class="dash-col">
+        <section class="dash-section" data-dash="usage" aria-labelledby="usage-title">
+            <h2 class="dash-section-title" id="usage-title">{% trans "Usage" %}</h2>
+            <div class="card">{% include "chat/_usage_widget.html" %}</div>
+        </section>
+        {% include "dashboards/_notifications.html" with notes=dash.notifications %}
+        <section class="dash-section" data-dash="shortcuts" aria-labelledby="shortcuts-title">
+            <h2 class="dash-section-title" id="shortcuts-title">{% trans "Helpful shortcuts" %}</h2>
+            <div class="dash-shortcuts">
+                {% for shortcut in dash.shortcuts %}
+                <form method="post" action="{{ shortcut.url }}">
+                    {% csrf_token %}
+                    {% for name, value in shortcut.post.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+                    <button type="submit" class="dash-shortcut"><strong>{{ shortcut.label }}</strong><span>{{ shortcut.hint }}</span></button>
+                </form>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<section class="dash-section" data-dash="plan">
+<div class="card">
+    <h2 style="margin-bottom:0.75rem;">{% trans "Your plan" %}</h2>
+    {% if plan_status.plan %}
+    <p style="margin:0;">
+        <span class="badge">{{ plan_status.plan.name }}</span>
+        {% if plan_status.state == "grace" %}
+        <span class="badge badge-danger" style="margin-left:0.4rem;">{% blocktrans with days=plan_status.grace_days_remaining %}Trial ended — {{ days }}d left{% endblocktrans %}</span>
+        {% elif plan_status.state == "expired" %}
+        <span class="badge badge-danger" style="margin-left:0.4rem;">{% trans "Trial ended" %}</span>
+        {% elif plan_status.days_remaining is not None %}
+        <span class="badge badge-muted" style="margin-left:0.4rem;">{% blocktrans with days=plan_status.days_remaining %}{{ days }}d left{% endblocktrans %}</span>
+        {% else %}
+        <span class="badge badge-success" style="margin-left:0.4rem;">{% trans "Active" %}</span>
+        {% endif %}
+    </p>
+    {% if plan_status.plan.description %}<p class="text-faint" style="font-size:0.85rem; margin-top:0.6rem; margin-bottom:0;">{{ plan_status.plan.description }}</p>{% endif %}
+    {% if current_plan_capabilities %}
+    <div class="plan-capabilities" style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
+        {% include "billing/_plan_capability_list.html" with capabilities=current_plan_capabilities %}
+    </div>
+    {% endif %}
+    {% if not plan_status.plan.is_demo %}
+    <div style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
+        {% if plan_status.assignment.cancelled_at %}
+        <p class="text-faint" style="font-size:0.82rem; margin:0 0 0.6rem;">{% trans "Cancelled — no further invoices will be generated. You'll keep access until the period you already paid for ends." %}</p>
+        <form method="post" action="{% url 'billing:resume_plan' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="dashboard">
+            <button type="submit" class="btn-small btn-ghost">{% trans "Resume plan" %}</button>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'billing:cancel_plan' %}" onsubmit="return confirm('{% trans "Cancel your plan? This stops future billing - you keep access until the period you already paid for ends." %}');">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="dashboard">
+            <button type="submit" class="btn-small btn-ghost">{% trans "Cancel plan" %}</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="text-faint" style="margin:0;">{% trans "No plan assigned yet." %}</p>
+    {% endif %}
+</div>
+</section>
+</div>
 {% endblock %}
