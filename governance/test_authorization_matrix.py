@@ -70,8 +70,8 @@ def build_matrix(users):
         if role != "anonymous":
             client.force_login(users[role])
         for name, path in routes:
-            if "logout" in path:
-                continue  # ends the very session being probed (accounts and Django admin)
+            if "logout" in path or "sign-out-all" in path:
+                continue  # ends the very session being probed (accounts, Django admin, "sign out all sessions")
             matrix[(name, path)][role] = probe(client, path)
     return matrix
 
