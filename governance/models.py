@@ -794,12 +794,34 @@ class SiteBranding(models.Model):
     logo = models.ImageField(upload_to="branding/", null=True, blank=True)
     favicon = models.ImageField(upload_to="branding/", null=True, blank=True)
 
+    # Global visual branding (governance/branding.py): which of Branding 1 / 2 / 3 / Custom is applied to the whole
+    # application. Branding 1 (the default) is the appearance the app has always had and uses site_name/logo/favicon
+    # above; Custom keeps its own validated settings and light/dark logos here. `version` changes on every save so the
+    # cached generated CSS is rebuilt on the next request (no polling, nothing stale).
+    PRESET_CHOICES = [
+        ("branding_1", "Branding 1"),
+        ("branding_2", "Branding 2"),
+        ("branding_3", "Branding 3"),
+        ("custom", "Custom"),
+    ]
+    preset = models.CharField(max_length=20, choices=PRESET_CHOICES, default="branding_1")
+    custom_config = models.JSONField(default=dict, blank=True)
+    custom_logo_light = models.ImageField(upload_to="branding/", null=True, blank=True)
+    custom_logo_dark = models.ImageField(upload_to="branding/", null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
+
     class Meta:
         verbose_name = "Site branding"
         verbose_name_plural = "Site branding"
 
     def __str__(self):
         return "Site branding"
+
+    def save(self, *args, **kwargs):
+        self.version = (self.version or 0) + 1
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = {*kwargs["update_fields"], "version"}
+        super().save(*args, **kwargs)
 
     @classmethod
     def load(cls):

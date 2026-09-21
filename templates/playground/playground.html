@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Code Playground — {{ site_branding.site_name }}</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+{% if site_branding.css %}<style id="brand-tokens">{{ site_branding.css|safe }}</style>{% endif %}
 <style>
   :root{
     --bg:#0B0D12; --surface:#12151C; --panel:#0E1015; --border:#232836;
     --text-hi:#F2F3F5; --text-mid:#9DA2B0; --text-lo:#5B6070;
-    --cyan:#00D9FF; --cyan-dim:#0A2E38;
+    --cyan:var(--console-accent,#00D9FF); --cyan-dim:var(--console-accent-dim,#0A2E38);
     --green:#3ECF8E; --green-dim:#0F2E22;
     --amber:#F2B84B; --amber-dim:#3A2E10;
     --ease:cubic-bezier(0.16,1,0.3,1); --ease-spring:cubic-bezier(0.34,1.56,0.64,1);
@@ -42,7 +43,7 @@
   }
   .pipeline-stage{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;}
   .pipeline-stage.ai{background:var(--cyan-dim);color:var(--cyan);cursor:pointer;position:relative;transition:background .15s ease;}
-  .pipeline-stage.ai:hover{background:#0D3642;}
+  .pipeline-stage.ai:hover{background:var(--console-hover,#0D3642);}
   .pipeline-stage.sandbox{background:var(--green-dim);color:var(--green);}
   .pipeline-stage svg{width:13px;height:13px;}
   .pipeline-stage .chevron{width:11px;height:11px;transition:transform .2s var(--ease);margin-left:-2px;}

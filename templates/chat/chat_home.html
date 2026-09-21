@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block sidebar %}
-<a class="brand" href="{% url 'accounts:dashboard' %}">{% include "_brand_mark.html" %}</a>
+<a class="brand" href="{% url 'accounts:dashboard' %}">{% include "_brand_mark.html" with on_dark=site_branding.sidebar_dark %}</a>
 {% if user.is_admin %}
 <div class="sidebar-top-row">
     <div class="app-switch" role="group" aria-label="{% trans 'Switch product area' %}">

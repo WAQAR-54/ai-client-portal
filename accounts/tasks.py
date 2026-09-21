@@ -9,6 +9,8 @@ from django.urls import reverse
 from django.utils import translation
 from django.utils.html import strip_tags
 
+from governance.branding import brand_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +73,7 @@ def send_mfa_code_email_task(user_id, code):
         )
     send_tracked_email(
         to_email=user.email,
-        subject="[AI Client Portal] Your verification code",
+        subject=f"[{brand_name()}] Your verification code",
         text_body=strip_tags(html_body),
         html_body=html_body,
     )
@@ -103,7 +105,7 @@ def send_password_reset_email_task(user_id, uidb64, token):
         html_body = render_to_string("accounts/email_password_reset.html", {"user": user, "reset_url": reset_url})
     send_tracked_email(
         to_email=user.email,
-        subject="[AI Client Portal] Reset your password",
+        subject=f"[{brand_name()}] Reset your password",
         text_body=strip_tags(html_body),
         html_body=html_body,
     )

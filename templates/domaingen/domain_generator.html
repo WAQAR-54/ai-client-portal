@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Domain Generator — {{ site_branding.site_name }}</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+{% if site_branding.css %}<style id="brand-tokens">{{ site_branding.css|safe }}</style>{% endif %}
 <style>
   :root{
     --bg:#0B0D12; --surface:#12151C; --border:#232836;
     --text-hi:#F2F3F5; --text-mid:#9DA2B0; --text-lo:#5B6070;
-    --cyan:#00D9FF; --cyan-dim:#0A2E38;
+    --cyan:var(--console-accent,#00D9FF); --cyan-dim:var(--console-accent-dim,#0A2E38);
     --green:#3ECF8E; --green-dim:#0F2E22;
     --amber:#F2B84B; --amber-dim:#3A2E10;
     --red:#F0665A; --red-dim:#3A1815;
@@ -32,7 +33,7 @@
   }
   .pipeline-stage{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;cursor:pointer;position:relative;transition:background .15s ease;}
   .pipeline-stage.ai{background:var(--cyan-dim);color:var(--cyan);}
-  .pipeline-stage.ai:hover{background:#0D3642;}
+  .pipeline-stage.ai:hover{background:var(--console-hover,#0D3642);}
   .pipeline-stage.registrar{background:var(--green-dim);color:var(--green);cursor:default;}
   .pipeline-stage svg{width:13px;height:13px;}
   .pipeline-stage .chevron{width:11px;height:11px;transition:transform .2s var(--ease);margin-left:-2px;}
@@ -82,7 +83,7 @@
   .search-box svg{width:18px;height:18px;color:var(--text-lo);flex-shrink:0;}
   .search-box input{flex:1;background:transparent;border:none;outline:none;color:var(--text-hi);font-size:15px;font-family:'Inter',sans-serif;padding:12px 0;}
   .search-box input::placeholder{color:var(--text-lo);}
-  .generate-btn{background:var(--cyan);color:#04141A;border:none;font-size:14px;font-weight:700;padding:13px 24px;border-radius:11px;cursor:pointer;transition:transform .15s var(--ease);white-space:nowrap;}
+  .generate-btn{background:var(--cyan);color:var(--console-on-accent,#04141A);border:none;font-size:14px;font-weight:700;padding:13px 24px;border-radius:11px;cursor:pointer;transition:transform .15s var(--ease);white-space:nowrap;}
   .generate-btn:hover{transform:scale(1.03);}
   .generate-btn:disabled{opacity:0.6;transform:none;cursor:default;}
 
@@ -103,7 +104,7 @@
   .domain-row:hover{border-color:#2E3444;transform:translateY(-2px);box-shadow:0 14px 30px rgba(0,0,0,0.35);}
   .domain-row.recommended{border-color:rgba(0,217,255,0.35);}
   .recommended-badge{
-    position:absolute;top:-9px;left:20px;background:var(--cyan);color:#04141A;font-size:10.5px;font-weight:700;
+    position:absolute;top:-9px;left:20px;background:var(--cyan);color:var(--console-on-accent,#04141A);font-size:10.5px;font-weight:700;
     padding:2px 9px;border-radius:6px;letter-spacing:0.3px;
   }
 
@@ -126,7 +127,7 @@
   .status-badge svg{width:11px;height:11px;}
   .checking-spin{width:11px;height:11px;border:2px solid #2A2F3C;border-top-color:var(--text-lo);border-radius:50%;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  .reg-btn{font-size:12px;font-weight:700;color:#04141A;background:var(--cyan);padding:7px 16px;border-radius:8px;border:none;cursor:pointer;transition:transform .15s var(--ease);white-space:nowrap;}
+  .reg-btn{font-size:12px;font-weight:700;color:var(--console-on-accent,#04141A);background:var(--cyan);padding:7px 16px;border-radius:8px;border:none;cursor:pointer;transition:transform .15s var(--ease);white-space:nowrap;}
   .reg-btn:hover{transform:scale(1.05);}
   .reg-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
   .reg-note{font-size:11px;color:var(--text-lo);}

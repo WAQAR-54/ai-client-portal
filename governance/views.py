@@ -22,6 +22,7 @@ from accounts.permissions import AdminRequiredMixin, ManagerRequiredMixin, Super
 from accounts.redirects import safe_next_url
 from chat.models import Conversation, Message, MessageFeedback, ModelConfig, PromptTemplate, UserModelPermission
 from governance.audit import log_action
+from governance.branding import localize_product_name
 from governance.system_status import build_system_status
 from governance.features import RequireFeatureMixin, require_feature
 from governance.limits import _effective_limit, _metric
@@ -1054,10 +1055,13 @@ def _notify_account_created(user):
 
     with translation.override(user.preferred_language):
         title = _("Your account is ready")
-        body = _(
-            "An administrator created a %(role)s account for you on AI Client Portal. "
-            "Log in with %(email)s and the password your administrator gave you."
-        ) % {"role": user.get_role_display(), "email": user.email}
+        body = localize_product_name(
+            _(
+                "An administrator created a %(role)s account for you on AI Client Portal. "
+                "Log in with %(email)s and the password your administrator gave you."
+            )
+            % {"role": user.get_role_display(), "email": user.email}
+        )
     notify(user, NotificationType.ACCOUNT_CREATED, title=title, body=body)
 
 

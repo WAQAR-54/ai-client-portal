@@ -346,6 +346,56 @@ Phase ke naam commit messages se liye gaye hain; 1–4C ke beech ki hadbandi com
 
 ---
 
+## 8e. Global branding system (2026-09-21)
+
+**Ek setting poori application ka look badalti hai:** Branding 1 (maujooda look, default) / Branding 2 (Web Host Era Brand Kit) / Branding 3 (naya technology identity) / Custom (SuperAdmin ka apna). UI, fonts, logo, browser title, sab emails, invoice (page/PDF/share link), login/auth pages, admin, chat, projects, billing, media, system status aur maintenance page — sab ek hi jagah se. Sirf presentation: `SiteBranding` row ke ilawa koi data nahi badalta.
+
+**Status vocabulary:** IMPLEMENTED / VERIFIED / PARTIALLY VERIFIED / UNVERIFIED / KNOWN LIMITATION (section 8d wali).
+
+**Verification (2026-09-21):** IMPLEMENTED aur VERIFIED — 45 unit tests; poori suite 1854 tests OK; real Chromium par scratch server ke against **1560/1560 checks** (4 brandings x 1440/820/390px x light/dark x 10 pages: login, chat, project, billing, my-invoices, invoice share link, dashboard, system status, media, maintenance — har jagah `data-brand` + computed `--accent`/`--color-bg`/font sahi, koi horizontal overflow nahi, koi JavaScript error nahi) aur Brand themes screen ka poora flow **23/23** (Preview lagu nahi karta, Apply confirm ke baad, Custom, kharab rang reject, kam contrast par acknowledge, Reset, normal user 403). Real browser ne ek bug pakda jo unit test se nahi pakda gaya (htmx response ke shuru ki `<style>`/`<link>` hoist hokar gir jati thi, preview purani branding mein dikhta tha) — theek + test. PARTIALLY VERIFIED: production par branding switch nahi kiya gaya (production Branding 1 par hai, jaisa pehle tha); Gilroy/Mont-Trial asli fonts UNVERIFIED (bundled nahi); emails asli inbox mein nahi dekhe (HTML render + locmem mail test).
+
+| File | Kaam | Status |
+|---|---|---|
+| `governance/branding.py` | **Sab kuch yahan:** preset data (`BRANDING_1/2/3`, `custom_brand()`), validation (hex `#RRGGBB`, font naam, brand name), colour maths (WCAG contrast, `ensure_contrast`, `readable_on`), token derivation (`tokens_for`), CSS generation (`render_css`, preview ke liye scoped), contrast report (`contrast_report`), active branding (`active_branding`, cache), email/invoice ke liye concrete colours (`email_tokens`), `brand_name()`, `localize_product_name()` | IMPLEMENTED; presets ka contrast har theme mein AA (4.5:1) test se pakka |
+| `governance/models.py::SiteBranding` (+ `governance/migrations/0038_site_branding_presets.py`) | Maujooda singleton ko reuse kiya (naya storage system nahi): `preset`, `custom_config` (JSON), `custom_logo_light/dark` (wahi `branding/` upload folder), `version` (har save par badhta hai = cache key). Branding 1 purane `site_name/tagline/logo/favicon` hi use karta hai | IMPLEMENTED (additive migration) |
+| `governance/context_processors.py` | `site_branding` ab ACTIVE branding hai (wahi attribute naam: `site_name`, `tagline`, `logo`, `favicon` + `logo_dark`, `css`, `fonts_url`, `preset`), isliye 76 templates bina badle brand name follow karte hain | IMPLEMENTED |
+| `templates/base.html`, `templates/_brand_mark.html` | `<html data-brand>`, fonts link (Branding 1 par bilkul purana URL), main.css ke BAAD `<style id="brand-tokens">` (Branding 1 par khali), favicon, light/dark logo pair, symbol-only logo + naam | IMPLEMENTED |
+| `static/css/main.css` | Naye tokens (purane tokens ke aliases + label colours jo pehle literal `#fff` the: `--on-brand-navy`, `--on-danger`, `--on-success`, `--check-mark`, `--showcase-*`, `--alert-*`), `.bt-*` selector aur `.bp-*` preview styles | IMPLEMENTED; Branding 1 ki values jaisi thi waisi (test `main.css` se compare karta hai) |
+| `governance/branding_views.py` + `templates/governance/branding_theme.html`, `_brand_preview.html`, `_brand_color_field.html` | SuperAdmin UI `/governance/branding/theme/`: 4 cards, **Preview phir Apply** (card click se kuch apply nahi hota), Custom form (naam, 3 brand colours, light/dark ke 5-5 colours, 2 fonts, 2 logos), light/dark preview toggle, contrast report, Reset Custom | IMPLEMENTED; 5 routes sirf `superadmin` (`governance/authz_expected.json`) |
+| `templates/maintenance.html` (+ SuperAdmin preview `governance:brand_maintenance_preview`) | Branded maintenance page (logo, colours, typography, button); 500 page ki tarah database ke bagair render hota hai (last rendered branding cache se) | IMPLEMENTED. **KNOWN LIMITATION:** application mein maintenance MODE nahi hai — koi visitor ko yeh page nahi dikhata; page sirf branding review ke liye hai |
+| `templates/500.html` | Same tokens (fallback purani values) — DB/static ke bagair | IMPLEMENTED |
+| `governance/templatetags/branding_tags.py` | `{% brand_email as brand %}` (emails/invoices ke liye concrete hex), `brand_head_cached`, `brand_last_known`, `dict_get` | IMPLEMENTED |
+| Emails: `templates/notifications/_email_shell.html` + `_email_content_*`, `templates/accounts/email_*`, `billing/templates/billing/email_invoice.html`, `email_overdue_reminder.html` | **Ek hi layout**; ~90 literal colours `{{ brand.* }}` par; header mein brand naam/logo (raster, absolute URL); "sirf information" notification types brand ka primary lete hain, status types (amber/red/green) apne maani rakhte hain; subjects `[Brand Name] ...` | IMPLEMENTED |
+| Invoice: `billing/templates/billing/_invoice_document.html`, `invoice_pdf.html`, `invoice_public.html`, `invoice_detail.html` | Browser invoice + share link + PDF (xhtml2pdf, CSS variables nahi chalte isliye concrete brand colours) active branding se; print par kaghaz safed | IMPLEMENTED; PDF teeno presets par ban-ta hai (test) |
+| `templates/domaingen/domain_generator.html`, `templates/playground/playground.html` | Standalone dark consoles: sirf accent brand follow karta hai (`--console-*`) | KNOWN LIMITATION: unki fixed dark surfaces/fonts brand se nahi badalti |
+| `templates/governance/dashboard.html` | Chart ki pehli do series + grid/labels brand tokens se (Branding 1 par purani values) | IMPLEMENTED |
+| `static/branding/whe-logo-blue.png`, `whe-logo-white.png`, `whe-mark.png`, `modern-mark-light.svg`, `modern-mark-dark.svg` | Branding 2 ke logos Brand Kit PDF ke artwork se kaate gaye (transparent PNG, rang badle nahi); Branding 3 ka apna mark | IMPLEMENTED |
+| `governance/test_branding.py` | 45 tests: 4 presets, persistence, global asar, custom naam, validation/injection, contrast (warning + acknowledge), permissions, audit, data-safety, cache invalidation, email/invoice/PDF/maintenance, dark+light | IMPLEMENTED |
+
+**Purana token -> naya brand token (Branding 1 ki maujooda values):**
+
+| Current token | Branding 1 value (light / dark) | Kahan use hota hai | Brand token |
+|---|---|---|---|
+| `--accent` | `#00aef0` | buttons ki fill, active state, focus ring, dark surface par links | `--brand-primary` |
+| `--secondary` | `#122268` / `#93a5f2` | headings, links, secondary buttons | `--brand-secondary` |
+| `--brand-navy` | `#122268` | nav active pill, send button, avatars, brand mark | (wahi; label = `--on-brand-navy`) |
+| — (naya) | `#00aef0` | text selection, pinned dot | `--brand-accent` |
+| `--color-bg` | `#f1f0eb` / `#0e1015` | page background | `--brand-background` |
+| `--color-surface` | `#f9f8f4` / `#12151c` | cards, sidebar | `--brand-surface` |
+| `--color-text` | `#232019` / `#edeef2` | body text | `--brand-text` |
+| `--color-text-muted` | `#67645a` / `#aeb2be` | muted text | `--brand-muted` |
+| `--color-border` | `rgba(32,26,10,.09)` / `#262b37` | borders | `--brand-border` |
+| `--color-success` / `--warn` / `--color-danger` | `#1e9a6c` / `#b5761e` / `#c7443f` | status | `--brand-success` / `--brand-warning` / `--brand-danger` |
+| `--font-sans` / `--font-display` | Manrope / Space Grotesk | body / headings | `--font-primary` / `--font-secondary` |
+| literal `#fff` on brand fills (13 jagah) | white | nav pill, danger/success buttons, checkmarks, showcase panel | `--on-brand-navy`, `--on-danger`, `--on-success`, `--check-mark`, `--showcase-text` |
+| ~150 literal hex (emails, invoices, PDF) | warm/cool neutrals + `#00aef0` | emails aur invoices | `{{ brand.* }}` |
+
+**Branding 2 (Brand Kit):** hex printed labels (pages 7-9) se — `#008CFF`, `#151515`, `#FFFFFF`, `#00172A`, `#0055A5`, `#7DB5DC`, `#F96939`, `#01C970`, `#C7FC35`, `#F9FFEB`, `#333333`, `#737373`, `#B3B3B3`, `#D9D9D9`, `#E9EAE9`. PDF raster hai; sampled pixels labels se +-1 milte hain, sirf "Too Blue to be True" ka swatch aur logo `#2C6EF8` mein bane hain jabke label `#008CFF` likha hai (token label wala; logo artwork jaisa hai waisa). Fonts **Gilroy/Mont-Trial bundled nahi** (commercial; download/embed nahi kiye): stack `"Gilroy", "Urbanist", Inter, ...` aur `"Mont-Trial", "Montserrat", Inter, ...`. **Branding 3:** primary `#4F3FE0` (deep indigo), structure `#1F2A5C`, accent `#22D3EE` (electric cyan), slate neutrals, radii 4/6/10, Sora + Inter, light sidebar + indigo pill.
+
+**Persistence / cache / permissions / accessibility:** DB row (localStorage nahi); CSS cache key mein row `version` hai (save par naya key — polling nahi, stale nahi); sirf SuperAdmin (baaqi 403, anonymous login par), audit `branding.theme_apply` / `branding.custom_reset`; validation server par (hex, font naam, brand name 1-60, logo image type + 2 MB); kharab Custom poore site ko nahi tordta (Branding 1 par fallback); Custom mein AA se kam contrast ho to preview warning + acknowledge ke baghair Apply nahi, rang khud kabhi nahi badalte.
+
+---
+
 ## 9. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |
@@ -362,6 +412,7 @@ Phase ke naam commit messages se liye gaye hain; 1–4C ke beech ki hadbandi com
 | Login lockout ki settings (attempts/cooldown) badalna | `config/settings.py` ke `AXES_*` settings |
 | Poori app ka color/font badalna | `static/css/main.css` ke `:root` wale design tokens |
 | Mobile responsive kuch tootay to | `static/css/main.css` ka `@media (max-width: 720px)` block, `templates/base.html` ka hamburger/drawer markup |
+| Branding (rang/font/logo/naam, presets, Custom) | `governance/branding.py` (presets + tokens + validation), UI `governance/branding_views.py` + `templates/governance/branding_theme.html`, emails/invoices mein `{% brand_email as brand %}` — template mein rang kabhi hard-code mat karo |
 | Database backup/restore | `docs/BACKUP_RESTORE.md` — exact commands wahan hain; kya hai/nahi: `manage.py ops_verify` (backups), `manage.py verify_backup` |
 | HTTPS redirect / HSTS / secure cookies / client IP trust | `accounts/middleware.py::CloudflareHttpsMiddleware`, `accounts/rate_limit.py::client_ip`, `docs/OPERATIONS.md` "Transport security" (kill switch wahin) |
 | Media bulk delete badalna | `governance/media_service.py::bulk_delete` (server-side re-check) + `governance/media_views.py::media_bulk_delete` + `static/js/media-admin.js` (bulk section) — limits `BULK_MAX_PER_REQUEST`/`BULK_MAX_PER_OPERATION`/`BULK_CHUNK` |

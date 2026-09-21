@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from accounts.models import User
+from governance.branding import brand_name
 from notifications.emailing import send_tracked_email
 
 # RFC 2606 names that can never receive mail. A placeholder account on one of them (the demo "admin@example.com")
@@ -45,10 +46,10 @@ class Command(BaseCommand):
             return
 
         if options["status"] == "success":
-            subject = f"[AI Client Portal] Deploy succeeded ({sha})"
+            subject = f"[{brand_name()}] Deploy succeeded ({sha})"
             body = f"Commit {sha} was deployed and passed the post-deploy health check. Live now."
         else:
-            subject = f"[AI Client Portal] Deploy FAILED - rolled back ({sha})"
+            subject = f"[{brand_name()}] Deploy FAILED - rolled back ({sha})"
             body = (
                 f"Commit {sha} failed its health check after deploy and was automatically rolled back"
                 f"{f' to {prev_sha}' if prev_sha else ''}. The site is back on the previous working "

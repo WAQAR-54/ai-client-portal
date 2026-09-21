@@ -45,6 +45,7 @@ from accounts.rate_limit import (
     is_over_limit,
     is_rate_limited,
 )
+from governance.branding import localize_product_name
 from governance.features import require_feature
 
 # Per-IP-per-hour caps on the two unauthenticated, abuse-prone endpoints
@@ -403,7 +404,7 @@ def notify_self_signup_welcome(user):
     from notifications.notify import notify
 
     with translation.override(user.preferred_language):
-        title = translation.gettext("Welcome to AI Client Portal")
+        title = localize_product_name(translation.gettext("Welcome to AI Client Portal"))
         body = translation.gettext(
             "Your account is ready. Head to Chat to start a conversation, or check My Plans to see what your "
             "plan includes."

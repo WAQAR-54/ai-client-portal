@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-{% load i18n %}
+{% load i18n branding_tags %}
 {% comment %}
 Deliberately NOT extending base.html: a 500 can be caused by the very
 thing base.html needs to render (a DB outage breaks governance's
@@ -20,10 +20,11 @@ treated as a comment at all. {% comment %} does support multi-line.
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% trans "Something went wrong" %}</title>
+{% brand_head_cached %}
 <style>
-  :root { --bg:#f1f0eb; --surface:#f9f8f4; --border:rgba(32,26,10,0.09); --text:#232019; --text-muted:#6f6c62; --accent:#00aef0; --accent-soft:#e3f6fd; }
+  :root { --bg:var(--color-bg,#f1f0eb); --surface:var(--color-surface,#f9f8f4); --border:var(--color-border,rgba(32,26,10,0.09)); --text:var(--color-text,#232019); --text-muted:var(--color-text-muted,#6f6c62); --e-accent:var(--accent,#00aef0); --e-accent-soft:var(--accent-soft,#e3f6fd); --e-on-accent:var(--on-accent,#fff); }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#0a0d16; --surface:#12151d; --border:#232838; --text:#e7e8ec; --text-muted:#9296a3; --accent:#00aef0; --accent-soft:#123244; }
+    :root { --bg:var(--color-bg,#0a0d16); --surface:var(--color-surface,#12151d); --border:var(--color-border,#232838); --text:var(--color-text,#e7e8ec); --text-muted:var(--color-text-muted,#9296a3); --e-accent:var(--accent,#00aef0); --e-accent-soft:var(--accent-soft,#123244); }
   }
   * { box-sizing: border-box; }
   body {
@@ -32,10 +33,10 @@ treated as a comment at all. {% comment %} does support multi-line.
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   .card { max-width: 440px; margin: 1.5rem; padding: 2rem; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
-  .icon-badge { width: 48px; height: 48px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
+  .icon-badge { width: 48px; height: 48px; border-radius: 50%; background: var(--e-accent-soft); color: var(--e-accent); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; }
   h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
   p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; margin: 0 0 1.25rem; }
-  a { display: inline-block; padding: 0.6rem 1.2rem; background: var(--accent); color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.88rem; }
+  a { display: inline-block; padding: 0.6rem 1.2rem; background: var(--e-accent); color: var(--e-on-accent); border-radius: var(--radius-md, 8px); text-decoration: none; font-weight: 600; font-size: 0.88rem; }
   a:hover { opacity: 0.9; }
 </style>
 </head>

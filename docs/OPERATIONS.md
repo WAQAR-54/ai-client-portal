@@ -46,6 +46,89 @@ the commit that was deployed; "git is current" says nothing about the image that
 A 503 from either is logged as a WARNING, not an ERROR (`HealthProbeDowngradeFilter`), so a dependency
 outage does not produce one alert per poll. A crash *inside* a probe is still an ERROR.
 
+## Branding (SuperAdmin)
+
+One setting controls the look of the whole application: **Branding 1** (the current appearance, the default),
+**Branding 2** (Web Host Era Brand Kit), **Branding 3** (a separate "modern technology" identity) or **Custom**.
+It applies to every user at once: the web UI (chat, projects, billing, admin, system status, media, login and
+password-reset pages), the fonts, the logo, the browser-tab title, every email, the invoice page/PDF/share link and the
+maintenance page. It changes presentation only: users, plans, invoices, permissions, AI settings, providers,
+conversations, projects and files are not touched (the only row written is `SiteBranding`).
+
+**Where:** sidebar Admin > **Branding** > "Brand themes" (`/governance/branding/theme/`), SuperAdmin only (every other
+role gets 403, anonymous visitors are sent to login). The older Branding page (site name, tagline, logo, favicon)
+stays: those are the identity of **Branding 1**.
+
+1. **View the current branding.** The header of the page says "Current: ● Branding N"; the card of the applied
+   branding carries an "Active" badge.
+2. **Preview a branding.** Click a card, then **Preview**. Nothing is saved and nobody else sees a change. The preview
+   is a compact sample (sidebar, buttons, badges, card, input, table, notifications) in the previewed colors and fonts,
+   with a Light / Dark switch and an accessibility report. Clicking a card alone never applies anything.
+3. **Apply Branding 1 / 2 / 3.** Select the card, press **Apply branding**, confirm the dialog. The change is
+   immediate for everyone (no restart; the generated CSS is cached under a key that includes the row's version, so the
+   next request already builds and caches the new one).
+   * **Branding 1** uses the site name, logo and favicon saved on the old Branding page, and emits no extra CSS: the
+     stylesheet alone renders it (`governance/test_branding.py` checks its preset data against `static/css/main.css`).
+   * **Branding 2** takes its values from *Brand Kit.pdf* (pages 7-9): Too Blue to be True `#008CFF`, Matt Black
+     `#151515`, White, Void `#00172A`, Soulstone Blue `#0055A5`, High Seas `#7DB5DC`, Halloween `#F96939`, Fennel Fiesta
+     `#01C970`, Lime Fizz `#C7FC35`, Pearl Powder `#F9FFEB`, Dark Charcoal `#333333`, Nickel `#737373`, Philippine
+     Silver `#B3B3B3`, Light Silver `#D9D9D9`, Plaster `#E9EAE9`. Two values are derived, not from the kit: muted text
+     `#4D4D4D` and muted surface `#F3F4F3` (so muted text passes AA on Plaster). The PDF is raster artwork, so the
+     values are the printed labels; sampled pixels agree within +-1 (compression), **except** the page-7 "Too Blue to be
+     True" swatch and the logo are drawn in `#2C6EF8` while the label says `#008CFF`. The token uses the printed
+     `#008CFF`; the logo files are cut from the artwork unchanged (`static/branding/whe-logo-blue.png`, `-white.png`,
+     `whe-mark.png`). If `#2C6EF8` is the intended brand blue, change `colors.primary` in `BRANDING_2`
+     (`governance/branding.py`); nothing else needs editing.
+   * **Fonts:** Gilroy and Mont-Trial are commercial fonts and are **not bundled or downloaded**. Branding 2 declares
+     `"Gilroy"` / `"Mont-Trial"` first, so a visitor who has them installed sees them; everyone else gets the closest
+     open fonts from Google Fonts (Urbanist for Gilroy, Montserrat for Mont-Trial), then Inter and the system font. To use
+     the real fonts, add licensed `@font-face` files and keep the same names.
+   * **Branding 3:** deep indigo `#4F3FE0` (primary), deep slate-indigo `#1F2A5C` (structure), electric cyan `#22D3EE`
+     (accent) on cool slate neutrals, crisp 4/6/10 px radii, a light sidebar with an indigo pill, Sora + Inter, its own
+     mark (`static/branding/modern-mark-*.svg`).
+4. **Create a Custom branding.** Select **Custom**; the form opens. Fill it, **Preview**, then **Apply**.
+5. **Change the Custom brand name.** "Brand name" (1-60 characters, no `< > { } \`). It replaces the product name in the
+   sidebar, login page, browser tab, email header and subjects, invoices and the maintenance page. It does not touch
+   legal/company names (billing profile, "Bill to" data).
+6. **Change Custom colors.** Three brand colors (primary = buttons/active/focus, secondary = headings/links/nav pill,
+   accent = highlights) and, for Light and Dark separately, background, surface, text, muted text and border. Each is a
+   6-digit hex (`#abc` is accepted and expanded). Hover, tinted and label colors are derived; **your colors are never
+   changed silently**.
+7. **Change Custom typography.** Primary font (body) and secondary font (headings): letters, numbers, spaces and hyphens
+   only. Tick "Load these fonts from Google Fonts" for a Google font; otherwise a font must already be on the visitor's
+   device (else the system font is used).
+8. **Upload logos.** Custom has a light-mode and a dark-mode logo (PNG, JPG, GIF or WebP, under 2 MB, checked as a
+   real image). They are stored with the existing branding uploads (`media/branding/`, the one public media folder).
+   The favicon is the one saved on the old Branding page.
+9. **Poor contrast.** The preview lists every pair that misses WCAG AA (4.5:1). A Custom branding with warnings cannot be
+   applied until the acknowledgement box is ticked (the server checks this itself); the colors are applied exactly as chosen.
+10. **Reset Custom branding.** "Reset Custom branding" (bottom of the page) clears the Custom settings and both logos;
+    if Custom was applied the app returns to Branding 1.
+11. **Recover from a bad branding.** Apply Branding 1 (no override at all). A saved Custom configuration that no longer
+    validates falls back to Branding 1 by itself, so a bad value can never take the site down.
+
+**Design tokens.** The app already consumed CSS custom properties, so a branding is a set of validated inputs from which
+`governance/branding.py` derives those same properties. The brand tokens map to the existing ones: `--brand-primary` =
+`--accent`, `--brand-secondary` = `--secondary`, `--brand-accent` (new), `--brand-background/-surface/-text/-muted/-border`
+= `--color-bg/-surface/-text/-text-muted/-border`, `--brand-success/-warning/-danger` = `--color-success/--warn/--color-danger`,
+`--font-primary/--font-secondary` = `--font-sans/--font-display`. Presets live in one place (`BRANDING_1/2/3`,
+`custom_brand()`); templates contain no branding values (emails, invoices and PDFs read concrete colors through
+`{% brand_email as brand %}`).
+
+**Dark / light.** Branding and theme are independent: each branding defines a light and a dark surface set, and the
+user's own Light / Dark / System choice still wins.
+
+**Limits (by design or not built).**
+* The application has **no maintenance mode**: nothing serves the maintenance page to visitors. The branded page exists
+  (`templates/maintenance.html`, previewable from Brand themes) so the branding can be reviewed on it. Like the 500
+  page it renders without the database, from the last branding rendered (kept in the cache).
+* The Domain Generator and Code Playground pages are standalone dark consoles: their accent follows the branding; their
+  fixed dark surfaces and fonts do not.
+* Two sentences that embed the product name inside translated text ("Welcome to AI Client Portal" and the
+  admin-created-account email) are rewritten at send time by replacing the default name; a translation that does not
+  contain the default name would keep its own wording.
+* Email clients cannot render SVG, so Branding 3's mark is not shown in emails (its name is).
+
 ## Deploy emails
 
 After every deploy the workflow runs `manage.py send_deploy_notification` inside the `web` container

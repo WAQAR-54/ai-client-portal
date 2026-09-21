@@ -1,6 +1,6 @@
 from django.urls import path
 
-from governance import media_views, views
+from governance import branding_views, media_views, views
 
 app_name = "governance"
 
@@ -52,6 +52,11 @@ urlpatterns = [
         name="toggle_google_signin_enabled",
     ),
     path("branding/", views.BrandingSettingsView.as_view(), name="branding"),
+    path("branding/theme/", branding_views.BrandThemeView.as_view(), name="brand_theme"),
+    path("branding/theme/preview/", branding_views.brand_theme_preview, name="brand_theme_preview"),
+    path("branding/theme/apply/", branding_views.brand_theme_apply, name="brand_theme_apply"),
+    path("branding/theme/reset-custom/", branding_views.brand_theme_reset_custom, name="brand_theme_reset_custom"),
+    path("branding/preview/maintenance/", branding_views.brand_maintenance_preview, name="brand_maintenance_preview"),
     path("teams/", views.TeamListView.as_view(), name="teams"),
     path("teams/add/", views.add_team, name="add_team"),
     path("teams/<int:team_id>/delete/", views.delete_team, name="delete_team"),

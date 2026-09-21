@@ -4,6 +4,7 @@
 {% block admin_page_title %}{% trans "Branding" %}{% endblock %}
 {% block content %}
 <div class="card" style="margin-bottom:1.5rem;">
+    <p style="margin:0 0 0.6rem;"><a href="{% url 'governance:brand_theme' %}"><strong>{% trans "Brand themes" %}</strong></a> — {% trans "switch the whole application between Branding 1, 2, 3 and a Custom branding (colors, fonts, logo, emails, invoices)." %}</p>
     <h1>{% trans "Branding" %}</h1>
     <p class="text-muted">
         {% trans "This name, logo, and favicon replace \"AI Client Portal\" everywhere in the app - the sidebar, the browser tab, and the login page - for every user, immediately." %}

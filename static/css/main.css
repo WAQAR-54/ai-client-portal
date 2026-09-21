@@ -172,6 +172,37 @@
        only - never body copy. Falls back to --font-sans, so any selector
        using it degrades cleanly if the font hasn't loaded yet. */
     --font-display: "Space Grotesk", var(--font-sans);
+
+    /* ---------- Branding tokens (governance/branding.py) ----------
+       The application's brand tokens. The first group are ALIASES of the tokens above, so every existing rule keeps
+       working and Branding 1 (this file) renders exactly as before; Branding 2 / 3 / Custom re-declare the tokens
+       above in a <style id="brand-tokens"> block after this stylesheet and the aliases follow. The second group
+       holds the label colours that used to be a literal #fff on a brand fill: Branding 1 keeps white, the others
+       compute whichever of white / near-black reads on their fill. */
+    --brand-primary: var(--accent);
+    --brand-secondary: var(--secondary);
+    --brand-accent: var(--accent);
+    --brand-background: var(--color-bg);
+    --brand-surface: var(--color-surface);
+    --brand-text: var(--color-text);
+    --brand-muted: var(--color-text-muted);
+    --brand-border: var(--color-border);
+    --brand-success: var(--color-success);
+    --brand-warning: var(--warn);
+    --brand-danger: var(--color-danger);
+    --font-primary: var(--font-sans);
+    --font-secondary: var(--font-display);
+    --on-brand-navy: #fff;
+    --on-brand-accent: var(--on-accent);
+    --on-danger: #fff;
+    --on-success: #fff;
+    --check-mark: #fff;
+    --showcase-bg: linear-gradient(160deg, var(--secondary-hover) 0%, var(--secondary) 55%, var(--accent) 100%);
+    --showcase-text: #fff;
+    --showcase-icon: #7fddfb;
+    --alert-danger-text: var(--color-danger);
+    --alert-success-text: var(--color-success);
+    --alert-info-text: var(--accent);
 }
 
 /* ---------- Dark mode ----------
@@ -505,6 +536,16 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     height: 34px; width: auto; max-width: 140px;
     object-fit: contain; border-radius: 4px; flex-shrink: 0;
 }
+/* A branding with separate light/dark logos renders both; the one for the other theme is hidden. */
+.brand-logo-dark { display: none; }
+:root[data-theme="dark"] .brand-logo-light { display: none; }
+:root[data-theme="dark"] .brand-logo-dark { display: inline-block; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand-logo-light { display: none; }
+    :root:not([data-theme="light"]) .brand-logo-dark { display: inline-block; }
+}
+/* A symbol-only logo (Branding 3) is followed by the brand name. */
+.brand-name { font-weight: 700; margin-inline-start: 0.5rem; }
 
 /* Chat/Admin segmented switch at the top of the sidebar - replaces the old
    flat "Chat" + "Admin" links for anyone who can see both. A real <a href>
@@ -615,12 +656,12 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
 .app-nav-sub a.active,
 .settings-tab-sidebar.active {
     background: var(--brand-navy);
-    color: #fff;
+    color: var(--on-brand-navy);
     box-shadow: var(--shadow-card);
 }
 .app-nav a.active .nav-icon,
 .app-nav-sub a.active .nav-icon,
-.settings-tab-sidebar.active .nav-icon { color: #fff; opacity: 1; }
+.settings-tab-sidebar.active .nav-icon { color: var(--on-brand-navy); opacity: 1; }
 .nav-icon { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.85; transition: transform 0.18s var(--ease); }
 
 .app-nav-sub { display: flex; flex-direction: column; gap: 2px; }
@@ -678,7 +719,7 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     cursor: pointer;
     font-family: inherit;
 }
-.app-sidebar-footer button.link-btn:hover { background: var(--color-danger); color: #fff; }
+.app-sidebar-footer button.link-btn:hover { background: var(--color-danger); color: var(--on-danger); }
 
 /* ---------- Top-right profile menu ---------- */
 .topbar-mini {
@@ -844,7 +885,7 @@ a:hover { color: var(--secondary-hover); text-decoration: underline; }
     padding: 0 3px;
     border-radius: 999px;
     background: var(--color-danger);
-    color: #fff;
+    color: var(--on-danger);
     font-size: 0.65rem;
     font-weight: 700;
     display: flex;
@@ -1136,7 +1177,7 @@ button:active, .btn:active { transform: scale(0.98); }
 button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
 
 .btn-small { padding: 0.4rem 0.85rem; font-size: 0.82rem; }
-.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-danger { background: var(--color-danger); color: var(--on-danger); }
 .btn-danger:hover { background: var(--color-danger-hover); }
 .btn-ghost {
     background: transparent;
@@ -1355,7 +1396,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     font-size: 0.88rem;
     animation: fade-in-up 200ms var(--ease);
 }
-.alert-danger { background: var(--color-danger-soft); color: var(--color-danger); }
+.alert-danger { background: var(--color-danger-soft); color: var(--alert-danger-text); }
 .alert-warning { background: var(--warn-soft); color: var(--warn); }
 /* base.html used to render every Django message as .alert-warning
    regardless of its real level - every django_messages.success(...) call
@@ -1366,8 +1407,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
    settings.py maps Django's default "error" tag to "danger" so this lines
    up with the existing .alert-danger class instead of needing a third
    error-specific one. */
-.alert-success { background: var(--color-success-soft); color: var(--color-success); }
-.alert-info { background: var(--accent-soft); color: var(--accent); }
+.alert-success { background: var(--color-success-soft); color: var(--alert-success-text); }
+.alert-info { background: var(--accent-soft); color: var(--alert-info-text); }
 
 /* Budget-automation banner (chat/views.py::get_budget_automation_status) -
    same visual weight as .alert-warning but centered over the chat column
@@ -1508,8 +1549,8 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     flex-direction: column;
     justify-content: center;
     padding: var(--space-8);
-    background: linear-gradient(160deg, var(--secondary-hover) 0%, var(--secondary) 55%, var(--accent) 100%);
-    color: #fff;
+    background: var(--showcase-bg);
+    color: var(--showcase-text);
     position: relative;
     overflow: hidden;
 }
@@ -1683,7 +1724,7 @@ tr:hover .row-checkbox, .row-checkbox:checked, .row-checkbox:focus-visible { opa
     font-weight: 600;
     line-height: 1.25;
 }
-.auth-float-card svg { width: 18px; height: 18px; flex-shrink: 0; color: #7fddfb; }
+.auth-float-card svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--showcase-icon); }
 
 .auth-float-card-1 {
     top: 6%;
@@ -1927,7 +1968,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     border-radius: var(--radius-sm);
 }
 .conv-item-link .nav-icon { opacity: 0.6; flex-shrink: 0; }
-.pin-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin: 0 5.5px; }
+.pin-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--brand-accent); flex-shrink: 0; margin: 0 5.5px; }
 .conv-item-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-item-link:hover { color: var(--sidebar-text); text-decoration: none; }
 .conv-item-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -2009,7 +2050,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .conv-action-btn:active { transform: scale(0.88); }
 .conv-action-btn:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
 .conv-action-btn.conv-action-active { color: var(--accent); }
-.conv-action-btn.conv-action-danger:hover { background: var(--color-danger); color: #fff; }
+.conv-action-btn.conv-action-danger:hover { background: var(--color-danger); color: var(--on-danger); }
 
 .sidebar-user-chip { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; position: relative; }
 .sidebar-user-chip .msg-avatar { width: 26px; height: 26px; }
@@ -2754,7 +2795,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .pending-sub { font-size: 0.76rem; color: var(--color-text-muted); }
 .pending-approve {
     background: var(--color-success);
-    color: #fff;
+    color: var(--on-success);
     border: none;
     font-size: 0.76rem;
     font-weight: 600;
@@ -2797,7 +2838,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     transition: background 140ms var(--ease), border-color 140ms var(--ease);
 }
 .pii-check.on { background: var(--accent); border-color: var(--accent); }
-.pii-check svg { width: 11px; height: 11px; color: #fff; opacity: 0; }
+.pii-check svg { width: 11px; height: 11px; color: var(--check-mark); opacity: 0; }
 .pii-check.on svg { opacity: 1; }
 .pii-name { font-size: 0.85rem; font-weight: 500; flex: 1; }
 .pii-action-select {
@@ -3013,7 +3054,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
     transition: background 140ms var(--ease), border-color 140ms var(--ease);
 }
 .compare-setup-row.checked .compare-setup-check { background: var(--accent); border-color: var(--accent); }
-.compare-setup-check svg { width: 12px; height: 12px; color: #fff; opacity: 0; }
+.compare-setup-check svg { width: 12px; height: 12px; color: var(--check-mark); opacity: 0; }
 .compare-setup-row.checked .compare-setup-check svg { opacity: 1; }
 .compare-setup-name { font-size: 0.85rem; font-weight: 600; flex: 1; }
 .compare-setup-provider { font-size: 0.72rem; color: var(--color-text-faint); }
@@ -3578,7 +3619,7 @@ summary.nav-group-label:hover { color: var(--sidebar-text); }
 .send-btn { width: 32px; height: 32px; padding: 0; background: var(--brand-navy); border: none; transition: background-color 0.16s var(--ease), transform 0.16s var(--ease), opacity 0.16s var(--ease); }
 .send-btn:hover { background: color-mix(in srgb, var(--brand-navy) 100%, white 14%); transform: scale(1.06); }
 .send-btn:active { transform: scale(0.94); }
-.send-btn svg { width: 15px; height: 15px; stroke: #fff; }
+.send-btn svg { width: 15px; height: 15px; stroke: var(--on-brand-navy); }
 /* Nothing showed a send was in flight before - the button stayed fully
    clickable, inviting an accidental double-send on a slow connection.
    #composer-form gets htmx's own .htmx-request class for free during
@@ -4634,3 +4675,73 @@ main .sys-status > .server-health.card { margin-top: 0; }
 /* The dialog switches panels with the HTML `hidden` attribute, but .modal-body / .btn set `display`, which beats the
    browser's own [hidden] rule: without this every panel and button showed at once. */
 .modal-overlay [hidden], .media-bulk-bar[hidden] { display: none !important; }
+
+
+/* ==========================================================================
+   Brand themes (SuperAdmin > Branding > Brand themes): the four cards and the compact preview.
+   The preview re-declares the brand tokens on .brand-preview (governance/branding.py render_css(scope=...)), so the
+   real component classes inside it - buttons, badges, table, alerts, the nav pill - render in the previewed branding.
+   ========================================================================== */
+.bt-current { font-weight: 700; color: var(--accent-text); }
+.bt-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.bt-card {
+    display: flex; flex-direction: column; gap: 6px; position: relative; cursor: pointer;
+    padding: 14px 16px; background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.bt-card input[type="radio"] { position: absolute; inset-block-start: 14px; inset-inline-end: 14px; width: auto; margin: 0; }
+.bt-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-sm); }
+.bt-card:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bt-card-title { font-weight: 700; font-family: var(--font-display); padding-inline-end: 24px; }
+.bt-card-sub { font-size: var(--text-xs); color: var(--color-text-muted); }
+.bt-card-fonts { font-size: 11.5px; color: var(--color-text-faint); }
+.bt-swatches { display: flex; gap: 6px; }
+.bt-swatches i { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--color-border-strong); display: block; }
+.bt-custom { margin-bottom: var(--space-4); }
+.bt-custom[hidden] { display: none; }
+.bt-h2 { margin: 0 0 var(--space-3); font-size: var(--text-base); }
+.bt-colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-3); }
+.bt-color label { display: block; font-size: var(--text-xs); font-weight: 600; margin-bottom: 4px; }
+.bt-color-row { display: flex; gap: 8px; align-items: center; }
+.bt-color-row input[type="color"] { width: 38px; height: 34px; padding: 2px; flex: none; cursor: pointer; }
+.bt-color-row .input { min-width: 0; font-family: var(--font-mono); }
+.bt-error { color: var(--alert-danger-text); }
+.bt-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-4) 0; }
+.bt-preview-pane { margin-bottom: var(--space-4); }
+.bp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.bp-theme-toggle { display: inline-flex; border: 1px solid var(--color-border-strong); border-radius: 999px; overflow: hidden; }
+.bp-theme-toggle button { border: 0; border-radius: 0; background: transparent; color: var(--color-text-muted); padding: 0.3rem 0.9rem; font-size: 0.8rem; box-shadow: none; }
+.bp-theme-toggle button.active { background: var(--brand-navy); color: var(--on-brand-navy); }
+
+.brand-preview {
+    background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); overflow: hidden;
+}
+.brand-preview .brand-logo-dark { display: none; }
+.brand-preview[data-preview-theme="dark"] .brand-logo-light { display: none; }
+.brand-preview[data-preview-theme="dark"] .brand-logo-dark { display: inline-block; }
+.bp-app { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 340px; }
+.bp-sidebar { background: var(--sidebar-bg); color: var(--sidebar-text); border-inline-end: 1px solid var(--sidebar-border); padding: 14px 10px; display: flex; flex-direction: column; gap: 14px; }
+.bp-brand { display: flex; align-items: center; font-weight: 700; font-family: var(--font-display); padding: 0 6px; min-height: 30px; }
+.bp-brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-inline-end: 8px; flex: none; }
+.bp-brand .brand-logo-img { height: 26px; max-width: 130px; }
+.bp-nav { display: flex; flex-direction: column; gap: 2px; }
+.bp-nav a { display: block; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--sidebar-text-muted); font-size: 0.85rem; text-decoration: none; }
+.bp-nav a:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-text); }
+.bp-nav a.active { background: var(--brand-navy); color: var(--on-brand-navy); font-weight: 600; }
+.bp-main { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.bp-main h3 { margin: 0; font-family: var(--font-display); font-size: 1.15rem; color: var(--secondary); }
+.bp-main p { margin: 0; font-size: 0.85rem; color: var(--color-text-muted); }
+.bp-main .bp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bp-main .card { margin: 0; padding: 12px 14px; }
+.bp-main table.data { width: 100%; }
+.bp-main .bp-table-wrap { overflow-x: auto; }
+.bp-a11y { margin-top: var(--space-3); }
+.bp-a11y table { width: 100%; font-size: 0.8rem; }
+.bp-a11y td, .bp-a11y th { padding: 4px 8px; text-align: start; }
+.bp-a11y .bad { color: var(--alert-danger-text); font-weight: 600; }
+@media (max-width: 600px) {
+    .bp-app { grid-template-columns: minmax(0, 1fr); }
+    .bp-sidebar { flex-direction: row; align-items: center; flex-wrap: wrap; border-inline-end: 0; border-bottom: 1px solid var(--sidebar-border); }
+    .bp-nav { flex-direction: row; flex-wrap: wrap; }
+}

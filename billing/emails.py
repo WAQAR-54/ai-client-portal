@@ -12,7 +12,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from billing.pdf import render_invoice_pdf
-from governance.models import SiteBranding
+from governance.branding import active_branding
 from notifications.emailing import send_tracked_email
 
 
@@ -26,7 +26,8 @@ def share_url_for_invoice(invoice):
 
 
 def _logo_url(site_branding):
-    if not site_branding.logo:
+    # An email needs an absolute URL to a raster image (mail clients do not render SVG).
+    if not site_branding.logo or site_branding.logo.url.lower().endswith(".svg"):
         return None
     return settings.SITE_URL.rstrip("/") + site_branding.logo.url
 
@@ -42,7 +43,7 @@ def send_invoice_email(invoice):
     if invoice.recipient_user_id is None or not invoice.recipient_user.email:
         return False, "This invoice has no recipient email to send to."
 
-    site_branding = SiteBranding.load()
+    site_branding = active_branding()
     share_url = share_url_for_invoice(invoice)
     subject = f"{site_branding.site_name}: Invoice {invoice.invoice_number}"
     text_body = (
@@ -69,7 +70,7 @@ def send_overdue_reminder_email(invoice):
     if invoice.recipient_user_id is None or not invoice.recipient_user.email:
         return False, "This invoice has no recipient email to send to."
 
-    site_branding = SiteBranding.load()
+    site_branding = active_branding()
     share_url = share_url_for_invoice(invoice)
     days_overdue = (timezone.localdate() - invoice.due_date).days
     subject = f"{site_branding.site_name}: Invoice {invoice.invoice_number} is overdue"

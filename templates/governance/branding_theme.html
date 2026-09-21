@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% load i18n branding_tags %}
+{% block title %}{% trans "Brand themes" %} — {{ site_branding.site_name }}{% endblock %}
+{% block admin_page_title %}{% trans "Brand themes" %}{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <h1>{% trans "Branding" %}</h1>
+    <p class="text-muted">
+        {% trans "Choose the look of the whole application: colors, fonts, logo, emails, invoices and the login page. It applies to every user. Preview first, then apply. Nothing else changes - users, billing, permissions, AI settings, files and conversations are not touched." %}
+    </p>
+    <p style="margin:0.4rem 0 0;">
+        <strong>{% trans "Current" %}:</strong> <span class="bt-current" data-current="{{ current }}">● {{ current_label }}</span>
+        &nbsp;·&nbsp; <a href="{% url 'governance:branding' %}">{% trans "Site name, logo and favicon (used by Branding 1)" %}</a>
+        &nbsp;·&nbsp; <a href="{% url 'governance:brand_maintenance_preview' %}" target="_blank" rel="noopener">{% trans "Preview the maintenance page" %}</a>
+    </p>
+</div>
+
+<form id="theme-form" method="post" enctype="multipart/form-data" action="{% url 'governance:brand_theme_apply' %}"
+      onsubmit="return portalConfirmSubmit(event, '{% trans "Apply this branding for every user?" %}');">
+    {% csrf_token %}
+    {% if errors.contrast %}<div class="alert alert-danger" role="alert">{{ errors.contrast }}</div>{% endif %}
+
+    <div class="bt-cards" role="radiogroup" aria-label="{% trans 'Branding' %}">
+        {% for card in cards %}
+        <label class="bt-card{% if card.key == selected %} selected{% endif %}" data-card="{{ card.key }}">
+            <input type="radio" name="preset" value="{{ card.key }}"{% if card.key == selected %} checked{% endif %}>
+            <span class="bt-card-title">{{ card.label }}{% if card.key == current %} <span class="badge badge-success sys-badge">{% trans "Active" %}</span>{% endif %}</span>
+            <span class="bt-card-sub">{{ card.tagline }}</span>
+            <span class="bt-swatches" aria-hidden="true">{% for c in card.swatches %}<i style="background:{{ c }}"></i>{% endfor %}</span>
+            <span class="bt-card-fonts">{{ card.fonts }}</span>
+        </label>
+        {% endfor %}
+    </div>
+
+    <section id="custom-fields" class="card bt-custom"{% if selected != "custom" %} hidden{% endif %}>
+        <h2 class="bt-h2">{% trans "Custom branding" %}</h2>
+
+        <label for="cf-brand_name">{% trans "Brand name" %}</label>
+        <input class="input" type="text" id="cf-brand_name" name="brand_name" maxlength="60" value="{{ values.brand_name }}" placeholder="{% trans 'e.g. WHE AI' %}">
+        <div class="form-hint">{% trans "Shown in the sidebar, login page, browser tab, emails, invoices and the maintenance page. It does not rename legal or company names on invoices (billing profile)." %}</div>
+        {% if errors.brand_name %}<div class="form-hint bt-error">{{ errors.brand_name }}</div>{% endif %}
+
+        <div class="form-section-label">{% trans "Brand colors" %}</div>
+        <div class="bt-colors">
+            {% for row in color_rows %}{% include "governance/_brand_color_field.html" %}{% endfor %}
+        </div>
+        {% for section in theme_sections %}
+        <div class="form-section-label">{{ section.label }}</div>
+        <div class="bt-colors">
+            {% for row in section.rows %}{% include "governance/_brand_color_field.html" %}{% endfor %}
+        </div>
+        {% endfor %}
+
+        <div class="form-section-label">{% trans "Typography" %}</div>
+        <div class="bt-colors">
+            <div class="bt-color"><label for="cf-font_primary">{% trans "Primary font (body)" %}</label><input class="input" type="text" id="cf-font_primary" name="font_primary" maxlength="40" value="{{ values.font_primary }}">{% if errors.font_primary %}<div class="form-hint bt-error">{{ errors.font_primary }}</div>{% endif %}</div>
+            <div class="bt-color"><label for="cf-font_secondary">{% trans "Secondary font (headings)" %}</label><input class="input" type="text" id="cf-font_secondary" name="font_secondary" maxlength="40" value="{{ values.font_secondary }}">{% if errors.font_secondary %}<div class="form-hint bt-error">{{ errors.font_secondary }}</div>{% endif %}</div>
+        </div>
+        <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin-top:0.5rem;">
+            <input type="checkbox" name="google_fonts" value="1" style="width:auto;"{% if values.google_fonts %} checked{% endif %}> {% trans "Load these fonts from Google Fonts" %}
+        </label>
+        <div class="form-hint">{% trans "Letters, numbers, spaces and hyphens only. A font that is not on Google Fonts or installed on the visitor's device falls back to the system font." %}</div>
+
+        <div class="form-section-label">{% trans "Logos" %}</div>
+        <div class="bt-colors">
+            {% for field, label, current_logo in logo_fields %}
+            <div class="bt-color">
+                <label>{{ label }}</label>
+                {% if field in errors %}<div class="form-hint bt-error">{{ errors|dict_get:field }}</div>{% endif %}
+                <div class="branding-upload-row"><div class="branding-preview" style="min-width:90px;">{% if current_logo %}<img src="{{ current_logo.url }}" alt="">{% else %}<span class="text-faint" style="font-size:0.75rem;">{% trans "None" %}</span>{% endif %}</div>
+                <div style="flex:1;"><input type="file" name="{{ field }}" accept="image/*">
+                {% if current_logo %}<label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin-top:0.4rem;"><input type="checkbox" name="remove_{{ field }}" value="1" style="width:auto;"> {% trans "Remove" %}</label>{% endif %}</div></div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="form-hint">{% trans "PNG, JPG, GIF or WebP, under 2 MB. The dark-mode logo is used on dark surfaces." %}</div>
+    </section>
+
+    <div class="bt-actions">
+        <button type="button" class="btn-ghost" id="preview-btn"
+                hx-post="{% url 'governance:brand_theme_preview' %}" hx-include="#theme-form" hx-target="#brand-preview-pane" hx-swap="innerHTML">{% trans "Preview" %}</button>
+        <button type="submit" id="apply-btn">{% trans "Apply branding" %}</button>
+    </div>
+</form>
+
+<div id="brand-preview-pane" class="bt-preview-pane" aria-live="polite">
+    <p class="text-faint">{% trans "Select a branding and press Preview. Nothing changes until you press Apply." %}</p>
+</div>
+
+<form method="post" action="{% url 'governance:brand_theme_reset_custom' %}" class="mt-4"
+      onsubmit="return portalConfirmSubmit(event, '{% trans "Clear the Custom branding settings and both logos? If Custom is applied, the app returns to Branding 1." %}');">
+    {% csrf_token %}
+    <button type="submit" class="btn-small btn-ghost" style="color:var(--color-danger);">{% trans "Reset Custom branding" %}</button>
+</form>
+
+<script>
+(function () {
+    var form = document.getElementById("theme-form");
+    var custom = document.getElementById("custom-fields");
+    function syncPicker(text) {
+        var picker = form.querySelector('input[type=color][data-sync="' + text.id + '"]');
+        if (picker && /^#[0-9a-fA-F]{6}$/.test(text.value)) picker.value = text.value;
+    }
+    form.querySelectorAll('input[type=color][data-sync]').forEach(function (picker) {
+        var text = document.getElementById(picker.dataset.sync);
+        picker.setAttribute("aria-hidden", "false"); picker.tabIndex = 0; picker.setAttribute("aria-label", "color picker");
+        syncPicker(text);
+        picker.addEventListener("input", function () { text.value = picker.value; });
+        text.addEventListener("input", function () { syncPicker(text); });
+    });
+    // Light / Dark switch inside the preview (delegated: the pane is replaced by every Preview).
+    document.getElementById("brand-preview-pane").addEventListener("click", function (evt) {
+        var button = evt.target.closest("[data-preview-set]");
+        if (!button) return;
+        var frame = this.querySelector(".brand-preview");
+        if (frame) frame.dataset.previewTheme = button.dataset.previewSet;
+        this.querySelectorAll("[data-preview-set]").forEach(function (b) { b.classList.toggle("active", b === button); });
+    });
+    form.querySelectorAll('input[name="preset"]').forEach(function (radio) {
+        radio.addEventListener("change", function () {
+            form.querySelectorAll(".bt-card").forEach(function (c) { c.classList.toggle("selected", c.dataset.card === radio.value && radio.checked); });
+            custom.hidden = form.elements.preset.value !== "custom";
+        });
+    });
+})();
+</script>
+{% endblock %}

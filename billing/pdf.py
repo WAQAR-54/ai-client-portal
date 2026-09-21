@@ -15,7 +15,7 @@ from django.template.loader import render_to_string
 from xhtml2pdf import pisa
 
 from billing.models import OrganizationBillingProfile, billing_profile_for_invoice
-from governance.models import SiteBranding
+from governance.branding import active_branding
 
 
 def _resolve_pdf_uri(uri, _rel):
@@ -44,7 +44,7 @@ def render_invoice_pdf(invoice) -> bytes:
             "invoice": invoice,
             "billing_profile": billing_profile_for_invoice(invoice),
             "organization_profile": OrganizationBillingProfile.load(),
-            "site_branding": SiteBranding.load(),
+            "site_branding": active_branding(),
         },
     )
     buffer = BytesIO()

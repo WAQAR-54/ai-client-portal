@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n %}{% load branding_tags %}{% brand_email as brand %}
 {% comment %}
 Shared invoice document body - the actual "piece of paper" (header, Bill
 To/Payment Details, Plan/Team members, itemized table, totals). Included
@@ -20,9 +20,9 @@ mirrors the same content and Bill To logic.
        (--space-*, --radius-*), which never change between themes, are
        still referenced live. */
     .invoice-doc-card {
-        background: #f9f8f4 !important;
+        background: {{ brand.surface }} !important;
         border-color: rgba(32, 26, 10, 0.09) !important;
-        color: #232019;
+        color: {{ brand.text }};
         /* .invoice-doc-top/-number-row bleed to the card's edges via a
            negative margin equal to the card's own padding - without this,
            their own border-radius (matching the card's) draws a slightly
@@ -36,22 +36,22 @@ mirrors the same content and Bill To logic.
         display: flex; justify-content: space-between; align-items: center; gap: var(--space-5); flex-wrap: wrap;
         margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) 0;
         padding: var(--space-6);
-        background: #f9f8f4;
-        border-top: 4px solid #00aef0;
+        background: {{ brand.surface }};
+        border-top: 4px solid {{ brand.primary }};
     }
     .invoice-doc-brand { display: flex; align-items: center; gap: var(--space-3); }
     .invoice-doc-logo { max-height: 40px; max-width: 170px; object-fit: contain; }
-    .invoice-doc-avatar { width: 40px; height: 40px; border-radius: var(--radius-md); background: #e3f6fd; color: #122268; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display); flex-shrink: 0; }
-    .invoice-doc-meta { text-align: right; font-size: 0.85rem; color: #6f6c62; }
+    .invoice-doc-avatar { width: 40px; height: 40px; border-radius: var(--radius-md); background: {{ brand.primary_soft }}; color: {{ brand.secondary }}; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display); flex-shrink: 0; }
+    .invoice-doc-meta { text-align: right; font-size: 0.85rem; color: {{ brand.muted }}; }
     .invoice-doc-meta > div { margin-bottom: 0.15rem; }
     .invoice-doc-number-row {
         margin: 0 calc(-1 * var(--space-6)) var(--space-6);
         padding: var(--space-3) var(--space-6);
-        background: #e3f6fd;
+        background: {{ brand.primary_soft }};
         border-bottom: 1px solid rgba(32, 26, 10, 0.09);
-        font-weight: 700; color: #122268;
+        font-weight: 700; color: {{ brand.secondary }};
     }
-    .invoice-doc-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9c988c; margin-bottom: 0.4rem; }
+    .invoice-doc-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: {{ brand.faint }}; margin-bottom: 0.4rem; }
     /* .invoice-doc-items also carries the shared .scroll-shadow utility
        class (horizontal-scroll edge fade) - its gradients/background-color
        key off var(--color-surface), which is dark in dark mode, silently
@@ -59,25 +59,25 @@ mirrors the same content and Bill To logic.
        the item rows unreadable. Same fixed-color treatment as everything
        else here. */
     .invoice-doc-items.scroll-shadow {
-        background-color: #f9f8f4;
+        background-color: {{ brand.surface }};
         background-image:
-            linear-gradient(to right, #f9f8f4 0%, rgba(0, 0, 0, 0) 100%),
-            linear-gradient(to left, #f9f8f4 0%, rgba(0, 0, 0, 0) 100%),
+            linear-gradient(to right, {{ brand.surface }} 0%, rgba(0, 0, 0, 0) 100%),
+            linear-gradient(to left, {{ brand.surface }} 0%, rgba(0, 0, 0, 0) 100%),
             linear-gradient(to right, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0) 100%),
             linear-gradient(to left, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0) 100%);
     }
     .invoice-doc-items table { width: 100%; border-collapse: collapse; }
-    .invoice-doc-items th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #122268; font-weight: 700; padding-bottom: 0.5rem; border-bottom: 2px solid #00aef0; }
-    .invoice-doc-items td { padding: 0.65rem 0; border-bottom: 1px solid rgba(32, 26, 10, 0.09); color: #232019; }
+    .invoice-doc-items th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: {{ brand.secondary }}; font-weight: 700; padding-bottom: 0.5rem; border-bottom: 2px solid {{ brand.primary }}; }
+    .invoice-doc-items td { padding: 0.65rem 0; border-bottom: 1px solid rgba(32, 26, 10, 0.09); color: {{ brand.text }}; }
     .invoice-doc-items th:last-child, .invoice-doc-items td:last-child { text-align: right; }
     .invoice-doc-totals { margin-left: auto; width: min(320px, 100%); margin-top: var(--space-4); }
-    .invoice-doc-totals-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: 0.3rem 0; font-size: 0.9rem; color: #6f6c62; }
-    .invoice-doc-totals-row.is-total { margin-top: 0.5rem; padding: 0.7rem var(--space-4); font-weight: 700; font-size: 1.1rem; color: #122268; background: #e3f6fd; border-radius: var(--radius-md); }
+    .invoice-doc-totals-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: 0.3rem 0; font-size: 0.9rem; color: {{ brand.muted }}; }
+    .invoice-doc-totals-row.is-total { margin-top: 0.5rem; padding: 0.7rem var(--space-4); font-weight: 700; font-size: 1.1rem; color: {{ brand.secondary }}; background: {{ brand.primary_soft }}; border-radius: var(--radius-md); }
     .invoice-doc-parties { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-5); }
-    .invoice-doc-parties > div { flex: 1 1 280px; background: #ecebe4; border-radius: var(--radius-md); padding: var(--space-4); }
-    .invoice-doc-parties p { margin: 0 0 0.15rem; font-size: 0.9rem; color: #6f6c62; }
+    .invoice-doc-parties > div { flex: 1 1 280px; background: {{ brand.surface_muted }}; border-radius: var(--radius-md); padding: var(--space-4); }
+    .invoice-doc-parties p { margin: 0 0 0.15rem; font-size: 0.9rem; color: {{ brand.muted }}; }
     .invoice-doc-planteam { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-5); }
-    .invoice-doc-planteam > div { flex: 1 1 280px; background: #ecebe4; border-radius: var(--radius-md); padding: var(--space-4); color: #232019; }
+    .invoice-doc-planteam > div { flex: 1 1 280px; background: {{ brand.surface_muted }}; border-radius: var(--radius-md); padding: var(--space-4); color: {{ brand.text }}; }
     .invoice-doc-planteam .invoice-doc-label { margin-bottom: 0.15rem; }
 </style>
 
@@ -88,7 +88,7 @@ mirrors the same content and Bill To logic.
             <img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="invoice-doc-logo">
             {% else %}
             <div class="invoice-doc-avatar">{{ site_branding.site_name|slice:":2"|upper }}</div>
-            <div style="font-weight:700; font-size:1.05rem; color:#232019;">{{ site_branding.site_name }}</div>
+            <div style="font-weight:700; font-size:1.05rem; color:{{ brand.text }};">{{ site_branding.site_name }}</div>
             {% endif %}
         </div>
         <div class="invoice-doc-meta">
@@ -117,15 +117,15 @@ mirrors the same content and Bill To logic.
             {% endcomment %}
             {% with display_name=invoice.recipient_user.get_full_name|default:billing_profile.company_name %}
             {% if display_name %}
-            <p style="font-weight:600; color:#232019;">{{ display_name }}</p>
+            <p style="font-weight:600; color:{{ brand.text }};">{{ display_name }}</p>
             {% if invoice.recipient_user %}<p>{{ invoice.recipient_user.email }}</p>{% endif %}
             {% elif invoice.recipient_user %}
-            <p style="font-weight:600; color:#232019;">{{ invoice.recipient_user.email }}</p>
+            <p style="font-weight:600; color:{{ brand.text }};">{{ invoice.recipient_user.email }}</p>
             {% endif %}
             {% endwith %}
             {% if billing_profile.phone_number %}<p>{{ billing_profile.phone_number }}</p>{% endif %}
             {% if billing_profile.billing_address %}<p style="white-space:pre-line;">{{ billing_profile.billing_address }}</p>{% endif %}
-            {% if billing_profile.tax_id %}<p style="font-size:0.85rem; color:#9c988c;">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</p>{% endif %}
+            {% if billing_profile.tax_id %}<p style="font-size:0.85rem; color:{{ brand.faint }};">{% trans "Tax ID" %}: {{ billing_profile.tax_id }}</p>{% endif %}
         </div>
         {% if organization_profile.bank_name or organization_profile.account_number %}
         <div>
@@ -134,7 +134,7 @@ mirrors the same content and Bill To logic.
             {% if organization_profile.account_number %}<p>{% trans "Account / IBAN" %}: <span class="mono">{{ organization_profile.account_number }}</span></p>{% endif %}
             {% if organization_profile.account_title %}<p>{% trans "Account title" %}: {{ organization_profile.account_title }}</p>{% endif %}
             {% if organization_profile.swift_code %}<p>{% trans "SWIFT" %}: <span class="mono">{{ organization_profile.swift_code }}</span></p>{% endif %}
-            {% if organization_profile.payment_note %}<p style="font-size:0.85rem; color:#9c988c;">{{ organization_profile.payment_note }}</p>{% endif %}
+            {% if organization_profile.payment_note %}<p style="font-size:0.85rem; color:{{ brand.faint }};">{{ organization_profile.payment_note }}</p>{% endif %}
         </div>
         {% endif %}
     </div>

@@ -36,7 +36,8 @@ from billing.regions import EXTRA_REGIONS, REGION_BY_CODE, REGIONS, region_for_c
 from billing.tax_rules import country_choices, tax_rule_for_country
 from governance.audit import log_action
 from governance.features import RequireFeatureMixin, require_feature
-from governance.models import Plan, SiteBranding
+from governance.branding import active_branding
+from governance.models import Plan
 
 
 def _decimal_or_none(raw):
@@ -1327,7 +1328,7 @@ def public_invoice_view(request, token):
             "invoice": invoice,
             "billing_profile": billing_profile_for_invoice(invoice),
             "organization_profile": OrganizationBillingProfile.load(),
-            "site_branding": SiteBranding.load(),
+            "site_branding": active_branding(),
         },
     )
 

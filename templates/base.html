@@ -2,17 +2,19 @@
 {% get_current_language as LANGUAGE_CODE %}
 {% get_current_language_bidi as LANGUAGE_BIDI %}
 <!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE }}" dir="{% if LANGUAGE_BIDI %}rtl{% else %}ltr{% endif %}"
+<html lang="{{ LANGUAGE_CODE }}" dir="{% if LANGUAGE_BIDI %}rtl{% else %}ltr{% endif %}" data-brand="{{ site_branding.preset }}"
       {% if user.is_authenticated and user.theme_preference != "system" and user|has_feature:"dark_mode" %}data-theme="{{ user.theme_preference }}"{% endif %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ site_branding.site_name }}{% endblock %}</title>
-    {% if site_branding.favicon %}<link rel="icon" href="{{ site_branding.favicon.url }}">{% endif %}
+    {% if site_branding.favicon %}<link rel="icon" href="{{ site_branding.favicon.url }}"{% if site_branding.favicon.url|slice:"-4:" == ".svg" %} type="image/svg+xml"{% endif %}>{% endif %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="{{ site_branding.fonts_url }}" rel="stylesheet">
     <link rel="stylesheet" href="{% static_v 'css/main.css' %}">
+    {# The active branding's token values (governance/branding.py), after main.css so they win. Empty for Branding 1. #}
+    {% if site_branding.css %}<style id="brand-tokens">{{ site_branding.css|safe }}</style>{% endif %}
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.2.1/sse.js"></script>
     <script src="{% static_v 'js/ui-kit.js' %}"></script>
@@ -35,7 +37,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
             {% block sidebar %}
-            <a class="brand" href="{% url 'accounts:dashboard' %}">{% include "_brand_mark.html" %}</a>
+            <a class="brand" href="{% url 'accounts:dashboard' %}">{% include "_brand_mark.html" with on_dark=site_branding.sidebar_dark %}</a>
             {% if user.is_admin or user.is_manager %}
             <div class="app-switch" role="group" aria-label="{% trans 'Switch product area' %}" style="margin-bottom: var(--space-4);">
                 <div class="app-switch-pill" id="appSwitchPill"></div>

@@ -1,0 +1,84 @@
+{% load i18n %}
+{% comment %}
+Preview pane for Brand themes (governance/branding_views.py::brand_theme_preview). Saves nothing. The scoped <style>
+re-declares the previewed branding's tokens on .brand-preview, so the real classes below render in that branding.
+{% endcomment %}
+{% if invalid %}
+<div class="alert alert-danger" role="alert">
+    <strong>{% trans "Fix these before previewing:" %}</strong>
+    <ul style="margin:0.4rem 0 0; padding-inline-start:1.2rem;">{% for field, message in errors.items %}<li>{{ message }}</li>{% endfor %}</ul>
+</div>
+{% else %}
+{# The fragment must NOT start with <link>/<style>: htmx parses a response as a document and would hoist a leading #}
+{# link/style into <head> and drop it. They come after the first element, inside the body. #}
+<div class="bp-head">
+    <h2 class="bt-h2" style="margin:0;">{% trans "Preview" %}: {{ brand.label }} <span class="text-faint" style="font-weight:500;">— {{ name }}</span></h2>
+    <div class="bp-theme-toggle" role="group" aria-label="{% trans 'Preview theme' %}">
+        <button type="button" data-preview-set="light" class="active">{% trans "Light" %}</button>
+        <button type="button" data-preview-set="dark">{% trans "Dark" %}</button>
+    </div>
+</div>
+<link href="{{ fonts_url }}" rel="stylesheet">
+<style>{{ scoped_css|safe }}</style>
+
+<div class="brand-preview" data-preview-theme="light" data-preview-key="{{ preset_key }}">
+    <div class="bp-app">
+        <aside class="bp-sidebar">
+            <div class="bp-brand">
+                {% if logos.light %}{% if logos.dark %}<img src="{{ logos.light }}" alt="{{ name }}" class="brand-logo-img brand-logo-light"><img src="{{ logos.dark }}" alt="{{ name }}" class="brand-logo-img brand-logo-dark">{% else %}<img src="{{ logos.light }}" alt="{{ name }}" class="brand-logo-img">{% endif %}{% if mark_only %}<span class="brand-name">{{ name }}</span>{% endif %}{% else %}<span class="dot"></span>{{ name }}{% endif %}
+            </div>
+            <nav class="bp-nav" aria-label="{% trans 'Sample navigation' %}">
+                <a href="#" class="active" onclick="return false;">{% trans "Chat" %}</a>
+                <a href="#" onclick="return false;">{% trans "Projects" %}</a>
+                <a href="#" onclick="return false;">{% trans "Billing" %}</a>
+                <a href="#" onclick="return false;">{% trans "Media" %}</a>
+            </nav>
+        </aside>
+        <div class="bp-main">
+            <h3>{% trans "Good afternoon" %}</h3>
+            <p>{% trans "This is how headings, body text and muted text look." %}</p>
+            <div class="bp-row">
+                <button type="button">{% trans "Primary" %}</button>
+                <button type="button" class="btn-ghost">{% trans "Secondary" %}</button>
+                <button type="button" class="btn-danger">{% trans "Delete" %}</button>
+                <span class="badge badge-success sys-badge">{% trans "Healthy" %}</span>
+                <span class="badge badge-warn sys-badge">{% trans "Warning" %}</span>
+                <span class="badge badge-danger sys-badge">{% trans "Critical" %}</span>
+                <span class="badge badge-muted sys-badge">{% trans "Unavailable" %}</span>
+            </div>
+            <div class="card"><strong>{% trans "A card" %}</strong><p>{% trans "Cards, inputs and tables use the surface, border and text colors." %}</p></div>
+            <input class="input" type="text" value="{% trans 'A text field' %}" aria-label="{% trans 'Sample input' %}" readonly>
+            <div class="bp-table-wrap">
+                <table class="data">
+                    <thead><tr><th>{% trans "Plan" %}</th><th>{% trans "Status" %}</th><th>{% trans "Amount" %}</th></tr></thead>
+                    <tbody>
+                        <tr><td>Business</td><td><span class="badge badge-success sys-badge">{% trans "Paid" %}</span></td><td>$49.00</td></tr>
+                        <tr><td>Starter</td><td><span class="badge badge-muted sys-badge">{% trans "Draft" %}</span></td><td>$19.00</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="alert alert-info" role="status">{% trans "A notification: your plan renews in 3 days." %}</div>
+            <div class="alert alert-danger" role="status">{% trans "An error: the payment could not be verified." %}</div>
+        </div>
+    </div>
+</div>
+
+<div class="bp-a11y" data-a11y="{% if warnings %}warn{% else %}ok{% endif %}">
+    <h3 class="bt-h2">{% trans "Accessibility (WCAG AA)" %}</h3>
+    {% if warnings %}
+    <div class="alert alert-warning" role="alert">
+        <strong>{% blocktrans count n=warnings|length %}{{ n }} color pair is hard to read.{% plural %}{{ n }} color pairs are hard to read.{% endblocktrans %}</strong>
+        {% trans "Your colors are not changed. You can still apply this branding after acknowledging the warning." %}
+    </div>
+    <table>
+        <thead><tr><th>{% trans "Theme" %}</th><th>{% trans "Pair" %}</th><th>{% trans "Contrast" %}</th><th>{% trans "Needed" %}</th></tr></thead>
+        <tbody>{% for row in warnings %}<tr><td>{{ row.theme }}</td><td>{{ row.label }}</td><td class="bad">{{ row.ratio }} : 1</td><td>{{ row.required }} : 1</td></tr>{% endfor %}</tbody>
+    </table>
+    <label style="display:flex; align-items:center; gap:0.4rem; font-weight:500; margin-top:0.6rem;">
+        <input type="checkbox" name="acknowledge_contrast" value="1" form="theme-form" style="width:auto;"> {% trans "I have reviewed these warnings and want to apply this branding anyway." %}
+    </label>
+    {% else %}
+    <div class="alert alert-success" role="status">{% blocktrans with n=report|length %}All {{ n }} checked color pairs (light and dark) meet 4.5 : 1.{% endblocktrans %}</div>
+    {% endif %}
+</div>
+{% endif %}

@@ -10,6 +10,8 @@ from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 from django.utils.translation import override as translation_override
 
+from governance.branding import brand_name
+
 logger = logging.getLogger(__name__)
 
 TRIAL_EXPIRING_NOTICE_DAYS = getattr(settings, "TRIAL_EXPIRING_NOTICE_DAYS", 2)
@@ -24,8 +26,8 @@ _EMAIL_TYPE_STYLE = {
     "trial_expiring": ("#b5761e", "#fcf0dc", "notifications/_email_content_trial_expiring.html"),
     "trial_expired": ("#c7443f", "#fbe7e8", "notifications/_email_content_trial_expired.html"),
     "plan_change": ("#1e9a6c", "#e3f5ec", "notifications/_email_content_plan_change.html"),
-    "model_sync_available": ("#00aef0", "#e3f6fd", "notifications/_email_content_model_sync.html"),
-    "account_created": ("#00aef0", "#e3f6fd", "notifications/_email_content_account_created.html"),
+    "model_sync_available": ("brand", "brand", "notifications/_email_content_model_sync.html"),
+    "account_created": ("brand", "brand", "notifications/_email_content_account_created.html"),
     # These two were real, actively-triggered types (governance/views.py's
     # _notify_admin_change, billing/views.py's payment-proof notify()
     # call) that had simply never been added here - silently falling
@@ -39,7 +41,7 @@ _EMAIL_TYPE_STYLE = {
     "refund_decision": ("#1e9a6c", "#e3f5ec", "notifications/_email_content_default.html"),
     "plan_cancellation": ("#5b5fc7", "#eceafd", "notifications/_email_content_default.html"),
 }
-_DEFAULT_EMAIL_STYLE = ("#00aef0", "#e3f6fd", "notifications/_email_content_default.html")
+_DEFAULT_EMAIL_STYLE = ("brand", "brand", "notifications/_email_content_default.html")
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=300, max_retries=3)
@@ -64,6 +66,11 @@ def send_notification_email(notification_id):
     from notifications.emailing import send_tracked_email
 
     accent, accent_soft, content_template = _EMAIL_TYPE_STYLE.get(notification.notification_type, _DEFAULT_EMAIL_STYLE)
+    if accent == "brand":  # an informational type: the active branding's primary colour (governance/branding.py)
+        from governance.branding import email_tokens
+
+        tokens = email_tokens()
+        accent, accent_soft = tokens["primary"], tokens["primary_soft"]
     site_url = settings.SITE_URL.rstrip("/")
     with translation_override(notification.user.preferred_language):
         html_body = render_to_string(
@@ -80,7 +87,7 @@ def send_notification_email(notification_id):
         )
     sent, error = send_tracked_email(
         to_email=notification.user.email,
-        subject=f"[AI Client Portal] {notification.title}",
+        subject=f"[{brand_name()}] {notification.title}",
         text_body=strip_tags(html_body),
         html_body=html_body,
     )

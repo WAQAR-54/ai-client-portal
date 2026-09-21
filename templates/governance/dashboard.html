@@ -210,11 +210,22 @@
     // how the rest of this page is server-rendered once per load.
     const explicitTheme = document.documentElement.getAttribute("data-theme");
     const isDark = explicitTheme === "dark" || (explicitTheme !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    const palette = isDark
+    let palette = isDark
         ? ["#93a5f2", "#00aef0", "#5fbf7a", "#d98f3b", "#aeb2be", "#e27171", "#c9cede", "#c99ce8"]
         : ["#122268", "#00aef0", "#1e8e5a", "#c77700", "#7a8a99", "#d9363e", "#5b6472", "#7a5ea8"];
-    const gridColor = isDark ? "#262b37" : "#dde2ea";
-    const textColor = isDark ? "#aeb2be" : "#5b6472";
+    let gridColor = isDark ? "#262b37" : "#dde2ea";
+    let textColor = isDark ? "#aeb2be" : "#5b6472";
+    // Branding 2 / 3 / Custom (governance/branding.py): the first two series, the grid and the labels follow the brand
+    // tokens; Branding 1 keeps exactly the values above.
+    if (document.documentElement.dataset.brand && document.documentElement.dataset.brand !== "branding_1") {
+        const tokens = getComputedStyle(document.documentElement);
+        const token = (name, fallback) => tokens.getPropertyValue(name).trim() || fallback;
+        palette = palette.slice();
+        palette[0] = isDark ? token("--secondary", palette[0]) : token("--brand-navy", palette[0]);
+        palette[1] = token("--accent", palette[1]);
+        gridColor = token("--color-border", gridColor);
+        textColor = token("--color-text-muted", textColor);
+    }
     Chart.defaults.font.family = "Manrope, -apple-system, sans-serif";
     Chart.defaults.color = textColor;
 

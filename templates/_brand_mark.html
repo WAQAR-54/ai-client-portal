@@ -10,5 +10,8 @@ uploaded, it stands alone (most real logos already contain the brand
 name, like the "WHE AI" one this was written against - repeating the
 site name in plain text right beside it read as a duplicate/mistake,
 not as a caption).
+
+`on_dark` (an include argument): the surface is dark in both themes (the auth showcase panel, Branding 2's sidebar), so a
+branding with a dark-mode logo shows that one.
 {% endcomment %}
-{% if site_branding.logo %}<img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img">{% else %}<span class="dot"></span>{{ site_branding.site_name }}{% endif %}
+{% if site_branding.logo %}{% if on_dark and site_branding.logo_dark %}<img src="{{ site_branding.logo_dark.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img">{% elif site_branding.logo_dark %}<img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img brand-logo-light"><img src="{{ site_branding.logo_dark.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img brand-logo-dark">{% else %}<img src="{{ site_branding.logo.url }}" alt="{{ site_branding.site_name }}" class="brand-logo-img">{% endif %}{% if site_branding.mark_only %}<span class="brand-name">{{ site_branding.site_name }}</span>{% endif %}{% else %}<span class="dot"></span>{{ site_branding.site_name }}{% endif %}

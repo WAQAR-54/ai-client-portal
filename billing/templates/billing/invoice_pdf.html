@@ -1,39 +1,39 @@
-{% load i18n %}
+{% load i18n %}{% load branding_tags %}{% brand_email as brand %}
 <html>
 <head>
 <style>
-    body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #232019; }
-    h1 { font-size: 14pt; margin: 0 0 2px 0; color: #232019; }
-    .muted { color: #6f6c62; }
-    .faint { color: #9c988c; font-size: 8pt; }
+    body { font-family: Helvetica, sans-serif; font-size: 10pt; color: {{ brand.text }}; }
+    h1 { font-size: 14pt; margin: 0 0 2px 0; color: {{ brand.text }}; }
+    .muted { color: {{ brand.muted }}; }
+    .faint { color: {{ brand.faint }}; font-size: 8pt; }
     .mono { font-family: Courier, monospace; }
     .right { text-align: right; }
     table.layout { width: 100%; border-collapse: collapse; }
-    table.layout td { vertical-align: top; padding: 12px 14px; background-color: #f9f8f4; border: 1px solid #ebe8dd; }
+    table.layout td { vertical-align: top; padding: 12px 14px; background-color: {{ brand.surface }}; border: 1px solid {{ brand.border }}; }
     table.layout td.spacer { padding: 0 7px; background-color: #fff; border: none; }
-    .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #9c988c; margin-bottom: 7px; }
+    .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: {{ brand.faint }}; margin-bottom: 7px; }
     .field { margin: 0 0 4px 0; line-height: 1.3; }
-    .field-label { color: #9c988c; }
+    .field-label { color: {{ brand.faint }}; }
     table.topbar { width: 100%; border-collapse: collapse; }
-    table.topbar td { padding: 0; height: 4px; background-color: #00aef0; font-size: 1px; line-height: 1px; }
+    table.topbar td { padding: 0; height: 4px; background-color: {{ brand.primary }}; font-size: 1px; line-height: 1px; }
     table.header-bar { width: 100%; border-collapse: collapse; }
     table.header-bar td { padding: 18px 20px; vertical-align: middle; }
-    .header-sub { color: #6f6c62; line-height: 1.5; }
-    table.number-row { width: 100%; border-collapse: collapse; background-color: #e3f6fd; }
-    table.number-row td { padding: 9px 20px; font-weight: bold; color: #122268; font-size: 11pt; }
+    .header-sub { color: {{ brand.muted }}; line-height: 1.5; }
+    table.number-row { width: 100%; border-collapse: collapse; background-color: {{ brand.primary_soft }}; }
+    table.number-row td { padding: 9px 20px; font-weight: bold; color: {{ brand.secondary }}; font-size: 11pt; }
     table.items { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #122268; border-bottom: 2px solid #00aef0; padding-bottom: 7px; }
+    table.items th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: {{ brand.secondary }}; border-bottom: 2px solid {{ brand.primary }}; padding-bottom: 7px; }
     table.items th.right, table.items td.right { text-align: right; }
-    table.items td { padding: 9px 0; border-bottom: 1px solid #eee; }
+    table.items td { padding: 9px 0; border-bottom: 1px solid {{ brand.border }}; }
     table.totals { width: 270px; margin-top: 14px; margin-left: auto; border-collapse: collapse; }
-    table.totals td { padding: 4px 6px; font-size: 10pt; color: #6f6c62; }
+    table.totals td { padding: 4px 6px; font-size: 10pt; color: {{ brand.muted }}; }
     table.totals td.right { text-align: right; }
-    table.totals tr.total td { padding: 11px 6px; font-weight: bold; font-size: 12pt; color: #122268; background-color: #e3f6fd; }
-    .footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid #eee; font-size: 9pt; color: #6f6c62; }
-    .thanks { margin-top: 26px; padding-top: 14px; border-top: 1px solid #eee; font-size: 10pt; color: #122268; font-weight: bold; }
+    table.totals tr.total td { padding: 11px 6px; font-weight: bold; font-size: 12pt; color: {{ brand.secondary }}; background-color: {{ brand.primary_soft }}; }
+    .footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid {{ brand.border }}; font-size: 9pt; color: {{ brand.muted }}; }
+    .thanks { margin-top: 26px; padding-top: 14px; border-top: 1px solid {{ brand.border }}; font-size: 10pt; color: {{ brand.secondary }}; font-weight: bold; }
     .content { padding: 22px 4px 0; }
     table.planteam { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    table.planteam td { padding: 10px 14px; background-color: #f9f8f4; border: 1px solid #ebe8dd; }
+    table.planteam td { padding: 10px 14px; background-color: {{ brand.surface }}; border: 1px solid {{ brand.border }}; }
 </style>
 </head>
 <body>

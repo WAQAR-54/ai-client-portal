@@ -1,0 +1,5 @@
+<div class="bt-color">
+    <label for="cf-{{ row.name }}">{{ row.label }}</label>
+    <div class="bt-color-row"><input type="color" data-sync="cf-{{ row.name }}" value="{{ row.value }}"><input class="input" type="text" id="cf-{{ row.name }}" name="{{ row.name }}" maxlength="7" spellcheck="false" autocomplete="off" value="{{ row.value }}"></div>
+    {% if row.error %}<div class="form-hint bt-error">{{ row.error }}</div>{% endif %}
+</div>

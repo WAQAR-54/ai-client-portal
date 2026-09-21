@@ -4,7 +4,7 @@
 {% block content %}
 <div class="auth-split">
     <div class="auth-split-brand">
-        <div class="brand-mark">{% include "_brand_mark.html" %}</div>
+        <div class="brand-mark">{% include "_brand_mark.html" with on_dark=True %}</div>
         {% include "accounts/_auth_showcase.html" %}
         {% if site_branding.tagline %}<p class="brand-tagline">{{ site_branding.tagline }}</p>{% endif %}
         <h2>{% trans "One assistant. Every model. Full control." %}</h2>
