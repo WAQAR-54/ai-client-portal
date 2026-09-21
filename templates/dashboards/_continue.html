@@ -6,7 +6,7 @@ is never filled with invented content. `item` = {title,subtitle,age,url,cta}.
 {% if item %}
 <section class="dash-continue" data-dash="continue" aria-labelledby="continue-title">
     <div class="dash-continue-text">
-        <span class="dash-section-title" id="continue-title">{% trans "Continue where you left off" %}</span>
+        <span class="dash-section-title" id="continue-title">{% include "dashboards/_icon.html" with name="t_continue" %}{% trans "Continue where you left off" %}</span>
         <strong class="dash-continue-title">{{ item.title }}</strong>
         <span class="dash-continue-meta">{% if item.subtitle %}{{ item.subtitle }} · {% endif %}{% blocktrans with age=item.age %}Last activity {{ age }} ago{% endblocktrans %}</span>
     </div>

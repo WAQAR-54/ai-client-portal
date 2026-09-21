@@ -6,7 +6,7 @@ SuperAdmin - the busiest providers and models of the last 30 days. Errors are th
 already tracks; the application keeps no per-request error record, so none is invented.
 {% endcomment %}
 <section class="dash-section" data-dash="ai-usage" aria-labelledby="ai-usage-title">
-    <h2 class="dash-section-title" id="ai-usage-title">{% trans "AI usage" %}{% if more_url %} <a class="dash-more" href="{{ more_url }}">{% trans "Details" %}</a>{% endif %}</h2>
+    <h2 class="dash-section-title" id="ai-usage-title">{% include "dashboards/_icon.html" with name="t_ai" %}{% trans "AI usage" %}{% if more_url %} <a class="dash-more" href="{{ more_url }}">{% trans "Details" %}</a>{% endif %}</h2>
     <div class="dash-kv">
         <div><span class="dash-kv-label">{% trans "Today" %}</span><span class="dash-kv-value">{{ usage.today }}</span>
             {% if usage.trend %}<span class="dash-trend" data-direction="{{ usage.trend.direction }}">{% if usage.trend.direction == "up" %}↑{% elif usage.trend.direction == "down" %}↓{% else %}→{% endif %} {{ usage.trend.pct }}% {% trans "vs same time yesterday" %}</span>{% endif %}</div>

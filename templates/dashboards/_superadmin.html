@@ -13,7 +13,7 @@ existing sections, unchanged.
     <div class="dash-col dash-main">
         <div class="dash-pair">
             <section class="dash-section" data-dash="business" aria-labelledby="business-title">
-                <h2 class="dash-section-title" id="business-title">{% trans "Business overview" %}</h2>
+                <h2 class="dash-section-title" id="business-title">{% include "dashboards/_icon.html" with name="t_business" %}{% trans "Business overview" %}</h2>
                 <div class="dash-kv">
                     <div><span class="dash-kv-label">{% trans "Users" %}</span><span class="dash-kv-value">{{ dash.business.users.total }}</span><span class="dash-kv-sub">{{ dash.business.users.active }} {% trans "active" %} · {{ dash.business.users.new }} {% trans "new this week" %}</span></div>
                     <div><span class="dash-kv-label">{% trans "Projects" %}</span><span class="dash-kv-value">{{ dash.business.projects.total }}</span><span class="dash-kv-sub">{{ dash.business.projects.active }} {% trans "active (30 days)" %}</span></div>

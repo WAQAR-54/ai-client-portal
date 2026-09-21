@@ -5,17 +5,17 @@ cards submit (chat:create_conversation); the others are plain links to existing 
 ever put in the list (governance/dashboards.py); the page behind a link still authorizes on its own.
 {% endcomment %}
 <section class="dash-section" data-dash="quick-actions" aria-labelledby="quick-actions-title">
-    <h2 class="dash-section-title" id="quick-actions-title">{% trans "Quick actions" %}</h2>
+    <h2 class="dash-section-title" id="quick-actions-title">{% include "dashboards/_icon.html" with name="t_quick" %}{% trans "Quick actions" %}</h2>
     <div class="dash-actions">
         {% for action in actions %}
         {% if action.post is not None %}
         <form method="post" action="{{ action.url }}" class="dash-action-form">
             {% csrf_token %}
             {% for name, value in action.post.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-            <button type="submit" class="btn btn-ghost" data-action="{{ action.key }}">{{ action.label }}</button>
+            <button type="submit" class="btn btn-ghost" data-action="{{ action.key }}">{% include "dashboards/_icon.html" with name="qa_"|add:action.key %}{{ action.label }}</button>
         </form>
         {% else %}
-        <a class="btn btn-ghost" href="{{ action.url }}" data-action="{{ action.key }}">{{ action.label }}</a>
+        <a class="btn btn-ghost" href="{{ action.url }}" data-action="{{ action.key }}">{% include "dashboards/_icon.html" with name="qa_"|add:action.key %}{{ action.label }}</a>
         {% endif %}
         {% endfor %}
     </div>

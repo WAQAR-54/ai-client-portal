@@ -11,7 +11,7 @@ uses the same scoping helpers as the pages it links to) and none of the infrastr
     <div class="dash-col dash-main">
         <div class="dash-pair">
             <section class="dash-section" data-dash="team" aria-labelledby="team-title">
-                <h2 class="dash-section-title" id="team-title">{% trans "Team overview" %}{% if dash.department %} <span class="dash-more">{{ dash.department }}</span>{% endif %}</h2>
+                <h2 class="dash-section-title" id="team-title">{% include "dashboards/_icon.html" with name="users" %}{% trans "Team overview" %}{% if dash.department %} <span class="dash-more">{{ dash.department }}</span>{% endif %}</h2>
                 <div class="dash-kv">
                     <div><span class="dash-kv-label">{% trans "Members" %}</span><span class="dash-kv-value">{{ dash.team.members }}</span><span class="dash-kv-sub">{{ dash.team.active_week }} {% trans "active this week" %}</span></div>
                     <div><span class="dash-kv-label">{% trans "Teams" %}</span><span class="dash-kv-value">{{ dash.team.teams }}</span></div>

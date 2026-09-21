@@ -11,7 +11,7 @@ project names. No infrastructure, no billing administration (governance/dashboar
     <div class="dash-col dash-main">
         <div class="dash-pair">
             <section class="dash-section" data-dash="projects" aria-labelledby="projects-title">
-                <h2 class="dash-section-title" id="projects-title">{% trans "Project overview" %}</h2>
+                <h2 class="dash-section-title" id="projects-title">{% include "dashboards/_icon.html" with name="t_projects" %}{% trans "Project overview" %}</h2>
                 {% if dash.projects.total %}
                 <div class="dash-kv">
                     <div><span class="dash-kv-label">{% trans "Active" %}</span><span class="dash-kv-value">{{ dash.projects.active }}</span></div>

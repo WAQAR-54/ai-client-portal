@@ -6,8 +6,9 @@ number could not be measured shows "Unavailable" (muted) - never a made-up zero.
 <div class="dash-tiles" data-dash="tiles" data-count="{{ tiles|length }}">
     {% for t in tiles %}
     {% if t.url %}<a class="dash-tile" href="{{ t.url }}" data-tile="{{ t.key }}" data-tone="{{ t.tone }}" data-available="{{ t.available|yesno:'1,0' }}">{% else %}<div class="dash-tile" data-tile="{{ t.key }}" data-tone="{{ t.tone }}" data-available="{{ t.available|yesno:'1,0' }}">{% endif %}
+        <span class="dash-tile-ico">{% include "dashboards/_icon.html" with name=t.key %}</span>
         <span class="dash-tile-label">{{ t.label }}</span>
-        <span class="dash-tile-value{% if not t.available %} is-unavailable{% endif %}">{% if t.tone != "muted" and t.available %}<i class="dash-dot" aria-hidden="true"></i>{% endif %}{{ t.value }}</span>
+        <span class="dash-tile-value{% if not t.available %} is-unavailable{% endif %}">{{ t.value }}</span>
         {% if t.sub %}<span class="dash-tile-sub">{{ t.sub }}</span>{% endif %}
     {% if t.url %}</a>{% else %}</div>{% endif %}
     {% endfor %}

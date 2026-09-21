@@ -1,0 +1,34 @@
+{% comment %}
+Dashboard icons: inline SVG (no image request), stroke = currentColor so they follow the tokens of whatever they sit in.
+Usage: {% include "dashboards/_icon.html" with name="qa_users" %}. Prefixes: (none) overview tiles / panel titles are "t_*",
+attention rows "att_*", quick actions "qa_*". Unknown names render nothing.
+{% endcomment %}<svg class="dash-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{% if name == "system" or name == "qa_status" or name == "att_status" %}<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+{% elif name == "providers" or name == "att_provider" or name == "qa_providers" or name == "att_cpu" or name == "att_memory" %}<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>
+{% elif name == "users" or name == "members" or name == "att_noteam" or name == "att_nomembers" or name == "qa_team" %}<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+{% elif name == "qa_users" or name == "qa_invite" %}<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>
+{% elif name == "requests" or name == "t_ai" or name == "t_shortcuts" or name == "t_quick" %}<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+{% elif name == "storage" or name == "att_disk" or name == "qa_media_disk" %}<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/>
+{% elif name == "invoices" or name == "att_verification" or name == "att_overdue" or name == "att_refunds" or name == "qa_invoices" %}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/>
+{% elif name == "maintenance" or name == "att_maintenance" or name == "qa_maintenance" %}<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+{% elif name == "alerts" %}<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>
+{% elif name == "notifications" or name == "t_notifications" or name == "att_notifications" or name == "att_unread" or name == "qa_notifications" %}<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+{% elif name == "projects" or name == "t_projects" or name == "qa_projects" %}<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+{% elif name == "qa_project" or name == "qa_new_project" %}<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/>
+{% elif name == "conversations" or name == "t_conversations" or name == "qa_conversation" or name == "qa_new_conversation" %}<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+{% elif name == "approvals" %}<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10.01-3-3"/>
+{% elif name == "att_backup" or name == "att_db" or name == "t_business_db" %}<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+{% elif name == "att_redis" %}<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>
+{% elif name == "att_job" or name == "att_beat" or name == "t_activity" %}<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+{% elif name == "att_usage80" or name == "t_usage" %}<path d="M12 12l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>
+{% elif name == "att_upgrades" %}<path d="m23 6-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>
+{% elif name == "qa_media" %}<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+{% elif name == "qa_branding" %}<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.75 1.5-1.5 0-.4-.15-.75-.4-1a1.5 1.5 0 0 1 1.1-2.5H16c3.3 0 6-2.7 6-6 0-4.9-4.5-9-10-9z"/>
+{% elif name == "qa_audit" %}<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+{% elif name == "qa_upload_document" %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>
+{% elif name == "qa_compare_models" %}<path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"/>
+{% elif name == "qa_billing" %}<rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/>
+{% elif name == "t_business" %}<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+{% elif name == "t_continue" %}<polygon points="5 3 19 12 5 21 5 3"/>
+{% elif name == "t_attention" %}<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>
+{% endif %}</svg>

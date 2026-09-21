@@ -41,7 +41,7 @@ role dashboards at this same address (accounts/views.py::DashboardView). Data: g
 
         {% if dash.projects is not None %}
         <section class="dash-section" data-dash="projects" aria-labelledby="my-projects-title">
-            <h2 class="dash-section-title" id="my-projects-title">{% trans "My projects" %}</h2>
+            <h2 class="dash-section-title" id="my-projects-title">{% include "dashboards/_icon.html" with name="t_projects" %}{% trans "My projects" %}</h2>
             {% if dash.projects %}
             <ul class="dash-list">
                 {% for project in dash.projects %}
@@ -60,7 +60,7 @@ role dashboards at this same address (accounts/views.py::DashboardView). Data: g
         {% endif %}
 
         <section class="dash-section" data-dash="recent-conversations" aria-labelledby="recent-title">
-            <h2 class="dash-section-title" id="recent-title">{% trans "Recent conversations" %}</h2>
+            <h2 class="dash-section-title" id="recent-title">{% include "dashboards/_icon.html" with name="t_conversations" %}{% trans "Recent conversations" %}</h2>
             {% if dash.recent_conversations %}
             <ul class="dash-list">
                 {% for c in dash.recent_conversations %}
@@ -78,12 +78,12 @@ role dashboards at this same address (accounts/views.py::DashboardView). Data: g
 
     <div class="dash-col">
         <section class="dash-section" data-dash="usage" aria-labelledby="usage-title">
-            <h2 class="dash-section-title" id="usage-title">{% trans "Usage" %}</h2>
+            <h2 class="dash-section-title" id="usage-title">{% include "dashboards/_icon.html" with name="t_usage" %}{% trans "Usage" %}</h2>
             <div class="card">{% include "chat/_usage_widget.html" %}</div>
         </section>
         {% include "dashboards/_notifications.html" with notes=dash.notifications %}
         <section class="dash-section" data-dash="shortcuts" aria-labelledby="shortcuts-title">
-            <h2 class="dash-section-title" id="shortcuts-title">{% trans "Helpful shortcuts" %}</h2>
+            <h2 class="dash-section-title" id="shortcuts-title">{% include "dashboards/_icon.html" with name="t_shortcuts" %}{% trans "Helpful shortcuts" %}</h2>
             <div class="dash-shortcuts">
                 {% for shortcut in dash.shortcuts %}
                 <form method="post" action="{{ shortcut.url }}">

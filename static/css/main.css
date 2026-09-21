@@ -4956,3 +4956,31 @@ a.dash-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2
 /* the existing "Usage & cost" figures on the admin overview: five across on a wide screen, no orphan card */
 @media (min-width: 1100px) { main:has([data-dashboard]) .kpi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 main:has([data-dashboard]) .kpi-card { min-height: 0; }
+
+/* ---------- dashboard icons ---------- */
+.dash-ico { width: 18px; height: 18px; flex: none; }
+.dash-section-title .dash-ico, .dash-continue-text .dash-section-title .dash-ico { width: 17px; height: 17px; color: var(--accent-text); margin-inline-end: 2px; }
+.dash-section-title { gap: 8px; }
+/* stat strip: a tinted icon chip over label, numeral, note */
+.dash-tile { gap: 4px; align-items: flex-start; }
+.dash-tile-ico {
+    display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; margin-bottom: 6px;
+    background: var(--accent-soft); color: var(--accent-text);
+}
+.dash-tile[data-tone="ok"] .dash-tile-ico { background: var(--color-success-soft); color: var(--color-success); }
+.dash-tile[data-tone="warn"] .dash-tile-ico { background: var(--warn-soft); color: var(--warn); }
+.dash-tile[data-tone="danger"] .dash-tile-ico { background: var(--color-danger-soft); color: var(--color-danger); }
+.dash-tile[data-available="0"] .dash-tile-ico { background: var(--color-surface-muted); color: var(--color-text-faint); }
+.dash-tile-label { order: 0; }
+/* attention chips carry the icon, tinted by severity */
+.dash-chip { width: 34px; height: 34px; border-radius: 11px; }
+.dash-attention-item[data-level="danger"] .dash-chip { color: var(--color-danger); }
+.dash-attention-item[data-level="warn"] .dash-chip { color: var(--warn); }
+.dash-attention-item[data-level="info"] .dash-chip { color: var(--accent-text); }
+/* quick actions: icon + label, left-aligned */
+.dash-actions .btn { justify-content: flex-start; gap: 10px; padding-inline: 14px; font-weight: 500; }
+.dash-actions .btn .dash-ico { color: var(--accent-text); }
+.dash-attention-item .dash-link { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 560px) { .dash-tile-ico { width: 28px; height: 28px; margin-bottom: 4px; } .dash-attention-item .dash-link { margin-inline-start: 46px; } }
+.dash-actions .btn { text-align: start; line-height: 1.25; }
+@media (max-width: 560px) { .dash-actions .btn { padding-inline: 10px; gap: 8px; font-size: 0.85rem; } }

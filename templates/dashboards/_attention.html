@@ -5,12 +5,12 @@
 what an empty list says.
 {% endcomment %}
 <section class="dash-section" id="needs-attention" data-dash="attention" aria-labelledby="needs-attention-title">
-    <h2 class="dash-section-title" id="needs-attention-title">{% trans "Needs attention" %}{% if attention %} <span class="badge badge-warn">{{ attention|length }}</span>{% endif %}</h2>
+    <h2 class="dash-section-title" id="needs-attention-title">{% include "dashboards/_icon.html" with name="t_attention" %}{% trans "Needs attention" %}{% if attention %} <span class="badge badge-warn">{{ attention|length }}</span>{% endif %}</h2>
     {% if attention %}
     <ul class="dash-attention">
         {% for item in attention %}
         <li class="dash-attention-item" data-level="{{ item.level }}" data-key="{{ item.key }}">
-            <span class="dash-chip" aria-hidden="true"><i class="dash-dot"></i></span>
+            <span class="dash-chip" aria-hidden="true">{% include "dashboards/_icon.html" with name=item.icon %}</span>
             <div class="dash-attention-body"><strong>{{ item.area }}</strong><span>{{ item.text }}</span></div>
             <a class="dash-link" href="{{ item.url }}">{{ item.action }} <span aria-hidden="true">→</span></a>
         </li>

@@ -86,7 +86,9 @@ class Attention:
         if key in self._keys:
             return
         self._keys.add(key)
-        self.items.append({"key": key, "level": level, "area": area, "text": text, "url": url, "action": action})
+        item = {"key": key, "level": level, "area": area, "text": text, "url": url, "action": action}
+        item["icon"] = "att_" + key.split(":")[0]  # dashboards/_icon.html
+        self.items.append(item)
 
     def sorted(self):
         return sorted(self.items, key=lambda item: LEVEL_ORDER[item["level"]])

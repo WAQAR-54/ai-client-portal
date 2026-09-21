@@ -6,7 +6,7 @@ already covers is not listed again (it is still in the unread count).
 {% endcomment %}
 {% if notes %}
 <section class="dash-section" data-dash="notifications" aria-labelledby="notes-title">
-    <h2 class="dash-section-title" id="notes-title">{% trans "Notifications" %}</h2>
+    <h2 class="dash-section-title" id="notes-title">{% include "dashboards/_icon.html" with name="t_notifications" %}{% trans "Notifications" %}</h2>
     {% if notes.unread %}
     <p class="dash-notes-count"><strong>{% blocktrans count n=notes.unread %}{{ n }} unread notification{% plural %}{{ n }} unread notifications{% endblocktrans %}</strong>
         <a href="{{ notes.url }}">{% trans "View notifications" %}</a></p>
