@@ -133,14 +133,28 @@ class LegalNavigationTests(TestCase):
             for href in hrefs:
                 self.assertIn(f'href="{href}"', body, f"{url} lacks a link to {href}")
 
-    def test_footer_links_are_in_the_signed_in_sidebar_and_they_all_work(self):
-        user = User.objects.create_user(email="reader@corp.io", password="pw12345!Strong")
-        client = Client()
-        client.force_login(user)
-        body = client.get(reverse("accounts:dashboard")).content.decode()
-        for name in URLS.values():
-            self.assertIn(f'href="{reverse(name)}"', body)
-            self.assertEqual(client.get(reverse(name)).status_code, 200)
+    def test_legal_links_are_not_in_the_signed_in_sidebar(self):
+    user = User.objects.create_user(
+        email="reader@corp.io",
+        password="pw12345!Strong",
+    )
+
+    client = Client()
+    client.force_login(user)
+
+    body = client.get(reverse("accounts:dashboard")).content.decode()
+
+    for name in URLS.values():
+        self.assertNotIn(
+            f'href="{reverse(name)}"',
+            body,
+            f"Legal link {name} must not appear in the signed-in sidebar",
+        )
+
+        self.assertEqual(
+            client.get(reverse(name)).status_code,
+            200,
+        )
 
     def test_every_internal_link_on_every_legal_page_resolves(self):
         for name in URLS.values():
