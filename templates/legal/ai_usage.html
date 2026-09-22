@@ -98,7 +98,6 @@
 
 <section id="contact-and-support"><h2>Contact / Support</h2>
 <p>Questions about this policy, or a concern about an AI response or provider, can be sent to {{ site_branding.site_name }}{% if support_email %} at <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %} at {% include "legal/_todo.html" with what="support contact e-mail address" %}{% endif %}. See also the <a href="{% url 'legal:privacy' %}">Privacy Policy</a> and <a href="{% url 'legal:terms' %}">Terms &amp; Conditions</a>.</p>
-{% include "legal/_links.html" %}
 </section>
 
 {% endblock %}

@@ -1,0 +1,1 @@
+{% load i18n %}{% url 'legal:terms' as terms_url %}{% url 'legal:privacy' as privacy_url %}<p class="legal-agree">{% blocktrans %}By continuing, you agree to our <a href="{{ terms_url }}">Terms &amp; Conditions</a> and <a href="{{ privacy_url }}">Privacy Policy</a>.{% endblocktrans %}</p>

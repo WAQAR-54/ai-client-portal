@@ -99,7 +99,6 @@
 
 <section id="how-to-contact-support"><h2>How to Contact Support</h2>
 <p>For questions about cancellation, invoices, payments or refunds, contact {{ site_branding.site_name }}{% if support_email %} at <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %} at {% include "legal/_todo.html" with what="billing support contact e-mail address" %}{% endif %}, quoting your invoice number and the email address on your account. Also see the <a href="{% url 'legal:terms' %}">Terms &amp; Conditions</a>, <a href="{% url 'legal:privacy' %}">Privacy Policy</a> and <a href="{% url 'legal:ai_usage' %}">AI &amp; Third-Party Model Usage Policy</a>.</p>
-{% include "legal/_links.html" %}
 </section>
 
 {% endblock %}

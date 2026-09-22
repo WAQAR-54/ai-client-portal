@@ -1,0 +1,8 @@
+{% load i18n %}{% now "Y" as this_year %}
+{% comment %}The one legal footer: (c) year + brand name, then the four policy links. Used by the legal pages and the public pricing page.{% endcomment %}
+<footer class="legal-footer">
+    <div class="legal-footer-in">
+        <p class="legal-copy">&copy; {{ this_year }} {{ site_branding.site_name }}</p>
+        {% include "legal/_links.html" %}
+    </div>
+</footer>

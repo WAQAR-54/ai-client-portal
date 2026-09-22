@@ -186,7 +186,6 @@
 
 <section id="contact-information"><h2>Contact Information</h2>
 <p>Questions about these Terms: {{ site_branding.site_name }}{% if support_email %}, <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %}, {% include "legal/_todo.html" with what="support / legal contact e-mail address" %}{% endif %}. Registered address: {% include "legal/_todo.html" with what="registered business address" %}.</p>
-{% include "legal/_links.html" %}
 </section>
 
 {% endblock %}
