@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from django.core.cache import cache
-from django.test import Client, TestCase, override_settings
+from django.test import Client, TestCase, client, override_settings
 from django.urls import reverse
 
 from accounts.models import User
@@ -134,18 +134,15 @@ class LegalNavigationTests(TestCase):
                 self.assertIn(f'href="{href}"', body, f"{url} lacks a link to {href}")
 
     def test_legal_links_are_not_in_the_signed_in_sidebar(self):
-    user = User.objects.create_user(
-        email="reader@corp.io",
-        password="pw12345!Strong",
-    )
+        user = User.objects.create_user(email="reader@corp.io",password="pw12345!Strong",)
 
-    client = Client()
-    client.force_login(user)
+        client = Client()
+        client.force_login(user)
 
-    body = client.get(reverse("accounts:dashboard")).content.decode()
+        body = client.get(reverse("accounts:dashboard")).content.decode()
 
-    for name in URLS.values():
-        self.assertNotIn(
+        for name in URLS.values():
+            self.assertNotIn(
             f'href="{reverse(name)}"',
             body,
             f"Legal link {name} must not appear in the signed-in sidebar",
