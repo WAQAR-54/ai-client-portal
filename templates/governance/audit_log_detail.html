@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load i18n governance_extras %}
+{% block title %}{% trans "Audit Event" %} — {{ site_branding.site_name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:640px;">
+    <a href="{% url 'governance:audit_logs' %}" class="btn-small btn-ghost" style="margin-bottom:0.75rem;">← {% trans "Back to Audit Logs" %}</a>
+    <h1 style="display:flex; align-items:center; gap:0.5rem;">
+        <span class="log-dot log-dot-{{ log.action_type|audit_severity }}" title="{{ log.action_type|audit_severity }}"></span>
+        {% trans "Audit Event" %}
+    </h1>
+    <table class="data" style="margin-top:0.75rem;">
+        <tbody>
+            <tr><th style="width:9rem;">{% trans "Timestamp" %}</th><td class="mono">{{ log.timestamp|date:"Y-m-d H:i:s" }}</td></tr>
+            <tr><th>{% trans "Actor" %}</th><td>{{ log.actor|default:"—" }}</td></tr>
+            <tr><th>{% trans "Action" %}</th><td><span class="badge badge-muted">{{ log.action_type }}</span></td></tr>
+            <tr><th>{% trans "Target" %}</th><td class="mono">{{ log.target_type }}#{{ log.target_id }}</td></tr>
+            <tr><th>{% trans "Old value" %}</th><td class="text-muted" style="white-space:pre-wrap; word-break:break-word;">{{ log.old_value|mask_audit_value|default:"—" }}</td></tr>
+            <tr><th>{% trans "New value" %}</th><td class="text-muted" style="white-space:pre-wrap; word-break:break-word;">{{ log.new_value|mask_audit_value|default:"—" }}</td></tr>
+        </tbody>
+    </table>
+    {% comment %}
+    No "result/status" or "request ID" row - AuditLog has no such field (see governance/models.py)
+    and nothing here should fabricate one. This detail view shows exactly what's actually stored,
+    same values as the list row just untruncated, plus the same masking.
+    {% endcomment %}
+    <p class="text-faint" style="font-size:var(--text-xs); margin-top:0.75rem;">{% trans "This event has no recorded success/failure status or request ID - AuditLog does not store either." %}</p>
+</div>
+{% endblock %}

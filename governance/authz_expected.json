@@ -89,6 +89,7 @@
  "/domains/generate/": "admin",
  "/governance/": "admin",
  "/governance/audit-logs/": "admin",
+ "/governance/audit-logs/999999/": "admin",
  "/governance/branding/": "superadmin",
  "/governance/branding/preview/maintenance/": "superadmin",
  "/governance/branding/theme/": "superadmin",
@@ -203,6 +204,7 @@
  "/legal/terms/": "anonymous",
  "/notifications/": "user",
  "/notifications/999999/read/": "user",
+ "/notifications/999999/unread/": "user",
  "/notifications/bell/": "user",
  "/notifications/delete/": "user",
  "/notifications/mark-all-read/": "user",
@@ -219,5 +221,6 @@
  "/providers/999999/resync/": "superadmin",
  "/providers/models/999999/toggle-manager-assignable/": "superadmin",
  "/providers/models/999999/toggle-vision/": "superadmin",
- "/providers/models/999999/toggle/": "superadmin"
+ "/providers/models/999999/toggle/": "superadmin",
+ "/search/global/": "user"
 }

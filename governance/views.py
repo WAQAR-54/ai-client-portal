@@ -15,7 +15,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods
-from django.views.generic import ListView, TemplateView
+from django.views.generic import DetailView, ListView, TemplateView
 
 from accounts.models import Department, Team, User
 from accounts.permissions import AdminRequiredMixin, ManagerRequiredMixin, SuperAdminRequiredMixin, role_required
@@ -27,7 +27,7 @@ from accounts.views import DashboardView as AccountsDashboardView
 from governance import dashboards
 from governance.system_status import build_system_status
 from governance.features import RequireFeatureMixin, require_feature
-from governance.limits import _effective_limit, _metric
+from governance.limits import _metric
 from governance.models import (
     ADMIN_NAV_FEATURES,
     AuditLog,
@@ -56,6 +56,7 @@ from governance.plans import (
     get_assignment,
     get_plan_status,
     get_user_overrides,
+    plan_limit_fallback,
 )
 from governance.reports import (
     growth_report_rows,
@@ -266,21 +267,45 @@ def _org_usage_overview(users=None):
     _effective_limit()/_metric() from governance.limits but never touches
     check_usage_limits()/validate_upload(). `users` defaults to everyone
     (SuperAdmin); DashboardView passes a department-scoped queryset for a
-    plain Admin."""
+    plain Admin.
+
+    Personal and department UsageLimit rows are batched (1 query each for
+    the whole org, not one per user) - _effective_limit()'s own precedence
+    chain used to run up to 3 queries per user here, scaling with org size.
+    Only a user with neither a personal nor a department limit still falls
+    through to plan_limit_fallback()'s own per-user query (no batched-
+    assignment entry point exists for it today, unlike get_plan_status)."""
     if users is None:
         users = User.objects.all()
+    users = list(users.only("id", "department_id"))
+    user_ids = [u.id for u in users]
+    dept_ids = {u.department_id for u in users if u.department_id}
+    personal_limits = {ul.user_id: ul for ul in UsageLimit.objects.filter(user_id__in=user_ids)}
+    dept_limits = {ul.department_id: ul for ul in UsageLimit.objects.filter(department_id__in=dept_ids)}
+
     month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    used_tokens_by_user = dict(
+        Message.objects.filter(
+            conversation__user_id__in=user_ids,
+            role=Message.Role.ASSISTANT,
+            created_at__gte=month_start,
+        )
+        .values("conversation__user_id")
+        .annotate(total=Sum(F("input_tokens") + F("output_tokens")))
+        .values_list("conversation__user_id", "total")
+    )
+
     pct_values = []
     over_80_count = 0
     for user in users:
-        limit = _effective_limit(user)
+        limit = (
+            personal_limits.get(user.id)
+            or (dept_limits.get(user.department_id) if user.department_id else None)
+            or plan_limit_fallback(user)
+        )
         if limit is None or limit.monthly_token_cap is None:
             continue
-        used = Message.objects.filter(
-            conversation__user=user,
-            role=Message.Role.ASSISTANT,
-            created_at__gte=month_start,
-        ).aggregate(total=Sum(F("input_tokens") + F("output_tokens")))["total"]
+        used = used_tokens_by_user.get(user.id, 0)
         metric = _metric("", used, limit.monthly_token_cap)
         pct_values.append(metric["pct"])
         if metric["pct"] >= 80:
@@ -2501,14 +2526,29 @@ class AuditLogListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
         date_to = self.request.GET.get("date_to", "").strip()
         if date_to:
             qs = qs.filter(timestamp__date__lte=date_to)
-        return qs
+        # Meta.ordering already gives "-timestamp" (newest first) - explicit here only for the
+        # "oldest" case, so a sort=oldest link genuinely reverses it rather than relying on an
+        # implicit default that combining with the filters above could otherwise obscure. "id" as
+        # a stable tiebreaker: auto_now_add timestamps for two rows created microseconds apart in
+        # the same request/test can tie, and ordering by timestamp alone then falls back to
+        # whatever order the DB happens to return - not necessarily creation order.
+        if self.request.GET.get("sort") == "oldest":
+            return qs.order_by("timestamp", "id")
+        return qs.order_by("-timestamp", "-id")
 
     def get_context_data(self, **kwargs):
+        search = self.request.GET.get("search", "").strip()
+        action_type = self.request.GET.get("action_type", "").strip()
+        date_from = self.request.GET.get("date_from", "").strip()
+        date_to = self.request.GET.get("date_to", "").strip()
+        sort = self.request.GET.get("sort", "").strip()
         return super().get_context_data(**kwargs) | {
-            "search": self.request.GET.get("search", ""),
-            "action_type_filter": self.request.GET.get("action_type", ""),
-            "date_from": self.request.GET.get("date_from", ""),
-            "date_to": self.request.GET.get("date_to", ""),
+            "search": search,
+            "action_type_filter": action_type,
+            "date_from": date_from,
+            "date_to": date_to,
+            "sort": sort,
+            "has_active_filters": bool(search or action_type or date_from or date_to or sort),
             # From the SCOPED queryset: the full list would name action types that only ever happened
             # in other departments.
             "action_types": _scope_audit_logs(self.request, AuditLog.objects.all())
@@ -2518,6 +2558,23 @@ class AuditLogListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
             "total_count": _scope_audit_logs(self.request, AuditLog.objects.all()).count(),
             "querystring_without_page": _querystring_without(self.request, "page"),
         }
+
+
+class AuditLogDetailView(AdminRequiredMixin, RequireFeatureMixin, DetailView):
+    """Read-only detail for one audit event - AuditLogListView's row is truncated
+    (old/new values at 40 chars) and has nowhere to see the rest. Same scoping as the
+    list (_scope_audit_logs via get_queryset, so a cross-department id 404s, not 403 -
+    no existence leak), same masking of anything secret-shaped in old_value/new_value
+    (see governance_extras.mask_audit_value). No POST/edit/delete route exists here or
+    anywhere else for AuditLog - see the model's own save()/delete() guards."""
+
+    feature_key = "audit_logs"
+    model = AuditLog
+    template_name = "governance/audit_log_detail.html"
+    context_object_name = "log"
+
+    def get_queryset(self):
+        return _scope_audit_logs(self.request, AuditLog.objects.select_related("actor"))
 
 
 class FeedbackListView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMixin, ListView):
@@ -2928,22 +2985,34 @@ class ManagerDashboardView(ManagerRequiredMixin, TemplateView):
                 "dash": dashboards.manager_dashboard(self.request, None, User.objects.none()),
             }
 
-        members = User.objects.filter(team=team).order_by("email")
+        members = User.objects.filter(team=team).select_related("plan_assignment__plan").order_by("email")
         month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         assistant_messages = Message.objects.filter(role=Message.Role.ASSISTANT, conversation__user__team=team)
         month_messages = assistant_messages.filter(created_at__gte=month_start)
 
-        member_stats = []
-        for member in members:
-            agg = assistant_messages.filter(conversation__user=member).aggregate(
+        # One batched aggregate across every member instead of one query per member (the same
+        # N+1 UserListView used to pay before it was fixed there - see engagement_score's own
+        # docstring). member_stats_by_user also doubles as engagement_score's used_tokens input,
+        # since both readings are the same underlying "this member's all-time assistant tokens".
+        member_stats_by_user = {
+            row["conversation__user_id"]: row
+            for row in assistant_messages.values("conversation__user_id").annotate(
                 tokens=Sum(F("input_tokens") + F("output_tokens")), cost=Sum("estimated_cost")
             )
+        }
+
+        member_stats = []
+        for member in members:
+            stats = member_stats_by_user.get(member.id, {"tokens": 0, "cost": 0})
+            # plan_assignment is already select_related-loaded above - passing it in skips
+            # get_plan_status's own per-member query.
+            status = get_plan_status(member, assignment=getattr(member, "plan_assignment", None))
             member_stats.append(
                 {
                     "user": member,
-                    "tokens": agg["tokens"] or 0,
-                    "cost": agg["cost"] or 0,
-                    "engagement": engagement_score(member),
+                    "tokens": stats["tokens"] or 0,
+                    "cost": stats["cost"] or 0,
+                    "engagement": engagement_score(member, status=status, used_tokens=stats["tokens"] or 0),
                 }
             )
 

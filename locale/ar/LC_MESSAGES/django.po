@@ -1919,3 +1919,94 @@ msgid ""
 msgstr ""
 "أرسل %(email)s إثبات دفع بقيمة %(currency)s %(total)s - راجعه في الفوترة، "
 "الفواتير."
+
+#: templates/accounts/login.html:30
+msgid "Forgot password?"
+msgstr "هل نسيت كلمة المرور؟"
+
+#: templates/accounts/login.html:32
+msgid "View pricing"
+msgstr "عرض الأسعار"
+
+#: templates/accounts/_auth_showcase.html:4
+msgid "Chat with 4 AI models"
+msgstr "الدردشة مع 4 نماذج ذكاء اصطناعي"
+
+#: templates/accounts/_auth_showcase.html:8
+msgid "Sales, Marketing & Dev agents"
+msgstr "وكلاء المبيعات والتسويق والتطوير"
+
+#: templates/accounts/_auth_showcase.html:12
+msgid "Full admin console"
+msgstr "لوحة تحكم إدارية كاملة"
+
+#: templates/accounts/mfa_verify.html:7
+msgid "Verify it's you"
+msgstr "تأكد من أنك أنت"
+
+#: templates/accounts/mfa_verify.html:12
+msgid ""
+"We emailed a 6-digit code to your account's email address. Enter it below to"
+" finish signing in."
+msgstr ""
+"أرسلنا بريدًا إلكترونيًا يحتوي على رمز مكوّن من 6 أرقام إلى عنوان البريد "
+"الإلكتروني لحسابك. أدخله أدناه لإكمال تسجيل الدخول."
+
+#: templates/accounts/mfa_verify.html:16
+msgid "Verification code"
+msgstr "رمز التحقق"
+
+#: templates/accounts/mfa_verify.html:20
+msgid "Verify"
+msgstr "تحقق"
+
+#: templates/accounts/mfa_verify.html:24
+msgid "Didn't get a code? Resend"
+msgstr "لم يصلك الرمز؟ إعادة الإرسال"
+
+#: templates/accounts/password_reset_request.html:7
+msgid "Reset your password"
+msgstr "إعادة تعيين كلمة المرور"
+
+#: templates/accounts/password_reset_request.html:12
+msgid ""
+"Enter your account email and we'll send you a link to set a new password."
+msgstr ""
+"أدخل البريد الإلكتروني لحسابك وسنرسل لك رابطًا لتعيين كلمة مرور جديدة."
+
+#: templates/accounts/password_reset_request.html:16
+msgid "Send reset link"
+msgstr "إرسال رابط إعادة التعيين"
+
+#: templates/accounts/password_reset_request.html:20
+msgid "Back to log in"
+msgstr "العودة إلى تسجيل الدخول"
+
+#: templates/accounts/password_reset_confirm.html:7
+msgid "Set a new password"
+msgstr "تعيين كلمة مرور جديدة"
+
+#: templates/accounts/password_reset_confirm.html:12
+msgid "Choose a new password for your account."
+msgstr "اختر كلمة مرور جديدة لحسابك."
+
+#: templates/accounts/password_reset_confirm.html:22
+msgid "Set new password"
+msgstr "تعيين كلمة المرور الجديدة"
+
+#: templates/accounts/password_reset_confirm.html:28
+msgid "This link is invalid or has expired"
+msgstr "هذا الرابط غير صالح أو انتهت صلاحيته"
+
+#: templates/accounts/password_reset_confirm.html:30
+msgid "Password reset links only work once and expire after a while."
+msgstr ""
+"روابط إعادة تعيين كلمة المرور تعمل مرة واحدة فقط وتنتهي صلاحيتها بعد فترة."
+
+#: templates/accounts/password_reset_confirm.html:32
+msgid "Request a new link"
+msgstr "طلب رابط جديد"
+
+#: templates/accounts/_google_signin_button.html:1
+msgid "or"
+msgstr "أو"

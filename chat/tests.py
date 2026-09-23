@@ -76,6 +76,41 @@ class ProviderRegistryTests(TestCase):
         openai_row = Provider.objects.get(slug="openai")
         self.assertIsInstance(get_provider(openai_row), OpenAICompatibleProvider)
 
+    def test_grok_and_deepseek_chat_completions_use_their_builtin_base_url(self):
+        """Regression: Provider.base_url is deliberately left blank for these two (see its own docstring) - the
+        chat client must fall back to the same _BUILTIN_BASE_URLS the connect/sync adapter already uses, or every
+        real request silently goes to OpenAI's own endpoint with a Grok/DeepSeek key and fails authentication -
+        which also meant those conversations never got tagged with a provider (nothing was ever saved past the
+        point stream_chat raises), so the sidebar's provider filter could never find them either."""
+        from providers.adapters.openai_compatible import _BUILTIN_BASE_URLS
+        from providers.models import Provider
+
+        from chat.providers import OpenAICompatibleProvider
+
+        for slug, expected in (("grok", _BUILTIN_BASE_URLS["grok"]), ("deepseek", _BUILTIN_BASE_URLS["deepseek"])):
+            with self.subTest(provider=slug):
+                row = Provider(slug=slug, name=slug, adapter_type="openai_compatible", base_url="")
+                row.set_api_key("fake-test-key")
+                with patch("openai.OpenAI") as mock_openai:
+                    OpenAICompatibleProvider(row)._client()
+                self.assertEqual(mock_openai.call_args.kwargs["base_url"], expected)
+
+    def test_a_custom_openai_compatible_provider_uses_its_own_configured_base_url(self):
+        from providers.models import Provider
+
+        from chat.providers import OpenAICompatibleProvider
+
+        row = Provider(
+            slug="my-vllm",
+            name="Self-hosted",
+            adapter_type="openai_compatible",
+            base_url="https://models.internal.example/v1",
+        )
+        row.set_api_key("fake-test-key")
+        with patch("openai.OpenAI") as mock_openai:
+            OpenAICompatibleProvider(row)._client()
+        self.assertEqual(mock_openai.call_args.kwargs["base_url"], "https://models.internal.example/v1")
+
 
 class ProviderFailureModeTests(TestCase):
     """Every provider wraps its whole call in a blanket `except Exception ->
@@ -1669,14 +1704,16 @@ class MediaGenerationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(self.conversation.messages.exists())
 
-    def test_generate_media_button_shown_only_with_the_feature_flag(self):
+    def test_generate_media_toggle_shown_only_with_the_feature_flag(self):
         response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
-        self.assertContains(response, "portalGenerateMedia(event, 'image')")
+        self.assertContains(response, "portalToggleMediaMode(event, 'image')")
+        self.assertContains(response, 'id="media-mode-input"')
 
         self.premium.feature_flags = {"media_generation": False}
         self.premium.save(update_fields=["feature_flags"])
         response = self.client.get(reverse("chat:chat_conversation", kwargs={"conversation_id": self.conversation.id}))
-        self.assertNotContains(response, "portalGenerateMedia(event, 'image')")
+        self.assertNotContains(response, "portalToggleMediaMode(event, 'image')")
+        self.assertNotContains(response, 'id="media-mode-input"')
 
     @patch("chat.media_generation.generate_image", return_value=b"fake-png-bytes")
     def test_generated_image_renders_inline_not_as_a_download_link(self, mock_generate_image):

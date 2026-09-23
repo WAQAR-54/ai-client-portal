@@ -349,7 +349,12 @@ document.body.addEventListener("htmx:beforeRequest", function(evt) {
         <span class="msg-avatar msg-avatar-user">{{ user.email|first|upper }}</span>
         <span class="sidebar-user-email">{{ user.email }}</span>
         {% if user|has_feature:"notifications" %}
-        <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"></div>
+        <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"
+             hx-on::response-error="portalNotifBellError(this)">
+            <span class="notif-bell-placeholder" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </span>
+        </div>
         {% endif %}
     </div>
     {% if user.is_manager %}
@@ -373,80 +378,13 @@ document.body.addEventListener("htmx:beforeRequest", function(evt) {
 {% endblock %}
 
 {% block content %}
-{% if user|has_feature:"quick_switcher" %}
-<div id="quick-switcher-overlay" class="quick-switcher-overlay" style="display:none;">
-    <div class="quick-switcher-box">
-        <input type="text" id="quick-switcher-input" class="input" placeholder="{% trans 'Search conversations, or start a new one...' %}" autocomplete="off">
-        <div id="quick-switcher-results" class="quick-switcher-results"></div>
-    </div>
-</div>
-<script>
-(function() {
-    var overlay = document.getElementById("quick-switcher-overlay");
-    var input = document.getElementById("quick-switcher-input");
-    var results = document.getElementById("quick-switcher-results");
-    var newChatUrl = "{% url 'chat:create_conversation' %}";
-    var csrfToken = "{{ csrf_token }}";
-
-    function escapeHtml(s) {
-        var d = document.createElement("div");
-        d.textContent = s;
-        return d.innerHTML;
-    }
-
-    function getConversations() {
-        return Array.from(document.querySelectorAll(".conv-item-link")).map(function(a) {
-            var span = a.querySelector("span");
-            return {href: a.getAttribute("href"), title: span ? span.textContent : a.textContent};
-        });
-    }
-
-    function render(query) {
-        query = (query || "").trim().toLowerCase();
-        var items = getConversations().filter(function(c) {
-            return !query || c.title.toLowerCase().indexOf(query) !== -1;
-        });
-        var html = '<form method="post" action="' + newChatUrl + '">' +
-            '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
-            '<button type="submit" class="quick-switcher-item quick-switcher-item-new">' +
-            '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
-            '{% trans "New conversation" %}</button></form>';
-        items.slice(0, 8).forEach(function(c) {
-            html += '<a class="quick-switcher-item" href="' + c.href + '">' +
-                '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>' +
-                escapeHtml(c.title) + '</a>';
-        });
-        if (query && items.length === 0) {
-            html += '<div class="quick-switcher-empty">{% trans "No matching conversations." %}</div>';
-        }
-        results.innerHTML = html;
-    }
-
-    function openSwitcher() {
-        overlay.style.display = "flex";
-        input.value = "";
-        render("");
-        setTimeout(function() { input.focus(); }, 0);
-    }
-    function closeSwitcher() {
-        overlay.style.display = "none";
-    }
-
-    document.addEventListener("keydown", function(evt) {
-        if ((evt.ctrlKey || evt.metaKey) && (evt.key === "k" || evt.key === "K")) {
-            evt.preventDefault();
-            if (overlay.style.display === "flex") { closeSwitcher(); } else { openSwitcher(); }
-        } else if (evt.key === "Escape" && overlay.style.display === "flex") {
-            closeSwitcher();
-        }
-    });
-    overlay.addEventListener("mousedown", function(evt) {
-        if (evt.target === overlay) closeSwitcher();
-    });
-    input.addEventListener("input", function() { render(input.value); });
-})();
-</script>
-{% endif %}
+{% comment %}
+chat's own Ctrl+K quick-switcher used to live here (search conversations already rendered in the
+sidebar DOM, or start a new one) - superseded by the Global Search / Command Palette in base.html,
+which covers the same ground (server-side conversation search, not limited to whatever page of the
+sidebar happened to be rendered, plus "New conversation" as one of its commands) on every page, not
+just this one. Still gated on the same "quick_switcher" role feature.
+{% endcomment %}
 
 {% if user|has_feature:"upgrade_request" %}
 <div id="upgrade-modal-overlay" class="upgrade-modal-overlay" style="display:none;">
@@ -569,6 +507,13 @@ function portalCloseUpgradeModal() {
         <span class="chat-toolbar-title"></span>
         {% endif %}
         <div class="chat-header-actions">
+            {% if user|has_feature:"quick_switcher" %}
+            <button type="button" class="global-search-trigger" onclick="portalOpenGlobalSearch()" title="{% trans 'Search (Ctrl+K)' %}" aria-label="{% trans 'Global search' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span class="global-search-trigger-label">{% trans "Search" %}</span>
+                <kbd class="global-search-trigger-kbd">Ctrl K</kbd>
+            </button>
+            {% endif %}
             {% if conversation %}
             <details class="export-menu">
                 <summary class="btn-small btn-ghost no-marker" title="{% trans 'Export conversation' %}">
@@ -795,8 +740,39 @@ function portalCloseUpgradeModal() {
                                 <svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                 {% trans "Code-focused answer" %}
                             </a>
+                            {% if can_generate_document %}
+                            {% comment %}
+                            Document mode is auto-detected by default
+                            (chat/router.py::looks_like_document_request), but
+                            that only fires for messages that already read as
+                            a document request - typing anything else while
+                            "just generate documents" is what the user wants
+                            never triggers it. This toggle is the explicit,
+                            STICKY override: turning it on sends
+                            document_mode=on with every message (chat/
+                            views.py::post_message already treats that POST
+                            field as an override, no backend change needed)
+                            until turned off again - same sticky shape as
+                            Image/video mode below, and mutually exclusive
+                            with it (a message can't be both).
+                            {% endcomment %}
+                            <a href="#" class="menu-toggle-item" id="document-mode-toggle-btn" onclick="event.preventDefault(); portalToggleDocumentMode()">
+                                <svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                {% trans "Document mode (every message generates a document)" %}
+                            </a>
+                            {% endif %}
                         </div>
                     </details>
+                    {% if can_generate_document %}
+                    <input type="hidden" name="document_mode" id="document-mode-input" value="">
+                    <div class="compare-active-pill media-mode-pill" id="documentModePill" style="display:none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span>{% trans "Document mode: every message generates a document" %}</span>
+                        <button type="button" class="compare-active-pill-clear" onclick="portalApplyDocumentMode(false)" title="{% trans 'Turn off document mode' %}" aria-label="{% trans 'Turn off document mode' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                    {% endif %}
                     {% if can_use_research %}<input type="hidden" name="research" id="research-input" value="">{% endif %}
                     <input type="hidden" name="output_mode" id="output-mode-input" value="">
                     <input type="hidden" name="live_intel" id="live-intel-input" value="">
@@ -824,16 +800,41 @@ function portalCloseUpgradeModal() {
                     download, no re-generate/copy/share) was confusing next
                     to the new toggle, both nominally doing "generate a
                     document" for visibly different results.
+
+                    Image/video mode is STICKY (like Agent persona above),
+                    not per-turn: turning it on redirects the composer's own
+                    hx-post from chat:post_message to chat:generate_media
+                    (same swap-hx-post trick portalSetCompareMode already
+                    uses) and portalResetComposerAttrs leaves it alone after
+                    every send, so every message typed while it's on - no
+                    matter what it says - generates media instead of a text
+                    reply, until the pill below is explicitly cleared. Picking
+                    a mode here also turns Compare mode off, and vice versa
+                    (portalSetCompareMode) - the two are mutually exclusive.
                     {% endcomment %}
                     <details class="export-menu">
-                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image or video from the text in the composer' %}">
+                        <summary class="attach-btn no-marker" title="{% trans 'Generate an image or video from every message until turned off' %}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                         </summary>
                         <div class="export-menu-panel">
-                            <a href="#" onclick="portalGenerateMedia(event, 'image')">{% trans "Generate image" %}</a>
-                            <a href="#" onclick="portalGenerateMedia(event, 'video')">{% trans "Generate video (~1 min)" %}</a>
+                            <a href="#" class="menu-toggle-item" id="media-mode-toggle-image" onclick="event.preventDefault(); portalToggleMediaMode(event, 'image')">
+                                <svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                {% trans "Image mode (every message generates an image)" %}
+                            </a>
+                            <a href="#" class="menu-toggle-item" id="media-mode-toggle-video" onclick="event.preventDefault(); portalToggleMediaMode(event, 'video')">
+                                <svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                {% trans "Video mode (every message generates a video, ~1 min)" %}
+                            </a>
                         </div>
                     </details>
+                    <input type="hidden" name="media_mode" id="media-mode-input" value="">
+                    <div class="compare-active-pill media-mode-pill" id="mediaModePill" style="display:none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                        <span id="mediaModePillLabel"></span>
+                        <button type="button" class="compare-active-pill-clear" onclick="portalApplyMediaMode('')" title="{% trans 'Turn off image/video mode' %}" aria-label="{% trans 'Turn off image/video mode' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
                     {% endif %}
                     {% if can_select_model %}
                     {% comment %}
@@ -1266,7 +1267,11 @@ document.body.addEventListener("htmx:afterSwap", function(evt) { portalHighlight
 <script>
 function portalResetComposerAttrs() {
     var form = document.getElementById("composer-form");
-    if (form && form.dataset.defaultPost) {
+    // Image/video mode is sticky (see portalApplyMediaMode) - unlike every other per-turn mode below, its hx-post
+    // override must survive this reset, or the very first send would silently fall back to a normal text reply.
+    var mediaModeInput = document.getElementById("media-mode-input");
+    var mediaModeOn = mediaModeInput && mediaModeInput.value;
+    if (form && form.dataset.defaultPost && !mediaModeOn) {
         form.setAttribute("hx-post", form.dataset.defaultPost);
         form.setAttribute("hx-target", form.dataset.defaultTarget);
         form.setAttribute("hx-swap", form.dataset.defaultSwap);
@@ -1314,6 +1319,34 @@ function portalToggleResearch(btn) {
     btn.classList.toggle("active", on);
 }
 
+// Document mode (composer's "More options" menu) - unlike Research/Code
+// above, deliberately STICKY across sends (not reset in
+// portalResetComposerAttrs, same reasoning as Agent persona/Image-video
+// mode): see chat/views.py::post_message, which already treats a posted
+// document_mode=on as an explicit override of its own default
+// auto-detection (looks_like_document_request). Mutually exclusive with
+// Image/video mode (portalApplyMediaMode) and Compare mode
+// (portalSetCompareMode) - only one "what does every message do" mode at
+// a time.
+function portalApplyDocumentMode(on) {
+    var input = document.getElementById("document-mode-input");
+    if (!input) return;
+    input.value = on ? "on" : "";
+    var btn = document.getElementById("document-mode-toggle-btn");
+    if (btn) btn.classList.toggle("active", on);
+    if (on) {
+        var mediaModeInput = document.getElementById("media-mode-input");
+        if (mediaModeInput && mediaModeInput.value) portalApplyMediaMode("");
+        portalSetCompareMode(false);
+    }
+    var pill = document.getElementById("documentModePill");
+    if (pill) pill.style.display = on ? "flex" : "none";
+}
+function portalToggleDocumentMode() {
+    var input = document.getElementById("document-mode-input");
+    portalApplyDocumentMode(!(input && input.value === "on"));
+}
+
 // "Code" output mode (composer's "More options" menu) - see chat/prompts.py's
 // CODE_OUTPUT_HINT and chat:post_message's own "output_mode" POST field.
 // Same one-off, per-message toggle shape as Research above (not sticky
@@ -1341,48 +1374,63 @@ function portalSetAgentPersona(evt, persona) {
     if (menu) menu.removeAttribute("open");
 }
 
-// Image/video generation (composer footer "Generate image/video" menu) -
-// a genuinely separate POST target (chat:generate_media, not
-// chat:post_message) since this never goes through model routing/
-// streaming at all - see that view's own docstring. Not htmx-driven like
-// the rest of the composer, since there's no natural hx-post target to
-// swap to (unlike compare mode/edit, which reuse the SAME form) - a plain
-// fetch() appending its own result HTML mirrors the export menu's own
-// fetch-based download flow just above.
-function portalGenerateMedia(evt, mediaMode) {
-    evt.preventDefault();
+// Image/video mode (composer footer "Generate image/video" menu) - STICKY
+// across sends, not per-turn: turns EVERY message typed from here on into a
+// chat:generate_media call (real image/video generation, never routed
+// through a text model at all - see that view's own docstring) instead of
+// the normal chat:post_message, by swapping the composer form's own hx-post
+// the same way portalSetCompareMode already swaps it to the arena endpoint.
+// generate_media renders both the user's message and the result in one
+// response (chat/_media_generation_result.html) that fits the SAME
+// hx-target/hx-swap ("#messages .chat-column", "beforeend") post_message
+// already uses, so only hx-post itself needs to change. Left alone by
+// portalResetComposerAttrs (see its own comment) so it survives every send
+// until portalApplyMediaMode('') turns it off again - the pill below is the
+// one place that state is visible, so it's never ambiguous which mode a
+// message is about to go out as.
+function portalApplyMediaMode(mode) {
     var form = document.getElementById("composer-form");
+    var input = document.getElementById("media-mode-input");
+    if (!form || !input) return;
+    input.value = mode;
+    var imageBtn = document.getElementById("media-mode-toggle-image");
+    var videoBtn = document.getElementById("media-mode-toggle-video");
+    if (imageBtn) imageBtn.classList.toggle("active", mode === "image");
+    if (videoBtn) videoBtn.classList.toggle("active", mode === "video");
+    var attachLabel = document.getElementById("attach-btn-label");
+    if (attachLabel) attachLabel.style.display = mode ? "none" : "";
     var textarea = document.getElementById("composer-textarea");
+    if (textarea) {
+        textarea.placeholder = mode === "video" ? "{% trans 'Describe the video to generate...' %}"
+            : mode === "image" ? "{% trans 'Describe the image to generate...' %}"
+            : "{% trans 'Message the assistant...' %}";
+    }
+    if (mode) {
+        portalSetCompareMode(false); // mutually exclusive - only one "what does Send do" mode at a time
+        var documentModeInput = document.getElementById("document-mode-input");
+        if (documentModeInput && documentModeInput.value) portalApplyDocumentMode(false);
+        if (!form.dataset.defaultPost) {
+            form.dataset.defaultPost = form.getAttribute("hx-post");
+            form.dataset.defaultTarget = form.getAttribute("hx-target");
+            form.dataset.defaultSwap = form.getAttribute("hx-swap");
+        }
+        form.setAttribute("hx-post", form.getAttribute("data-generate-media-url"));
+    } else {
+        form.setAttribute("hx-post", form.dataset.defaultPost || form.getAttribute("hx-post"));
+    }
+    htmx.process(form);
+    var pill = document.getElementById("mediaModePill");
+    var pillLabel = document.getElementById("mediaModePillLabel");
+    if (pill) pill.style.display = mode ? "flex" : "none";
+    if (pillLabel) pillLabel.textContent = mode === "video" ? "{% trans 'Video mode: every message generates a video' %}"
+        : mode === "image" ? "{% trans 'Image mode: every message generates an image' %}" : "";
+}
+function portalToggleMediaMode(evt, mode) {
+    evt.preventDefault();
+    var input = document.getElementById("media-mode-input");
     var menu = evt.target.closest("details");
     if (menu) menu.removeAttribute("open");
-    var prompt = textarea ? textarea.value.trim() : "";
-    if (!prompt) {
-        window.alert("Type a prompt in the composer first.");
-        return;
-    }
-    var url = form.getAttribute("data-generate-media-url");
-    var csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
-    var formData = new FormData();
-    formData.append("content", prompt);
-    formData.append("media_mode", mediaMode);
-
-    var summary = menu ? menu.querySelector("summary") : null;
-    var originalIconHTML = summary ? summary.innerHTML : "";
-    if (summary) summary.innerHTML = '<span class="export-spinner"></span>';
-
-    fetch(url, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: formData, credentials: "same-origin"})
-        .then(function(resp) { return resp.text(); })
-        .then(function(html) {
-            var column = document.querySelector("#messages .chat-column");
-            if (column) column.insertAdjacentHTML("beforeend", html);
-            textarea.value = "";
-            textarea.style.height = "auto";
-            var container = document.getElementById("messages");
-            if (container) container.scrollTop = container.scrollHeight;
-        })
-        .finally(function() {
-            if (summary) summary.innerHTML = originalIconHTML;
-        });
+    portalApplyMediaMode(input && input.value === mode ? "" : mode);
 }
 
 // --- Compare mode: sidebar Chat/Compare switch -> "pick 2 models" setup
@@ -1454,6 +1502,15 @@ function portalSetCompareMode(on, modelAId, modelBId, label) {
     portalCompareModeOn = on;
     var form = document.getElementById("composer-form");
     if (!form) return;
+    // Mutually exclusive with image/video mode (portalApplyMediaMode) - only one "what does Send do" mode at a
+    // time. Checks the input directly rather than calling portalApplyMediaMode('') to avoid the two functions
+    // calling each other back and forth when media mode is the one turning Compare off.
+    if (on) {
+        var mediaModeInput = document.getElementById("media-mode-input");
+        if (mediaModeInput && mediaModeInput.value) portalApplyMediaMode("");
+        var documentModeInput = document.getElementById("document-mode-input");
+        if (documentModeInput && documentModeInput.value) portalApplyDocumentMode(false);
+    }
     var chips = document.querySelector(".composer-chips");
     var pill = document.getElementById("compareActivePill");
     var pillLabel = document.getElementById("compareActivePillLabel");
@@ -1493,7 +1550,20 @@ function portalSetCompareMode(on, modelAId, modelBId, label) {
         form.dataset.defaultTarget = form.getAttribute("hx-target");
         form.dataset.defaultSwap = form.getAttribute("hx-swap");
     }
-    form.setAttribute("hx-post", on ? form.dataset.arenaPost : (form.dataset.defaultPost || form.getAttribute("hx-post")));
+    if (on) {
+        form.setAttribute("hx-post", form.dataset.arenaPost);
+    } else {
+        // portalResetComposerAttrs calls this with on=false after EVERY send (Compare is per-turn) - unconditionally
+        // restoring hx-post here would silently undo Image/video or Document mode's own override one send after
+        // it was turned on, since this always runs right alongside it. Only restore the default when neither
+        // sticky mode is actually active.
+        var mediaModeInput = document.getElementById("media-mode-input");
+        var documentModeInput = document.getElementById("document-mode-input");
+        var stickyModeActive = (mediaModeInput && mediaModeInput.value) || (documentModeInput && documentModeInput.value === "on");
+        if (!stickyModeActive) {
+            form.setAttribute("hx-post", form.dataset.defaultPost || form.getAttribute("hx-post"));
+        }
+    }
     htmx.process(form);
 }
 function portalStartEdit(btn) {

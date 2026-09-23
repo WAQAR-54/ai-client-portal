@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n notification_extras %}
 <details class="notif-bell">
     <summary class="notif-bell-summary" aria-label="{% trans 'Notifications' %}{% if unread_count %} ({{ unread_count }}){% endif %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -27,17 +27,23 @@
             <a href="{{ n.action_url }}" class="notif-item{% if not n.is_read %} notif-item-unread{% endif %}"
                data-mark-read-url="{% url 'notifications:mark_read' notification_id=n.id %}"
                onclick="portalMarkNotificationRead(this)">
-                <span class="notif-item-title">{{ n.title }}</span>
-                {% if n.body %}<span class="notif-item-body">{{ n.body|truncatechars:90 }}</span>{% endif %}
-                <span class="notif-item-time mono">{{ n.created_at|date:"M d, H:i" }}</span>
+                {% include "notifications/_notif_icon.html" with kind=n.notification_type|notif_icon %}
+                <span class="notif-item-text">
+                    <span class="notif-item-title">{{ n.title }}</span>
+                    {% if n.body %}<span class="notif-item-body">{{ n.body|truncatechars:90 }}</span>{% endif %}
+                    <span class="notif-item-time mono">{{ n.created_at|date:"M d, H:i" }}</span>
+                </span>
             </a>
             {% else %}
             <form method="post" action="{% url 'notifications:mark_read' notification_id=n.id %}" hx-post="{% url 'notifications:mark_read' notification_id=n.id %}" hx-target="closest .notif-bell" hx-swap="outerHTML">
                 {% csrf_token %}
                 <button type="submit" class="notif-item{% if not n.is_read %} notif-item-unread{% endif %}">
-                    <span class="notif-item-title">{{ n.title }}</span>
-                    {% if n.body %}<span class="notif-item-body">{{ n.body|truncatechars:90 }}</span>{% endif %}
-                    <span class="notif-item-time mono">{{ n.created_at|date:"M d, H:i" }}</span>
+                    {% include "notifications/_notif_icon.html" with kind=n.notification_type|notif_icon %}
+                    <span class="notif-item-text">
+                        <span class="notif-item-title">{{ n.title }}</span>
+                        {% if n.body %}<span class="notif-item-body">{{ n.body|truncatechars:90 }}</span>{% endif %}
+                        <span class="notif-item-time mono">{{ n.created_at|date:"M d, H:i" }}</span>
+                    </span>
                 </button>
             </form>
             {% endif %}

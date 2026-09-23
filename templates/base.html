@@ -30,6 +30,11 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <span class="mobile-topbar-brand">{% include "_brand_mark.html" %}</span>
+            {% if user|has_feature:"quick_switcher" %}
+            <button type="button" class="mobile-search-btn" onclick="portalOpenGlobalSearch()" title="{% trans 'Search' %}" aria-label="{% trans 'Global search' %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            {% endif %}
         </header>
         <div class="sidebar-backdrop" onclick="document.body.classList.remove('sidebar-open')"></div>
         <aside class="app-sidebar" aria-label="{% trans 'Sidebar' %}">
@@ -371,8 +376,27 @@
                     {% endif %}
                 </div>
                 <div class="topbar-mini-right">
+                    {% if user|has_feature:"quick_switcher" %}
+                    <button type="button" class="global-search-trigger" style="margin-right:0.6rem;" onclick="portalOpenGlobalSearch()" title="{% trans 'Search (Ctrl+K)' %}" aria-label="{% trans 'Global search' %}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <span class="global-search-trigger-label">{% trans "Search" %}</span>
+                        <kbd class="global-search-trigger-kbd">Ctrl K</kbd>
+                    </button>
+                    {% endif %}
                     {% if user|has_feature:"notifications" %}
-                    <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML" style="margin-right:0.6rem;"></div>
+                    <div id="notif-bell-wrap" hx-get="{% url 'notifications:bell_dropdown' %}" hx-trigger="load, every 45s" hx-swap="innerHTML"
+                         hx-on::response-error="portalNotifBellError(this)" style="margin-right:0.6rem;">
+                        {% comment %}
+                        Loading state: a plain static bell (no count) until the load-triggered
+                        hx-get above swaps it for the real dropdown - previously this div was
+                        empty on first paint, a blank gap where the bell belongs. On a failed
+                        fetch, portalNotifBellError (ui-kit.js) swaps in the same icon (muted,
+                        non-interactive) instead of leaving the last-known content or an empty div.
+                        {% endcomment %}
+                        <span class="notif-bell-placeholder" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        </span>
+                    </div>
                     {% endif %}
                     {% if user|has_feature:"dark_mode" %}
                     <button type="button" class="theme-toggle-quick" style="margin-right:0.6rem;"
@@ -433,10 +457,176 @@
         </div>
     </div>
 
+    {% comment %}
+    Global Search / Command Palette (Ctrl+K) - one shared instance for every
+    authenticated page, gated on the same "quick_switcher" role feature that
+    used to gate chat's own, chat-only quick-switcher (now superseded by
+    this: search/views.py's global_search reuses chat's conversation
+    queryset plus every other app's own already-scoped queryset, so nothing
+    here duplicates or bypasses an existing authorization rule). "Pages"
+    commands are rendered once, server-side, permission-filtered by the same
+    checks used everywhere else in this template (has_feature, is_admin,
+    is_superadmin) - filtering them is pure client-side substring matching
+    on data-cmdk-label, no round trip. Data results (conversations/projects/
+    users/invoices/media) come from search:global, debounced, same hx-get
+    pattern as the admin topbar's own search box above.
+    {% endcomment %}
+    {% if user.is_authenticated and user|has_feature:"quick_switcher" %}
+    <div class="quick-switcher-overlay" id="globalSearchOverlay" style="display:none;">
+        <div class="quick-switcher-box" role="dialog" aria-modal="true" aria-label="{% trans 'Global search' %}">
+            <div class="quick-switcher-input-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; left:0.75rem; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--color-text-faint); pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="search" id="globalSearchInput" name="q" class="input" autocomplete="off"
+                       placeholder="{% trans 'Search conversations, projects, people… or jump to a page' %}"
+                       style="padding-left:2.3rem;"
+                       hx-get="{% url 'search:global' %}" hx-trigger="input changed delay:200ms"
+                       hx-target="#globalSearchDataResults" hx-swap="innerHTML" hx-indicator="#globalSearchSpinner"
+                       oninput="portalFilterGlobalSearchCommands(this.value)">
+            </div>
+            <div class="fetch-spinner" id="globalSearchSpinner" style="padding:0.3rem 0.75rem;"><span class="spin-icon"></span>{% trans "Searching…" %}</div>
+            <div class="quick-switcher-results" id="globalSearchResults">
+                <div id="globalSearchCommands">
+                    <div class="quick-switcher-group-label" id="globalSearchCommandsGroupLabel">{% trans "Pages" %}</div>
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'dashboard home' %}" href="{% url 'accounts:dashboard' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+                        {% trans "Dashboard" %}
+                    </a>
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'conversations chat' %}" href="{% url 'chat:chat_home' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                        {% trans "Conversations" %}
+                    </a>
+                    <form method="post" action="{% url 'chat:create_conversation' %}" style="display:contents;">
+                        {% csrf_token %}
+                        <button type="submit" class="quick-switcher-item quick-switcher-item-new cmdk-row" data-cmdk-label="{% trans 'new conversation new chat' %}">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            {% trans "New conversation" %}
+                        </button>
+                    </form>
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'billing invoices my invoices' %}" href="{% url 'billing:my_invoices' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        {% trans "Billing / My Invoices" %}
+                    </a>
+                    {% if user.is_admin %}
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'users admin' %}" href="{% url 'governance:users' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        {% trans "Users" %}
+                    </a>
+                    {% endif %}
+                    {% if user.is_superadmin %}
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'media admin' %}" href="{% url 'governance:media' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                        {% trans "Media" %}
+                    </a>
+                    {% endif %}
+                    {% if user|has_feature:"notifications" %}
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'notifications' %}" href="{% url 'notifications:list' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        {% trans "Notifications" %}
+                    </a>
+                    {% endif %}
+                    <a class="quick-switcher-item cmdk-row" data-cmdk-label="{% trans 'profile settings security password mfa' %}" href="{% url 'accounts:profile' %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        {% trans "Profile, Settings & Security" %}
+                    </a>
+                </div>
+                <div id="globalSearchDataResults"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        function portalOpenGlobalSearch() {
+            var overlay = document.getElementById("globalSearchOverlay");
+            if (!overlay) return;
+            overlay.style.display = "flex";
+            var input = document.getElementById("globalSearchInput");
+            input.value = "";
+            portalFilterGlobalSearchCommands("");
+            // htmx.ajax() directly, independent of the input's own hx-trigger/debounce - dispatching
+            // a synthetic "input" event on the element instead once fed straight into htmx's own
+            // "changed" value tracking and left it unable to tell a later REAL keystroke apart from
+            // this one, so typing after opening the palette never fired a follow-up request at all.
+            htmx.ajax("GET", input.getAttribute("hx-get"), {target: "#globalSearchDataResults", swap: "innerHTML"});
+            setTimeout(function() { input.focus(); }, 0);
+        }
+        function portalCloseGlobalSearch() {
+            var overlay = document.getElementById("globalSearchOverlay");
+            if (overlay) overlay.style.display = "none";
+        }
+        document.getElementById("globalSearchOverlay").addEventListener("mousedown", function(evt) {
+            if (evt.target.id === "globalSearchOverlay") portalCloseGlobalSearch();
+        });
+        // Client-side substring filter over the static "Pages" commands only - the data groups below
+        // them are filtered server-side (search:global) and never touched here.
+        function portalFilterGlobalSearchCommands(value) {
+            var q = (value || "").trim().toLowerCase();
+            var anyVisible = false;
+            document.querySelectorAll("#globalSearchCommands .cmdk-row").forEach(function(row) {
+                var label = (row.getAttribute("data-cmdk-label") || "").toLowerCase();
+                var visible = !q || label.indexOf(q) !== -1;
+                row.style.display = visible ? "" : "none";
+                anyVisible = anyVisible || visible;
+            });
+            var groupLabel = document.getElementById("globalSearchCommandsGroupLabel");
+            if (groupLabel) groupLabel.style.display = anyVisible ? "" : "none";
+            portalGlobalSearchSetActive(0);
+        }
+        // Keyboard navigation across BOTH the static commands and the htmx-swapped data rows - always
+        // re-queries the DOM (never a cached list) so it reflects whichever rows are visible right now.
+        var portalGlobalSearchActiveIndex = -1;
+        function portalGlobalSearchRows() {
+            return Array.prototype.filter.call(document.querySelectorAll("#globalSearchResults .cmdk-row"), function(el) {
+                return el.offsetParent !== null;
+            });
+        }
+        function portalGlobalSearchSetActive(index) {
+            // Clears EVERY row, not just the currently-visible ones: a row hidden by the commands
+            // filter right after being marked active (e.g. typing over "Dashboard" while it was
+            // active) would otherwise keep its stale .cmdk-active class - invisible for the moment,
+            // but a second "active" row the instant it becomes visible again.
+            document.querySelectorAll("#globalSearchResults .cmdk-active").forEach(function(r) { r.classList.remove("cmdk-active"); });
+            var rows = portalGlobalSearchRows();
+            if (!rows.length) { portalGlobalSearchActiveIndex = -1; return; }
+            portalGlobalSearchActiveIndex = Math.max(0, Math.min(index, rows.length - 1));
+            var active = rows[portalGlobalSearchActiveIndex];
+            active.classList.add("cmdk-active");
+            active.scrollIntoView({block: "nearest"});
+        }
+        document.getElementById("globalSearchInput").addEventListener("keydown", function(evt) {
+            if (evt.key === "ArrowDown") {
+                evt.preventDefault();
+                portalGlobalSearchSetActive(portalGlobalSearchActiveIndex + 1);
+            } else if (evt.key === "ArrowUp") {
+                evt.preventDefault();
+                portalGlobalSearchSetActive(portalGlobalSearchActiveIndex - 1);
+            } else if (evt.key === "Enter") {
+                evt.preventDefault();
+                var rows = portalGlobalSearchRows();
+                var target = rows[portalGlobalSearchActiveIndex] || rows[0];
+                if (target) target.click();
+            }
+        });
+        document.body.addEventListener("htmx:afterSwap", function(evt) {
+            if (evt.target && evt.target.id === "globalSearchDataResults") portalGlobalSearchSetActive(0);
+        });
+    </script>
+    {% endif %}
+
     {% if user.is_authenticated %}
     <script>
         document.addEventListener("keydown", function(evt) {
+            // Ctrl/Cmd+K: the Global Search / Command Palette, everywhere - the palette's own DOM
+            // only exists when quick_switcher is on for this role (see the template condition
+            // gating it above), so this no-ops quietly for a role that has it turned off.
+            if ((evt.ctrlKey || evt.metaKey) && (evt.key === "k" || evt.key === "K")) {
+                evt.preventDefault();
+                var searchOverlay = document.getElementById("globalSearchOverlay");
+                if (searchOverlay) {
+                    if (searchOverlay.style.display === "flex") { portalCloseGlobalSearch(); } else { portalOpenGlobalSearch(); }
+                }
+                return;
+            }
             if (evt.key !== "Escape") return;
+            if (typeof portalCloseGlobalSearch === "function") portalCloseGlobalSearch();
             document.body.classList.remove("sidebar-open");
             // Closes any open <details> popover (profile menu, notification
             // bell, usage popover) - they're the closest thing this app has

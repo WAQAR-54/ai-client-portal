@@ -139,6 +139,7 @@ urlpatterns = [
     path("limits/<int:limit_id>/edit/", views.LimitFormView.as_view(), name="limit_edit"),
     path("limits/<int:limit_id>/delete/", views.delete_limit, name="limit_delete"),
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit_logs"),
+    path("audit-logs/<int:pk>/", views.AuditLogDetailView.as_view(), name="audit_log_detail"),
     path("feedback/", views.FeedbackListView.as_view(), name="feedback"),
     path("departments/", views.DepartmentListView.as_view(), name="departments"),
     path("departments/add/", views.add_department, name="add_department"),

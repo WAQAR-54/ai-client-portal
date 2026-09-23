@@ -1,4 +1,5 @@
 import os
+import re
 
 from django import template
 from django.contrib.staticfiles import finders
@@ -84,3 +85,27 @@ def audit_severity(action_type):
     if any(marker in lowered for marker in _AUDIT_WARN_MARKERS):
         return "warn"
     return "info"
+
+
+# old_value/new_value are plain TextFields - governance/audit.py::log_action just does
+# str(old_value)/str(new_value), so nothing on the model stops a careless call site from ever
+# passing something secret-shaped. Every real call site today passes short human-readable text
+# (counts, plan names, region codes, "key ending 1234") - none currently need masking, but this is
+# a safety net for the Audit Explorer's own display, not a claim that today's data is unsafe.
+_SECRET_LIKE_RE = re.compile(r"^[A-Za-z0-9_\-+/=]{20,}$")
+
+
+@register.filter
+def mask_audit_value(value):
+    """{{ log.old_value|mask_audit_value }} - redacts a value that LOOKS like a token/key/hash
+    (one long run of characters with no whitespace and no @, so a real email/name/short phrase is
+    never masked) before it ever reaches the template. Apply BEFORE truncatechars, not after -
+    truncation's own "..." would otherwise break the full-string match this relies on."""
+    if not value:
+        return value
+    stripped = value.strip()
+    if "@" in stripped or " " in stripped:
+        return value
+    if _SECRET_LIKE_RE.match(stripped):
+        return "•••• (masked — looked like a token/key)"
+    return value

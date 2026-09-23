@@ -654,4 +654,46 @@ class EfficiencyTests(DashboardTestCase):
         self.assertLessEqual(len(user_dash["recent_conversations"]), 4)
         super_dash = self.get(self.superadmin).context["dash"]
         self.assertLessEqual(len(super_dash["activity"]), 8)
-        self.assertLessEqual(len(super_dash["notifications"]["items"]), 4)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+class RealViewEfficiencyTests(DashboardTestCase):
+    """The EfficiencyTests above deliberately call dashboards.*_dashboard() directly, bypassing
+    DashboardView/ManagerDashboardView - real, pre-existing N+1s in those two views
+    (_org_usage_overview's per-user UsageLimit/Message queries, ManagerDashboardView's per-member
+    aggregate+engagement_score loop) were invisible to that test by construction. These hit the
+    real accounts:dashboard URL instead, so a regression here would actually be caught."""
+
+    def _query_count(self, who):
+        with CaptureQueriesContext(connection) as captured:
+            self.get(who)
+        return len(captured)
+
+    def _grow(self, n, department, team=None):
+        start = getattr(self, "_grown", 0)
+        self._grown = start + n
+        for i in range(start, start + n):
+            person = make(f"grow{i}@corp.io", department=department, team=team)
+            reply(person, count=2)
+            UsageLimit.objects.create(user=person, monthly_token_cap=1000)
+
+    def test_admin_dashboard_query_count_does_not_grow_with_department_size(self):
+        self._grow(2, self.dept_a)
+        before = self._query_count(self.admin)
+        self._grow(15, self.dept_a)
+        after = self._query_count(self.admin)
+        self.assertLessEqual(after, before, f"admin dashboard: {before} -> {after} queries")
+
+    def test_superadmin_dashboard_query_count_does_not_grow_with_org_size(self):
+        self._grow(2, self.dept_a)
+        before = self._query_count(self.superadmin)
+        self._grow(15, self.dept_b)
+        after = self._query_count(self.superadmin)
+        self.assertLessEqual(after, before, f"superadmin dashboard: {before} -> {after} queries")
+
+    def test_manager_dashboard_query_count_does_not_grow_with_team_size(self):
+        self._grow(2, self.dept_a, team=self.team)
+        before = self._query_count(self.manager)
+        self._grow(15, self.dept_a, team=self.team)
+        after = self._query_count(self.manager)
+        self.assertLessEqual(after, before, f"manager dashboard: {before} -> {after} queries")

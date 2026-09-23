@@ -322,3 +322,15 @@ function portalToggleAllNotifications(checkbox) {
         cb.checked = checkbox.checked;
     });
 }
+
+/* #notif-bell-wrap's hx-on::response-error (base.html) - a failed bell_dropdown fetch (network
+   blip, 5xx) would otherwise leave the last successful render sitting there silently forever
+   (this div only ever gets a fresh load every 45s) or, on the very first load, an empty div with
+   no bell icon at all. Swaps in the same bell icon, muted and non-interactive, so the header
+   never looks broken or just blank. */
+function portalNotifBellError(wrap) {
+    wrap.innerHTML =
+        '<span class="notif-bell-placeholder" aria-hidden="true">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>';
+}

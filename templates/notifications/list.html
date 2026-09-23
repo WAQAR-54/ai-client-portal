@@ -1,17 +1,32 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n notification_extras %}
 {% block title %}{% trans "Notifications" %} — {{ site_branding.site_name }}{% endblock %}
 {% block content %}
 <div class="card">
     <div class="page-head-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.5rem;">
         <h1 style="margin-bottom:0;">{% trans "Notifications" %}</h1>
+        {% if total_unread_count %}
         <form method="post" action="{% url 'notifications:mark_all_read' %}">
             {% csrf_token %}
             <input type="hidden" name="next" value="{% url 'notifications:list' %}">
             <button type="submit" class="btn-small btn-ghost">{% trans "Mark all read" %}</button>
         </form>
+        {% endif %}
     </div>
     <p class="text-muted" style="margin-top:-0.4rem;">{% trans "Your full notification history - the bell only ever shows the 10 most recent." %}</p>
+
+    <div class="notif-tabs">
+        <a href="?{% if category %}category={{ category }}{% endif %}" class="notif-tab{% if not unread_only %} active{% endif %}">{% trans "All" %}</a>
+        <a href="?unread=1{% if category %}&category={{ category }}{% endif %}" class="notif-tab{% if unread_only %} active{% endif %}">
+            {% trans "Unread" %}{% if total_unread_count %} <span class="notif-tab-count">({{ total_unread_count }})</span>{% endif %}
+        </a>
+    </div>
+    <div class="notif-category-chips">
+        <a href="?{% if unread_only %}unread=1{% endif %}" class="notif-chip{% if not category %} active{% endif %}">{% trans "All types" %}</a>
+        {% for key, label in categories %}
+        <a href="?category={{ key }}{% if unread_only %}&unread=1{% endif %}" class="notif-chip{% if category == key %} active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
 
     <form id="notifBulkForm" method="post" action="{% url 'notifications:delete_notifications' %}" onsubmit="return portalConfirmSubmit(event, '{% trans "Delete the selected notifications? This cannot be undone." %}')">
         {% csrf_token %}
@@ -35,8 +50,9 @@
 
     <div class="notif-history-list" style="display:flex; flex-direction:column; margin-top:0.75rem;">
         {% for n in page_obj %}
-        <div class="notif-history-row{% if not n.is_read %} notif-history-row-unread{% endif %}" style="display:flex; align-items:center; gap:0.6rem;">
+        <div class="notif-history-row{% if not n.is_read %} notif-history-row-unread{% endif %}">
             <input type="checkbox" name="notification_ids" value="{{ n.id }}" form="notifBulkForm" class="notif-select">
+            {% include "notifications/_notif_icon.html" with kind=n.notification_type|notif_icon %}
             {% if n.action_url %}
             <a href="{{ n.action_url }}" class="notif-history-link" data-mark-read-url="{% url 'notifications:mark_read' notification_id=n.id %}" onclick="portalMarkNotificationRead(this)">
                 <span class="notif-item-title">{{ n.title }}</span>
@@ -48,27 +64,39 @@
                 {% if n.body %}<span class="notif-item-body">{{ n.body }}</span>{% endif %}
             </div>
             {% endif %}
-            <div style="display:flex; align-items:center; gap:0.6rem; flex-shrink:0;">
+            <div class="notif-history-meta">
                 <span class="notif-item-time mono">{{ n.created_at|date:"Y-m-d H:i" }}</span>
                 {% if not n.is_read %}
                 <form method="post" action="{% url 'notifications:mark_read' notification_id=n.id %}">
                     {% csrf_token %}
-                    <input type="hidden" name="next" value="{% url 'notifications:list' %}">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
                     <button type="submit" class="btn-small btn-ghost">{% trans "Mark read" %}</button>
+                </form>
+                {% else %}
+                <form method="post" action="{% url 'notifications:mark_unread' notification_id=n.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn-small btn-ghost">{% trans "Mark unread" %}</button>
                 </form>
                 {% endif %}
             </div>
         </div>
         {% empty %}
+        {% if unread_only %}
+        <p class="notif-empty">{% trans "You're all caught up - no unread notifications." %}</p>
+        {% elif category %}
+        <p class="notif-empty">{% trans "No notifications in this category yet." %}</p>
+        {% else %}
         <p class="notif-empty">{% trans "No notifications yet." %}</p>
+        {% endif %}
         {% endfor %}
     </div>
 
     {% if page_obj.has_other_pages %}
     <div class="pagination-bar">
-        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← {% trans "Prev" %}</a>{% endif %}
+        {% if page_obj.has_previous %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&{% endif %}page={{ page_obj.previous_page_number }}">← {% trans "Prev" %}</a>{% endif %}
         <span class="text-faint">{% blocktrans with number=page_obj.number pages=page_obj.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktrans %}</span>
-        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">{% trans "Next" %} →</a>{% endif %}
+        {% if page_obj.has_next %}<a href="?{{ querystring_without_page }}{% if querystring_without_page %}&{% endif %}page={{ page_obj.next_page_number }}">{% trans "Next" %} →</a>{% endif %}
     </div>
     {% endif %}
 </div>

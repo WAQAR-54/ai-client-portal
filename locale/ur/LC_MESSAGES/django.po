@@ -1934,3 +1934,96 @@ msgid ""
 msgstr ""
 "%(email)s نے %(currency)s %(total)s کی ادائیگی کا ثبوت جمع کروایا ہے - بلنگ،"
 " انوائسز میں جائزہ لیں۔"
+
+#: templates/accounts/login.html:30
+msgid "Forgot password?"
+msgstr "پاس ورڈ بھول گئے؟"
+
+#: templates/accounts/login.html:32
+msgid "View pricing"
+msgstr "قیمتیں دیکھیں"
+
+#: templates/accounts/_auth_showcase.html:4
+msgid "Chat with 4 AI models"
+msgstr "4 AI ماڈلز کے ساتھ چیٹ کریں"
+
+#: templates/accounts/_auth_showcase.html:8
+msgid "Sales, Marketing & Dev agents"
+msgstr "سیلز، مارکیٹنگ اور ڈیولپمنٹ ایجنٹس"
+
+#: templates/accounts/_auth_showcase.html:12
+msgid "Full admin console"
+msgstr "مکمل ایڈمن کنسول"
+
+#: templates/accounts/mfa_verify.html:7
+msgid "Verify it's you"
+msgstr "تصدیق کریں کہ یہ آپ ہی ہیں"
+
+#: templates/accounts/mfa_verify.html:12
+msgid ""
+"We emailed a 6-digit code to your account's email address. Enter it below to"
+" finish signing in."
+msgstr ""
+"ہم نے آپ کے اکاؤنٹ کے ای میل ایڈریس پر 6 ہندسوں کا کوڈ بھیجا ہے۔ سائن اِن "
+"مکمل کرنے کے لیے اسے نیچے درج کریں۔"
+
+#: templates/accounts/mfa_verify.html:16
+msgid "Verification code"
+msgstr "تصدیقی کوڈ"
+
+#: templates/accounts/mfa_verify.html:20
+msgid "Verify"
+msgstr "تصدیق کریں"
+
+#: templates/accounts/mfa_verify.html:24
+msgid "Didn't get a code? Resend"
+msgstr "کوڈ موصول نہیں ہوا؟ دوبارہ بھیجیں"
+
+#: templates/accounts/password_reset_request.html:7
+msgid "Reset your password"
+msgstr "اپنا پاس ورڈ ری سیٹ کریں"
+
+#: templates/accounts/password_reset_request.html:12
+msgid ""
+"Enter your account email and we'll send you a link to set a new password."
+msgstr ""
+"اپنے اکاؤنٹ کا ای میل درج کریں، ہم آپ کو نیا پاس ورڈ سیٹ کرنے کے لیے ایک لنک"
+" بھیجیں گے۔"
+
+#: templates/accounts/password_reset_request.html:16
+msgid "Send reset link"
+msgstr "ری سیٹ لنک بھیجیں"
+
+#: templates/accounts/password_reset_request.html:20
+msgid "Back to log in"
+msgstr "لاگ اِن پر واپس جائیں"
+
+#: templates/accounts/password_reset_confirm.html:7
+msgid "Set a new password"
+msgstr "نیا پاس ورڈ سیٹ کریں"
+
+#: templates/accounts/password_reset_confirm.html:12
+msgid "Choose a new password for your account."
+msgstr "اپنے اکاؤنٹ کے لیے ایک نیا پاس ورڈ منتخب کریں۔"
+
+#: templates/accounts/password_reset_confirm.html:22
+msgid "Set new password"
+msgstr "نیا پاس ورڈ محفوظ کریں"
+
+#: templates/accounts/password_reset_confirm.html:28
+msgid "This link is invalid or has expired"
+msgstr "یہ لنک غلط ہے یا ختم ہو چکا ہے"
+
+#: templates/accounts/password_reset_confirm.html:30
+msgid "Password reset links only work once and expire after a while."
+msgstr ""
+"پاس ورڈ ری سیٹ لنکس صرف ایک بار کام کرتے ہیں اور کچھ دیر بعد ختم ہو جاتے "
+"ہیں۔"
+
+#: templates/accounts/password_reset_confirm.html:32
+msgid "Request a new link"
+msgstr "نیا لنک حاصل کریں"
+
+#: templates/accounts/_google_signin_button.html:1
+msgid "or"
+msgstr "یا"

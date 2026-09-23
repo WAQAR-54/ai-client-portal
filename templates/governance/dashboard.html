@@ -7,7 +7,14 @@
 {% endblock %}
 {% block content %}
 {% trans "No usage yet — data will appear here once conversations start." as chart_empty_msg %}
-<div class="admin-eyebrow">{% trans "Last updated a minute ago" %}</div>
+{% comment %}
+Was a hardcoded "Last updated a minute ago" - always said that regardless of when the page was
+actually rendered, inconsistent with the real, live "Last checked: X ago" timestamp further down
+(governance/_system_status.html, driven by build_system_status()'s own checked_at). Every section
+on this page (tiles, chart, org usage ring) is computed fresh on every request - genuinely true
+regardless of when it's viewed, unlike the old text.
+{% endcomment %}
+<div class="admin-eyebrow">{% trans "Live data — refreshes on every page load" %}</div>
 <div class="overview-head">
     <h1>{% blocktrans %}Good {{ greeting_time }}, {{ greeting_name }}{% endblocktrans %}</h1>
     {% if org_usage.has_data %}

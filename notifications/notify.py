@@ -82,4 +82,59 @@ def notification_action_url(notification):
         return reverse("providers:list")
     if notification.notification_type == NotificationType.USAGE_WARNING:
         return reverse("chat:chat_home")
+    if notification.notification_type == NotificationType.NEW_TRUSTED_DEVICE:
+        return reverse("accounts:profile") + "#security"
+    # MAINTENANCE has no universal destination - governance:maintenance is SuperAdmin-only, and
+    # most recipients of a maintenance notice have no page to send them to about it.
     return None
+
+
+class NotificationCategory:
+    """Display-only grouping over the existing NotificationType values (Notification Center's
+    optional category filter) - never stored on the model, never a new NotificationType. A type
+    left out of _TYPE_CATEGORY (ACCOUNT_CREATED) simply has no category chip; it still shows
+    under "All"."""
+
+    SECURITY = "security"
+    BILLING = "billing"
+    AI_SYSTEM = "ai_system"
+    MAINTENANCE = "maintenance"
+
+
+NOTIFICATION_CATEGORIES = [
+    (NotificationCategory.SECURITY, "Security"),
+    (NotificationCategory.BILLING, "Billing"),
+    (NotificationCategory.AI_SYSTEM, "AI & System"),
+    (NotificationCategory.MAINTENANCE, "Maintenance"),
+]
+
+_TYPE_CATEGORY = {
+    "admin_change": NotificationCategory.SECURITY,
+    "new_trusted_device": NotificationCategory.SECURITY,
+    "plan_change": NotificationCategory.BILLING,
+    "trial_expiring": NotificationCategory.BILLING,
+    "trial_expired": NotificationCategory.BILLING,
+    "invoice_payment_submitted": NotificationCategory.BILLING,
+    "refund_requested": NotificationCategory.BILLING,
+    "refund_decision": NotificationCategory.BILLING,
+    "plan_cancellation": NotificationCategory.BILLING,
+    "model_sync_available": NotificationCategory.AI_SYSTEM,
+    "usage_warning": NotificationCategory.AI_SYSTEM,
+    "maintenance": NotificationCategory.MAINTENANCE,
+}
+
+# One icon "kind" per type, reused by both the category grouping above (where a type has a
+# category, its icon matches) and the ones that don't (account_created falls back to "generic").
+_TYPE_ICON_KIND = dict(_TYPE_CATEGORY, account_created="generic")
+
+
+def notification_category(notification_type):
+    return _TYPE_CATEGORY.get(notification_type)
+
+
+def notification_types_for_category(category_key):
+    return [t for t, c in _TYPE_CATEGORY.items() if c == category_key]
+
+
+def notification_icon_kind(notification_type):
+    return _TYPE_ICON_KIND.get(notification_type, "generic")

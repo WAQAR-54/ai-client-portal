@@ -2175,6 +2175,73 @@ class AdminListFilteringTests(TestCase):
         )
         self.assertEqual(len(response.context["logs"]), 0)
 
+    def test_audit_logs_search_matches_actor_action_or_target(self):
+        AuditLog.objects.create(actor=self.alice, action_type="user.role_change", target_type="User", target_id="1")
+        AuditLog.objects.create(actor=self.bob, action_type="model.enable", target_type="ModelConfig", target_id="1")
+        response = self.client.get(reverse("governance:audit_logs"), {"search": "alice"})
+        self.assertEqual(len(response.context["logs"]), 1)
+        self.assertEqual(response.context["logs"][0].actor_id, self.alice.id)
+        response = self.client.get(reverse("governance:audit_logs"), {"search": "model.enable"})
+        self.assertEqual(len(response.context["logs"]), 1)
+        response = self.client.get(reverse("governance:audit_logs"), {"search": "nothing-matches-this"})
+        self.assertEqual(len(response.context["logs"]), 0)
+
+    def test_audit_logs_sort_toggles_newest_vs_oldest(self):
+        # setUp's own User.objects.create_user() calls already fire "user.create" AuditLog rows
+        # (accounts/signals.py) - narrow with search to just these two rather than assuming
+        # either sits at absolute index 0 of the whole (unfiltered) table.
+        first = AuditLog.objects.create(
+            actor=self.admin, action_type="sort.test.one", target_type="User", target_id="1"
+        )
+        second = AuditLog.objects.create(
+            actor=self.admin, action_type="sort.test.two", target_type="User", target_id="1"
+        )
+        response = self.client.get(reverse("governance:audit_logs"), {"search": "sort.test"})
+        self.assertEqual([entry.id for entry in response.context["logs"]], [second.id, first.id])  # newest first
+        response = self.client.get(reverse("governance:audit_logs"), {"search": "sort.test", "sort": "oldest"})
+        self.assertEqual([entry.id for entry in response.context["logs"]], [first.id, second.id])
+
+    def test_audit_logs_clear_filters_link_only_shows_when_a_filter_is_active(self):
+        response = self.client.get(reverse("governance:audit_logs"))
+        self.assertFalse(response.context["has_active_filters"])
+        self.assertNotContains(response, "Clear filters")
+        response = self.client.get(reverse("governance:audit_logs"), {"search": "alice"})
+        self.assertTrue(response.context["has_active_filters"])
+        self.assertContains(response, "Clear filters")
+
+    def test_audit_log_old_new_value_is_masked_when_secret_shaped(self):
+        """Defense-in-depth, not a claim that any real call site logs a secret today (none do) -
+        governance_extras.mask_audit_value redacts a long no-whitespace token before it's shown."""
+        fake_token = "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+        entry = AuditLog.objects.create(
+            actor=self.admin, action_type="a.one", target_type="User", target_id="1", old_value=fake_token
+        )
+        response = self.client.get(reverse("governance:audit_logs"))
+        self.assertNotContains(response, fake_token)
+        detail_response = self.client.get(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertNotContains(detail_response, fake_token)
+
+    def test_audit_log_short_or_normal_values_are_not_masked(self):
+        entry = AuditLog.objects.create(
+            actor=self.admin,
+            action_type="provider.region_update",
+            target_type="Provider",
+            target_id="1",
+            old_value="us-east",
+            new_value="3 model(s) disabled",
+        )
+        response = self.client.get(reverse("governance:audit_logs"))
+        self.assertContains(response, "us-east")
+        detail_response = self.client.get(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertContains(detail_response, "3 model(s) disabled")
+
+    def test_audit_log_detail_view_is_read_only(self):
+        entry = AuditLog.objects.create(actor=self.admin, action_type="a.one", target_type="User", target_id="1")
+        response = self.client.post(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertEqual(response.status_code, 405)
+        response = self.client.delete(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertEqual(response.status_code, 405)
+
     def test_usage_search_and_model_filter(self):
         model = ModelConfig.objects.create(provider="openai", model_name="gpt-4o-mini", is_enabled=True)
         conv = Conversation.objects.create(user=self.alice, title="c")
@@ -2201,6 +2268,18 @@ class AdminListFilteringTests(TestCase):
         for url_name in ["users", "models", "departments", "limits", "audit_logs", "usage"]:
             response = self.client.get(reverse(f"governance:{url_name}"), {"search": "x"})
             self.assertEqual(response.status_code, 403, url_name)
+
+    def test_manager_has_no_audit_log_access(self):
+        """Manager sits below Admin in the role hierarchy AdminRequiredMixin checks - confirmed
+        here directly rather than only inferred from that mixin's own code. Not a narrower
+        Manager-scoped view; no audit access at all today."""
+        self.client.logout()
+        self.client.login(email="bob@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:audit_logs"))
+        self.assertEqual(response.status_code, 403)
+        entry = AuditLog.objects.create(actor=self.admin, action_type="a.one", target_type="User", target_id="1")
+        response = self.client.get(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertEqual(response.status_code, 403)
 
 
 class AuditLogImmutabilityTests(TestCase):
@@ -2880,6 +2959,25 @@ class RoleHierarchyAccessControlTests(TestCase):
         logs = list(response.context["logs"])
         self.assertTrue(any(entry.actor_id == self.admin_a.id for entry in logs))
         self.assertFalse(any(entry.actor_id == self.admin_b.id for entry in logs))
+
+    def test_admin_cannot_open_another_departments_audit_log_detail(self):
+        """Same 404-not-403 shape as every other cross-department ownership check in this
+        app - a guessed id for an entry outside the Admin's scope must not leak existence."""
+        from governance.audit import log_action
+
+        entry = log_action(self.admin_b, "user.suspend", self.user_b, old_value=True, new_value=False)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_can_open_their_own_departments_audit_log_detail(self):
+        from governance.audit import log_action
+
+        entry = log_action(self.admin_a, "user.suspend", self.user_a, old_value=True, new_value=False)
+        self.client.login(email="admina@example.com", password="pw12345!")
+        response = self.client.get(reverse("governance:audit_log_detail", kwargs={"pk": entry.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "user.suspend")
 
     def test_admin_usage_export_excludes_another_departments_data(self):
         model = ModelConfig.objects.create(provider=ModelConfig.Provider.OPENAI, model_name="m", is_enabled=True)

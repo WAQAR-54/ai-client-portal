@@ -22,6 +22,13 @@
                hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
         <input type="date" name="date_to" value="{{ date_to }}" title="{% trans 'To date' %}"
                hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+        <select name="sort" hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" hx-trigger="change" hx-include="closest form">
+            <option value="" {% if sort != "oldest" %}selected{% endif %}>{% trans "Newest first" %}</option>
+            <option value="oldest" {% if sort == "oldest" %}selected{% endif %}>{% trans "Oldest first" %}</option>
+        </select>
+        {% if has_active_filters %}
+        <a href="{{ filter_url }}" hx-get="{{ filter_url }}" hx-target="#audit-logs-table" hx-push-url="true" class="btn-small btn-ghost">{% trans "Clear filters" %}</a>
+        {% endif %}
     </form>
 
     <div id="audit-logs-table">

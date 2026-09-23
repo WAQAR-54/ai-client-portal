@@ -366,6 +366,33 @@ class BellDropdownAndPreferencesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "notif-bell")
 
+    def test_each_notification_type_renders_an_icon(self):
+        notify(self.user, NotificationType.ADMIN_CHANGE, title="Security one")
+        notify(self.user, NotificationType.PLAN_CHANGE, title="Billing one")
+        response = self.client.get(reverse("notifications:bell_dropdown"))
+        self.assertContains(response, "notif-icon-security")
+        self.assertContains(response, "notif-icon-billing")
+
+    def test_bell_wrap_has_a_loading_placeholder_before_htmx_loads(self):
+        """base.html's #notif-bell-wrap must never render as an empty div on first paint."""
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "notif-bell-placeholder")
+
+    def test_metadata_is_never_dumped_raw_into_the_bell_or_list_html(self):
+        """metadata can carry internal ids (invoice_id, plan_name, ...) - it drives
+        notification_action_url() server-side but must never be interpolated straight into the
+        page; only title/body/created_at are ever shown."""
+        notify(
+            self.user,
+            NotificationType.INVOICE_PAYMENT_SUBMITTED,
+            title="Invoice submitted",
+            metadata={"invoice_id": 999, "internal_note": "do-not-leak-this-token"},
+        )
+        bell_response = self.client.get(reverse("notifications:bell_dropdown"))
+        list_response = self.client.get(reverse("notifications:list"))
+        self.assertNotContains(bell_response, "do-not-leak-this-token")
+        self.assertNotContains(list_response, "do-not-leak-this-token")
+
 
 class NotificationActionUrlTests(TestCase):
     """notification_action_url() - one deliberate destination per
@@ -417,6 +444,15 @@ class NotificationActionUrlTests(TestCase):
 
     def test_usage_warning_links_to_chat(self):
         self.assertEqual(notification_action_url(self._make(NotificationType.USAGE_WARNING)), reverse("chat:chat_home"))
+
+    def test_new_trusted_device_links_to_the_profile_security_tab(self):
+        self.assertEqual(
+            notification_action_url(self._make(NotificationType.NEW_TRUSTED_DEVICE)),
+            reverse("accounts:profile") + "#security",
+        )
+
+    def test_maintenance_has_no_destination(self):
+        self.assertIsNone(notification_action_url(self._make(NotificationType.MAINTENANCE)))
 
 
 class NotificationListPageTests(TestCase):
@@ -475,6 +511,167 @@ class NotificationListPageTests(TestCase):
         response = self.client.post(reverse("notifications:delete_notifications"), {"delete_all": "1"})
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Notification.objects.filter(id=others_notification.id).exists())
+
+
+class MarkUnreadTests(TestCase):
+    """notifications:mark_unread - the one direction the Notification Center adds. Mirrors
+    mark_read's own tests exactly (same view shape, same ownership enforcement)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="unread-check@example.com", password="pw12345!")
+        self.client.login(email="unread-check@example.com", password="pw12345!")
+
+    def test_requires_login(self):
+        self.client.logout()
+        notification = notify(self.user, NotificationType.USAGE_WARNING, title="One")
+        response = self.client.post(reverse("notifications:mark_unread", kwargs={"notification_id": notification.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("accounts:login"), response.url)
+
+    def test_marks_a_read_notification_unread(self):
+        notification = notify(self.user, NotificationType.USAGE_WARNING, title="One")
+        notification.is_read = True
+        notification.save(update_fields=["is_read"])
+        response = self.client.post(
+            reverse("notifications:mark_unread", kwargs={"notification_id": notification.id}),
+            {"next": reverse("notifications:list")},
+        )
+        self.assertRedirects(response, reverse("notifications:list"))
+        notification.refresh_from_db()
+        self.assertFalse(notification.is_read)
+
+    def test_via_htmx_returns_the_bell_partial(self):
+        notification = notify(self.user, NotificationType.USAGE_WARNING, title="One")
+        notification.is_read = True
+        notification.save(update_fields=["is_read"])
+        response = self.client.post(
+            reverse("notifications:mark_unread", kwargs={"notification_id": notification.id}), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "notif-bell")
+
+    def test_cannot_mark_another_users_notification_unread(self):
+        """The single most important security property here - a guessed/enumerated id for
+        someone else's notification 404s, exactly like mark_read already does, never a 403 that
+        would leak whether the id exists."""
+        other = User.objects.create_user(email="unread-victim@example.com", password="pw12345!")
+        others_notification = notify(other, NotificationType.USAGE_WARNING, title="Not yours")
+        others_notification.is_read = True
+        others_notification.save(update_fields=["is_read"])
+        response = self.client.post(
+            reverse("notifications:mark_unread", kwargs={"notification_id": others_notification.id})
+        )
+        self.assertEqual(response.status_code, 404)
+        others_notification.refresh_from_db()
+        self.assertTrue(others_notification.is_read)
+
+
+class NotificationFilterAndPaginationTests(TestCase):
+    """The Notification Center's All/Unread tab and optional category chips on
+    notifications:list - both plain filters on top of the existing user=request.user queryset,
+    combined with the existing 25/page pagination."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="filter-check@example.com", password="pw12345!")
+        self.client.login(email="filter-check@example.com", password="pw12345!")
+
+    def test_default_view_shows_all_notifications(self):
+        notify(self.user, NotificationType.USAGE_WARNING, title="Unread one")
+        read_one = notify(self.user, NotificationType.ADMIN_CHANGE, title="Read one")
+        read_one.is_read = True
+        read_one.save(update_fields=["is_read"])
+        response = self.client.get(reverse("notifications:list"))
+        self.assertContains(response, "Unread one")
+        self.assertContains(response, "Read one")
+
+    def test_unread_tab_hides_read_notifications(self):
+        notify(self.user, NotificationType.USAGE_WARNING, title="Unread one")
+        read_one = notify(self.user, NotificationType.ADMIN_CHANGE, title="Read one")
+        read_one.is_read = True
+        read_one.save(update_fields=["is_read"])
+        response = self.client.get(reverse("notifications:list"), {"unread": "1"})
+        self.assertContains(response, "Unread one")
+        self.assertNotContains(response, "Read one")
+
+    def test_unread_tab_empty_state_when_everything_is_read(self):
+        n = notify(self.user, NotificationType.USAGE_WARNING, title="Already read")
+        n.is_read = True
+        n.save(update_fields=["is_read"])
+        response = self.client.get(reverse("notifications:list"), {"unread": "1"})
+        self.assertContains(response, "all caught up")
+
+    def test_category_filter_only_shows_matching_types(self):
+        notify(self.user, NotificationType.ADMIN_CHANGE, title="Security notice")
+        notify(self.user, NotificationType.PLAN_CHANGE, title="Billing notice")
+        response = self.client.get(reverse("notifications:list"), {"category": "security"})
+        self.assertContains(response, "Security notice")
+        self.assertNotContains(response, "Billing notice")
+
+    def test_an_invalid_category_is_ignored_not_erroring(self):
+        notify(self.user, NotificationType.ADMIN_CHANGE, title="Security notice")
+        response = self.client.get(reverse("notifications:list"), {"category": "not-a-real-category"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Security notice")
+
+    def test_unread_and_category_combine(self):
+        unread_security = notify(self.user, NotificationType.ADMIN_CHANGE, title="Unread security")
+        read_security = notify(self.user, NotificationType.NEW_TRUSTED_DEVICE, title="Read security")
+        read_security.is_read = True
+        read_security.save(update_fields=["is_read"])
+        notify(self.user, NotificationType.PLAN_CHANGE, title="Unread billing")
+        response = self.client.get(reverse("notifications:list"), {"unread": "1", "category": "security"})
+        self.assertContains(response, "Unread security")
+        self.assertNotContains(response, "Read security")
+        self.assertNotContains(response, "Unread billing")
+        self.assertTrue(Notification.objects.get(id=unread_security.id).is_read is False)
+
+    def test_pagination_preserves_the_active_filter(self):
+        for i in range(30):
+            notify(self.user, NotificationType.USAGE_WARNING, title=f"Unread {i}")
+        for i in range(5):
+            n = notify(self.user, NotificationType.ADMIN_CHANGE, title=f"Read {i}")
+            n.is_read = True
+            n.save(update_fields=["is_read"])
+        response = self.client.get(reverse("notifications:list"), {"unread": "1"})
+        self.assertEqual(response.context["page_obj"].paginator.count, 30)
+        self.assertContains(response, "unread=1")
+        self.assertNotContains(response, "page=1&amp;unread=1")  # querystring_without_page never re-includes page
+
+    def test_empty_state_with_no_notifications_at_all(self):
+        response = self.client.get(reverse("notifications:list"))
+        self.assertContains(response, "No notifications yet.")
+
+    def test_never_shows_another_users_notifications_under_any_filter(self):
+        other = User.objects.create_user(email="filter-victim@example.com", password="pw12345!")
+        notify(other, NotificationType.ADMIN_CHANGE, title="Not yours - security")
+        response = self.client.get(reverse("notifications:list"), {"category": "security"})
+        self.assertNotContains(response, "Not yours - security")
+
+
+class NotificationCenterScopingTests(TestCase):
+    """Admin/SuperAdmin-originated notifications (e.g. maintenance broadcasts) are still one row
+    per recipient (governance/maintenance.py::deliver_notice) - the same user=request.user
+    ownership check that guards every other endpoint here is sufficient, no special-casing."""
+
+    def test_superadmin_only_sees_their_own_notifications_not_every_recipients(self):
+        superadmin = User.objects.create_user(
+            email="notif-super@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        member = User.objects.create_user(email="notif-member@example.com", password="pw12345!")
+        notify(member, NotificationType.MAINTENANCE, title="Scheduled maintenance", body="For member only")
+        notify(superadmin, NotificationType.MAINTENANCE, title="Scheduled maintenance", body="For superadmin only")
+
+        self.client.login(email="notif-super@example.com", password="pw12345!")
+        response = self.client.get(reverse("notifications:list"))
+        self.assertContains(response, "For superadmin only")
+        self.assertNotContains(response, "For member only")
+
+    def test_maintenance_notification_has_no_action_url_for_a_regular_user(self):
+        """Deliberate: governance:maintenance is SuperAdmin-only, so a regular recipient's
+        maintenance notice stays mark-read-only rather than linking to a page they can't open."""
+        self.assertIsNone(
+            notification_action_url(Notification(notification_type=NotificationType.MAINTENANCE, title="x"))
+        )
 
 
 class EmailSettingsModelTests(TestCase):

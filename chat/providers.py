@@ -116,6 +116,16 @@ class OpenAICompatibleProvider(AIProvider):
     def _client(self):
         import openai
 
+        from providers.adapters.openai_compatible import _BUILTIN_BASE_URLS
+
+        # provider_row.base_url is blank for the two built-in OpenAI-compatible providers (Grok, DeepSeek) by
+        # design (see Provider.base_url's own docstring) - the connect/sync adapter already knows to fall back
+        # to _BUILTIN_BASE_URLS for them (providers/adapters/openai_compatible.py::_base_url). This client was
+        # missing that same fallback, so every Grok/DeepSeek chat request silently went to OpenAI's own default
+        # endpoint (base_url=None) with a Grok/DeepSeek API key - authentication failed on every real reply,
+        # and because that raised before Message.save()/last_provider_model was ever set (see stream_message's
+        # two completion points), those conversations could never be tagged or filtered by provider either.
+        base_url = self.provider_row.base_url or _BUILTIN_BASE_URLS.get(self.provider_row.slug)
         # The SDK's default max_retries=2 gave up too fast against a flaky
         # local network (observed: two quick retries on a DNS getaddrinfo
         # failure, then a hard failure) — a real, live example of this is
@@ -123,7 +133,7 @@ class OpenAICompatibleProvider(AIProvider):
         # immediately surface as a failed reply to the user.
         return openai.OpenAI(
             api_key=self._api_key(),
-            base_url=self.provider_row.base_url or None,
+            base_url=base_url or None,
             max_retries=5,
             timeout=60.0,
         )

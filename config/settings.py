@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     "notifications",
     "playground",
     "providers",
+    "search",
 ]
 
 MIDDLEWARE = [

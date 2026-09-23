@@ -9,8 +9,9 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from accounts.redirects import safe_next_url
 from governance.features import require_feature
+from governance.views import _querystring_without
 from notifications.models import EMAIL_TOGGLE_LABELS, EmailLog, Notification, NotificationPreference
-from notifications.notify import notification_action_url
+from notifications.notify import NOTIFICATION_CATEGORIES, notification_action_url, notification_types_for_category
 
 # A real, minimal 1x1 transparent GIF - not a redirect to a static file,
 # so this endpoint works standalone with no other dependency, and every
@@ -65,11 +66,42 @@ def notification_list(request):
     """Full history - the bell dropdown only ever shows the 10 most
     recent (see _bell_context), so anyone with more than that piling up
     had no way to ever see or act on the rest of their unread backlog
-    except "Mark all read"."""
-    paginator = Paginator(Notification.objects.filter(user=request.user), 25)
+    except "Mark all read".
+
+    Notification Center additions: an All/Unread tab (?unread=1) and an optional category chip
+    (?category=<key>, grouping the existing NotificationType values - see notifications/notify.py's
+    NOTIFICATION_CATEGORIES; never a new type). Both are plain queryset filters on top of the same
+    user=request.user base queryset, so the existing per-user scoping is untouched. Pagination
+    preserves both via the same querystring-preserving helper governance's own list pages already
+    use (_querystring_without), rather than a new pattern."""
+    qs = Notification.objects.filter(user=request.user)
+
+    unread_only = request.GET.get("unread") == "1"
+    if unread_only:
+        qs = qs.filter(is_read=False)
+
+    category = request.GET.get("category", "")
+    valid_categories = {key for key, _label in NOTIFICATION_CATEGORIES}
+    if category not in valid_categories:
+        category = ""
+    if category:
+        qs = qs.filter(notification_type__in=notification_types_for_category(category))
+
+    paginator = Paginator(qs, 25)
     page = paginator.get_page(request.GET.get("page"))
     page.object_list = _with_action_urls(page.object_list)
-    return render(request, "notifications/list.html", {"page_obj": page})
+    return render(
+        request,
+        "notifications/list.html",
+        {
+            "page_obj": page,
+            "unread_only": unread_only,
+            "category": category,
+            "categories": NOTIFICATION_CATEGORIES,
+            "querystring_without_page": _querystring_without(request, "page"),
+            "total_unread_count": Notification.objects.filter(user=request.user, is_read=False).count(),
+        },
+    )
 
 
 @login_required
@@ -78,6 +110,21 @@ def notification_list(request):
 def mark_read(request, notification_id):
     notification = get_object_or_404(Notification, id=notification_id, user=request.user)
     notification.is_read = True
+    notification.save(update_fields=["is_read"])
+    if request.headers.get("HX-Request"):
+        return render(request, "notifications/_bell_dropdown.html", _bell_context(request))
+    return redirect(safe_next_url(request, "notifications:list"))
+
+
+@login_required
+@require_feature("notifications")
+@require_http_methods(["POST"])
+def mark_unread(request, notification_id):
+    """Mirrors mark_read exactly (same ownership check, same HX/redirect branching) - the one
+    direction that didn't exist before the Notification Center: letting someone put a
+    read notification back into their unread backlog instead of it just sitting read forever."""
+    notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+    notification.is_read = False
     notification.save(update_fields=["is_read"])
     if request.headers.get("HX-Request"):
         return render(request, "notifications/_bell_dropdown.html", _bell_context(request))

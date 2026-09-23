@@ -116,6 +116,7 @@ urlpatterns = [
     path("governance/", include("governance.urls")),
     path("providers/", include("providers.urls")),
     path("notifications/", include("notifications.urls")),
+    path("search/", include("search.urls")),
     path("playground/", include("playground.urls")),
     path("domains/", include("domaingen.urls")),
     # No S3/CDN is configured for user-uploaded media (SiteBranding's logo/

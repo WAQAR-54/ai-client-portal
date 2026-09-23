@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import RequestFactory, TestCase, override_settings
+from django.test import Client, RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone, translation
 
@@ -889,6 +889,41 @@ class ArabicLanguagePreferenceTests(TestCase):
             translation.deactivate()
 
 
+class AuthPageTranslationTests(TestCase):
+    """Regression for a real reported bug: the login page's floating showcase cards ("Chat with 4 AI models",
+    "Sales, Marketing & Dev agents", "Full admin console") kept rendering in English inside an otherwise-Urdu
+    page, because those three strings - and the whole MFA/password-reset flow - had no locale/ur or locale/ar
+    entry at all (Django silently falls back to the English msgid when a translation is missing, no error).
+    These pin down that the specific strings from the bug report are now translated, without trying to audit
+    every string in the app (a real, much larger gap - see docs/OPERATIONS.md's own note on it)."""
+
+    def test_the_showcase_cards_are_translated_not_left_in_english(self):
+        for ip, phrase in (("182.176.1.1", "چیٹ کریں"), ("213.42.1.1", "الدردشة")):
+            with self.subTest(ip=ip):
+                # A fresh client per IP - the geo-detected language cookie set by the first request would
+                # otherwise stick around (Client persists Set-Cookie like a real browser) and be trusted as an
+                # "already chosen" language on the second request, skipping detection for the other one entirely.
+                response = Client().get(reverse("accounts:login"), REMOTE_ADDR=ip)
+                self.assertContains(response, phrase)
+                self.assertNotContains(response, "Chat with 4 AI models")
+                self.assertNotContains(response, "Sales, Marketing &amp; Dev agents")
+                self.assertNotContains(response, "Full admin console")
+
+    def test_mfa_and_password_reset_pages_are_translated_in_urdu_and_arabic(self):
+        translation.activate("ur")
+        try:
+            self.assertEqual(translation.gettext("Verify it's you"), "تصدیق کریں کہ یہ آپ ہی ہیں")
+            self.assertEqual(translation.gettext("Reset your password"), "اپنا پاس ورڈ ری سیٹ کریں")
+        finally:
+            translation.deactivate()
+        translation.activate("ar")
+        try:
+            self.assertEqual(translation.gettext("Verify it's you"), "تأكد من أنك أنت")
+            self.assertEqual(translation.gettext("Reset your password"), "إعادة تعيين كلمة المرور")
+        finally:
+            translation.deactivate()
+
+
 class DepartmentRetentionDaysTests(TestCase):
     def test_forever_returns_none(self):
         department = Department.objects.create(name="D1", retention_period=Department.RetentionPeriod.FOREVER)
@@ -1263,6 +1298,21 @@ class SessionTimeoutMiddlewareTests(TestCase):
         self.client.logout()
         response = self.client.get(reverse("accounts:login"))
         self.assertEqual(response.status_code, 200)
+
+    def test_an_htmx_request_past_the_timeout_gets_hx_redirect(self):
+        """A background htmx poll (the notification bell's hx-trigger="load, every 45s") can be the request
+        that lands right after the timeout, with no user action at all - a plain 302 here would have htmx
+        swap the whole rendered login page into that poll's small target element instead of replacing the
+        page (the bug this test guards against; see SingleSessionMiddleware's identical test)."""
+        from accounts.middleware import SESSION_TIMEOUT_MINUTES
+
+        session = self.client.session
+        session["last_activity"] = timezone.now().timestamp() - (SESSION_TIMEOUT_MINUTES * 60 + 30)
+        session.save()
+        response = self.client.get(reverse("accounts:dashboard"), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], reverse("accounts:login"))
+        self.assertNotIn("_auth_user_id", self.client.session)
 
 
 @override_settings(DEBUG=False)

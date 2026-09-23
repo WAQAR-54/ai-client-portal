@@ -157,7 +157,7 @@ ADMIN_NAV_FEATURES = [
 # has all of these; that's not a row here since it's not actually a choice.
 USER_CHAT_FEATURES = [
     ("prompt_templates", "Prompt templates (save/insert in composer)"),
-    ("quick_switcher", "Keyboard shortcuts / Ctrl+K quick-switcher"),
+    ("quick_switcher", "Global search / Ctrl+K command palette"),
     ("conversation_pin_search", "Pin & search conversations"),
     ("dark_mode", "Dark mode toggle (Settings > Display)"),
     ("notifications", "Notifications (bell + email preferences)"),

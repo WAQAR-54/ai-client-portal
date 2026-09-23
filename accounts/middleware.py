@@ -191,7 +191,14 @@ class SessionTimeoutMiddleware:
 
     Must run after AuthenticationMiddleware (needs request.user) and after
     MessageMiddleware (uses django.contrib.messages) - see the MIDDLEWARE
-    ordering comment in config/settings.py."""
+    ordering comment in config/settings.py.
+
+    An htmx request gets HX-Redirect instead of a 302, same reasoning as
+    SingleSessionMiddleware below: a background htmx poll (e.g. the
+    notification bell's hx-trigger="load, every 45s" in base.html) can be
+    the one that lands after the timeout with no user action at all, and a
+    plain redirect would have htmx swap the whole rendered login page into
+    that poll's small target element instead of replacing the page."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -203,7 +210,12 @@ class SessionTimeoutMiddleware:
             if last_activity is not None and (now - last_activity) > SESSION_TIMEOUT_MINUTES * 60:
                 logout(request)
                 messages.info(request, translation.gettext("You were logged out after a period of inactivity."))
-                return redirect("accounts:login")
+                login_url = reverse("accounts:login")
+                if request.headers.get("HX-Request"):
+                    response = HttpResponse(status=204)
+                    response["HX-Redirect"] = login_url
+                    return response
+                return redirect(login_url)
             request.session["last_activity"] = now
         return self.get_response(request)
 

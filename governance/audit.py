@@ -2,7 +2,7 @@ from governance.models import AuditLog
 
 
 def log_action(actor, action_type, target, old_value="", new_value=""):
-    AuditLog.objects.create(
+    return AuditLog.objects.create(
         actor=actor,
         action_type=action_type,
         target_type=target.__class__.__name__,
