@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from django.core.cache import cache
-from django.test import Client, TestCase, client, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from accounts.models import User
@@ -126,32 +126,37 @@ class LegalNavigationTests(TestCase):
     def setUp(self):
         cache.clear()
 
-    def test_footer_links_are_on_sign_in_sign_up_pricing_and_every_legal_page(self):
+    def test_all_four_footer_links_are_on_pricing_and_every_legal_page(self):
         hrefs = [reverse(name) for name in URLS.values()]
-        for url in (reverse("accounts:login"), reverse("accounts:signup"), reverse("billing:public_pricing"), *hrefs):
+        for url in (reverse("billing:public_pricing"), *hrefs):
             body = self.client.get(url).content.decode()
             for href in hrefs:
                 self.assertIn(f'href="{href}"', body, f"{url} lacks a link to {href}")
 
-    def test_legal_links_are_not_in_the_signed_in_sidebar(self):
-        user = User.objects.create_user(email="reader@corp.io",password="pw12345!Strong",)
+    def test_sign_in_and_sign_up_show_a_subtle_agreement_line_not_four_buttons(self):
+        for url in (reverse("accounts:login"), reverse("accounts:signup")):
+            body = self.client.get(url).content.decode()
+            self.assertIn(f'href="{reverse("legal:terms")}"', body)
+            self.assertIn(f'href="{reverse("legal:privacy")}"', body)
+            self.assertNotIn(f'href="{reverse("legal:refund")}"', body)
+            self.assertNotIn(f'href="{reverse("legal:ai_usage")}"', body)
 
+    def test_legal_links_are_not_in_the_signed_in_sidebar(self):
+        user = User.objects.create_user(email="reader@corp.io", password="pw12345!Strong")
         client = Client()
         client.force_login(user)
 
         body = client.get(reverse("accounts:dashboard")).content.decode()
+        sidebar_match = re.search(r'<aside[^>]*class="[^"]*\bapp-sidebar\b[^"]*"[^>]*>(.*?)</aside>', body, re.DOTALL)
+        self.assertIsNotNone(sidebar_match, "Signed-in sidebar was not found")
+        sidebar = sidebar_match.group(1)
 
         for name in URLS.values():
-            self.assertNotIn(
-            f'href="{reverse(name)}"',
-            body,
-            f"Legal link {name} must not appear in the signed-in sidebar",
-        )
-
-        self.assertEqual(
-            client.get(reverse(name)).status_code,
-            200,
-        )
+            with self.subTest(page=name):
+                self.assertNotIn(
+                    f'href="{reverse(name)}"', sidebar, f"Legal link {name} must not appear in the signed-in sidebar"
+                )
+                self.assertEqual(client.get(reverse(name)).status_code, 200)
 
     def test_every_internal_link_on_every_legal_page_resolves(self):
         for name in URLS.values():
