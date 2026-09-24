@@ -5,6 +5,7 @@ the single implementation shared by the manual "Generate invoice" action
 compute a total differently.
 """
 
+import calendar
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -16,6 +17,14 @@ from billing.tax_rules import tax_rule_for_country
 
 DEFAULT_DUE_IN_DAYS = 14
 
+# The self-checkout "Duration" picker's Custom option (billing.views.checkout_plan) - a sensible upper
+# bound on a one-time custom month count, so a customer (or a scripted abuse attempt) can't submit an
+# absurd value like 999999 and get an invoice for it. Named/documented here rather than an inline
+# magic number, same reasoning as DEFAULT_DUE_IN_DAYS above; there is no existing Plan/billing setting
+# for this in the project already (checked governance.models.Plan and every billing profile model), so
+# this is the one place it's defined - change it here, not at either call site below.
+MAX_CUSTOM_DURATION_MONTHS = 36
+
 
 class InvoiceGenerationError(ValueError):
     """Raised when a department can't be invoiced yet - a clear, specific
@@ -24,6 +33,102 @@ class InvoiceGenerationError(ValueError):
 
 def _quantize(amount):
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def add_calendar_months(start_date, months):
+    """start_date + `months` calendar months, e.g. Jan 15 + 8 -> Sep 15. Clamps the day to the target
+    month's real length instead of raising (Jan 31 + 1 month -> Feb 28, or 29 in a leap year) - the
+    standard calendar-month-arithmetic pattern, no extra dependency needed for it. Works on both
+    date and datetime (whichever `start_date` is - .replace() preserves the type and, for a datetime,
+    the time-of-day)."""
+    month_index = start_date.month - 1 + months
+    year = start_date.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(start_date.day, calendar.monthrange(year, month)[1])
+    return start_date.replace(year=year, month=month, day=day)
+
+
+def validate_duration_months(months):
+    """The server's own independent check, same validation shape whether the caller is the
+    self-checkout view (billing.views.checkout_plan, which already validated the raw POST value
+    before ever calling in here) or any other future caller - this function never trusts that a
+    positive-int-in-range value actually reached it, per the spec's own "never trust the frontend's
+    duration" instruction extended to defense in depth at this layer too."""
+    if not isinstance(months, int) or isinstance(months, bool) or months < 1:
+        raise InvoiceGenerationError("Duration must be a positive whole number of months.")
+    if months > MAX_CUSTOM_DURATION_MONTHS:
+        raise InvoiceGenerationError(f"Duration can't be more than {MAX_CUSTOM_DURATION_MONTHS} months.")
+
+
+def _apply_duration_months(subtotal, line_items, months):
+    """Scales a subtotal/line_items pair (still just "one billing period's worth", computed identically
+    to how this file already priced a plan before duration options existed) up to the actual number of
+    months being billed for - one multiplication point shared by both generator functions below, so
+    "the total is the per-month price times the number of months" can never be computed two different
+    ways. A no-op for months=1 (every pre-existing caller), by construction: multiplying by 1 changes
+    nothing, so this never has to special-case "was a duration actually chosen or not"."""
+    if months == 1:
+        return subtotal, line_items
+    scaled_items = [
+        {"description": f"{item['description']} × {months} months", "amount": str(Decimal(item["amount"]) * months)}
+        for item in line_items
+    ]
+    return subtotal * months, scaled_items
+
+
+# Self-checkout upgrade/change credit (billing.views.checkout_plan): the standard "daily rate x days
+# remaining" proration convention (a fixed 30-day month for the rate itself - the same simplification
+# most subscription billers use so the credit is predictable and doesn't shrink/grow depending on
+# which calendar month it happens to fall in; days_remaining itself still comes from real calendar
+# dates, only the per-day RATE uses this fixed denominator). No proration method already existed in
+# this project (checked governance/billing models and every legal/docs policy page) - this is the one
+# place it's defined.
+UPGRADE_CREDIT_DAYS_PER_MONTH = 30
+
+
+def _compute_upgrade_credit(user, new_plan):
+    """The unused-value credit for switching a self-checkout user from their current plan to
+    `new_plan`, per the spec's own worked example (current plan price/month x days remaining / 30).
+    Returns (credit: Decimal, previous_plan: Plan|None, days_remaining: int) - previous_plan is None
+    (credit always 0) for every case that isn't a genuine upgrade/change:
+    - no assignment yet, or the assignment has no real fixed-term expiry (never bought via self-
+      checkout, or on the org's default/free plan) - nothing to credit.
+    - the SAME plan is being picked again - see checkout_plan's own docstring: that is a renewal
+      (stacks days onto the existing expiry instead), not an upgrade, and must never ALSO get a
+      price credit for time it already keeps via that stacking (the abuse the spec explicitly warns
+      about: "do not allow users to ... manipulate the credit" - crediting the same unused time twice,
+      once as extra days and once as a price discount, would be exactly that).
+    - the current plan has already expired - there is no unused value left to credit.
+    - no real PAID invoice for the current plan can be found - the credit is always capped at what
+      the user actually paid (never more, however the daily-rate math comes out), so with nothing on
+      file there is nothing to credit."""
+    from governance.plans import get_assignment
+
+    assignment = get_assignment(user)
+    if assignment is None or assignment.plan_id == new_plan.id or assignment.expires_at is None:
+        return Decimal("0"), None, 0
+
+    now = timezone.now()
+    if assignment.expires_at <= now:
+        return Decimal("0"), None, 0
+    days_remaining = (assignment.expires_at - now).days
+    if days_remaining <= 0:
+        return Decimal("0"), None, 0
+
+    source_invoice = (
+        Invoice.objects.filter(recipient_user=user, plan=assignment.plan, status=Invoice.Status.PAID)
+        .order_by("-issue_date", "-id")
+        .first()
+    )
+    if source_invoice is None:
+        return Decimal("0"), None, 0
+
+    daily_rate = source_invoice.monthly_price() / UPGRADE_CREDIT_DAYS_PER_MONTH
+    credit = _quantize(daily_rate * days_remaining)
+    # Explicit abuse-prevention cap, on top of the formula's own natural bound: never credit more
+    # than the user actually paid for that plan, however the day-rate math comes out.
+    credit = min(credit, source_invoice.total)
+    return credit, assignment.plan, days_remaining
 
 
 def _plan_line_item_description(plan):
@@ -49,11 +154,28 @@ def _plan_line_item_description(plan):
 
 
 def generate_invoice_for_department(
-    department, recipient_user=None, *, plan=None, seat_count=None, region_code=None, due_in_days=DEFAULT_DUE_IN_DAYS
+    department,
+    recipient_user=None,
+    *,
+    plan=None,
+    seat_count=None,
+    region_code=None,
+    due_in_days=DEFAULT_DUE_IN_DAYS,
+    months=1,
+    is_fixed_term=False,
 ):
     """Build and save one Invoice, billed to `recipient_user` (the person
     who sees it under "My Invoices" and submits payment proof - see
     billing.views.generate_invoice).
+
+    `months`: how many calendar months this invoice actually covers - 1 for every existing caller
+    (unchanged behavior), or a validated positive int up to MAX_CUSTOM_DURATION_MONTHS when a customer
+    picked a duration on the self-checkout page (billing.views.checkout_plan, which validates the raw
+    value before it ever reaches here - validate_duration_months below is the independent server-side
+    check this function makes regardless of what already ran in the view, per the spec's own "the
+    server MUST independently validate" instruction). Multiplies the whole subtotal (base charge, and
+    any extra-seat charge) by this - see _apply_duration_months. Stored on the created Invoice as
+    duration_months, which is also what Invoice.subscription_expiry_date() reads.
 
     `plan` defaults to `department.plan` but can be overridden per-invoice
     (a SuperAdmin/Admin explicitly billing this person for a different
@@ -71,8 +193,9 @@ def generate_invoice_for_department(
     region standing in for "the department's country" in that one tier).
 
     Raises InvoiceGenerationError if there's no plan to bill (neither
-    given nor on the department) or that plan has no price set for the
-    department's billing region."""
+    given nor on the department), that plan has no price set for the
+    department's billing region, or months fails validation."""
+    validate_duration_months(months)
     plan = plan or department.plan
     if plan is None:
         raise InvoiceGenerationError(f"{department.name} has no subscription plan assigned.")
@@ -110,6 +233,8 @@ def generate_invoice_for_department(
                 }
             )
 
+    subtotal, line_items = _apply_duration_months(subtotal, line_items, months)
+
     if billing_profile.is_tax_exempt:
         tax_rate = Decimal("0")
     elif billing_profile.custom_tax_rate is not None:
@@ -126,6 +251,8 @@ def generate_invoice_for_department(
         plan=plan,
         issue_date=issue_date,
         due_date=issue_date + timedelta(days=due_in_days),
+        duration_months=months,
+        is_fixed_term=is_fixed_term,
         currency=currency_for_region(region_code),
         line_items=line_items,
         seats_billed=actual_seats,
@@ -180,7 +307,9 @@ def _effective_due_in_days(plan, due_in_days):
     return DEFAULT_DUE_IN_DAYS
 
 
-def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=None, region_code=None):
+def generate_invoice_for_user(
+    user, *, plan=None, seat_count=None, due_in_days=None, region_code=None, months=1, is_fixed_term=False
+):
     """Build and save one Invoice billed directly to `user` - the
     department-optional counterpart to generate_invoice_for_department.
     Department assignment is a separate, optional, admin-driven action in
@@ -189,6 +318,10 @@ def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=N
     both the automatic "welcome invoice" on account creation (accounts.
     signals.generate_welcome_invoice_on_creation) and the recurring
     monthly sweep (billing.tasks.sweep_due_invoices).
+
+    `months`: see generate_invoice_for_department's own docstring - identical meaning, passed straight
+    through when delegating there. This is the parameter billing.views.checkout_plan actually calls
+    with the customer's chosen (and independently, server-side re-validated) duration.
 
     Plan resolution: `plan` argument > `user.department.plan` (if the user
     has a department and it has a plan) > the user's own individual
@@ -200,6 +333,14 @@ def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=N
     `seat_count` is passed straight through to generate_invoice_for_department
     when delegating (see below) - it's a no-op otherwise, since a
     department-less individual always bills exactly one seat regardless.
+
+    `is_fixed_term`: True only for a genuine self-checkout purchase (billing.views.checkout_plan) -
+    see Invoice.is_fixed_term's own field comment for exactly what this changes once the invoice is
+    paid. Upgrade/change credit (_compute_upgrade_credit) is only ever computed on THIS
+    department-less path, not when delegating to generate_invoice_for_department below - self-
+    checkout is a personal purchase against the user's own governance.UserPlanAssignment, a
+    different concept from a department's own subscription, which has no "switch and get credited"
+    flow in this pass.
 
     When the user's department has its own configured plan, this simply
     delegates to generate_invoice_for_department (recipient_user=user) -
@@ -231,6 +372,7 @@ def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=N
     if resolved_plan is None:
         raise InvoiceGenerationError(f"{user.email} has no plan assigned.")
 
+    validate_duration_months(months)
     resolved_due_in_days = _effective_due_in_days(resolved_plan, due_in_days)
 
     if department_has_plan:
@@ -241,6 +383,8 @@ def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=N
             seat_count=seat_count,
             region_code=region_code,
             due_in_days=resolved_due_in_days,
+            months=months,
+            is_fixed_term=is_fixed_term,
         )
 
     resolved_region_code = region_code or "ROW"
@@ -255,17 +399,41 @@ def generate_invoice_for_user(user, *, plan=None, seat_count=None, due_in_days=N
     # count here, so this is never conditional on plan.seats_included.
     seats_billed = 1
 
+    subtotal, line_items = _apply_duration_months(subtotal, line_items, months)
+
+    # Upgrade/change credit - only ever non-zero for a fixed-term (self-checkout) purchase of a
+    # DIFFERENT plan than the one currently assigned; see _compute_upgrade_credit's own docstring for
+    # every case that stays at zero (same plan, no expiry yet, already expired, nothing paid on
+    # file). Applied to the TAXABLE amount, not just subtracted from the final total - the credit is
+    # a real discount on what's being charged, not a separate payment applied after tax.
+    credit_applied = Decimal("0")
+    previous_plan = None
+    if is_fixed_term:
+        credit_applied, previous_plan, days_remaining = _compute_upgrade_credit(user, resolved_plan)
+        if credit_applied > 0:
+            line_items.append(
+                {
+                    "description": f"Credit — {days_remaining} unused day(s) on {previous_plan.name}",
+                    "amount": str(-credit_applied),
+                }
+            )
+    taxable_amount = max(Decimal("0"), subtotal - credit_applied)
+
     tax_rate = tax_rule_for_country(resolved_region_code)["tax_rate"]
-    tax_amount = _quantize(subtotal * tax_rate / Decimal("100"))
-    total = subtotal + tax_amount
+    tax_amount = _quantize(taxable_amount * tax_rate / Decimal("100"))
+    total = taxable_amount + tax_amount
 
     issue_date = timezone.localdate()
     return Invoice.objects.create(
         department=None,
         recipient_user=user,
         plan=resolved_plan,
+        previous_plan=previous_plan,
+        credit_applied=credit_applied,
         issue_date=issue_date,
         due_date=issue_date + timedelta(days=resolved_due_in_days),
+        duration_months=months,
+        is_fixed_term=is_fixed_term,
         currency=currency_for_region(resolved_region_code),
         line_items=line_items,
         seats_billed=seats_billed,

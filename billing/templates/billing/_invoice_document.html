@@ -94,6 +94,16 @@ mirrors the same content and Bill To logic.
         <div class="invoice-doc-meta">
             <div>{% blocktrans with date=invoice.issue_date|date:"Y-m-d" %}Issued: {{ date }}{% endblocktrans %}</div>
             <div>{% blocktrans with date=invoice.due_date|date:"Y-m-d" %}Due: {{ date }}{% endblocktrans %}</div>
+            {% comment %}
+            Start/Expiry: the subscription period this invoice actually pays for, calendar-month
+            arithmetic from Start (see Invoice.subscription_expiry_date - never re-derived from
+            anything the browser sent, only from this invoice's own already-stored issue_date/
+            duration_months). Shown on every invoice, not just a multi-month one, since a 1-month
+            invoice's own period (issue_date to issue_date+1 month) is just as real an answer to
+            "what does this invoice cover" - it was only ever implicit before duration options existed.
+            {% endcomment %}
+            <div>{% blocktrans with date=invoice.subscription_start_date|date:"Y-m-d" %}Start: {{ date }}{% endblocktrans %}</div>
+            <div>{% blocktrans with date=invoice.subscription_expiry_date|date:"Y-m-d" %}Expiry: {{ date }}{% endblocktrans %}</div>
             <div>{% blocktrans with currency=invoice.currency %}Currency: {{ currency }}{% endblocktrans %}</div>
         </div>
     </div>
@@ -140,9 +150,23 @@ mirrors the same content and Bill To logic.
     </div>
 
     <div class="invoice-doc-planteam">
+        {% if invoice.previous_plan %}
         <div>
-            <div class="invoice-doc-label">{% trans "Plan" %}</div>
+            <div class="invoice-doc-label">{% trans "Current plan" %}</div>
+            <div>{{ invoice.previous_plan.name }}</div>
+        </div>
+        {% endif %}
+        <div>
+            <div class="invoice-doc-label">{% if invoice.previous_plan %}{% trans "New plan" %}{% else %}{% trans "Plan" %}{% endif %}</div>
             <div>{{ invoice.plan.name }}</div>
+        </div>
+        <div>
+            <div class="invoice-doc-label">{% trans "Monthly price" %}</div>
+            <div class="mono">{{ invoice.currency }} {{ invoice.monthly_price }}</div>
+        </div>
+        <div>
+            <div class="invoice-doc-label">{% trans "Duration" %}</div>
+            <div>{% blocktrans count months=invoice.duration_months %}{{ months }} month{% plural %}{{ months }} months{% endblocktrans %}</div>
         </div>
         <div>
             <div class="invoice-doc-label">{% trans "Team members" %}</div>
@@ -170,12 +194,18 @@ mirrors the same content and Bill To logic.
             <span>{% trans "Subtotal (plan + extra seats)" %}</span>
             <span class="mono">{{ invoice.currency }} {{ invoice.subtotal }}</span>
         </div>
+        {% if invoice.credit_applied > 0 %}
+        <div class="invoice-doc-totals-row">
+            <span>{% trans "Remaining current-plan credit" %}</span>
+            <span class="mono">-{{ invoice.currency }} {{ invoice.credit_applied }}</span>
+        </div>
+        {% endif %}
         <div class="invoice-doc-totals-row">
             <span>{% blocktrans with rate=invoice.tax_rate %}Tax ({{ rate }}%){% endblocktrans %}</span>
             <span class="mono">{{ invoice.currency }} {{ invoice.tax_amount }}</span>
         </div>
         <div class="invoice-doc-totals-row is-total">
-            <span>{% trans "Total" %}</span>
+            <span>{% if invoice.credit_applied > 0 %}{% trans "Net amount payable" %}{% else %}{% trans "Total" %}{% endif %}</span>
             <span class="mono">{{ invoice.currency }} {{ invoice.total }}</span>
         </div>
     </div>

@@ -1,3 +1,5 @@
+import re
+from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages as django_messages
@@ -21,7 +23,12 @@ from accounts.permissions import AdminRequiredMixin, SuperAdminRequiredMixin, ro
 from accounts.rate_limit import client_ip
 from accounts.redirects import safe_next_url
 from billing.emails import send_invoice_email, share_url_for_invoice
-from billing.invoicing import InvoiceGenerationError, generate_invoice_for_team, generate_invoice_for_user
+from billing.invoicing import (
+    InvoiceGenerationError,
+    generate_invoice_for_team,
+    generate_invoice_for_user,
+    validate_duration_months,
+)
 from billing.models import (
     DepartmentBillingProfile,
     Invoice,
@@ -181,6 +188,19 @@ class PublicPricingView(TemplateView):
         }
 
 
+# The self-checkout Duration picker's predefined options (billing/_plan_cards.html) - "custom" is a
+# fixed sentinel the view/JS both recognize, never itself a valid month count (validate_duration_months
+# would reject it as non-numeric same as any other junk, which is exactly why the JS/hidden "months"
+# field never actually submits the literal word "custom" - see portalSetCheckoutDuration).
+DURATION_CHOICES = [
+    ("1", _("1 month")),
+    ("3", _("3 months")),
+    ("6", _("6 months")),
+    ("12", _("12 months")),
+    ("custom", _("Custom")),
+]
+
+
 def my_plans_context(request):
     """The rows/region/current_plan_id that back the plan-cards grid
     (billing/_plan_cards.html) - shared by MyPlansView below and chat_home
@@ -218,6 +238,7 @@ def my_plans_context(request):
         "rows": rows,
         "current_plan_id": current_plan_id,
         "current_assignment": assignment,
+        "duration_choices": DURATION_CHOICES,
     }
 
 
@@ -232,6 +253,32 @@ class MyPlansView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         return super().get_context_data(**kwargs) | my_plans_context(self.request)
+
+
+_DURATION_MONTHS_RE = re.compile(r"[1-9][0-9]*")
+
+
+def _parse_requested_months(raw):
+    """The Duration picker's raw POST value (a predefined "1"/"3"/"6"/"12", or whatever the Custom
+    number input held) - one strict positive-whole-number check for every one of the spec's own
+    rejection cases in a single place: a full-string match against [1-9][0-9]* rejects "0" (no leading
+    zero-only match), a negative sign, a decimal point, and anything non-numeric, all in one regex,
+    while "2", "8", "36" etc. all parse cleanly. Range checking (the MAX_CUSTOM_DURATION_MONTHS cap)
+    is deliberately NOT done here - that's validate_duration_months's job, reused so there is exactly
+    one place that decides "is this many months allowed", not a duplicate cap re-implemented per
+    caller. Raises InvoiceGenerationError (the same type generate_invoice_for_user already raises for
+    a bad months value) so this view needs only the one except clause below for both.
+
+    raw is None (the "months" field wasn't in the POST body at all, never just blank) defaults to 1 -
+    every checkout that predates Duration options, and any caller that never adds the field, keeps
+    behaving exactly as it always did. An explicitly blank/zero/negative/decimal/non-numeric value that
+    WAS sent is never silently defaulted - that is a real rejection, not a missing field."""
+    if raw is None:
+        return 1
+    raw = raw.strip()
+    if not _DURATION_MONTHS_RE.fullmatch(raw):
+        raise InvoiceGenerationError(_("Enter a whole number of months (1 or more, no decimals)."))
+    return int(raw)
 
 
 @login_required
@@ -253,13 +300,24 @@ def checkout_plan(request):
     direct POST bypassing the "Contact us" button in the UI must not be
     able to route around that.
 
+    Duration options (predefined 1/3/6/12 months, or a Custom whole number up to
+    billing.invoicing.MAX_CUSTOM_DURATION_MONTHS): the "months" POST field, independently parsed
+    (_parse_requested_months) and range-checked (validate_duration_months) here regardless of what the
+    browser's own <input type=number min=1 step=1> already enforced - the browser's own total/expiry-
+    date preview (recalculated client-side purely for display) is never trusted either; the total and
+    duration_months actually stored come only from this server-side computation, priced against the
+    Plan's own regional price, never anything the POST body claims the total or expiry already is.
+
     Idempotent against a double-click/refresh/retry: if the user already
     has an open (unpaid or pending-verification) invoice for this exact
-    plan, this hands back THAT invoice instead of generating a new one -
-    real gap found in the production-readiness audit, since nothing here
-    checked before creating. A plan the user already has a PAID or
-    REFUNDED invoice for is unaffected - switching plans, or re-
-    subscribing after a refund, must still create a fresh invoice.
+    plan AND duration, this hands back THAT invoice instead of generating
+    a new one - real gap found in the production-readiness audit, since
+    nothing here checked before creating. A plan the user already has a
+    PAID or REFUNDED invoice for is unaffected - switching plans, or re-
+    subscribing after a refund, must still create a fresh invoice; so
+    does picking a different duration while one is still open (the
+    customer changed their mind, they should get an invoice for what
+    they're asking for now, not be stuck with the old one's amount).
     select_for_update() on the user's own row (Postgres only, same no-op-
     on-SQLite caveat as the identical pattern in chat/views.py::
     post_message) closes the true concurrent-request race: two near-
@@ -268,12 +326,19 @@ def checkout_plan(request):
     plan = get_object_or_404(
         Plan, id=request.POST.get("plan_id"), is_active=True, is_demo=False, self_checkout_enabled=True
     )
+    try:
+        months = _parse_requested_months(request.POST.get("months"))
+        validate_duration_months(months)
+    except InvoiceGenerationError as exc:
+        django_messages.error(request, str(exc))
+        return redirect("billing:my_plans")
 
     with transaction.atomic():
         User.objects.select_for_update().get(pk=request.user.pk)
         existing_invoice = Invoice.objects.filter(
             recipient_user=request.user,
             plan=plan,
+            duration_months=months,
             status__in=[Invoice.Status.UNPAID, Invoice.Status.PENDING_VERIFICATION],
         ).first()
         if existing_invoice is not None:
@@ -284,7 +349,7 @@ def checkout_plan(request):
             return redirect("billing:my_invoices")
 
         try:
-            invoice = generate_invoice_for_user(request.user, plan=plan)
+            invoice = generate_invoice_for_user(request.user, plan=plan, months=months, is_fixed_term=True)
         except InvoiceGenerationError as exc:
             django_messages.error(request, str(exc))
             return redirect("billing:my_plans")
@@ -292,6 +357,26 @@ def checkout_plan(request):
         # (billing.invoice_generate); the self-service path creates the same
         # billable document and left no trace - remaining-audit finding.
         log_action(request.user, "billing.invoice_checkout", invoice, new_value=plan.name)
+
+        # An upgrade whose credit fully covers the new plan's cost (edge case the spec explicitly
+        # calls out: "insufficient/zero payable amount after credit") - there is nothing to pay and
+        # no proof of payment anyone could submit for £0, so this closes the loop itself rather than
+        # leaving an unpayable "Unpaid" invoice sitting there forever. Still fully audited (both log
+        # entries below) and still goes through the exact same plan-sync path a real payment does.
+        if invoice.total <= 0:
+            invoice.status = Invoice.Status.PAID
+            invoice.verified_at = timezone.now()
+            invoice.save(update_fields=["status", "verified_at"])
+            log_action(request.user, "billing.invoice_auto_paid_by_credit", invoice, new_value="0.00")
+            _sync_plan_assignment_to_paid_invoice(invoice, request.user)
+
+    if invoice.status == Invoice.Status.PAID:
+        django_messages.success(
+            request,
+            _("Your existing plan credit fully covered the %(plan)s plan - you're switched over, no payment needed.")
+            % {"plan": plan.name},
+        )
+        return redirect("billing:my_invoices")
 
     success, _error = send_invoice_email(invoice)
     if success:
@@ -758,26 +843,73 @@ def _safe_next_url(request, default):
     return default
 
 
+def _expiry_datetime_for_invoice(invoice, previous_expires_at):
+    """The new UserPlanAssignment.expires_at for a fixed-term (self-checkout) paid invoice - end of
+    the last paid day (23:59:59), so the customer keeps access through the whole day they paid for.
+
+    A plan CHANGE (invoice.previous_plan_id is set - an upgrade) always starts the new period fresh
+    from the invoice's own issue_date: the unused value of the old plan was already returned as a
+    price credit (invoice.credit_applied), not as extra days, so also stacking days on top here
+    would credit the same unused time twice - exactly the "manipulate the credit" abuse the spec
+    warns against.
+
+    A renewal of the SAME plan (previous_plan_id is null) stacks onto whichever is later: the
+    existing expiry, if it's still in the future (a renewal bought before the old period runs out
+    never loses paid time), or the invoice's own issue_date otherwise (a fresh purchase, or
+    renewing after the old period already lapsed)."""
+    from billing.invoicing import add_calendar_months
+
+    new_period_start = invoice.subscription_start_date()
+    if invoice.previous_plan_id is None and previous_expires_at is not None:
+        previous_expiry_date = previous_expires_at.date()
+        if previous_expiry_date > new_period_start:
+            new_period_start = previous_expiry_date
+    expiry_date = add_calendar_months(new_period_start, invoice.duration_months)
+    return timezone.make_aware(datetime.combine(expiry_date, time.max))
+
+
 def _sync_plan_assignment_to_paid_invoice(invoice, actor):
     """Switches invoice.recipient_user onto invoice.plan the moment an
     invoice is confirmed paid - the other half of checkout_plan's "pick a
     plan -> only an unpaid Invoice is created, the plan itself never
-    changes until that invoice is paid" promise. A no-op (by construction,
-    via assign_plan's own get_or_create + straight reassignment) for the
-    far more common case where the paid invoice's plan already matches
-    the recipient's current one (every recurring/welcome invoice) - this
-    runs on EVERY transition to paid, not just checkout-originated
-    invoices, since re-asserting "you're on the plan you just paid for"
-    is always correct, not just for this one new flow."""
+    changes until that invoice is paid" promise.
+
+    Two different behaviors depending on invoice.is_fixed_term (see that field's own comment):
+
+    - NOT fixed-term (every pre-existing invoice path - welcome, the recurring monthly sweep,
+      department/admin-generated invoices): unchanged from before this had duration options at all.
+      A no-op when the plan already matches (the common case for a recurring/welcome invoice);
+      otherwise assigns the plan. Never touches expires_at - that kind of invoice was never meant to
+      carry a real, enforced expiry, and must not start doing so now (a recurring sweep that runs a
+      few days late must never look like the plan itself "expired" in the meantime).
+
+    - Fixed-term (a self-checkout duration purchase or upgrade/change): ALWAYS runs, even when the
+      plan is staying the same (a same-plan renewal that must still extend the real, enforced expiry
+      - see get_plan_status(), which now checks this for a non-demo plan just like it already did
+      for a demo one). _expiry_datetime_for_invoice decides whether that extends the current expiry
+      or starts a fresh period, depending on whether this is a renewal or a plan change."""
     if not invoice.recipient_user_id:
         return
     from governance.plans import assign_plan, get_assignment
 
     assignment = get_assignment(invoice.recipient_user)
-    if assignment and assignment.plan_id == invoice.plan_id:
+    plan_unchanged = assignment is not None and assignment.plan_id == invoice.plan_id
+    previous_expires_at = assignment.expires_at if assignment else None
+
+    if not invoice.is_fixed_term:
+        if plan_unchanged:
+            return
+        assign_plan(invoice.recipient_user, invoice.plan, assigned_by=actor)
+        log_action(actor, "billing.invoice_payment_plan_assigned", invoice, new_value=invoice.plan.name)
         return
-    assign_plan(invoice.recipient_user, invoice.plan, assigned_by=actor)
-    log_action(actor, "billing.invoice_payment_plan_assigned", invoice, new_value=invoice.plan.name)
+
+    if not plan_unchanged:
+        assignment = assign_plan(invoice.recipient_user, invoice.plan, assigned_by=actor)
+        log_action(actor, "billing.invoice_payment_plan_assigned", invoice, new_value=invoice.plan.name)
+    new_expiry = _expiry_datetime_for_invoice(invoice, previous_expires_at)
+    assignment.expires_at = new_expiry
+    assignment.save(update_fields=["expires_at"])
+    log_action(actor, "billing.invoice_payment_plan_expiry_set", invoice, new_value=new_expiry.date().isoformat())
 
 
 @role_required(User.Role.ADMIN)

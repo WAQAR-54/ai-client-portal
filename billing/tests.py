@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core import mail
@@ -10,6 +10,7 @@ from accounts.models import Department, Team, User
 from billing.access import has_overdue_unpaid_invoice
 from billing.invoicing import (
     InvoiceGenerationError,
+    add_calendar_months,
     generate_invoice_for_department,
     generate_invoice_for_team,
     generate_invoice_for_user,
@@ -450,6 +451,27 @@ class GenerateInvoiceForDepartmentTests(TestCase):
         self.assertIn("Extra members", invoice.line_items[1]["description"])
         self.assertIn("4 total, 2 included", invoice.line_items[1]["description"])
         self.assertEqual(invoice.line_items[1]["amount"], "40.00")
+
+    def test_months_multiplies_both_the_base_charge_and_the_extra_seats_line_item(self):
+        """The duration multiplier (months param, threaded through from billing.views.checkout_plan)
+        applies to the WHOLE subtotal, not just the base plan charge - a department prepaying several
+        months also prepays for its extra seats over that same period."""
+        self._add_users(4)
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department, months=3)
+        self.assertEqual(invoice.duration_months, 3)
+        # (100 base + 40 extra-seats) x 3 months = 420.
+        self.assertEqual(invoice.subtotal, Decimal("420"))
+        self.assertEqual(invoice.total, Decimal("420"))
+        self.assertEqual(invoice.line_items[0]["amount"], "300.00")  # 100 x 3
+        self.assertEqual(invoice.line_items[1]["amount"], "120.00")  # 40 x 3
+
+    def test_months_of_one_is_unaffected_default_behavior(self):
+        DepartmentBillingProfile.objects.filter(department=self.department).update(is_tax_exempt=True)
+        invoice = generate_invoice_for_department(self.department, months=1)
+        self.assertEqual(invoice.duration_months, 1)
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+        self.assertEqual(invoice.line_items[0]["amount"], "100.00")
 
     def test_generated_invoice_is_linked_to_recipient(self):
         recipient = User.objects.create_user(
@@ -1593,6 +1615,457 @@ class CheckoutPlanTests(TestCase):
         response = self.client.get(reverse("billing:public_pricing"))
         self.assertContains(response, "Research (live web search)")
         self.assertContains(response, "25")
+
+
+class DurationOptionsCheckoutTests(TestCase):
+    """Self-checkout Duration options (billing.views.checkout_plan / billing.invoicing) - a customer
+    choosing 1/3/6/12 predefined months, or a Custom whole number, gets an invoice priced and dated
+    entirely server-side. Every price/duration/expiry number asserted below comes from what the
+    server actually computed and stored, never from anything a POST body claimed."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="duration@example.com", password="pw12345!")
+        self.plan = Plan.objects.create(name="Pro")
+        RegionalPrice.objects.create(plan=self.plan, region_code="ROW", price=Decimal("50"))
+        self.client.login(email="duration@example.com", password="pw12345!")
+
+    def _checkout(self, **extra):
+        data = {"plan_id": self.plan.id}
+        data.update(extra)
+        return self.client.post(reverse("billing:checkout_plan"), data)
+
+    # ---- predefined durations ------------------------------------------------------------------
+    def test_predefined_1_month(self):
+        self._checkout(months="1")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 1)
+        self.assertEqual(invoice.subtotal, Decimal("50"))
+
+    def test_predefined_3_months(self):
+        self._checkout(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 3)
+        self.assertEqual(invoice.subtotal, Decimal("150"))
+
+    def test_predefined_6_months(self):
+        self._checkout(months="6")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 6)
+        self.assertEqual(invoice.subtotal, Decimal("300"))
+
+    def test_predefined_12_months(self):
+        self._checkout(months="12")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 12)
+        self.assertEqual(invoice.subtotal, Decimal("600"))
+
+    def test_no_months_field_at_all_defaults_to_one_month(self):
+        """Backward compatibility: every caller/test that predates Duration options never sends
+        "months" at all - must behave exactly as it always did, not be rejected as invalid."""
+        response = self._checkout()
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 1)
+        self.assertEqual(invoice.subtotal, Decimal("50"))
+
+    # ---- custom durations ------------------------------------------------------------------------
+    def test_custom_2_months(self):
+        self._checkout(months="2")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 2)
+        self.assertEqual(invoice.subtotal, Decimal("100"))
+        self.assertEqual(invoice.total, Decimal("100"))
+
+    def test_custom_8_months_matches_the_spec_example(self):
+        """Plan: Pro, Monthly price: 50, Custom duration: 8 months -> Total: 400 (the spec's own
+        worked example, no tax configured for ROW by default so total == subtotal here)."""
+        self._checkout(months="8")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 8)
+        self.assertEqual(invoice.subtotal, Decimal("400"))
+        self.assertEqual(invoice.total, Decimal("400"))
+
+    def test_custom_larger_duration_within_the_cap(self):
+        from billing.invoicing import MAX_CUSTOM_DURATION_MONTHS
+
+        self._checkout(months=str(MAX_CUSTOM_DURATION_MONTHS))
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, MAX_CUSTOM_DURATION_MONTHS)
+        self.assertEqual(invoice.subtotal, Decimal("50") * MAX_CUSTOM_DURATION_MONTHS)
+
+    def test_custom_duration_beyond_the_cap_is_rejected(self):
+        from billing.invoicing import MAX_CUSTOM_DURATION_MONTHS
+
+        response = self._checkout(months=str(MAX_CUSTOM_DURATION_MONTHS + 1))
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    # ---- rejected values -------------------------------------------------------------------------
+    def test_zero_months_is_rejected(self):
+        response = self._checkout(months="0")
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    def test_negative_months_is_rejected(self):
+        response = self._checkout(months="-3")
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    def test_decimal_months_is_rejected(self):
+        response = self._checkout(months="2.5")
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    def test_non_numeric_months_is_rejected(self):
+        response = self._checkout(months="abc")
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    def test_blank_custom_months_is_rejected(self):
+        """An explicitly-sent but empty value (Custom selected, number field left blank) is a real
+        rejection - never silently treated the same as "field not sent at all"."""
+        response = self._checkout(months="")
+        self.assertRedirects(response, reverse("billing:my_plans"))
+        self.assertFalse(Invoice.objects.filter(recipient_user=self.user, plan=self.plan).exists())
+
+    # ---- never trust the frontend -----------------------------------------------------------------
+    def test_tampered_price_is_ignored(self):
+        """The view never reads a total/price from POST at all - there is no field for one to tamper
+        with - but this proves it directly: a request that ALSO carries fake price-looking fields
+        still gets an invoice priced only from the Plan's own regional price × months."""
+        self._checkout(months="3", total="1", price="1", subtotal="1")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.subtotal, Decimal("150"))
+        self.assertEqual(invoice.total, Decimal("150"))
+
+    def test_tampered_expiry_is_ignored(self):
+        """Same as above for the expiry/duration side - duration_months and issue_date (both server-
+        computed/validated) are the ONLY inputs subscription_expiry_date ever reads; a POST body
+        claiming a different duration_months or an explicit expiry_date changes nothing."""
+        self._checkout(
+            months="3",
+            duration_months="999",
+            expiry_date="2099-01-01",
+            expires_at="2099-01-01",
+        )
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        self.assertEqual(invoice.duration_months, 3)
+        expected_expiry = add_calendar_months(invoice.issue_date, 3)
+        self.assertEqual(invoice.subscription_expiry_date(), expected_expiry)
+
+    # ---- invoice display + calendar-month correctness ----------------------------------------------
+    def test_correct_invoice_shows_plan_price_duration_total_dates(self):
+        self._checkout(months="8")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        response = self.client.get(reverse("billing:invoice_detail", kwargs={"invoice_id": invoice.id}))
+        self.assertContains(response, "Pro")
+        self.assertContains(response, "50.00")  # monthly price
+        self.assertContains(response, "400.00")  # total
+        self.assertContains(response, "8 months")
+        self.assertContains(response, invoice.subscription_start_date().strftime("%Y-%m-%d"))
+        self.assertContains(response, invoice.subscription_expiry_date().strftime("%Y-%m-%d"))
+
+    def test_correct_calendar_month_expiry_8_months(self):
+        self._checkout(months="8")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        expected = add_calendar_months(invoice.issue_date, 8)
+        self.assertEqual(invoice.subscription_expiry_date(), expected)
+        # Sanity-check the arithmetic itself, not just that the method agrees with its own helper.
+        self.assertEqual(expected.month, ((invoice.issue_date.month - 1 + 8) % 12) + 1)
+
+    def test_correct_calendar_month_expiry_across_a_month_end(self):
+        """Jan 31 + 1 month must land on Feb 28 (or 29), never raise and never silently roll over into
+        March - the standard calendar-month clamping behavior, exercised directly against a real
+        invoice row rather than just the helper function in isolation."""
+        invoice = generate_invoice_for_user(self.user, plan=self.plan, months=1)
+        invoice.issue_date = date(2026, 1, 31)
+        invoice.save(update_fields=["issue_date"])
+        self.assertEqual(invoice.subscription_expiry_date(), date(2026, 2, 28))
+
+    def test_duration_is_stored_on_the_invoice_for_audit(self):
+        """The actual selected number of months is what's on the row, not derived/guessed after the
+        fact - true even long after issue_date/pricing might otherwise change."""
+        self._checkout(months="6")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.plan)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.duration_months, 6)
+
+
+class PlanUpgradeCreditTests(TestCase):
+    """Self-checkout plan upgrade/change (billing.views.checkout_plan -> billing.invoicing.
+    _compute_upgrade_credit) - switching to a different plan mid-cycle credits the unused value of
+    the current one, per the spec's own worked example: current £50/month with 20 days remaining,
+    new plan £100/month for 3 months -> credit = 50/30 x 20 = 33.33, net payable = 300 - 33.33."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="upgrader@example.com", password="pw12345!")
+        self.current_plan = Plan.objects.create(name="Pro")
+        RegionalPrice.objects.create(plan=self.current_plan, region_code="ROW", price=Decimal("50"))
+        self.new_plan = Plan.objects.create(name="Elite")
+        RegionalPrice.objects.create(plan=self.new_plan, region_code="ROW", price=Decimal("100"))
+        self.client.login(email="upgrader@example.com", password="pw12345!")
+
+    def _give_active_plan(self, plan, days_remaining, monthly_price):
+        """Simulates "the user already has a paid, fixed-term plan with N days left" directly,
+        rather than going through a full checkout - precise control over days_remaining, matching
+        the spec's own example exactly, without depending on real elapsed time."""
+        from governance.plans import assign_plan, get_assignment
+
+        invoice = Invoice.objects.create(
+            recipient_user=self.user,
+            plan=plan,
+            issue_date=timezone.localdate(),
+            due_date=timezone.localdate(),
+            currency="USD",
+            subtotal=monthly_price,
+            tax_rate=Decimal("0"),
+            tax_amount=Decimal("0"),
+            total=monthly_price,
+            status=Invoice.Status.PAID,
+            duration_months=1,
+            is_fixed_term=True,
+        )
+        assign_plan(self.user, plan, assigned_by=None)
+        assignment = get_assignment(self.user)
+        # A +12h buffer on a genuinely positive days_remaining, so the real wall-clock time that
+        # elapses between setting this and _compute_upgrade_credit calling timezone.now() later
+        # can never floor `.days` down by one (timedelta.days truncates, so "exactly 20 days" set
+        # here can otherwise read back as 19 a few milliseconds later). Never added for zero/negative
+        # values - those test the "already at or past expiry" boundary itself, where nudging the
+        # value forward would change what's actually being tested.
+        buffer = timedelta(hours=12) if days_remaining > 0 else timedelta(0)
+        assignment.expires_at = timezone.now() + timedelta(days=days_remaining) + buffer
+        assignment.save(update_fields=["expires_at"])
+        return invoice
+
+    def _checkout_new_plan(self, months="3", **extra):
+        data = {"plan_id": self.new_plan.id, "months": months}
+        data.update(extra)
+        return self.client.post(reverse("billing:checkout_plan"), data)
+
+    def _pay(self, invoice):
+        """Real payment path, not a shortcut: submit proof, then an admin verifies it - the same
+        route _sync_plan_assignment_to_paid_invoice is actually reached through in production."""
+        superadmin = User.objects.create_user(
+            email=f"admin-{invoice.pk}@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        invoice.submit_payment_proof(transaction_id="TXN123")
+        self.client.logout()
+        self.client.login(email=superadmin.email, password="pw12345!")
+        self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": invoice.id}))
+        self.client.logout()
+        self.client.login(email=self.user.email, password="pw12345!")
+        invoice.refresh_from_db()
+        return invoice
+
+    # ---- the spec's own worked example --------------------------------------------------------
+    def test_upgrade_credits_unused_value_of_current_plan(self):
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self.assertEqual(invoice.previous_plan, self.current_plan)
+        self.assertEqual(invoice.credit_applied, Decimal("33.33"))
+        self.assertEqual(invoice.subtotal, Decimal("300"))
+        self.assertEqual(invoice.total, Decimal("266.67"))
+
+    def test_invoice_shows_current_new_plan_credit_and_net_payable(self):
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        response = self.client.get(reverse("billing:invoice_detail", kwargs={"invoice_id": invoice.id}))
+        self.assertContains(response, "Pro")  # current plan
+        self.assertContains(response, "Elite")  # new plan
+        self.assertContains(response, "33.33")  # credit
+        self.assertContains(response, "266.67")  # net payable
+        self.assertContains(response, "Net amount payable")
+
+    def test_new_expiry_after_upgrade_starts_fresh_from_today(self):
+        """A plan CHANGE starts fresh from today - the old plan's unused value was already returned
+        as a price credit, not as extra days, so it must not ALSO be stacked as days here (that
+        would credit the same unused time twice)."""
+        from governance.plans import get_assignment
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.current_plan)
+        self._checkout_new_plan(months="3")
+        new_invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self._pay(new_invoice)
+
+        assignment = get_assignment(self.user)
+        expected = add_calendar_months(new_invoice.issue_date, 3)
+        self.assertEqual(assignment.expires_at.date(), expected)
+
+    def test_old_plan_no_longer_active_and_new_plan_active_after_payment(self):
+        from governance.plans import get_assignment
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self._pay(invoice)
+
+        assignment = get_assignment(self.user)
+        self.assertEqual(assignment.plan_id, self.new_plan.id)
+        self.assertNotEqual(assignment.plan_id, self.current_plan.id)
+
+    def test_actual_access_reflects_the_new_plan_after_upgrade(self):
+        """governance.plans.get_plan_status - the function real access checks (governance.limits.
+        check_usage_limits) actually read - must report the NEW plan, active, with the real expiry
+        this upgrade set. Never a case where the invoice says one thing and access says another."""
+        from governance.plans import get_plan_status
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self._pay(invoice)
+
+        status = get_plan_status(self.user)
+        self.assertEqual(status["plan"], self.new_plan)
+        self.assertEqual(status["state"], "active")
+
+    # ---- edge cases -----------------------------------------------------------------------------
+    def test_no_existing_plan_is_a_normal_purchase_no_credit(self):
+        """A user with no prior fixed-term plan at all (never bought via self-checkout) - nothing to
+        credit, and no previous_plan recorded; a plain purchase, not an upgrade."""
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self.assertIsNone(invoice.previous_plan)
+        self.assertEqual(invoice.credit_applied, Decimal("0"))
+        self.assertEqual(invoice.total, Decimal("300"))
+
+    def test_expired_existing_plan_gets_no_credit(self):
+        self._give_active_plan(self.current_plan, days_remaining=-5, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self.assertIsNone(invoice.previous_plan)
+        self.assertEqual(invoice.credit_applied, Decimal("0"))
+
+    def test_zero_days_remaining_gets_no_credit(self):
+        self._give_active_plan(self.current_plan, days_remaining=0, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self.assertEqual(invoice.credit_applied, Decimal("0"))
+
+    def test_same_plan_selected_is_a_renewal_not_an_upgrade(self):
+        """Picking the SAME plan again is a renewal (stacks days, no credit needed - there is no
+        unused value to return, the same plan just keeps going), never treated as an upgrade."""
+        from governance.plans import get_assignment
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        old_expiry = get_assignment(self.user).expires_at
+        response = self.client.post(
+            reverse("billing:checkout_plan"), {"plan_id": self.current_plan.id, "months": "3"}
+        )
+        self.assertEqual(response.status_code, 302)
+        invoice = Invoice.objects.filter(recipient_user=self.user, plan=self.current_plan, status=Invoice.Status.UNPAID).first()
+        self.assertIsNotNone(invoice)
+        self.assertIsNone(invoice.previous_plan)
+        self.assertEqual(invoice.credit_applied, Decimal("0"))
+        self.assertEqual(invoice.total, Decimal("150"))  # 50 x 3, no credit
+
+        self._pay(invoice)
+        new_expiry = get_assignment(self.user).expires_at
+        # Stacked onto the existing expiry (20 days out), not reset to today - no paid time lost.
+        expected = add_calendar_months(old_expiry.date(), 3)
+        self.assertEqual(new_expiry.date(), expected)
+
+    def test_credit_fully_covering_new_plan_is_auto_paid_with_zero_payable(self):
+        """Insufficient/zero payable amount after credit - there's nothing to pay and no proof
+        anyone could submit for it, so this closes the loop itself instead of leaving an
+        un-payable "Unpaid" invoice with no way forward."""
+        from governance.plans import get_assignment
+
+        # 30 days left on a $100/month plan -> ~$100 credit, comfortably covers a 1-month $50 plan.
+        self._give_active_plan(self.current_plan, days_remaining=30, monthly_price=Decimal("100"))
+        cheap_plan = Plan.objects.create(name="Basic")
+        RegionalPrice.objects.create(plan=cheap_plan, region_code="ROW", price=Decimal("50"))
+
+        response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": cheap_plan.id, "months": "1"})
+        self.assertRedirects(response, reverse("billing:my_invoices"))
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=cheap_plan)
+        self.assertEqual(invoice.status, Invoice.Status.PAID)
+        self.assertEqual(invoice.total, Decimal("0.00"))
+
+        assignment = get_assignment(self.user)
+        self.assertEqual(assignment.plan_id, cheap_plan.id)
+
+    def test_credit_never_exceeds_what_was_actually_paid(self):
+        """Explicit abuse-prevention cap: however the day-rate math comes out, the credit can never
+        exceed the total actually paid for the current plan - proven directly by manually forcing an
+        expires_at far beyond what a normal 1-month purchase could ever have produced."""
+        from billing.invoicing import _compute_upgrade_credit
+        from governance.plans import get_assignment
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        assignment = get_assignment(self.user)
+        assignment.expires_at = timezone.now() + timedelta(days=3650)  # 10 years - not a real purchase
+        assignment.save(update_fields=["expires_at"])
+
+        credit, previous_plan, _days = _compute_upgrade_credit(self.user, self.new_plan)
+        self.assertEqual(credit, Decimal("50"))  # capped at the $50 actually paid, not ~$608
+
+    # ---- never trust the frontend ------------------------------------------------------------------
+    def test_tampered_price_ignored_during_upgrade(self):
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3", total="1", price="1")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self.assertEqual(invoice.total, Decimal("266.67"))
+
+    def test_tampered_credit_ignored(self):
+        """There is no POST field for credit at all - the server only ever computes it from the
+        user's real assignment/invoice history - but this proves it directly: a request that ALSO
+        carries fake credit/previous-plan-looking fields changes nothing."""
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(
+            months="3", credit_applied="9999", previous_plan="1", previous_plan_id="1", days_remaining="9999"
+        )
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+        self.assertEqual(invoice.credit_applied, Decimal("33.33"))
+        self.assertEqual(invoice.previous_plan, self.current_plan)
+
+    # ---- failed/duplicate payment ------------------------------------------------------------------
+    def test_rejected_payment_does_not_change_plan_or_expiry(self):
+        from governance.plans import get_assignment
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        old_expiry = get_assignment(self.user).expires_at
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+
+        superadmin = User.objects.create_user(
+            email="reject-admin@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        invoice.submit_payment_proof(transaction_id="BADTXN")
+        self.client.logout()
+        self.client.login(email=superadmin.email, password="pw12345!")
+        self.client.post(reverse("billing:reject_invoice_payment", kwargs={"invoice_id": invoice.id}))
+
+        assignment = get_assignment(self.user)
+        self.assertEqual(assignment.plan_id, self.current_plan.id)
+        self.assertEqual(assignment.expires_at, old_expiry)
+
+    def test_duplicate_verification_does_not_double_extend_expiry(self):
+        """A double-click/retried admin verification on the SAME invoice must not run the plan sync
+        twice - the existing PENDING_VERIFICATION-only guard (verify_invoice_payment) already
+        prevents this; proven here specifically for the new expiry-setting side effect."""
+        from governance.plans import get_assignment
+
+        self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
+        self._checkout_new_plan(months="3")
+        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
+
+        superadmin = User.objects.create_user(
+            email="verify-admin@example.com", password="pw12345!", role=User.Role.SUPERADMIN
+        )
+        invoice.submit_payment_proof(transaction_id="TXN1")
+        self.client.logout()
+        self.client.login(email=superadmin.email, password="pw12345!")
+        self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": invoice.id}))
+        first_expiry = get_assignment(self.user).expires_at
+
+        self.client.post(reverse("billing:verify_invoice_payment", kwargs={"invoice_id": invoice.id}))
+        second_expiry = get_assignment(self.user).expires_at
+
+        self.assertEqual(first_expiry, second_expiry)
 
 
 class LeadCapturePlanTests(TestCase):

@@ -31,9 +31,39 @@
         {% if row.is_current %}
         <button type="button" class="btn btn-ghost mt-3" style="width:100%;" disabled>{% trans "You're on this plan" %}</button>
         {% elif row.plan.self_checkout_enabled %}
-        <form method="post" action="{% url 'billing:checkout_plan' %}" style="margin-top:0.75rem;">
+        {% comment %}
+        Duration options: predefined 1/3/6/12 months (radio pills, reusing the same .theme-picker/
+        .theme-option markup/CSS the Light/Dark/System theme picker already uses - no new CSS needed)
+        plus a Custom whole-number-of-months input. The "months" hidden input is the ONE field the
+        server actually reads (billing.views.checkout_plan) - predefined and Custom both just write
+        into it, so the view needs only one code path regardless of which the customer picked. The
+        total shown here is a live PREVIEW ONLY: portalUpdateCheckoutTotal recomputes it client-side
+        from data-monthly-price purely so the customer sees it change immediately, but the server
+        independently recalculates the real total (and validates the month count) from the Plan's own
+        price when the form is actually submitted - nothing typed here is trusted as-is.
+        {% endcomment %}
+        <form method="post" action="{% url 'billing:checkout_plan' %}" style="margin-top:0.75rem;"
+              data-monthly-price="{{ row.price_row.price|default:"0" }}" data-currency="{{ region.currency }}">
             {% csrf_token %}
             <input type="hidden" name="plan_id" value="{{ row.plan.id }}">
+            <div class="theme-picker" style="margin-bottom:0.6rem;">
+                {% for value, label in duration_choices %}
+                <div class="theme-option">
+                    <input type="radio" name="duration_choice" id="dur-{{ value }}-{{ row.plan.id }}" value="{{ value }}"
+                           {% if value == "1" %}checked{% endif %} onchange="portalSetCheckoutDuration(this)">
+                    <label for="dur-{{ value }}-{{ row.plan.id }}">{{ label }}</label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="checkout-custom-months" style="display:none; margin-bottom:0.6rem;">
+                <label for="custom-months-{{ row.plan.id }}" class="text-faint" style="font-size:0.8rem; display:block; margin-bottom:2px;">{% trans "How many months?" %}</label>
+                <input type="number" name="custom_months" id="custom-months-{{ row.plan.id }}" class="input" min="1" step="1" inputmode="numeric"
+                       oninput="portalUpdateCheckoutTotal(this.closest('form'))">
+            </div>
+            <input type="hidden" name="months" value="1">
+            <p class="text-faint" style="font-size:0.85rem; margin:0 0 0.6rem;">
+                {% trans "Total" %}: <span class="mono checkout-total">{{ region.currency }} {{ row.price_row.price|floatformat:0|intcomma }}</span>
+            </p>
             <button type="submit" class="btn" style="width:100%;">{% trans "Checkout" %}</button>
         </form>
         {% else %}
@@ -48,3 +78,39 @@
     <p class="text-faint">{% trans "No plans available yet." %}</p>
     {% endfor %}
 </div>
+<script>
+    // Duration picker (billing/_plan_cards.html) - scoped entirely by closest('form') rather than
+    // per-plan ids, so this one script block works for every plan card the loop above rendered,
+    // no matter how many. Both functions only ever touch this ONE form's own fields.
+    function portalSetCheckoutDuration(radio) {
+        var form = radio.closest("form");
+        var customWrap = form.querySelector(".checkout-custom-months");
+        var customInput = form.querySelector("input[name=custom_months]");
+        var monthsInput = form.querySelector("input[name=months]");
+        if (radio.value === "custom") {
+            customWrap.style.display = "";
+            monthsInput.value = customInput.value || "";
+            customInput.focus();
+        } else {
+            customWrap.style.display = "none";
+            monthsInput.value = radio.value;
+        }
+        portalUpdateCheckoutTotal(form);
+    }
+    function portalUpdateCheckoutTotal(form) {
+        var customChecked = form.querySelector("input[name=duration_choice]:checked").value === "custom";
+        var monthsInput = form.querySelector("input[name=months]");
+        if (customChecked) {
+            monthsInput.value = form.querySelector("input[name=custom_months]").value || "";
+        }
+        var months = parseInt(monthsInput.value, 10);
+        var totalEl = form.querySelector(".checkout-total");
+        var price = parseFloat(form.dataset.monthlyPrice || "0");
+        if (!months || months < 1 || isNaN(months)) {
+            totalEl.textContent = "—";
+            return;
+        }
+        var total = Math.round(price * months);
+        totalEl.textContent = form.dataset.currency + " " + total.toLocaleString();
+    }
+</script>

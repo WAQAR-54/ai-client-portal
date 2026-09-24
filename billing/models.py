@@ -196,6 +196,31 @@ class Invoice(models.Model):
     invoice_number = models.CharField(max_length=30, unique=True, editable=False)
     issue_date = models.DateField(default=timezone.localdate)
     due_date = models.DateField()
+    # The subscription duration this invoice actually bills for, in whole calendar months - always 1
+    # for every pre-existing invoice-generation path (welcome invoice, the recurring monthly sweep,
+    # department/admin-generated invoices), and whatever the customer picked (a predefined 1/3/6/12, or
+    # a validated custom number) on the self-checkout "Duration" picker (billing.views.checkout_plan).
+    # Stored - not just used to compute the total and thrown away - so the duration stays auditable on
+    # this invoice forever, independent of anything that happens to the plan/pricing later. See
+    # subscription_expiry_date() below for what this drives on the invoice itself.
+    duration_months = models.PositiveIntegerField(default=1)
+    # True only for a self-checkout purchase (billing.views.checkout_plan - a plain duration purchase
+    # or a plan upgrade/change) - the customer explicitly bought a real, dated period, so THIS
+    # invoice's own duration_months/issue_date genuinely drives UserPlanAssignment.expires_at once
+    # paid (see billing.views._sync_plan_assignment_to_paid_invoice). False for every pre-existing
+    # invoice-generation path (the welcome invoice, the recurring monthly sweep, department/admin-
+    # generated invoices) - those are ongoing/admin-managed billing where expiry was never this
+    # invoice's concern, and must keep behaving exactly as they always did (expires_at untouched).
+    is_fixed_term = models.BooleanField(default=False)
+    # Set only for an upgrade/plan-change invoice (self-checkout, picking a DIFFERENT plan than the
+    # one currently assigned) - which plan this invoice is replacing. Null for a plain duration
+    # purchase/renewal of the same plan, and for every pre-existing invoice path.
+    previous_plan = models.ForeignKey(Plan, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # The unused-value credit from previous_plan that was subtracted before tax on this invoice - see
+    # billing.invoicing._compute_upgrade_credit for how it's calculated. Zero whenever previous_plan
+    # is null. Stored (not just reflected in the "Credit" line_items entry) so the audit trail can
+    # explain the final total without having to re-derive it from line_items text.
+    credit_applied = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
     currency = models.CharField(max_length=10)
     # [{"description": str, "amount": str}, ...] - e.g. the base plan
     # charge plus, when relevant, a separate "Extra members - N x price
@@ -318,6 +343,34 @@ class Invoice(models.Model):
         if self.status != self.Status.PAID or self.verified_at is None:
             return False
         return timezone.now() - self.verified_at <= timedelta(days=REFUND_WINDOW_DAYS)
+
+    def subscription_start_date(self):
+        """The subscription period this invoice bills for starts on the day it was issued - not
+        verified_at (unlike is_within_money_back_window above, which is deliberately about the real
+        first-payment moment for a DIFFERENT question, the refund window). Duration options are shown
+        and priced on the invoice itself, before it's even paid, so the period they describe has to be
+        anchored to something that already exists at that moment - issue_date is it."""
+        return self.issue_date
+
+    def subscription_expiry_date(self):
+        """issue_date + duration_months calendar months, e.g. 8 months from Jan 15 lands on Sep 15 -
+        the "Custom duration"/"Expiry date" the invoice shows. Deliberately NOT a stored column: it is
+        fully determined by issue_date and duration_months, both already permanent snapshots on this
+        row, so computing it here can never drift out of sync with them the way a second stored copy
+        could after a future code change to the arithmetic."""
+        from billing.invoicing import add_calendar_months
+
+        return add_calendar_months(self.issue_date, self.duration_months)
+
+    def monthly_price(self):
+        """subtotal / duration_months - the effective per-month rate this invoice's total works out
+        to (for duration_months=1, the every-existing-invoice case, this is just subtotal itself).
+        Reverse-derived rather than separately stored for the same reason subscription_expiry_date()
+        above is: subtotal and duration_months are already the permanent numbers on this row, and
+        their ratio can never disagree with them."""
+        from billing.invoicing import _quantize
+
+        return _quantize(self.subtotal / self.duration_months)
 
     def mark_refunded(self, *, by, amount=None):
         self.status = self.Status.REFUNDED

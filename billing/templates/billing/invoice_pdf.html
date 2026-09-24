@@ -50,6 +50,8 @@
             <td class="right header-sub">
                 {% blocktrans with date=invoice.issue_date|date:"Y-m-d" %}Issued: {{ date }}{% endblocktrans %}<br>
                 {% blocktrans with date=invoice.due_date|date:"Y-m-d" %}Due: {{ date }}{% endblocktrans %}<br>
+                {% blocktrans with date=invoice.subscription_start_date|date:"Y-m-d" %}Start: {{ date }}{% endblocktrans %}<br>
+                {% blocktrans with date=invoice.subscription_expiry_date|date:"Y-m-d" %}Expiry: {{ date }}{% endblocktrans %}<br>
                 {% blocktrans with currency=invoice.currency %}Currency: {{ currency }}{% endblocktrans %}
             </td>
         </tr>
@@ -87,13 +89,35 @@
         </tr>
     </table>
 
+    {% if invoice.previous_plan %}
     <table class="planteam">
         <tr>
             <td width="50%">
-                <div class="label">{% trans "Plan" %}</div>
-                <div class="field">{{ invoice.plan.name }}</div>
+                <div class="label">{% trans "Current plan" %}</div>
+                <div class="field">{{ invoice.previous_plan.name }}</div>
             </td>
             <td width="50%">
+                <div class="label">{% trans "New plan" %}</div>
+                <div class="field">{{ invoice.plan.name }}</div>
+            </td>
+        </tr>
+    </table>
+    {% endif %}
+    <table class="planteam">
+        <tr>
+            <td width="25%">
+                <div class="label">{% if invoice.previous_plan %}{% trans "New plan" %}{% else %}{% trans "Plan" %}{% endif %}</div>
+                <div class="field">{{ invoice.plan.name }}</div>
+            </td>
+            <td width="25%">
+                <div class="label">{% trans "Monthly price" %}</div>
+                <div class="field mono">{{ invoice.currency }} {{ invoice.monthly_price }}</div>
+            </td>
+            <td width="25%">
+                <div class="label">{% trans "Duration" %}</div>
+                <div class="field">{% blocktrans count months=invoice.duration_months %}{{ months }} month{% plural %}{{ months }} months{% endblocktrans %}</div>
+            </td>
+            <td width="25%">
                 <div class="label">{% trans "Team members" %}</div>
                 <div class="field">{{ invoice.seats_billed|default:"—" }}</div>
             </td>
@@ -111,8 +135,11 @@
 
     <table class="totals">
         <tr><td>{% trans "Subtotal (plan + extra seats)" %}</td><td class="right mono">{{ invoice.currency }} {{ invoice.subtotal }}</td></tr>
+        {% if invoice.credit_applied > 0 %}
+        <tr><td>{% trans "Remaining current-plan credit" %}</td><td class="right mono">-{{ invoice.currency }} {{ invoice.credit_applied }}</td></tr>
+        {% endif %}
         <tr><td>{% blocktrans with rate=invoice.tax_rate %}Tax ({{ rate }}%){% endblocktrans %}</td><td class="right mono">{{ invoice.currency }} {{ invoice.tax_amount }}</td></tr>
-        <tr class="total"><td>{% trans "Total" %}</td><td class="right mono">{{ invoice.currency }} {{ invoice.total }}</td></tr>
+        <tr class="total"><td>{% if invoice.credit_applied > 0 %}{% trans "Net amount payable" %}{% else %}{% trans "Total" %}{% endif %}</td><td class="right mono">{{ invoice.currency }} {{ invoice.total }}</td></tr>
     </table>
 
     {% if organization_profile.payment_note %}

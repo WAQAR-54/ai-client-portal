@@ -78,11 +78,20 @@ def get_plan_status(user, assignment=None):
     right now". Returns a dict:
       plan, assignment: the Plan/UserPlanAssignment objects (or None)
       state: "none" | "active" | "grace" | "expired"
-      days_remaining: whole days left before expiry (active demo plans only)
+      days_remaining: whole days left before expiry (only when expires_at is set)
       grace_days_remaining: whole days left in the post-expiry grace window
     Purely a read - never mutates anything, so it's safe to call on every
     request (no Celery/cron dependency for the actual blocking behavior;
     see the module docstring in governance/tasks.py notes for why).
+
+    Applies the SAME active/grace/expired date math to any plan with a real expires_at, not just a
+    demo one - a self-checkout duration purchase/upgrade (billing.views._sync_plan_assignment_to_
+    paid_invoice) sets a real expires_at on a real paid plan for exactly this reason: "the invoice
+    said the plan expired" must actually mean something here too, not just for a trial. Demo-plan
+    behavior is completely unchanged: expires_at is null for the vast majority of plans (any plan
+    never bought through the duration/upgrade flow, demo or not), which is what actually decided
+    "active" before this - is_demo was never really the deciding factor, whether expires_at was set
+    at all always was.
 
     `assignment`: pass an already-fetched UserPlanAssignment (e.g. from a
     queryset that already select_related("plan_assignment__plan")) to
@@ -96,7 +105,7 @@ def get_plan_status(user, assignment=None):
         return {"plan": None, "assignment": None, "state": "none", "days_remaining": None, "grace_days_remaining": None}
 
     plan = assignment.plan
-    if not plan.is_demo or assignment.expires_at is None:
+    if assignment.expires_at is None:
         return {
             "plan": plan,
             "assignment": assignment,
@@ -128,6 +137,28 @@ def get_plan_status(user, assignment=None):
         }
 
     return {"plan": plan, "assignment": assignment, "state": "expired", "days_remaining": 0, "grace_days_remaining": 0}
+
+
+def plan_expired_message(plan):
+    """The user-facing message for get_plan_status's "expired" state - unchanged wording for a demo
+    plan (this is the exact text every existing caller already hardcoded before a paid plan could
+    expire too), but a paid plan gets its own, self-service-appropriate wording: "contact your
+    administrator" makes no sense when the user can renew themselves from the Plans page."""
+    if plan and plan.is_demo:
+        return _("Your trial has ended — contact your administrator.")
+    return _("Your plan has expired. Renew from the Plans page to continue.")
+
+
+def plan_grace_message(plan):
+    """Same reasoning as plan_expired_message, for the "grace" state."""
+    if plan and plan.is_demo:
+        return _(
+            "Your trial has ended. You're in a short grace period with read-only access — "
+            "contact your administrator to continue chatting."
+        )
+    return _(
+        "Your plan has expired. You're in a short grace period — renew from the Plans page to continue chatting."
+    )
 
 
 def get_budget_automation_status(user):
@@ -473,7 +504,7 @@ def check_session_creation_limit(user):
         return
 
     if status["state"] == "expired":
-        raise UsageLimitExceeded("Your trial has ended — contact your administrator.")
+        raise UsageLimitExceeded(plan_expired_message(plan))
 
     from chat.models import Conversation
 

@@ -174,7 +174,13 @@ def check_usage_limits(user, conversation):
     """Raise UsageLimitExceeded if sending another message would (or already
     does) violate the user's effective daily/monthly/session/budget caps,
     or if their Plan has expired past its grace window."""
-    from governance.plans import check_message_burst_limit, check_request_count_limit, get_plan_status
+    from governance.plans import (
+        check_message_burst_limit,
+        check_request_count_limit,
+        get_plan_status,
+        plan_expired_message,
+        plan_grace_message,
+    )
 
     # Lazy import: billing imports governance.models.Plan at module level,
     # so a module-level import here would be circular.
@@ -183,16 +189,11 @@ def check_usage_limits(user, conversation):
     if has_overdue_unpaid_invoice(user):
         raise UsageLimitExceeded(OVERDUE_INVOICE_MESSAGE)
 
-    plan_state = get_plan_status(user)["state"]
-    if plan_state == "expired":
-        raise UsageLimitExceeded(_("Your trial has ended — contact your administrator."))
-    if plan_state == "grace":
-        raise UsageLimitExceeded(
-            _(
-                "Your trial has ended. You're in a short grace period with read-only access — "
-                "contact your administrator to continue chatting."
-            )
-        )
+    plan_status = get_plan_status(user)
+    if plan_status["state"] == "expired":
+        raise UsageLimitExceeded(plan_expired_message(plan_status["plan"]))
+    if plan_status["state"] == "grace":
+        raise UsageLimitExceeded(plan_grace_message(plan_status["plan"]))
 
     # Plan-level request-COUNT cap, independent of the token-volume checks
     # below - see governance/plans.py::check_request_count_limit for why
