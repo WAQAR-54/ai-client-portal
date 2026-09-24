@@ -1886,7 +1886,6 @@ class PlanUpgradeCreditTests(TestCase):
         from governance.plans import get_assignment
 
         self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
-        invoice = Invoice.objects.get(recipient_user=self.user, plan=self.current_plan)
         self._checkout_new_plan(months="3")
         new_invoice = Invoice.objects.get(recipient_user=self.user, plan=self.new_plan)
         self._pay(new_invoice)
@@ -1952,11 +1951,11 @@ class PlanUpgradeCreditTests(TestCase):
 
         self._give_active_plan(self.current_plan, days_remaining=20, monthly_price=Decimal("50"))
         old_expiry = get_assignment(self.user).expires_at
-        response = self.client.post(
-            reverse("billing:checkout_plan"), {"plan_id": self.current_plan.id, "months": "3"}
-        )
+        response = self.client.post(reverse("billing:checkout_plan"), {"plan_id": self.current_plan.id, "months": "3"})
         self.assertEqual(response.status_code, 302)
-        invoice = Invoice.objects.filter(recipient_user=self.user, plan=self.current_plan, status=Invoice.Status.UNPAID).first()
+        invoice = Invoice.objects.filter(
+            recipient_user=self.user, plan=self.current_plan, status=Invoice.Status.UNPAID
+        ).first()
         self.assertIsNotNone(invoice)
         self.assertIsNone(invoice.previous_plan)
         self.assertEqual(invoice.credit_applied, Decimal("0"))

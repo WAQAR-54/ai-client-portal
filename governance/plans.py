@@ -156,9 +156,7 @@ def plan_grace_message(plan):
             "Your trial has ended. You're in a short grace period with read-only access — "
             "contact your administrator to continue chatting."
         )
-    return _(
-        "Your plan has expired. You're in a short grace period — renew from the Plans page to continue chatting."
-    )
+    return _("Your plan has expired. You're in a short grace period — renew from the Plans page to continue chatting.")
 
 
 def get_budget_automation_status(user):
