@@ -1799,7 +1799,9 @@ class MediaGenerationRoutingIndependenceTests(TestCase):
 
         # No ProviderModel row for grok-imagine-image-2.0 exists at all (never synced, or the sync fix
         # correctly never imported it) - generation must not care.
-        self.assertFalse(ProviderModel.objects.filter(provider__slug="grok", model_id="grok-imagine-image-2.0").exists())
+        self.assertFalse(
+            ProviderModel.objects.filter(provider__slug="grok", model_id="grok-imagine-image-2.0").exists()
+        )
         mock_post.return_value = MagicMock(json=lambda: {"data": [{"url": "https://x.ai/generated.png"}]})
         mock_get.return_value = MagicMock(content=b"fake-bytes")
         result = generate_image("a cat")
