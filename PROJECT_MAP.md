@@ -563,6 +563,44 @@ Dono features **pehle se largely complete the** — QA pass ne unhe rebuild nahi
 
 **Real-browser QA (13/13 checks):** dashboard eyebrow fix, audit sort/clear-filters/detail/masking sab desktop par confirm hue; 390px par dono pages (audit list, admin dashboard) koi horizontal page-overflow nahi (audit table ka apna internal horizontal scroll pehle se tha, naya "Detail" column bhi usi mein fit hota hai).
 
+## 8m. AI Usage Analytics — gap-fix (2026-09-24)
+
+Feature **largely pehle se complete thi** — `governance/dashboards.py::ai_usage()` (requests today/week/month + trend) aur `governance/views.py::UsageSummaryView` (`/governance/usage/` — per-user spend, spend-by-provider, 7-day cost trend, cache hit rate, search/model/date filters, CSV/XLSX export, department-scoped for Admin) dono already real data par based the. 3 genuine gaps mile aur fix hue — koi naya model, koi invented metric nahi:
+
+| File | Gap | Fix | Status |
+|---|---|---|---|
+| `governance/views.py::UsageSummaryView`, `templates/governance/usage.html` | "Usage by model" — sirf provider-level spend tha, model-level nahi (jabke `ai_usage()` ke dashboard-preview breakdown mein pehle se tha) | `model_bars` — provider_bars jaisa hi Sum/Count aggregate, `provider_model_used__model_id` (legacy `model_used__model_name` ke sath Coalesce), top 10 by cost | IMPLEMENTED aur VERIFIED |
+| `governance/dashboards.py::admin_dashboard`, `manager_dashboard` | Dono `ai_usage()` ko `breakdown=True` nahi pass karte the — SuperAdmin ke dashboard card par provider+model bars thay, Admin/Manager ke apne (department/team-scoped) card par nahi | Ek-line fix: dono call sites par `breakdown=True` add kiya — same existing aggregation, sirf scope alag | FIXED |
+| `governance/dashboards.py::user_dashboard`, `templates/accounts/dashboard.html` | Normal user ke dashboard par "AI requests today/this month" kahin nahi tha (sirf %-of-limit widget tha) | `user_dashboard()` mein apna `ai_usage()` call add kiya (sirf apne messages), `_ai_usage.html` partial reuse kiya | IMPLEMENTED aur VERIFIED |
+
+**Fabricate nahi kiya:** per-request failure/latency tracking — `_ai_usage.html`'s apna comment confirm karta hai "the application keeps no per-request error record, so none is invented"; jo hai (`provider_errors` = provider SYNC failures, System Status se) woh already correct hai, alag concept hai. Usage limits/remaining — dashboard ke `get_usage_status` widget mein already hai, duplicate nahi kiya.
+
+**Security:** har role apna hi scoped queryset dekhta hai (SuperAdmin unscoped, Admin `_scope_by_user_department`, Manager `member_ids`, User `conversation__user=user`) — koi naya authorization path nahi, sab existing helpers reuse hue.
+
+**Tests:** 4 naye (`governance/tests.py`, `governance/test_dashboards.py`) — model aggregation (real Sum/Count), empty state (fabricate nahi), user isolation (dusre user ka data nahi), user's own empty-state. Full `governance` suite (788 tests) OK.
+
+## 8n. System Alerts (2026-09-24)
+
+Naya "System Alerts" concept nahi banaya — existing `governance/dashboards.py::Attention` ("Needs attention" list, dashboard par pehle se tha, real `build_system_status()` probes se: DB/Redis/providers/Celery jobs/backup/disk/CPU/memory) ko hi is feature ki backbone banaya. Koi doosra monitoring system nahi bana.
+
+| File | Kya add hua | Status |
+|---|---|---|
+| `governance/dashboards.py::Attention.add()` | `severity_label` (Critical/Warning/Info — existing danger/warn/info levels ki hi mapping, naya scheme nahi), `time` (system_status ka apna real `checked_age`, invented nahi), `acknowledge_url` (danger-level items ke liye auto-set) | IMPLEMENTED |
+| `governance/dashboards.py::_attention_from_maintenance` (naya) | ACTIVE maintenance window ko Info-level alert — real data (`maintenance.open_window()`), koi naya state nahi | IMPLEMENTED aur VERIFIED |
+| `governance/dashboards.py::_attention_from_lockouts` (naya) | Recent `auth.lockout` AuditLog entries (already recorded security event) ko Warning-level alert — `_scope_audit_logs` se department-scoped (Admin), unscoped (SuperAdmin) | IMPLEMENTED aur VERIFIED |
+| `notifications/models.py::NotificationType.SYSTEM_ALERT` (naya, migration `0012`) | CRITICAL system alerts ke liye — 13 existing types mein koi bhi fit nahi hota tha | IMPLEMENTED |
+| `governance/dashboards.py::notify_critical_system_alerts` (naya) + `DashboardView` (SuperAdmin branch) se call | Har DANGER-level item (DB down, Redis down, job/backup fail, disk/CPU/memory critical) → real `Notification` (existing `notify()` reuse), SuperAdmins ko. **Dedup**: per (alert key, user), `SYSTEM_ALERT_RENOTIFY_HOURS=6` — same firing condition spam nahi karta, ek NAYA/alag condition suppress nahi hota | IMPLEMENTED aur VERIFIED |
+| `governance/views.py::acknowledge_system_alert` (naya, POST, Admin+) | Matching unread `SYSTEM_ALERT` notification(s) ko read mark karta hai — existing `is_read` flag reuse, naya read-tracking nahi. **Underlying condition ko "resolved" kabhi nahi marta** — sirf next real system-status check hi resolve karega | IMPLEMENTED aur VERIFIED |
+| `templates/dashboards/_attention.html`, `_superadmin.html` | Severity badge + time + Acknowledge button per item; empty state ab literal "No active system alerts" (SuperAdmin) | IMPLEMENTED aur VERIFIED |
+| `governance/authz_expected.json` | Naya route `/governance/system-alerts/<key>/acknowledge/` golden file mein (`admin`) | UPDATED |
+| `governance/test_dashboards.py::SystemAlertsTests` | 11 naye tests: severity/time render, real Notification creation, dedup (same condition), no-suppress (different condition), sirf SuperAdmin ko notify, Acknowledge (ownership + Admin-required), maintenance-active alert, lockout alert + department-scoping, **Manager ko system/security alerts bilkul nahi milte**, empty state text | IMPLEMENTED aur VERIFIED |
+
+**"Mark resolved" deliberately NAHI banaya:** brief khud kehta hai "Do NOT allow users to falsely mark a live system failure as resolved" — sirf ek re-probe (`build_system_status()`) hi honestly bata sakta hai ke condition clear hui ya nahi. Ek manual "resolved" button banana isi rule ko todta.
+
+**Role scoping:** SuperAdmin = full (system_status + lockouts unscoped). Admin = maintenance + lockouts (department-scoped via `_scope_audit_logs`) — koi raw infra alert nahi (`_attention_from_system` sirf SuperAdmin ke liye call hota hai). Manager = bilkul kuch nahi (no system_status probe, no audit access — `AdminRequiredMixin` khud is exclude karta hai). Normal user = kuch nahi (unke dashboard mein `_attention.html` include hi nahi hota).
+
+**Limitation:** mobile (390px) layout ke liye sirf CSS media query add hui, real-browser Playwright pass nahi kiya (session budget) — visually inspect nahi hua, sirf code-reviewed.
+
 ## 9. Naya kaam karte waqt kahan jayein (cheat-sheet)
 
 | Karna kya hai | Kis file mein jayein |

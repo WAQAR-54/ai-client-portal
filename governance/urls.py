@@ -108,6 +108,7 @@ urlpatterns = [
         name="update_capability_limits",
     ),
     path("system-status/server-health/", views.server_health_panel, name="server_health"),
+    path("system-alerts/<str:key>/acknowledge/", views.acknowledge_system_alert, name="acknowledge_system_alert"),
     path("media/", media_views.MediaDashboardView.as_view(), name="media"),
     path("media/rescan/", media_views.media_rescan, name="media_rescan"),
     path("media/orphans/delete/", media_views.media_delete_orphan, name="media_delete_orphan"),

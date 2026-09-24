@@ -509,6 +509,10 @@ class DashboardView(AdminRequiredMixin, TemplateView):
         # Org-wide infrastructure status - SuperAdmin-only, computed ONCE and reused by the dashboard summary below.
         system_status = build_system_status() if self.request.user.is_superadmin else None
         if system_status is not None:
+            # System Alerts -> Notification Center: dedup'd per-condition inside the function
+            # itself, so calling it on every SuperAdmin dashboard load (no new Celery schedule)
+            # never spams - see governance/dashboards.py::notify_critical_system_alerts.
+            dashboards.notify_critical_system_alerts(system_status)
             dash = dashboards.superadmin_dashboard(self.request, system_status, org_usage, pending_upgrade_count)
         else:
             dash = dashboards.admin_dashboard(self.request, org_usage, pending_upgrade_count)
@@ -576,6 +580,23 @@ class DashboardView(AdminRequiredMixin, TemplateView):
             "dash_role": "superadmin" if system_status is not None else "admin",
             "admin_setup_checklist": AccountsDashboardView._admin_setup_checklist(self.request.user),
         }
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["POST"])
+def acknowledge_system_alert(request, key):
+    """Marks the requesting user's own unread SYSTEM_ALERT notification(s) for this alert `key`
+    as read - reuses the Notification model's existing is_read flag (notifications/models.py),
+    never a second read-tracking system. This only ever affects the requesting user's own rows
+    (scoped by user=request.user, same ownership pattern as notifications:mark_read) and never
+    marks the underlying condition "resolved" - that's decided by the next real system-status
+    re-check, not a click (see notify_critical_system_alerts's own docstring)."""
+    from notifications.models import Notification, NotificationType
+
+    Notification.objects.filter(
+        user=request.user, notification_type=NotificationType.SYSTEM_ALERT, metadata__key=key, is_read=False
+    ).update(is_read=True)
+    return redirect(safe_next_url(request, "governance:dashboard"))
 
 
 @role_required(User.Role.SUPERADMIN)
@@ -2345,7 +2366,31 @@ class UsageSummaryView(FilterableListMixin, AdminRequiredMixin, RequireFeatureMi
             for row in provider_rows
         ]
 
+        # Usage by model - same shape/scope as provider_bars above, coalescing the current
+        # provider_model_used with the legacy model_used FK the same way provider_key does, so
+        # messages from before the ProviderModel cutover still land in a real bucket instead of
+        # being silently excluded.
+        model_rows = (
+            assistant_messages.annotate(model_key=Coalesce("provider_model_used__model_id", "model_used__model_name"))
+            .exclude(model_key__isnull=True)
+            .values("model_key")
+            .annotate(cost=Sum("estimated_cost"), requests=Count("id"))
+            .order_by("-cost")[:10]
+        )
+        total_model_cost = sum(float(row["cost"] or 0) for row in model_rows)
+        model_bars = [
+            {
+                "name": row["model_key"],
+                "cost": float(row["cost"] or 0),
+                "requests": row["requests"],
+                "pct": round(float(row["cost"] or 0) / total_model_cost * 100) if total_model_cost else 0,
+            }
+            for row in model_rows
+        ]
+
         return super().get_context_data(**kwargs) | {
+            "model_bars": model_bars,
+            "total_model_cost": total_model_cost,
             "per_user": per_user,
             "provider_bars": provider_bars,
             "total_provider_cost": total_provider_cost,

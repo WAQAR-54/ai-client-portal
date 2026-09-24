@@ -2261,6 +2261,33 @@ class AdminListFilteringTests(TestCase):
         response = self.client.get(reverse("governance:usage"), {"model": model.id})
         self.assertEqual(len(response.context["per_user"]), 1)
 
+    def test_usage_page_shows_spend_by_model(self):
+        """AI Usage Analytics gap-fix: the page had 'Spend by provider' but no per-model
+        breakdown - real aggregation (Sum/Count grouped by model), not an invented number."""
+        model_a = ModelConfig.objects.create(provider="openai", model_name="gpt-4o-mini", is_enabled=True)
+        model_b = ModelConfig.objects.create(provider="anthropic", model_name="claude-haiku", is_enabled=True)
+        conv = Conversation.objects.create(user=self.alice, title="c")
+        Message.objects.create(
+            conversation=conv, role=Message.Role.ASSISTANT, content="hi", model_used=model_a, estimated_cost="1.00"
+        )
+        Message.objects.create(
+            conversation=conv, role=Message.Role.ASSISTANT, content="hi", model_used=model_a, estimated_cost="1.00"
+        )
+        Message.objects.create(
+            conversation=conv, role=Message.Role.ASSISTANT, content="hi", model_used=model_b, estimated_cost="2.00"
+        )
+        response = self.client.get(reverse("governance:usage"))
+        bars = {row["name"]: row for row in response.context["model_bars"]}
+        self.assertEqual(bars["gpt-4o-mini"]["requests"], 2)
+        self.assertEqual(float(bars["gpt-4o-mini"]["cost"]), 2.0)
+        self.assertEqual(bars["claude-haiku"]["requests"], 1)
+        self.assertEqual(float(response.context["total_model_cost"]), 4.0)
+
+    def test_usage_page_model_breakdown_is_empty_not_fabricated_when_no_messages(self):
+        response = self.client.get(reverse("governance:usage"))
+        self.assertEqual(response.context["model_bars"], [])
+        self.assertEqual(response.context["total_model_cost"], 0)
+
     def test_filters_are_admin_only(self):
         User.objects.create_user(email="plain@example.com", password="pw12345!")
         self.client.logout()

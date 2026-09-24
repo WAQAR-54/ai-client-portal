@@ -35,6 +35,9 @@ ACTIVE_DAYS = 30  # a project or conversation counts as "active" if it was touch
 RECENT_DAYS = 7
 
 LEVEL_ORDER = {"danger": 0, "warn": 1, "info": 2}
+# System Alerts: the vocabulary the feature asks for, mapped onto the existing danger/warn/info
+# levels this module already used everywhere - not a second severity scheme.
+LEVEL_LABELS = {"danger": _lazy("Critical"), "warn": _lazy("Warning"), "info": _lazy("Info")}
 
 
 # ---------------------------------------------------------------- small shared pieces
@@ -82,11 +85,34 @@ class Attention:
         self.items = []
         self._keys = set()
 
-    def add(self, key, level, area, text, url, action):
+    def add(self, key, level, area, text, url, action, time=None, acknowledge_url=None):
+        """`time`: an already-computed age_label()-style string (e.g. system_status's own
+        checked_age) - never a fabricated timestamp for something that isn't actually clocked.
+        `acknowledge_url`: set only for a system alert that was ALSO turned into a real
+        Notification (see notify_critical_system_alerts below) - acknowledging marks that
+        notification read; it never marks the underlying condition "resolved" (only the next
+        real re-check can do that - see this module's own docstring rule against invented state)."""
         if key in self._keys:
             return
         self._keys.add(key)
-        item = {"key": key, "level": level, "area": area, "text": text, "url": url, "action": action}
+        if acknowledge_url is None and level == "danger":
+            # Every current danger-level item is system-sourced (_attention_from_system) and gets
+            # a real Notification from notify_critical_system_alerts - same key, so the two always
+            # agree without passing this explicitly at each of that function's many call sites.
+            from django.urls import reverse as _reverse
+
+            acknowledge_url = _reverse("governance:acknowledge_system_alert", kwargs={"key": key})
+        item = {
+            "key": key,
+            "level": level,
+            "severity_label": LEVEL_LABELS[level],
+            "area": area,
+            "text": text,
+            "url": url,
+            "action": action,
+            "time": time,
+            "acknowledge_url": acknowledge_url,
+        }
         item["icon"] = "att_" + key.split(":")[0]  # dashboards/_icon.html
         self.items.append(item)
 
@@ -274,6 +300,9 @@ def user_dashboard(user):
         "has_conversations": bool(conversations),
         "notifications": notification_summary(user),
         "usage_warning": _usage_warning(usage),
+        # AI requests today/this month - own messages only, never another user's (see
+        # _ai_usage.html's own comment on why no per-request error is invented here either).
+        "ai_usage": ai_usage(Message.objects.filter(role=Message.Role.ASSISTANT, conversation__user=user)),
     }
 
 
@@ -509,11 +538,20 @@ def _system_summary(system_status):
 
 def _attention_from_system(attention, system_status):
     status_url = reverse("governance:dashboard") + "#sys-status-title"
+    checked = system_status["checked_age"]  # System Alerts' "time" - the one real clock this data has
     if system_status["database"]["state"] != "healthy":
-        attention.add("db", "danger", _("Database"), _("The database is not responding."), status_url, _("View status"))
+        attention.add(
+            "db", "danger", _("Database"), _("The database is not responding."), status_url, _("View status"), checked
+        )
     if system_status["redis"]["state"] == "unavailable":
         attention.add(
-            "redis", "danger", _("Redis"), _("Redis is configured but not responding."), status_url, _("View status")
+            "redis",
+            "danger",
+            _("Redis"),
+            _("Redis is configured but not responding."),
+            status_url,
+            _("View status"),
+            checked,
         )
     providers = system_status["providers"]
     for row in providers["rows"]:
@@ -529,6 +567,7 @@ def _attention_from_system(attention, system_status):
                 ),
                 reverse("providers:list"),
                 _("View provider"),
+                checked,
             )
     if providers["never_synced"]:
         attention.add(
@@ -538,6 +577,7 @@ def _attention_from_system(attention, system_status):
             _("%(n)s connected provider(s) never synced.") % {"n": providers["never_synced"]},
             reverse("providers:list"),
             _("View providers"),
+            checked,
         )
     jobs = system_status["jobs"]
     if jobs["beat_stale"]:
@@ -548,6 +588,7 @@ def _attention_from_system(attention, system_status):
             _("The scheduler has stopped dispatching tasks."),
             status_url,
             _("View status"),
+            checked,
         )
     for row in jobs["rows"]:
         if row["health"] == "failing":
@@ -559,6 +600,7 @@ def _attention_from_system(attention, system_status):
                 (_("%(name)s failed on its last run.") % {"name": row["name"]}),
                 status_url,
                 _("View status"),
+                checked,
             )
     for metric in system_status["server_health"]["metrics"]:
         if metric["key"] == "disk" and metric["state"] in ("warning", "critical"):
@@ -569,6 +611,7 @@ def _attention_from_system(attention, system_status):
                 _("Disk is %(value)s full.") % {"value": metric["value"]},
                 reverse("governance:media"),
                 _("Open Media"),
+                checked,
             )
         elif metric["key"] in ("cpu", "memory") and metric["state"] == "critical":
             attention.add(
@@ -578,6 +621,84 @@ def _attention_from_system(attention, system_status):
                 _("%(label)s is critically high.") % {"label": metric["label"]},
                 status_url,
                 _("View status"),
+                checked,
+            )
+
+
+def _attention_from_maintenance(attention, window):
+    """An ACTIVE maintenance window as an info-level alert - scheduled-but-not-started ones
+    already have their own dashboard tile and don't need to double up here (nothing to act on
+    yet). Real data (governance/maintenance.py::open_window()), no new state."""
+    if window and getattr(window, "status", None) == "active":
+        attention.add(
+            "maintenance",
+            "info",
+            _("Maintenance"),
+            _("A maintenance window is currently active."),
+            reverse("governance:maintenance"),
+            _("View maintenance"),
+        )
+
+
+def _attention_from_lockouts(attention, request, since):
+    """Recent account lockouts (accounts/views.py already logs "auth.lockout" via log_action) -
+    a real, already-recorded security event, not a new detector. Department-scoped the same way
+    every other audit-derived item on this page already is."""
+    from governance.models import AuditLog
+    from governance.views import _scope_audit_logs
+
+    count = _scope_audit_logs(
+        request, AuditLog.objects.filter(action_type="auth.lockout", timestamp__gte=since)
+    ).count()
+    if count:
+        attention.add(
+            "lockouts",
+            "warn",
+            _("Security"),
+            _("%(n)s account lockout(s) in the last 24 hours.") % {"n": count},
+            reverse("governance:audit_logs") + "?action_type=auth.lockout",
+            _("View audit log"),
+        )
+
+
+SYSTEM_ALERT_RENOTIFY_HOURS = 6  # the same still-firing condition renotifies at most once per window
+
+
+def notify_critical_system_alerts(system_status):
+    """CRITICAL (danger-level) System Alerts -> a real Notification for every active SuperAdmin,
+    so a system failure doesn't only surface to whoever happens to open the dashboard. Reuses
+    _attention_from_system's own condition-detection (never a second copy of "what counts as
+    critical") and dedupes per (key, user) within SYSTEM_ALERT_RENOTIFY_HOURS via metadata.key -
+    the same still-firing condition does not create unlimited duplicate alerts, but a NEW distinct
+    problem (a different key) is never suppressed by an unrelated one already notified."""
+    from notifications.models import Notification, NotificationType
+    from notifications.notify import notify
+
+    probe = Attention()
+    _attention_from_system(probe, system_status)
+    critical = [item for item in probe.items if item["level"] == "danger"]
+    if not critical:
+        return
+
+    since = timezone.now() - timedelta(hours=SYSTEM_ALERT_RENOTIFY_HOURS)
+    recipients = list(User.objects.filter(role=User.Role.SUPERADMIN, is_active=True).exclude(email=""))
+    for item in critical:
+        already_notified_ids = set(
+            Notification.objects.filter(
+                notification_type=NotificationType.SYSTEM_ALERT,
+                metadata__key=item["key"],
+                created_at__gte=since,
+            ).values_list("user_id", flat=True)
+        )
+        for user in recipients:
+            if user.id in already_notified_ids:
+                continue
+            notify(
+                user,
+                NotificationType.SYSTEM_ALERT,
+                title=_("%(area)s: %(text)s") % {"area": item["area"], "text": item["text"]},
+                body=item["text"],
+                metadata={"key": item["key"]},
             )
 
 
@@ -610,6 +731,8 @@ def superadmin_dashboard(request, system_status, org_usage, pending_upgrade_requ
 
     attention = Attention()
     _attention_from_system(attention, system_status)
+    _attention_from_maintenance(attention, window)
+    _attention_from_lockouts(attention, request, timezone.now() - timedelta(days=1))
     if not _backup_configured():
         attention.add(
             "backup",
@@ -834,6 +957,7 @@ def _covered_notification_types():
 
 def admin_dashboard(request, org_usage, pending_upgrade_requests):
     from billing.views import _scoped_pending_refund_requests, scoped_invoices
+    from governance import maintenance
     from governance.views import _is_scoped_admin, _scope_by_user_department, _scope_users
 
     user = request.user
@@ -853,7 +977,8 @@ def admin_dashboard(request, org_usage, pending_upgrade_requests):
     usage = ai_usage(
         _scope_by_user_department(
             request, Message.objects.filter(role=Message.Role.ASSISTANT), "conversation__user__department_id"
-        )
+        ),
+        breakdown=True,
     )
     invoices = _invoice_counts(scoped_invoices(user))
     refunds = _scoped_pending_refund_requests(request).count()
@@ -864,6 +989,8 @@ def admin_dashboard(request, org_usage, pending_upgrade_requests):
     )
 
     attention = Attention()
+    _attention_from_maintenance(attention, maintenance.open_window())
+    _attention_from_lockouts(attention, request, timezone.now() - timedelta(days=1))
     if invoices["verification"]:
         attention.add(
             "verification",
@@ -1017,7 +1144,9 @@ def manager_dashboard(request, team, members):
     )
     conversations_today = Conversation.objects.filter(user__in=member_ids, updated_at__gte=today).count()
     projects = project_counts(members)
-    usage = ai_usage(Message.objects.filter(role=Message.Role.ASSISTANT, conversation__user__in=member_ids))
+    usage = ai_usage(
+        Message.objects.filter(role=Message.Role.ASSISTANT, conversation__user__in=member_ids), breakdown=True
+    )
     over_80 = members_over_limit(members)
     notes = notification_summary(user)
 

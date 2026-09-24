@@ -1,8 +1,12 @@
 {% load i18n %}
 {% comment %}
-"Needs attention": only actionable items, each with a link to the existing page that handles it (governance/dashboards.py
-::Attention - one underlying problem is one item). `attention` = list of {key,level,area,text,url,action}. `ok_text` is
-what an empty list says.
+"Needs attention" / System Alerts: only actionable items, each with a link to the existing page
+that handles it (governance/dashboards.py::Attention - one underlying problem is one item).
+`attention` = list of {key,level,severity_label,area,text,url,action,time,acknowledge_url}.
+`ok_text` is what an empty list says - defaults to the literal empty state System Alerts asks for.
+A danger-level item was also turned into a real Notification (notify_critical_system_alerts) -
+acknowledge_url marks THAT read; it never claims the underlying condition is "resolved" (only the
+next real system-status check decides that).
 {% endcomment %}
 <section class="dash-section" id="needs-attention" data-dash="attention" aria-labelledby="needs-attention-title">
     <h2 class="dash-section-title" id="needs-attention-title">{% include "dashboards/_icon.html" with name="t_attention" %}{% trans "Needs attention" %}{% if attention %} <span class="badge badge-warn">{{ attention|length }}</span>{% endif %}</h2>
@@ -11,12 +15,28 @@ what an empty list says.
         {% for item in attention %}
         <li class="dash-attention-item" data-level="{{ item.level }}" data-key="{{ item.key }}">
             <span class="dash-chip" aria-hidden="true">{% include "dashboards/_icon.html" with name=item.icon %}</span>
-            <div class="dash-attention-body"><strong>{{ item.area }}</strong><span>{{ item.text }}</span></div>
-            <a class="dash-link" href="{{ item.url }}">{{ item.action }} <span aria-hidden="true">→</span></a>
+            <div class="dash-attention-body">
+                <div class="dash-attention-head">
+                    <span class="badge badge-{{ item.level }}">{{ item.severity_label }}</span>
+                    <strong>{{ item.area }}</strong>
+                    {% if item.time %}<span class="text-faint mono" style="font-size:var(--text-xs);">{{ item.time }} {% trans "ago" %}</span>{% endif %}
+                </div>
+                <span>{{ item.text }}</span>
+            </div>
+            <div class="dash-attention-actions">
+                <a class="dash-link" href="{{ item.url }}">{{ item.action }} <span aria-hidden="true">→</span></a>
+                {% if item.acknowledge_url %}
+                <form method="post" action="{{ item.acknowledge_url }}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn-small btn-ghost">{% trans "Acknowledge" %}</button>
+                </form>
+                {% endif %}
+            </div>
         </li>
         {% endfor %}
     </ul>
     {% else %}
-    <p class="dash-allclear"><i class="dash-dot" data-tone="ok" aria-hidden="true"></i> {{ ok_text|default:_("Nothing needs your attention right now.") }}</p>
+    <p class="dash-allclear"><i class="dash-dot" data-tone="ok" aria-hidden="true"></i> {{ ok_text|default:_("No active system alerts") }}</p>
     {% endif %}
 </section>

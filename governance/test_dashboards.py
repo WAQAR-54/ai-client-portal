@@ -211,7 +211,7 @@ class SuperAdminDashboardTests(DashboardTestCase):
         with override_settings(BACKUP_S3_BUCKET="portal-backups"):
             response = self.get(self.superadmin)
         self.assertEqual(response.context["dash"]["attention"], [])
-        self.assertContains(response, "All critical systems are operational.")
+        self.assertContains(response, "No active system alerts")
         self.assertEqual(self.tile(response, "alerts")["value"], 0)
 
     def test_ai_usage_counts_and_breakdown(self):
@@ -553,6 +553,25 @@ class UserDashboardTests(DashboardTestCase):
         self.assertContains(response, "Your plan")
         self.assertContains(response, "Your usage")
 
+    def test_ai_usage_card_shows_only_the_users_own_request_counts(self):
+        """AI Usage Analytics gap-fix: a normal user previously had no 'AI requests
+        today/this month' figures anywhere - added via the same real ai_usage() aggregate every
+        other role already uses, scoped to their own messages only."""
+        conv = Conversation.objects.create(user=self.user, title="mine")
+        for _ in range(3):
+            Message.objects.create(conversation=conv, role=Message.Role.ASSISTANT, content="x")
+        other_conv = Conversation.objects.create(user=self.outsider, title="not mine")
+        Message.objects.create(conversation=other_conv, role=Message.Role.ASSISTANT, content="x")
+
+        dash = self.get(self.user).context["dash"]
+        self.assertEqual(dash["ai_usage"]["today"], 3)
+        self.assertEqual(dash["ai_usage"]["month"], 3)
+
+    def test_ai_usage_card_empty_state_when_no_messages(self):
+        dash = self.get(self.user).context["dash"]
+        self.assertEqual(dash["ai_usage"]["today"], 0)
+        self.assertIsNone(dash["ai_usage"]["trend"])
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 class PermissionBoundaryTests(DashboardTestCase):
@@ -697,3 +716,116 @@ class RealViewEfficiencyTests(DashboardTestCase):
         self._grow(15, self.dept_a, team=self.team)
         after = self._query_count(self.manager)
         self.assertLessEqual(after, before, f"manager dashboard: {before} -> {after} queries")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+class SystemAlertsTests(DashboardTestCase):
+    """System Alerts: severity labels/time on top of the existing "Needs attention" items, the
+    Notification Center integration + dedup for critical ones, Acknowledge, the new maintenance-
+    active/lockout sources, and role scoping (Manager gets none of this - no system_status, no
+    audit access)."""
+
+    def _make_db_down(self):
+        status = build_system_status()
+        status["database"]["state"] = "unavailable"
+        return status
+
+    def test_severity_label_and_time_are_shown_for_a_system_alert(self):
+        with patch("governance.views.build_system_status", return_value=self._make_db_down()):
+            response = self.get(self.superadmin)
+        item = next(i for i in response.context["dash"]["attention"] if i["key"] == "db")
+        self.assertEqual(item["level"], "danger")
+        self.assertEqual(str(item["severity_label"]), "Critical")
+        self.assertIsNotNone(item["time"])
+        self.assertContains(response, "Critical")
+
+    def test_critical_condition_creates_a_real_notification_for_superadmins(self):
+        with patch("governance.views.build_system_status", return_value=self._make_db_down()):
+            self.get(self.superadmin)
+        alerts = Notification.objects.filter(user=self.superadmin, notification_type=NotificationType.SYSTEM_ALERT)
+        self.assertEqual(alerts.count(), 1)
+        self.assertEqual(alerts.first().metadata["key"], "db")
+
+    def test_the_same_condition_does_not_spam_duplicate_notifications(self):
+        with patch("governance.views.build_system_status", return_value=self._make_db_down()):
+            self.get(self.superadmin)
+            self.get(self.superadmin)
+            self.get(self.superadmin)
+        self.assertEqual(
+            Notification.objects.filter(user=self.superadmin, notification_type=NotificationType.SYSTEM_ALERT).count(),
+            1,
+        )
+
+    def test_a_different_condition_is_not_suppressed_by_an_unrelated_dedup(self):
+        status = self._make_db_down()
+        status["redis"]["state"] = "unavailable"
+        with patch("governance.views.build_system_status", return_value=status):
+            self.get(self.superadmin)
+        keys = set(
+            Notification.objects.filter(
+                user=self.superadmin, notification_type=NotificationType.SYSTEM_ALERT
+            ).values_list("metadata__key", flat=True)
+        )
+        self.assertEqual(keys, {"db", "redis"})
+
+    def test_only_superadmins_are_notified_not_every_user(self):
+        with patch("governance.views.build_system_status", return_value=self._make_db_down()):
+            self.get(self.superadmin)
+        self.assertFalse(
+            Notification.objects.filter(notification_type=NotificationType.SYSTEM_ALERT)
+            .exclude(user=self.superadmin)
+            .exists()
+        )
+
+    def test_acknowledge_marks_the_notification_read_and_is_owner_scoped(self):
+        with patch("governance.views.build_system_status", return_value=self._make_db_down()):
+            self.get(self.superadmin)
+        alert = Notification.objects.get(user=self.superadmin, notification_type=NotificationType.SYSTEM_ALERT)
+        self.assertFalse(alert.is_read)
+        self.client.force_login(self.superadmin)
+        response = self.client.post(reverse("governance:acknowledge_system_alert", kwargs={"key": "db"}))
+        self.assertEqual(response.status_code, 302)
+        alert.refresh_from_db()
+        self.assertTrue(alert.is_read)
+
+    def test_acknowledge_requires_admin(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("governance:acknowledge_system_alert", kwargs={"key": "db"}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_active_maintenance_window_is_an_info_level_alert(self):
+        maintenance.enable_now(self.superadmin, "Upgrade", notify_users=False)
+        response = self.get(self.superadmin)
+        item = next(i for i in response.context["dash"]["attention"] if i["key"] == "maintenance")
+        self.assertEqual(item["level"], "info")
+        self.assertIsNone(item["acknowledge_url"])  # info-level: no Notification was created for it
+
+    def test_recent_lockouts_appear_and_are_department_scoped_for_admin(self):
+        # target_id deliberately far from any real pk in this fixture set - _scope_audit_logs' own
+        # target_type="User" OR-clause matches on that id, and a small collision would make this
+        # test pass for the wrong reason (only the actor's department should matter here).
+        AuditLog.objects.create(actor=self.user, action_type="auth.lockout", target_type="User", target_id="999901")
+        AuditLog.objects.create(actor=self.outsider, action_type="auth.lockout", target_type="User", target_id="999902")
+        response = self.get(self.superadmin)
+        item = next(i for i in response.context["dash"]["attention"] if i["key"] == "lockouts")
+        self.assertIn("2 account lockout", item["text"])
+
+        response = self.get(self.admin)  # admin's own department only (self.user is dept_a, outsider is dept_b)
+        item = next(i for i in response.context["dash"]["attention"] if i["key"] == "lockouts")
+        self.assertIn("1 account lockout", item["text"])
+
+    def test_manager_never_gets_system_or_security_alerts(self):
+        """Manager has no system_status probe and no audit-log access at all (AdminRequiredMixin
+        is Admin-or-above) - _attention_from_system/_attention_from_lockouts must never run for
+        them, not just happen to return nothing."""
+        AuditLog.objects.create(actor=self.member, action_type="auth.lockout", target_type="User", target_id="1")
+        response = self.get(self.manager)
+        keys = self.attention_keys(response)
+        self.assertNotIn("lockouts", keys)
+        self.assertNotIn("db", keys)
+        self.assertNotIn("maintenance", keys)
+
+    def test_empty_state_says_no_active_system_alerts(self):
+        with override_settings(BACKUP_S3_BUCKET="portal-backups"):
+            response = self.get(self.superadmin)
+        self.assertContains(response, "No active system alerts")

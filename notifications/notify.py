@@ -84,6 +84,8 @@ def notification_action_url(notification):
         return reverse("chat:chat_home")
     if notification.notification_type == NotificationType.NEW_TRUSTED_DEVICE:
         return reverse("accounts:profile") + "#security"
+    if notification.notification_type == NotificationType.SYSTEM_ALERT:
+        return reverse("governance:dashboard") + "#sys-status-title"
     # MAINTENANCE has no universal destination - governance:maintenance is SuperAdmin-only, and
     # most recipients of a maintenance notice have no page to send them to about it.
     return None
@@ -121,6 +123,7 @@ _TYPE_CATEGORY = {
     "model_sync_available": NotificationCategory.AI_SYSTEM,
     "usage_warning": NotificationCategory.AI_SYSTEM,
     "maintenance": NotificationCategory.MAINTENANCE,
+    "system_alert": NotificationCategory.AI_SYSTEM,
 }
 
 # One icon "kind" per type, reused by both the category grouping above (where a type has a

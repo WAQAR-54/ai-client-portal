@@ -63,6 +63,32 @@ connect (nothing listens on port 443 yet) and can look exactly like "login
 doesn't work" without ever reaching the login page at all. Always type
 `http://` explicitly for now.
 
+## Pending: mywheai.com domain cutover (owner action required)
+
+Checked 2026-09-24: **neither `mywheai.com` nor `www.mywheai.com` resolve in DNS at all**
+(`getaddrinfo ENOTFOUND` for both) — this is a registrar/DNS panel step, nothing in this
+repository can do it. Once DNS is pointed at this server, three env vars on the **server's own
+`.env`** (not `.env.example`) still need setting before the app will actually answer on that
+hostname:
+
+```
+ALLOWED_HOSTS=141.148.220.88,mywheai.com,www.mywheai.com
+CSRF_TRUSTED_ORIGINS=https://mywheai.com,https://www.mywheai.com
+SITE_URL=https://mywheai.com
+```
+
+then `docker compose up -d --build` to pick them up. `SITE_URL` feeds absolute links in emails
+(password reset, invoice share links, etc.) — leaving it as the IP would send those wrong once
+the domain is live.
+
+HTTPS is a separate step, still needed either way (see the gotcha above — nothing listens on
+port 443 today): either put Cloudflare in front (proxy the DNS record, set SSL/TLS mode to
+**Full (strict)**, which requires a real origin certificate — Cloudflare's own free origin CA
+cert is the simplest option) or issue a certificate directly on the VPS (`certbot --nginx`) and
+set `FORCE_HTTPS=True` in the server `.env` once a cert exists. Do this *before* relying on
+`ALLOWED_HOSTS` alone for the domain to feel "live" — otherwise visitors on `https://mywheai.com`
+get a connection error identical to the one this doc already describes for the bare IP.
+
 ## Restart / rebuild after a code change
 
 ```bash

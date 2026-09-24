@@ -5,7 +5,6 @@
 <div class="auth-split">
     <div class="auth-split-brand">
         <div class="brand-mark">{% include "_brand_mark.html" with on_dark=True %}</div>
-        {% include "accounts/_auth_showcase.html" %}
         {% if site_branding.tagline %}<p class="brand-tagline">{{ site_branding.tagline }}</p>{% endif %}
         <h2>{% trans "One assistant. Every model. Full control." %}</h2>
         <p>{% trans "Chat with your organization's approved AI models through a single, secure interface — usage, cost, and access all managed centrally." %}</p>
@@ -14,7 +13,7 @@
         <div class="auth-card">
             <h1>{% trans "Welcome back" %}</h1>
             <p class="auth-subtitle">{% trans "Sign in to your account." %}</p>
-            <form method="post" data-stagger data-stagger-items="label, input, button[type=submit]">
+            <form method="post">
                 {% csrf_token %}
                 {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
                 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
@@ -26,11 +25,11 @@
                 {{ form.password.errors }}
                 <button type="submit">{% trans "Log in" %}</button>
             </form>
+            {% include "legal/_agree.html" %}
             {% include "accounts/_google_signin_button.html" %}
             <p class="auth-footer"><a href="{% url 'accounts:password_reset_request' %}">{% trans "Forgot password?" %}</a></p>
             <p class="auth-footer">{% trans "No account?" %} <a href="{% url 'accounts:signup' %}">{% trans "Sign up" %}</a></p>
             <p class="auth-footer"><a href="{% url 'billing:public_pricing' %}">{% trans "View pricing" %}</a></p>
-            {% include "legal/_agree.html" %}
         </div>
     </div>
 </div>

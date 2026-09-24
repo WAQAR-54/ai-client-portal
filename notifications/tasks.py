@@ -43,6 +43,7 @@ _EMAIL_TYPE_STYLE = {
     # Amber like the other "heads-up" types; a finished window is recoloured green and a withdrawn one takes the
     # brand colour in _maintenance_style() below (one type, four kinds of notice).
     "maintenance": ("#b5761e", "#fcf0dc", "notifications/_email_content_maintenance.html"),
+    "system_alert": ("#c7443f", "#fbe7e8", "notifications/_email_content_default.html"),
 }
 _DEFAULT_EMAIL_STYLE = ("brand", "brand", "notifications/_email_content_default.html")
 

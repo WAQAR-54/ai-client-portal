@@ -41,6 +41,9 @@ class NotificationType(models.TextChoices):
     MAINTENANCE = "maintenance", "Maintenance"
     # A new browser became the account's trusted device after MFA (accounts/trusted_device.py).
     NEW_TRUSTED_DEVICE = "new_trusted_device", "New trusted device"
+    # A CRITICAL System Alert (governance/dashboards.py::notify_critical_system_alerts) - database/
+    # Redis down, a background job/backup failing, disk/CPU/memory critical. SuperAdmins only.
+    SYSTEM_ALERT = "system_alert", "System alert"
 
 
 # One boolean per type, checked as f"email_{notification_type}" - see

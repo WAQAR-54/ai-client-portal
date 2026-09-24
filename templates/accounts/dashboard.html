@@ -91,6 +91,9 @@ role dashboards at this same address (accounts/views.py::DashboardView). Data: g
             <h2 class="dash-section-title" id="usage-title">{% include "dashboards/_icon.html" with name="t_usage" %}{% trans "Usage" %}</h2>
             <div class="card">{% include "chat/_usage_widget.html" %}</div>
         </section>
+        {% if dash.ai_usage %}
+        <div class="card">{% include "dashboards/_ai_usage.html" with usage=dash.ai_usage %}</div>
+        {% endif %}
         {% include "dashboards/_notifications.html" with notes=dash.notifications %}
         <section class="dash-section" data-dash="shortcuts" aria-labelledby="shortcuts-title">
             <h2 class="dash-section-title" id="shortcuts-title">{% include "dashboards/_icon.html" with name="t_shortcuts" %}{% trans "Helpful shortcuts" %}</h2>

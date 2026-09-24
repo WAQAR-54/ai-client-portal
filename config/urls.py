@@ -7,6 +7,7 @@ from django.http import Http404, JsonResponse
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
+from accounts.views import public_home_view
 from config.client_errors import client_error
 from config.health import HEALTHY, NOT_CONFIGURED, check_database, check_redis
 
@@ -150,5 +151,9 @@ urlpatterns = [
     path("docs/", RedirectView.as_view(url="/docs/guides/index.html", permanent=False)),
     path("docs/guides/", RedirectView.as_view(url="/docs/guides/index.html", permanent=False)),
     re_path(r"^docs/(?P<path>.*)$", serve_docs),
-    path("", RedirectView.as_view(pattern_name="accounts:dashboard", permanent=False)),
+    # The public marketing/home page for an anonymous visitor - previously this redirected
+    # straight to accounts:dashboard, which (being @login_required) just bounced an anonymous
+    # visitor on to the login page with no explanation of the product first. An authenticated
+    # visitor is still sent to their dashboard - see public_home_view.
+    path("", public_home_view, name="home"),
 ]

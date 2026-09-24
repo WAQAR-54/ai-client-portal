@@ -890,12 +890,14 @@ class ArabicLanguagePreferenceTests(TestCase):
 
 
 class AuthPageTranslationTests(TestCase):
-    """Regression for a real reported bug: the login page's floating showcase cards ("Chat with 4 AI models",
+    """Regression for a real reported bug: the signup page's floating showcase cards ("Chat with 4 AI models",
     "Sales, Marketing & Dev agents", "Full admin console") kept rendering in English inside an otherwise-Urdu
     page, because those three strings - and the whole MFA/password-reset flow - had no locale/ur or locale/ar
     entry at all (Django silently falls back to the English msgid when a translation is missing, no error).
     These pin down that the specific strings from the bug report are now translated, without trying to audit
-    every string in the app (a real, much larger gap - see docs/OPERATIONS.md's own note on it)."""
+    every string in the app (a real, much larger gap - see docs/OPERATIONS.md's own note on it). Checked against
+    signup, not login: the login-page cleanup pass removed these purely decorative cards from login.html, but
+    signup.html still includes them (accounts/_auth_showcase.html), so the translation coverage is still live."""
 
     def test_the_showcase_cards_are_translated_not_left_in_english(self):
         for ip, phrase in (("182.176.1.1", "چیٹ کریں"), ("213.42.1.1", "الدردشة")):
@@ -903,7 +905,7 @@ class AuthPageTranslationTests(TestCase):
                 # A fresh client per IP - the geo-detected language cookie set by the first request would
                 # otherwise stick around (Client persists Set-Cookie like a real browser) and be trusted as an
                 # "already chosen" language on the second request, skipping detection for the other one entirely.
-                response = Client().get(reverse("accounts:login"), REMOTE_ADDR=ip)
+                response = Client().get(reverse("accounts:signup"), REMOTE_ADDR=ip)
                 self.assertContains(response, phrase)
                 self.assertNotContains(response, "Chat with 4 AI models")
                 self.assertNotContains(response, "Sales, Marketing &amp; Dev agents")

@@ -158,6 +158,16 @@ def _begin_mfa_challenge_if_required(request, user, next_url):
     return True
 
 
+def public_home_view(request):
+    """The public marketing/home page at "/" - an anonymous visitor's first stop, not the
+    authenticated portal. An already-signed-in visitor lands here too (e.g. an old bookmark
+    of "/"), so they're sent straight to their existing dashboard instead of seeing marketing
+    copy about the product they're already using."""
+    if request.user.is_authenticated:
+        return redirect("accounts:dashboard")
+    return render(request, "marketing/landing.html")
+
+
 class PortalLoginView(LoginView):
     template_name = "accounts/login.html"
     authentication_form = EmailAuthenticationForm
