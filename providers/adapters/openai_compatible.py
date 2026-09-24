@@ -16,6 +16,15 @@ _BUILTIN_BASE_URLS = {
 # /v1/models response carries no capability flag distinguishing chat
 # models from embeddings/audio/image/moderation, so this excludes obvious
 # non-chat families by name.
+#
+# "imagine" covers xAI's Grok Imagine image/video models (e.g.
+# grok-imagine-video-1.5, grok-imagine-image-2.0) - a real production bug:
+# xAI's /v1/models lists these alongside its chat models with no capability
+# flag either, so a sync imported grok-imagine-video-1.5 as if it were a
+# normal chat model, an admin enabled it, and every chat request sent to it
+# failed with a real 400 from xAI ("is a video model and is therefore not
+# available on this endpoint") - confirmed against the live API. The actual
+# Grok chat models (grok-4.20-0309-*) were never the problem.
 _NON_CHAT_MARKERS = [
     "embedding",
     "whisper",
@@ -28,6 +37,7 @@ _NON_CHAT_MARKERS = [
     "transcribe",
     "realtime",
     "search-preview",
+    "imagine",
 ]
 
 

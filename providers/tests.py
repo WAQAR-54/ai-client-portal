@@ -62,6 +62,45 @@ class AdapterFactoryTests(TestCase):
         self.assertIs(adapter.provider, provider)
 
 
+class NonChatModelFilterTests(TestCase):
+    """Regression for a real production bug: xAI's /v1/models lists its Grok Imagine
+    image/video models (e.g. grok-imagine-video-1.5) with no capability flag distinguishing
+    them from chat models, same as OpenAI's own catalog. A sync imported one, an admin
+    enabled it thinking it was a chat model, and every chat request sent to it failed with
+    a real 400 from xAI ("is a video model and is therefore not available on this
+    endpoint") - confirmed against the live production API. The genuine Grok chat models
+    were never the problem. This pins down that fetch_models excludes the whole
+    "grok-imagine-*" family going forward, without excluding a real chat model by mistake."""
+
+    def _model_ids(self, *ids):
+        from unittest.mock import MagicMock
+
+        provider = Provider.objects.create(name="xAI Grok", slug="grok-filter-t1", adapter_type="openai_compatible")
+        adapter = OpenAICompatibleAdapter(provider)
+        fake_response = MagicMock()
+        fake_response.data = [MagicMock(id=model_id) for model_id in ids]
+        with patch("openai.OpenAI") as mock_openai:
+            mock_openai.return_value.models.list.return_value = fake_response
+            return {m["model_id"] for m in adapter.fetch_models("sk-test")}
+
+    def test_grok_imagine_video_and_image_models_are_excluded(self):
+        ids = self._model_ids(
+            "grok-imagine-video-1.5",
+            "grok-imagine-image",
+            "grok-imagine-image-2.0",
+            "grok-imagine-image-quality",
+        )
+        self.assertEqual(ids, set())
+
+    def test_real_grok_chat_models_are_kept(self):
+        ids = self._model_ids("grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning", "grok-4.3")
+        self.assertEqual(ids, {"grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning", "grok-4.3"})
+
+    def test_openai_chat_models_are_unaffected_by_the_new_marker(self):
+        ids = self._model_ids("gpt-4o", "gpt-3.5-turbo")
+        self.assertEqual(ids, {"gpt-4o", "gpt-3.5-turbo"})
+
+
 class SyncProviderTests(TestCase):
     """The guardrail that matters most in the whole feature: a freshly
     discovered model is never auto-enabled, and an admin's own enable/
