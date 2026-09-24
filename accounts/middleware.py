@@ -257,6 +257,45 @@ class SingleSessionMiddleware:
         return self.get_response(request)
 
 
+class HtmxLoginRedirectMiddleware:
+    """The general case SessionTimeoutMiddleware/SingleSessionMiddleware above don't cover: by the time
+    either of those runs, request.user is still authenticated (this app's own idle-timeout/single-session
+    logic is what logs them out, right there in that same request). But a session can already be
+    anonymous when AuthenticationMiddleware runs - the session cookie expired or was deleted client-side,
+    or the session was invalidated some other way (e.g. Profile > "Sign out all sessions" from another
+    tab). Then request.user is AnonymousUser from the start, neither of those middlewares' `if
+    request.user.is_authenticated:` guard ever fires, and the view's own @login_required/
+    LoginRequiredMixin (75+ call sites across the app) returns Django's plain 302 to the login page -
+    exactly the response an htmx background request (the notification bell's 45s poll, the admin topbar's
+    search box, the Ctrl+K palette, anything else with an hx-get) would otherwise have its whole rendered
+    login page swapped into, in place of that request's own tiny target element - a real reported bug,
+    reproduced in a real browser: the dashboard/sidebar stayed on screen with the full login page's
+    two-column layout squeezed into a poll's target div.
+
+    Runs after the view (response-side only, no request-side work) so it doesn't matter where exactly in
+    MIDDLEWARE this sits relative to the two middlewares above, as long as it's after
+    AuthenticationMiddleware; grouped with them here since it's the same category of fix. Only touches an
+    HX-Request whose response is a redirect landing on the login page - a normal browser navigation is
+    untouched (a plain 302 there is already correct: the browser replaces the whole page itself), and any
+    OTHER redirect (a view's own business-logic redirect, HX-Redirect responses the two middlewares above
+    already return with a 204 rather than 302) never matches this check either."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if (
+            request.headers.get("HX-Request")
+            and response.status_code in (301, 302)
+            and response.get("Location", "").startswith(reverse("accounts:login"))
+        ):
+            htmx_response = HttpResponse(status=204)
+            htmx_response["HX-Redirect"] = response["Location"]
+            return htmx_response
+        return response
+
+
 def _visitor_scheme(request):
     """'http' or 'https' - the scheme of the VISITOR's connection to Cloudflare, from the CF-Visitor header
     Cloudflare adds to every request it proxies ({"scheme":"https"}). None when the header is absent or not

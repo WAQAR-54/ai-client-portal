@@ -1317,6 +1317,55 @@ class SessionTimeoutMiddlewareTests(TestCase):
         self.assertNotIn("_auth_user_id", self.client.session)
 
 
+class HtmxLoginRedirectMiddlewareTests(TestCase):
+    """Regression for a real reported bug, reproduced in a real browser: an admin's dashboard/sidebar
+    stayed on screen with the full two-column login page squeezed into a background htmx poll's tiny
+    target element (the notification bell, an admin search box, ...) instead of the browser navigating to
+    login. SessionTimeoutMiddleware/SingleSessionMiddleware already handle their OWN triggers correctly
+    (see the htmx test above and test_single_session.py) - both only fire while request.user is still
+    authenticated *at the top of that same request*. The gap this middleware closes is the request that
+    arrives already anonymous (an expired/deleted session cookie, or a session invalidated some other way,
+    e.g. "Sign out all sessions" from another tab) and hits any of this app's 75+ plain
+    @login_required/LoginRequiredMixin views, which return Django's ordinary 302 with no htmx awareness at
+    all."""
+
+    def test_normal_browser_navigation_still_gets_a_plain_redirect(self):
+        """No HX-Request header: a real browser follows this 302 itself and replaces the whole page - this
+        must stay untouched, this middleware only ever acts on an htmx request."""
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertRedirects(response, f"{reverse('accounts:login')}?next={reverse('accounts:dashboard')}")
+
+    def test_htmx_request_with_no_session_at_all_gets_hx_redirect_not_a_302(self):
+        """The exact scenario from the bug report: an htmx background request (any hx-get, e.g. the
+        notification bell's poll or an admin search box) reaching a login_required view with no valid
+        session at all. Must be a 204 + HX-Redirect (a full browser navigation), never a 302 whose HTML
+        body htmx would swap into that request's small target element."""
+        response = self.client.get(reverse("accounts:dashboard"), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], f"{reverse('accounts:login')}?next={reverse('accounts:dashboard')}")
+
+    def test_the_htmx_redirect_response_carries_no_embeddable_html(self):
+        """Nothing for htmx to swap into the target at all - a 204 has no body by definition, so even a
+        caller that ignored HX-Redirect entirely could not end up with login page markup embedded
+        somewhere."""
+        response = self.client.get(reverse("accounts:dashboard"), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.content, b"")
+
+    def test_htmx_request_to_a_different_admin_view_also_converts(self):
+        """Not a one-off patch on a single endpoint - any of the app's login_required views behaves the
+        same way, since the fix is a middleware over the response, not a per-view change."""
+        response = self.client.get(reverse("governance:users"), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(response["HX-Redirect"].startswith(reverse("accounts:login")))
+
+    def test_htmx_request_to_a_non_login_redirect_is_left_alone(self):
+        """A view's own ordinary redirect (unauthenticated hitting the public login page itself, which
+        just renders 200) is not touched - this middleware only rewrites a redirect that actually lands on
+        the login page."""
+        response = self.client.get(reverse("accounts:login"), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+
+
 @override_settings(DEBUG=False)
 class ErrorPageTests(TestCase):
     """templates/404.html, 403.html, 500.html - Django only renders these

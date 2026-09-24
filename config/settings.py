@@ -127,6 +127,10 @@ MIDDLEWARE = [
     "accounts.middleware.SessionTimeoutMiddleware",
     # Right after it: a browser whose account signed in elsewhere is signed out (accounts/single_session.py).
     "accounts.middleware.SingleSessionMiddleware",
+    # Catches the general case those two don't: a session that's already anonymous by the time
+    # AuthenticationMiddleware runs (expired/deleted cookie, invalidated elsewhere) hitting any of the
+    # app's 75+ @login_required/LoginRequiredMixin views. See its own docstring.
+    "accounts.middleware.HtmxLoginRedirectMiddleware",
     # Then Maintenance Mode: while a window is ACTIVE everyone but a SuperAdmin gets the maintenance page
     # (governance/middleware.py).
     "governance.middleware.MaintenanceMiddleware",
