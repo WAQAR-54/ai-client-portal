@@ -543,9 +543,17 @@ function portalCloseUpgradeModal() {
                     <p class="text-muted" style="margin:0 0 0.6rem; font-size:0.85rem;">
                         {% trans "Plan:" %} <span class="badge">{{ plan_status.plan.name }}</span>
                         {% if plan_status.state == "grace" %}
+                            {% if plan_status.plan.is_demo %}
                             <span class="badge badge-danger">{% blocktrans with days=plan_status.grace_days_remaining %}Trial ended — {{ days }}d left{% endblocktrans %}</span>
+                            {% else %}
+                            <span class="badge badge-danger">{% blocktrans with days=plan_status.grace_days_remaining %}Plan expired — {{ days }}d left{% endblocktrans %}</span>
+                            {% endif %}
                         {% elif plan_status.state == "expired" %}
+                            {% if plan_status.plan.is_demo %}
                             <span class="badge badge-danger">{% trans "Trial ended" %}</span>
+                            {% else %}
+                            <span class="badge badge-danger">{% trans "Plan expired" %}</span>
+                            {% endif %}
                         {% elif plan_status.days_remaining is not None %}
                             <span class="badge badge-muted">{% blocktrans with days=plan_status.days_remaining %}{{ days }}d left{% endblocktrans %}</span>
                         {% endif %}
@@ -582,12 +590,21 @@ function portalCloseUpgradeModal() {
     </header>
     {% if plan_status.state == "grace" %}
     <div class="alert alert-warning" style="margin:1rem 1rem 0;">
+        {% if plan_status.plan.is_demo %}
         {% blocktrans with days=plan_status.grace_days_remaining %}Your trial has ended. You have <strong>{{ days }} day(s)</strong> of read-only
         access left — you can still view past conversations, but new messages are blocked. Contact your administrator to continue.{% endblocktrans %}
+        {% else %}
+        {% blocktrans with days=plan_status.grace_days_remaining %}Your plan has expired. You have <strong>{{ days }} day(s)</strong> of read-only
+        access left — you can still view past conversations, but new messages are blocked. Renew from the Plans page to continue.{% endblocktrans %}
+        {% endif %}
     </div>
     {% elif plan_status.state == "expired" %}
     <div class="alert alert-danger" style="margin:1rem 1rem 0;">
+        {% if plan_status.plan.is_demo %}
         {% trans "Your trial has ended — contact your administrator to continue." %}
+        {% else %}
+        {% trans "Your plan has expired. Renew from the Plans page to continue." %}
+        {% endif %}
     </div>
     {% endif %}
     {% if not has_models_available %}

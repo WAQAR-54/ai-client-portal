@@ -2060,6 +2060,118 @@ class DashboardUsageAndPlansTests(TestCase):
         self.assertNotContains(response, "Cancel plan")
 
 
+class PlanExpiryBadgeWordingTests(TestCase):
+    """Regression for the billing expiry audit's one finding: templates/accounts/
+    dashboard.html and templates/chat/chat_home.html said "Trial ended" for ANY
+    expired/grace plan, demo or paid. Both now branch on plan_status.plan.is_demo
+    (already in context - no new expiry logic) the same way governance.plans.
+    plan_expired_message/plan_grace_message already do for the raised error text.
+    get_plan_status/check_usage_limits/the actual access block are untouched -
+    only the wording shown changes."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="expiry-wording@example.com", password="pw12345!")
+        self.client.login(email="expiry-wording@example.com", password="pw12345!")
+
+    def _set_expiry(self, plan, when):
+        from governance.plans import assign_plan, get_assignment
+
+        assign_plan(self.user, plan, assigned_by=None)
+        assignment = get_assignment(self.user)
+        assignment.expires_at = when
+        assignment.save(update_fields=["expires_at"])
+
+    # ---- 1. demo expired -> Trial ended -------------------------------------------------
+    def test_demo_plan_expired_shows_trial_ended_on_dashboard(self):
+        from datetime import timedelta
+
+        from governance.models import Plan
+
+        demo_plan = Plan.objects.create(name="Trial", is_demo=True)
+        self._set_expiry(demo_plan, timezone.now() - timedelta(days=10))
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Trial ended")
+        self.assertNotContains(response, "Plan expired")
+
+    def test_demo_plan_expired_shows_trial_ended_on_chat_home(self):
+        from datetime import timedelta
+
+        from governance.models import Plan
+
+        demo_plan = Plan.objects.create(name="Trial", is_demo=True)
+        self._set_expiry(demo_plan, timezone.now() - timedelta(days=10))
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertContains(response, "Your trial has ended")
+
+    # ---- 2. paid expired -> Plan expired -------------------------------------------------
+    def test_paid_plan_expired_shows_plan_expired_on_dashboard(self):
+        from datetime import timedelta
+
+        from governance.models import Plan
+
+        paid_plan = Plan.objects.create(name="Pro", is_demo=False)
+        self._set_expiry(paid_plan, timezone.now() - timedelta(days=10))
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Plan expired")
+        self.assertNotContains(response, "Trial ended")
+
+    def test_paid_plan_expired_shows_paid_wording_on_chat_home(self):
+        from datetime import timedelta
+
+        from governance.models import Plan
+
+        paid_plan = Plan.objects.create(name="Pro", is_demo=False)
+        self._set_expiry(paid_plan, timezone.now() - timedelta(days=10))
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertContains(response, "Your plan has expired")
+        self.assertContains(response, "Renew from the Plans page")
+        self.assertNotContains(response, "Your trial has ended")
+
+    # ---- 3. paid grace -> correct paid-plan wording --------------------------------------
+    def test_paid_plan_in_grace_shows_plan_expired_on_dashboard(self):
+        from datetime import timedelta
+
+        from governance.models import Plan
+
+        paid_plan = Plan.objects.create(name="Pro", is_demo=False)
+        self._set_expiry(paid_plan, timezone.now() - timedelta(hours=12))  # within the grace window
+        response = self.client.get(reverse("accounts:dashboard"))
+        self.assertContains(response, "Plan expired")
+        self.assertNotContains(response, "Trial ended")
+
+    def test_paid_plan_in_grace_shows_paid_wording_on_chat_home(self):
+        from datetime import timedelta
+
+        from governance.models import Plan
+
+        paid_plan = Plan.objects.create(name="Pro", is_demo=False)
+        self._set_expiry(paid_plan, timezone.now() - timedelta(hours=12))
+        response = self.client.get(reverse("chat:chat_home"))
+        self.assertContains(response, "Your plan has expired")
+        self.assertNotContains(response, "Your trial has ended")
+
+    # ---- 4. existing behavior (access control itself) is unchanged -----------------------
+    def test_actual_access_block_is_unaffected_by_the_wording_change(self):
+        """The wording fix touches templates only - get_plan_status/check_usage_limits
+        still block a real expired paid plan exactly as before."""
+        from datetime import timedelta
+
+        from governance.limits import UsageLimitExceeded, check_usage_limits
+        from governance.models import Plan
+        from governance.plans import get_plan_status
+
+        paid_plan = Plan.objects.create(name="Pro", is_demo=False)
+        self._set_expiry(paid_plan, timezone.now() - timedelta(days=10))
+        status = get_plan_status(self.user)
+        self.assertEqual(status["state"], "expired")
+
+        from chat.models import Conversation
+
+        conversation = Conversation.objects.create(user=self.user, title="t")
+        with self.assertRaises(UsageLimitExceeded):
+            check_usage_limits(self.user, conversation)
+
+
 class TemplateHygieneTests(TestCase):
     """Static scans across every template file - catch a whole bug class at
     once instead of one regression test per file it happens to bite next."""
