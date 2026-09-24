@@ -73,7 +73,20 @@
                     {% if m.is_new and not m.is_retired %}<span class="badge badge-muted">{% trans "New" %}</span>{% endif %}
                     {% if m.is_retired %}<span class="badge badge-danger">{% trans "Retired" %}</span>{% endif %}
                     {% if m.is_enabled %}<span class="badge badge-success">{% trans "Enabled" %}</span>{% else %}<span class="badge badge-danger">{% trans "Disabled" %}</span>{% endif %}
+                    {% if "imagine" in m.model_id %}
+                    <span class="badge badge-muted" title="{% trans 'A Grok Imagine image/video model, not a chat model' %}">{% trans "Media generation" %}</span>
+                    {% endif %}
                 </div>
+                {% if "imagine" in m.model_id %}
+                {% comment %}
+                The composer's own Image/Video mode toggle (chat/media_generation.py) calls xAI's image/video
+                endpoints directly with its own hardcoded model id - it never reads this row's Enabled state,
+                the chat model dropdown, or router selection. Enabling/disabling this row only affects whether
+                it can be chosen as a CHAT model (it can't be sent to /v1/chat/completions at all - xAI itself
+                rejects that - so there is no reason to enable it there either).
+                {% endcomment %}
+                <p class="text-faint" style="font-size:var(--text-xs); margin:2px 0 0;">{% trans "Used by the Image/Video Generation feature, not by the chat model selector — this toggle does not turn image/video generation on or off." %}</p>
+                {% endif %}
                 <div class="provider-model-controls">
                     <form method="post" action="{% url 'providers:toggle_model' model_id=m.id %}"
                           hx-post="{% url 'providers:toggle_model' model_id=m.id %}"

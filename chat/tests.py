@@ -1728,6 +1728,111 @@ class MediaGenerationTests(TestCase):
         self.assertContains(response, f'<img class="msg-generated-media" src="{download_url}"')
 
 
+class MediaGenerationProviderNameHiddenTests(TestCase):
+    """Regression for the Image Toggle audit's one real finding: chat/media_generation.py used to name
+    "Grok" directly in every user-facing MediaGenerationError - stream_message's own policy is that a
+    generation failure never tells the user which provider/model was behind it. These call the real
+    module functions directly (not mocked away, unlike MediaGenerationTests above), so they exercise the
+    actual strings the fix changed."""
+
+    def test_no_provider_connected_at_all_does_not_name_the_provider(self):
+        from chat.media_generation import generate_image
+
+        Provider.objects.filter(slug="grok").delete()
+        with self.assertRaises(MediaGenerationError) as ctx:
+            generate_image("a cat")
+        self.assertNotIn("Grok", str(ctx.exception))
+        self.assertNotIn("grok", str(ctx.exception).lower())
+
+    def test_provider_row_exists_but_has_no_key_does_not_name_the_provider(self):
+        from chat.media_generation import generate_video
+
+        grok = Provider.objects.get(slug="grok")
+        grok.is_connected = False
+        grok.api_key_encrypted = b""
+        grok.save()
+        with self.assertRaises(MediaGenerationError) as ctx:
+            generate_video("a cat")
+        self.assertNotIn("Grok", str(ctx.exception))
+
+    @patch("chat.media_generation.requests.post")
+    def test_an_unexpected_response_shape_does_not_name_the_provider(self, mock_post):
+        from chat.media_generation import generate_image
+
+        grok = Provider.objects.get(slug="grok")
+        grok.set_api_key("xai-test-key")
+        grok.save()
+        mock_post.return_value = MagicMock(json=lambda: {"data": []})  # no [0]["url"] -> IndexError inside
+        with self.assertRaises(MediaGenerationError) as ctx:
+            generate_image("a cat")
+        self.assertNotIn("Grok", str(ctx.exception))
+
+    @patch("chat.media_generation.requests.post", side_effect=__import__("requests").RequestException("boom"))
+    def test_a_network_failure_does_not_name_the_provider(self, mock_post):
+        from chat.media_generation import generate_video
+
+        grok = Provider.objects.get(slug="grok")
+        grok.set_api_key("xai-test-key")
+        grok.save()
+        with self.assertRaises(MediaGenerationError) as ctx:
+            generate_video("a cat")
+        self.assertNotIn("Grok", str(ctx.exception))
+
+
+class MediaGenerationRoutingIndependenceTests(TestCase):
+    """Regression for the audit's other finding: image/video generation is a completely separate code
+    path from chat model routing/selection - it never reads ProviderModel at all, so nothing about the
+    ProviderModel catalog (enabled, disabled, retired, or missing entirely) can turn it on or off. Also
+    confirms the recent Grok chat-model fix (providers/adapters/openai_compatible.py's "imagine" marker)
+    and this feature don't interact: retiring/disabling grok-imagine-* rows in ProviderModel changes
+    nothing here, in either direction."""
+
+    def setUp(self):
+        grok = Provider.objects.get(slug="grok")
+        grok.set_api_key("xai-test-key")
+        grok.save()
+
+    @patch("chat.media_generation.requests.get")
+    @patch("chat.media_generation.requests.post")
+    def test_generation_works_with_zero_providermodel_rows_for_grok(self, mock_post, mock_get):
+        from chat.media_generation import generate_image
+
+        # No ProviderModel row for grok-imagine-image-2.0 exists at all (never synced, or the sync fix
+        # correctly never imported it) - generation must not care.
+        self.assertFalse(ProviderModel.objects.filter(provider__slug="grok", model_id="grok-imagine-image-2.0").exists())
+        mock_post.return_value = MagicMock(json=lambda: {"data": [{"url": "https://x.ai/generated.png"}]})
+        mock_get.return_value = MagicMock(content=b"fake-bytes")
+        result = generate_image("a cat")
+        self.assertEqual(result, b"fake-bytes")
+        self.assertEqual(mock_post.call_args.kwargs["json"]["model"], "grok-imagine-image-2.0")
+
+    @patch("chat.media_generation.requests.get")
+    @patch("chat.media_generation.requests.post")
+    def test_generation_works_even_when_the_matching_providermodel_row_is_disabled(self, mock_post, mock_get):
+        from chat.media_generation import generate_image
+
+        provider = Provider.objects.get(slug="grok")
+        ProviderModel.objects.create(
+            provider=provider, model_id="grok-imagine-image-2.0", display_name="Grok Imagine", is_enabled=False
+        )
+        mock_post.return_value = MagicMock(json=lambda: {"data": [{"url": "https://x.ai/generated.png"}]})
+        mock_get.return_value = MagicMock(content=b"fake-bytes")
+        # is_enabled=False on the matching row must have no effect - generate_image never reads it.
+        result = generate_image("a cat")
+        self.assertEqual(result, b"fake-bytes")
+
+    def test_grok_imagine_models_still_excluded_from_the_chat_model_dropdown(self):
+        """Not this fix's job to guard (see providers.tests.NonChatModelFilterTests, added with the Grok
+        chat fix itself), just confirming the two features remain independent from this side too: a
+        grok-imagine-* row that IS enabled in ProviderModel (e.g. left over from before that fix) is still
+        a real 400 if ever sent to /v1/chat/completions - image/video generation bypasses that endpoint
+        entirely, which is exactly why this feature was unaffected by that bug in the first place."""
+        from providers.adapters.openai_compatible import _is_chat_model
+
+        self.assertFalse(_is_chat_model("grok-imagine-image-2.0"))
+        self.assertFalse(_is_chat_model("grok-imagine-video-1.5"))
+
+
 class DocumentGenerationOutputModeTests(TestCase):
     """generate_media's "document" media_mode (composer's unified Generate
     menu's "Generate document" option) - unlike image/video (Grok's own

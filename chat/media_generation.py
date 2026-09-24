@@ -44,13 +44,19 @@ class MediaGenerationError(Exception):
 def _grok_api_key():
     from providers.models import Provider
 
+    # Both raises below are deliberately the same generic, provider-hidden message - same policy
+    # chat/views.py::stream_message already follows for a chat reply ("never show the raw upstream
+    # error to the user - it can contain the model name or provider identity, which the portal is
+    # meant to keep hidden"). This used to say "Grok isn't set up/connected", naming the provider
+    # directly to the end user - fixed to match.
+    unavailable = MediaGenerationError("Image/video generation isn't available right now. Please try again later.")
     try:
         provider_row = Provider.objects.get(slug="grok")
     except Provider.DoesNotExist as exc:
-        raise MediaGenerationError("Grok isn't set up for this site yet.") from exc
+        raise unavailable from exc
     key = provider_row.get_decrypted_key()
     if not key:
-        raise MediaGenerationError("Grok isn't connected for this site yet.")
+        raise unavailable
     return key
 
 
@@ -75,7 +81,10 @@ def generate_image(prompt: str) -> bytes:
     except requests.RequestException as exc:
         raise MediaGenerationError("Image generation failed - please try again.") from exc
     except (KeyError, IndexError) as exc:
-        raise MediaGenerationError("Grok returned an unexpected response for image generation.") from exc
+        # Same generic wording as the request-failure branch above, not a provider-naming message -
+        # the cause differs (a malformed/unexpected response shape vs a network error) but there's
+        # nothing more actionable to tell the user either way.
+        raise MediaGenerationError("Image generation failed - please try again.") from exc
 
 
 def generate_video(prompt: str) -> bytes:
@@ -112,4 +121,5 @@ def generate_video(prompt: str) -> bytes:
     except requests.RequestException as exc:
         raise MediaGenerationError("Video generation failed - please try again.") from exc
     except (KeyError, IndexError) as exc:
-        raise MediaGenerationError("Grok returned an unexpected response for video generation.") from exc
+        # Same reasoning as generate_image's identical branch above.
+        raise MediaGenerationError("Video generation failed - please try again.") from exc
